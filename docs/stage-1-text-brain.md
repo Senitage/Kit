@@ -10,36 +10,30 @@ folder, GPU, Ollama and Claude.
 
 ## 1. Update and start Kit
 
-On the server, in the Kit repo:
+In the Ubuntu terminal, in the Kit repo:
 
 ```
+cd ~/kit
 git pull
-.venv\Scripts\activate          # Linux: source .venv/bin/activate
+source .venv/bin/activate
 pip install -e .
 ollama pull nomic-embed-text    # lets Kit find memories by meaning (about 300 MB)
 kit serve
 ```
 
-Before the first run, give Ollama room on the 8 GB card. In Windows, open
-**Edit the system environment variables**, add these, then restart Ollama from the
-tray icon:
-
-```
-OLLAMA_FLASH_ATTENTION=1
-OLLAMA_KV_CACHE_TYPE=q8_0        # halves the memory the context takes
-OLLAMA_NUM_PARALLEL=1            # one user; otherwise Ollama may reserve 4 contexts
-OLLAMA_MAX_LOADED_MODELS=3       # chat and embedding models stay loaded together
-```
+Stage 0 already gave Ollama the settings that keep the chat and embedding models
+loaded together on the 8 GB card (`sudo systemctl cat ollama` shows them).
 
 `kit serve` prints two links with the API token on the end. Open the chat link
-in a browser on the server. The page remembers the token, so after the first
-visit plain `http://127.0.0.1:8600/` works. `kit token` shows the token again.
+in a browser on the GPU PC's Windows side: WSL passes `127.0.0.1` through. The
+page remembers the token, so after the first visit plain
+`http://127.0.0.1:8600/` works. `kit token` shows the token again.
 
-To open it from your phone or desk PC, set `brain.host` to `0.0.0.0`
-(`kit config set brain.host 0.0.0.0`), restart `kit serve`, allow port 8600
-through Windows Firewall for the Tailscale adapter only (remote address
-`100.64.0.0/10`, so nothing else on the LAN can reach it), and browse to
-`http://kit-server:8600/#token=...` over Tailscale.
+To open it from your phone or desk PC, run `kit config set brain.host 0.0.0.0`
+and restart `kit serve`, then browse to `http://kit-server:8600/#token=...` over
+Tailscale. Under WSL, Ubuntu's own network address is only reachable from this
+PC, so `0.0.0.0` means "this PC and the tailnet", not the whole LAN. No Windows
+firewall rule is needed.
 
 ## 2. What's new
 
@@ -91,18 +85,37 @@ through Windows Firewall for the Tailscale adapter only (remote address
   running on the last version that worked and says so on the settings page and
   in `kit config show`. Fix the file or save from the page to clear it.
 
-## 3. Run Kit at login (Windows)
+## 3. Run Kit as a service
 
-Once you're happy with it, have Windows start `kit serve` at login:
+Once you're happy with it, make Kit a systemd service, like Ollama. Stage 0's
+`Kit WSL` scheduled task keeps Ubuntu running, so Kit starts when Ubuntu does
+and restarts if it crashes. The same service file works unchanged on the Linux
+server later.
 
-1. Open **Task Scheduler** and choose **Create Task**.
-2. General: name it `Kit`, select **Run whether user is logged on or not**.
-3. Triggers: **At startup**.
-4. Actions: **Start a program**. Program: the full path to `kit.exe` in the
-   venv (for example `C:\Kit\.venv\Scripts\kit.exe`). Arguments: `serve`.
-5. Settings: tick **If the task fails, restart every 1 minute**.
+```
+sudo tee /etc/systemd/system/kit.service > /dev/null <<UNIT
+[Unit]
+Description=Kit
+After=network-online.target ollama.service
+Wants=network-online.target
 
-On Linux this becomes a systemd service in the server-move stage.
+[Service]
+User=$USER
+ExecStart=$HOME/kit/.venv/bin/kit serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now kit
+systemctl status kit
+```
+
+`journalctl -u kit -f` shows what it's printing; `logs/kit.log` in the data
+folder keeps the warnings and errors. After a `git pull` and `pip install -e .`,
+run `sudo systemctl restart kit`.
 
 ## 4. Test before moving on
 
