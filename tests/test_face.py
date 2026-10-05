@@ -132,3 +132,12 @@ def test_reply_plan_starts_each_gesture_before_its_words():
     assert gesture.at < first_say.at
     assert second_say.at >= first_say.at + first_say.seconds
     assert [c.at for c in cues] == sorted(c.at for c in cues)
+
+
+def test_wink_closes_only_one_eye():
+    face = Face(rng=random.Random(9))
+    face._blink_at = 1e9  # no blinks during the check
+    face.tick(0)
+    face.play("wink", 0)
+    mid = run(face, 0, CLIPS["wink"].seconds / 2)[-1]
+    assert mid.open_right < 0.2 < 0.8 < mid.open_left

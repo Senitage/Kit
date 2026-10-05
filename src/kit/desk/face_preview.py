@@ -28,6 +28,26 @@ from kit.face import CLIPS, POSES, STATES, plan_reply
 
 SAMPLES = [
     {
+        "emotion": "excited",
+        "segments": [
+            {"say": "The new servos shipped!", "gesture": "wiggle"},
+            {"say": "Tracking says Thursday.", "gesture": "nod"},
+        ],
+    },
+    {
+        "emotion": "confused",
+        "segments": [
+            {"say": "Wait, the tax return from 2023?", "gesture": "double_take"},
+            {"say": "Let me think where you filed it.", "gesture": "look_up"},
+        ],
+    },
+    {
+        "emotion": "fond",
+        "segments": [
+            {"say": "I won't tell anyone about the third coffee.", "gesture": "wink"},
+        ],
+    },
+    {
         "emotion": "happy",
         "segments": [
             {"say": "Oh, you're back.", "gesture": "perk_up"},

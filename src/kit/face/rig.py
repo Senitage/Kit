@@ -76,6 +76,25 @@ POSES: dict[str, Pose] = {
     "proud": Pose(
         open=0.82, squint=0.45, tilt=-0.05, size=1.03, look_y=-0.35, blush=0.45, head_y=-0.016
     ),
+    "excited": Pose(open=1.18, squint=0.3, size=1.1, blush=0.65, head_y=-0.02),
+    "sad": Pose(
+        open=0.72, tilt=0.95, size=0.95, look_y=0.5, blush=0.0, head_tilt=0.08, head_y=0.025
+    ),
+    "confused": Pose(open=1.0, tilt=-0.2, asym=0.35, look_x=-0.2, look_y=-0.15, head_tilt=0.22),
+    "shy": Pose(
+        open=0.85,
+        squint=0.4,
+        size=0.95,
+        look_x=-0.6,
+        look_y=0.4,
+        blush=1.0,
+        head_tilt=-0.1,
+        head_y=0.01,
+    ),
+    "grumpy": Pose(open=0.62, tilt=-0.7, size=0.95, look_y=0.1, blush=0.0, head_y=0.01),
+    "focused": Pose(open=0.85, tilt=-0.4, size=0.92, look_y=0.2, blush=0.05),
+    "relieved": Pose(open=0.7, squint=0.35, tilt=0.3, blush=0.3, head_y=0.01),
+    "fond": Pose(open=0.9, squint=0.7, size=1.02, blush=0.9, head_tilt=0.1),
 }
 
 STATES = ("idle", "sleeping", "listening", "thinking", "speaking", "working", "offline")
@@ -118,6 +137,8 @@ class Offsets:
     look_y: float = 0.0
     open: float = 0.0
     squint: float = 0.0
+    size: float = 0.0
+    wink: float = 0.0  # 0..1, closes the right eye only
 
 
 def _ease(t: float) -> float:
@@ -204,6 +225,84 @@ def _lean_in(t: float) -> Offsets:
     return Offsets(scale=1 + 0.13 * h, open=0.12 * h)
 
 
+def _wink(t: float) -> Offsets:
+    h = _hold(t, 0.2, 0.65)
+    return Offsets(wink=h, squint=0.3 * h, rot=-0.06 * h)
+
+
+def _laugh(t: float) -> Offsets:
+    h = _bump(t, 0, 1)
+    return Offsets(
+        dy=0.012 * math.sin(t * math.pi * 10) * h,
+        squint=0.8 * min(1, 3 * h),
+        rot=0.04 * h,
+        look_y=-0.3 * h,
+    )
+
+
+def _sigh(t: float) -> Offsets:
+    # A breath in (rise and stretch), then a long breath out (sink and squash).
+    rise, fall = _bump(t, 0, 0.35), _bump(t, 0.3, 1)
+    return Offsets(
+        dy=-0.02 * rise + 0.03 * fall,
+        sy=1 + 0.05 * rise - 0.05 * fall,
+        open=0.1 * rise - 0.4 * fall,
+        look_y=-0.3 * rise + 0.4 * fall,
+    )
+
+
+def _startle(t: float) -> Offsets:
+    # A fast jolt back (smaller, wide eyes), then a slow recovery.
+    jolt = t / 0.1 if t < 0.1 else 1 - _ease((t - 0.1) / 0.9)
+    return Offsets(
+        scale=1 - 0.12 * jolt,
+        dy=-0.03 * jolt,
+        open=0.4 * jolt,
+        size=0.12 * jolt,
+        dx=0.01 * math.sin(t * math.pi * 14) * jolt,
+    )
+
+
+def _yawn(t: float) -> Offsets:
+    h = _hold(t, 0.3, 0.75)
+    return Offsets(
+        sy=1 + 0.09 * h, sx=1 - 0.04 * h, squint=0.6 * h, open=-0.5 * h, rot=-0.08 * h, dy=-0.02 * h
+    )
+
+
+def _double_take(t: float) -> Offsets:
+    away = _bump(t, 0, 0.3)
+    back = _bump(t, 0.35, 1)
+    return Offsets(
+        look_x=0.8 * away,
+        rot=-0.05 * away,
+        open=0.35 * back,
+        size=0.1 * back,
+        scale=1 + 0.06 * back,
+        dy=-0.02 * _bump(t, 0.35, 0.55),
+    )
+
+
+def _wiggle(t: float) -> Offsets:
+    h = _bump(t, 0, 1)
+    return Offsets(
+        rot=0.15 * math.sin(t * math.pi * 8) * h,
+        dy=-0.015 * abs(math.sin(t * math.pi * 8)) * h,
+        squint=0.5 * h,
+        dx=0.015 * math.sin(t * math.pi * 4) * h,
+    )
+
+
+def _peek(t: float) -> Offsets:
+    h = _hold(t, 0.25, 0.75)
+    return Offsets(dx=0.05 * h, rot=0.12 * h, look_x=0.9 * h, open=-0.15 * h, squint=0.2 * h)
+
+
+def _look_up(t: float) -> Offsets:
+    h = _hold(t, 0.2, 0.8)
+    return Offsets(look_x=-0.5 * h, look_y=-0.9 * h, rot=-0.06 * h, dy=-0.01 * h)
+
+
 @dataclass(frozen=True)
 class GestureClip:
     seconds: float
@@ -222,6 +321,15 @@ CLIPS: dict[str, GestureClip] = {
     "wave": GestureClip(1.3, _wave),
     "bounce": GestureClip(1.0, _bounce),
     "lean_in": GestureClip(1.6, _lean_in),
+    "wink": GestureClip(0.8, _wink),
+    "laugh": GestureClip(1.2, _laugh),
+    "sigh": GestureClip(2.0, _sigh),
+    "startle": GestureClip(1.3, _startle),
+    "yawn": GestureClip(2.2, _yawn),
+    "double_take": GestureClip(1.4, _double_take),
+    "wiggle": GestureClip(1.4, _wiggle),
+    "peek": GestureClip(1.8, _peek),
+    "look_up": GestureClip(1.8, _look_up),
 }
 
 _POSE_KEYS = [f.name for f in fields(Pose)]
@@ -305,10 +413,10 @@ class Face:
             talk = 0.25 + 0.55 * abs(math.sin(now * 11.8) * math.sin(now * 18.9 + 1))
         return FaceFrame(
             open_left=open_ * max(0.0, 1 + c["asym"] * 0.45),
-            open_right=open_ * max(0.0, 1 - c["asym"] * 0.45),
+            open_right=open_ * max(0.0, 1 - c["asym"] * 0.45) * (1 - g.wink),
             squint=_clamp(c["squint"] + g.squint, 0, 0.95),
             tilt=c["tilt"],
-            size=c["size"],
+            size=c["size"] + g.size,
             look_x=_clamp(look_x + g.look_x, -1, 1),
             look_y=_clamp(look_y + g.look_y, -1, 1),
             blush=_clamp(c["blush"], 0, 1),
