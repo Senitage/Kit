@@ -1,0 +1,24 @@
+# Kit's settings. Lives in Kit's data folder (run `kit paths` to see where).
+# Secrets such as API keys never go in this file; see docs/stage-0-setup.md.
+
+schema_version = 1
+
+[ollama]
+# Ollama on this machine, and the local model for everyday chat.
+url = "http://127.0.0.1:11434"
+model = "qwen3:8b"
+
+[claude]
+# The Claude model used for hard tasks.
+model = "claude-opus-5-5"
+
+[nas]
+# The Obsidian vault: the only NAS folder Kit may write to.
+# Single quotes keep backslashes literal in TOML.
+# vault = '\\NAS\home\Obsidian'
+
+# Shares Kit may read but never change. Use UNC paths on Windows,
+# mount points on Linux. The 'kit' NAS user should have read-only access.
+[nas.read_only_shares]
+# photos = '\\NAS\photo'
+# documents = '\\NAS\home\Documents'
