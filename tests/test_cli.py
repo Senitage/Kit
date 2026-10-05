@@ -53,6 +53,16 @@ def test_config_set_show_undo(paths, capsys):
     assert '"calm"' not in paths.settings_file.read_text(encoding="utf-8")
 
 
+def test_config_reset_goes_back_to_defaults_and_undo_restores(paths, capsys):
+    main(["init"])
+    assert main(["config", "set", "persona.name", "Kip"]) == 0
+    assert main(["config", "reset"]) == 0
+    assert "defaults" in capsys.readouterr().out
+    assert 'name = "Kit"' in paths.settings_file.read_text(encoding="utf-8")
+    assert main(["config", "undo"]) == 0
+    assert 'name = "Kip"' in paths.settings_file.read_text(encoding="utf-8")
+
+
 def test_config_bad_value_is_refused(paths, capsys):
     main(["init"])
     assert main(["config", "set", "brain.port", "0"]) == 1

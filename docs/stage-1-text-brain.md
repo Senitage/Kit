@@ -83,6 +83,7 @@ through Windows Firewall for the Tailscale adapter only (remote address
   kit config set persona.traits "['curious', 'dry humour']"
   kit config history                  # earlier versions
   kit config undo                     # back one change
+  kit config reset                    # back to the defaults; undo brings yours back
   kit config check                    # is settings.toml valid?
   ```
 

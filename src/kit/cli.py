@@ -100,6 +100,9 @@ def cmd_config(paths: KitPaths, args: argparse.Namespace) -> int:
         elif args.action == "undo":
             store.undo()
             print("went back to the previous settings")
+        elif args.action == "reset":
+            store.replace(Settings(), "cli reset")
+            print("settings are back to the defaults; `kit config undo` brings yours back")
         elif args.action == "history":
             versions = store.history()
             if not versions:
@@ -411,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     cset.add_argument("key")
     cset.add_argument("value")
     csub.add_parser("undo", help="go back to the settings before the last change")
+    csub.add_parser("reset", help="back to the defaults (memory is untouched; undo restores)")
     csub.add_parser("history", help="list earlier versions")
     crestore = csub.add_parser("restore", help="go back to an earlier version")
     crestore.add_argument("version")
