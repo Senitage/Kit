@@ -63,7 +63,10 @@ class ClaudeSettings(_Section):
         4.0, ge=0, description="Price per million input tokens, for the spend log."
     )
     cached_input_usd_per_mtok: float = Field(
-        0.4, ge=0, description="Price per million input tokens read from the prompt cache."
+        0.2,
+        ge=0,
+        description="Price per million input tokens read from the prompt cache "
+        "(0.05x input on Opus 5.5, 0.1x on most other models).",
     )
     output_usd_per_mtok: float = Field(
         20.0, ge=0, description="Price per million output tokens, for the spend log."

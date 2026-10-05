@@ -40,15 +40,17 @@ def test_answer_is_returned_and_spend_logged(memory):
 def test_cost_estimate():
     assert estimate_cost(ClaudeSettings(), 1_000_000, 0) == 4.0
     assert estimate_cost(ClaudeSettings(), 0, 1_000_000) == 20.0
-    # Tokens read from the prompt cache cost a tenth of fresh input.
-    assert estimate_cost(ClaudeSettings(), 1_000_000, 0, cached_tokens=1_000_000) == 0.4
+    # On Opus 5.5 a cache read costs 0.05x input; a cache write costs 1.25x.
+    assert estimate_cost(ClaudeSettings(), 1_000_000, 0, cached_tokens=1_000_000) == 0.2
+    assert estimate_cost(ClaudeSettings(), 1_000_000, 0, cache_write_tokens=1_000_000) == 5.0
 
 
 def test_cached_tokens_are_billed_at_the_cache_rate(memory):
     fake = FakeAnthropic(cache_read_input_tokens=1000)
     answer = ask(Expert(memory, lambda: "sk-test", fake.factory))
     assert answer.ok
-    assert answer.cost_usd == estimate_cost(ClaudeSettings(), 2000, 2000, 1000)
+    # 1000 fresh at $4/M + 1000 cached at $0.20/M + 2000 out at $20/M
+    assert answer.cost_usd == pytest.approx(0.0442)
 
 
 def test_cap_stops_calls(memory):

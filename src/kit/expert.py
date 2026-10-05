@@ -32,13 +32,23 @@ def make_async_client(api_key: str) -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(api_key=api_key, max_retries=2, timeout=300)
 
 
+CACHE_WRITE_MULTIPLIER = 1.25  # a 5-minute cache write costs 1.25x input, on every model
+
+
 def estimate_cost(
-    settings: ClaudeSettings, input_tokens: int, output_tokens: int, cached_tokens: int = 0
+    settings: ClaudeSettings,
+    input_tokens: int,
+    output_tokens: int,
+    cached_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> float:
-    """Cost of one call. ``input_tokens`` is every input token; ``cached_tokens`` is
-    the part of it that came from the prompt cache at the cheaper rate."""
+    """Cost of one call. ``input_tokens`` is every input token. Of those,
+    ``cached_tokens`` were read from the prompt cache at the cheap rate and
+    ``cache_write_tokens`` were written to it at 1.25x the input rate."""
+    fresh = input_tokens - cached_tokens - cache_write_tokens
     return (
-        (input_tokens - cached_tokens) * settings.input_usd_per_mtok
+        fresh * settings.input_usd_per_mtok
+        + cache_write_tokens * settings.input_usd_per_mtok * CACHE_WRITE_MULTIPLIER
         + cached_tokens * settings.cached_input_usd_per_mtok
         + output_tokens * settings.output_usd_per_mtok
     ) / 1_000_000
@@ -131,7 +141,11 @@ class Expert:
             + (usage.cache_read_input_tokens or 0)
         )
         cost = estimate_cost(
-            claude, input_tokens, usage.output_tokens, usage.cache_read_input_tokens or 0
+            claude,
+            input_tokens,
+            usage.output_tokens,
+            cached_tokens=usage.cache_read_input_tokens or 0,
+            cache_write_tokens=usage.cache_creation_input_tokens or 0,
         )
         self.memory.record_spend(response.model, input_tokens, usage.output_tokens, cost, question)
         if response.stop_reason == "refusal":

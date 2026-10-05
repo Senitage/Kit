@@ -23,7 +23,7 @@ max_tokens = 16000
 # Prices are only for the spend log; check them against Anthropic's price list.
 monthly_cap_usd = 20.0
 input_usd_per_mtok = 4.0
-cached_input_usd_per_mtok = 0.4
+cached_input_usd_per_mtok = 0.2
 output_usd_per_mtok = 20.0
 
 [brain]
