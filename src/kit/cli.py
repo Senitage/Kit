@@ -14,6 +14,7 @@ import httpx
 from kit import checks
 from kit.checks import CheckResult, Status
 from kit.credentials import anthropic_api_key, api_token
+from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError, load_settings, settings_to_toml
 from kit.settings_store import SettingsStore
@@ -127,16 +128,19 @@ def cmd_token(paths: KitPaths) -> int:
 
 def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     from kit.brain import Brain
+    from kit.embed import OllamaEmbedder
     from kit.expert import Expert
     from kit.local_model import OllamaModel
     from kit.memory import Memory
+    from kit.recall import Recall
 
     paths.ensure()
     store = SettingsStore(paths)
     memory = Memory(paths.state_dir / "memory.db")
     model = OllamaModel(lambda: store.current().ollama, client)
     expert = Expert(memory, lambda: anthropic_api_key(paths))
-    return store, memory, Brain(store.current, memory, model, expert)
+    recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
+    return store, memory, Brain(store.current, memory, model, expert, recall)
 
 
 def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -156,7 +160,7 @@ def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
     print(f"{settings.persona.name} is listening.")
     print(f"  chat:     http://{shown}:{port}/#token={token}")
     print(f"  settings: http://{shown}:{port}/settings#token={token}")
-    app = create_app(store, memory, brain, token)
+    app = create_app(store, memory, brain, token, paths=paths)
     uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
 
@@ -196,24 +200,49 @@ async def _chat_loop(paths: KitPaths) -> int:
     return 0
 
 
+def _show_item(item) -> str:
+    pin = "*" if item.pinned else " "
+    return f"{item.id:>5}{pin} {item.day}  {item.kind:<10}  {item.text}"
+
+
 def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
 
     paths.ensure()
-    if args.action == "summarise":
-        return asyncio.run(_summarise(paths))
+    if args.action in ("summarise", "remember", "search", "reindex"):
+        return asyncio.run(_memory_async(paths, args))
     memory = Memory(paths.state_dir / "memory.db")
+    code = 0
     if args.action == "facts":
         facts = memory.facts()
         if not facts:
             print("nothing remembered yet")
         for f in facts:
-            print(f"{f.id:>5}  {f.day}  {f.text}")
-    elif args.action == "remember":
-        memory.add_fact(args.text)
-        print("remembered")
+            print(_show_item(f))
+        if facts:
+            print("\n* = pinned (always in mind)")
+    elif args.action == "history":
+        for item in memory.index.history(args.id):
+            gone = "  (replaced)" if item.superseded_by else ""
+            print(_show_item(item) + gone)
+    elif args.action in ("pin", "unpin"):
+        if memory.index.set_pinned(args.id, args.action == "pin"):
+            print(f"{args.action}ned {args.id}")
+        else:
+            print(f"no fact {args.id}")
+            code = 1
     elif args.action == "forget":
-        print("forgotten" if memory.forget(args.id) else f"no fact {args.id}")
+        if memory.forget(args.id):
+            print("forgotten")
+        else:
+            print(f"no fact {args.id}")
+            code = 1
+    elif args.action == "days":
+        for item in memory.index.items("days"):
+            print(f"{item.ref}  {item.text}\n")
+    elif args.action == "backup":
+        keep = SettingsStore(paths).current().memory.backups_keep
+        print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
     elif args.action == "spend":
         cap = SettingsStore(paths).current().claude.monthly_cap_usd
         print(f"Claude this month: ${memory.month_spend():.2f} of ${cap:.2f}")
@@ -223,15 +252,49 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
                 f"  ${s.cost_usd:.4f}  {s.question[:60]}"
             )
     memory.close()
-    return 0
+    return code
 
 
-async def _summarise(paths: KitPaths) -> int:
+async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.memory import CONVERSATION, DAYS, FACTS
+
     async with httpx.AsyncClient() as client:
-        _, memory, brain = _runtime(paths, client)
-        days = await brain.summarise_past_days()
-        print(f"summarised {len(days)} day(s): {', '.join(days)}" if days else "nothing to do")
-        memory.close()
+        store, memory, brain = _runtime(paths, client)
+        try:
+            if args.action == "summarise":
+                days = await brain.summarise_past_days()
+                print(f"summarised {', '.join(days)}" if days else "nothing to summarise")
+            elif args.action == "remember":
+                learned = await brain.learner.learn(
+                    args.text, args.kind, store.current().persona.owner
+                )
+                if learned.decision == "same":
+                    print(f"already known: {learned.text}")
+                elif learned.decision == "update":
+                    print(f"updated: {learned.replaced}\n     ->  {learned.text}")
+                else:
+                    print(f"remembered: {learned.text}")
+            elif args.action == "search":
+                hits = await brain.recall.search(args.query, [FACTS, DAYS, CONVERSATION], 10)
+                if brain.recall.embed_problem:
+                    print(f"(words only: {brain.recall.embed_problem})")
+                if not hits:
+                    print("nothing found")
+                for h in hits:
+                    how = (
+                        "words+meaning"
+                        if h.word_match and h.similarity
+                        else ("words" if h.word_match else f"meaning {h.similarity:.2f}")
+                    )
+                    text = " / ".join(h.item.text.splitlines())[:110]
+                    print(f"{h.item.id:>5}  {h.item.day}  {h.item.source:<12} {how:<14} {text}")
+            elif args.action == "reindex":
+                done = await brain.recall.index_pending(limit=1_000_000)
+                problem = brain.recall.embed_problem
+                print(f"indexed {done} item(s)" + (f"; stopped: {problem}" if problem else ""))
+                return 1 if problem else 0
+        finally:
+            memory.close()
     return 0
 
 
@@ -261,6 +324,52 @@ async def _eval(paths: KitPaths, n: int) -> int:
     if median is not None:
         print(f"first words:   median {median:.2f}s, 90% within {p90:.2f}s")
     return 0 if report.valid == len(report.results) else 1
+
+
+async def _eval_memory(paths: KitPaths) -> int:
+    """Run the memory test in a scratch memory inside the data folder, then delete it."""
+    from kit.embed import OllamaEmbedder
+    from kit.evals import run_memory_eval
+    from kit.learning import Learner
+    from kit.local_model import OllamaModel
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    scratch = paths.state_dir / "memory-eval"
+    shutil.rmtree(scratch, ignore_errors=True)
+    memory = Memory(scratch / "memory.db")
+    try:
+        async with httpx.AsyncClient() as client:
+            model = OllamaModel(lambda: store.current().ollama, client)
+            recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
+            print("teaching Kit 13 facts, some repeated or changed...")
+            report = await run_memory_eval(memory, Learner(memory, recall, model), recall)
+    finally:
+        memory.close()
+        shutil.rmtree(scratch, ignore_errors=True)
+    if recall.embed_problem:
+        print(f"warning: searching by words only: {recall.embed_problem}")
+    for decision, text in report.learned:
+        print(f"  {decision:<6} {text}")
+    print()
+    for question, ok, texts in report.found:
+        print(f"{'ok  ' if ok else 'MISS'} {question}")
+        if not ok:
+            for t in texts[:3]:
+                print(f"       recalled: {t}")
+    for question, texts in report.unknown:
+        print(f"{'ok  ' if not texts else 'NOISE'} {question}")
+        for t in texts[:3]:
+            print(f"       recalled: {t}")
+    for name, ok in report.tidy:
+        print(f"{'ok  ' if ok else 'MESSY'} {name}")
+    print()
+    print(f"recalled the right fact:    {report.recall_score}/{len(report.found)}")
+    print(f"nothing for unknown things: {report.unknown_clean}/{len(report.unknown)}")
+    print(f"memory kept tidy:           {report.tidy_score}/{len(report.tidy)}")
+    return 0 if report.passed else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -294,16 +403,28 @@ def main(argv: list[str] | None = None) -> int:
 
     mem = sub.add_parser("memory", help="see what Kit remembers and spends")
     msub = mem.add_subparsers(dest="action", required=True)
-    msub.add_parser("facts", help="list remembered facts")
-    mremember = msub.add_parser("remember", help="add a fact")
+    msub.add_parser("facts", help="list what Kit knows (* = pinned)")
+    mremember = msub.add_parser("remember", help="teach Kit a fact")
     mremember.add_argument("text")
-    mforget = msub.add_parser("forget", help="delete a fact by its number")
-    mforget.add_argument("id", type=int)
-    msub.add_parser("summarise", help="turn finished days into facts now")
+    mremember.add_argument("--kind", default="other", choices=list(FACT_KINDS))
+    msearch = msub.add_parser("search", help="search memory the way Kit does")
+    msearch.add_argument("query")
+    for name, text in [
+        ("pin", "keep a fact always in mind"),
+        ("unpin", "stop keeping a fact always in mind"),
+        ("forget", "delete a fact"),
+        ("history", "show a fact's earlier versions"),
+    ]:
+        msub.add_parser(name, help=text).add_argument("id", type=int)
+    msub.add_parser("days", help="list day summaries")
+    msub.add_parser("summarise", help="summarise finished days now")
+    msub.add_parser("reindex", help="build any missing meaning vectors now")
+    msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's Claude spend")
 
-    ev = sub.add_parser("eval", help="check the local model's replies are valid and quick")
-    ev.add_argument("--n", type=int, default=50, help="how many prompts (default 50)")
+    ev = sub.add_parser("eval", help="test the local model's replies, or memory recall")
+    ev.add_argument("which", nargs="?", default="replies", choices=["replies", "memory"])
+    ev.add_argument("--n", type=int, default=50, help="replies: how many prompts (default 50)")
 
     args = parser.parse_args(argv)
     paths = KitPaths.default()
@@ -322,6 +443,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "memory":
         return cmd_memory(paths, args)
     if args.command == "eval":
+        if args.which == "memory":
+            return asyncio.run(_eval_memory(paths))
         return asyncio.run(_eval(paths, args.n))
     results = run_checks(paths, set(args.skip))
     print_report(results)

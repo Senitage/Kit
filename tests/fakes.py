@@ -96,3 +96,38 @@ def collect(agen):
         return [e async for e in agen]
 
     return asyncio.run(run())
+
+
+class FakeEmbedder:
+    """Bag-of-words vectors: texts sharing meaningful words are 'close in meaning'.
+
+    ``same`` maps a word to another so tests can show meaning matches that
+    share no words (e.g. "stuff" -> "returns")."""
+
+    model = "fake-embed"
+
+    def __init__(self, same=None, fail=False):
+        self.same = same or {}
+        self.fail = fail
+        self.calls = 0
+
+    async def embed(self, texts, purpose):
+        import re
+        import zlib
+
+        from kit.embed import EmbedError
+        from kit.knowledge import STOPWORDS
+
+        self.calls += 1
+        if self.fail:
+            raise EmbedError("embedding model not found")
+        out = []
+        for text in texts:
+            vec = [0.0] * 256
+            for word in re.findall(r"\w+", text.lower()):
+                word = self.same.get(word, word)
+                if word in STOPWORDS:
+                    continue
+                vec[zlib.crc32(word.encode()) % 256] += 1.0
+            out.append(vec)
+        return out

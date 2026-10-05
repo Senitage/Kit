@@ -37,7 +37,7 @@
 </style>
 </head>
 <body>
-<header><h1 id="name">Kit</h1><span id="state">idle</span><a href="/settings">Settings</a></header>
+<header><h1 id="name">Kit</h1><span id="state">idle</span><a href="/memory">Memory</a><a href="/settings">Settings</a></header>
 <div id="log"></div>
 <form id="form">
   <textarea id="text" rows="1" placeholder="Talk to Kit. Say &quot;ask Claude&quot; for hard ones." autofocus></textarea>
@@ -114,7 +114,11 @@ async function send(text) {
       } else if (ev.type === "asking_claude") {
         stateEl.textContent = "asking Claude";
       } else if (ev.type === "remembered") {
-        bubble("error", "Remembered: " + ev.fact).style.color = "var(--muted)";
+        const label = ev.decision === "same" ? "Already knew: " : ev.decision === "update" ? "Updated memory: " : "Remembered: ";
+        bubble("error", label + ev.fact).style.color = "var(--muted)";
+      } else if (ev.type === "recalled") {
+        stateEl.textContent = "remembering";
+        current = null;
       } else if (ev.type === "error") {
         bubble("error", ev.message);
       }

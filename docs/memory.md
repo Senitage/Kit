@@ -1,0 +1,81 @@
+# How Kit remembers and finds things
+
+Kit should know you the way a good colleague does: remember what you told it,
+notice when something has changed, and know where things are kept, without
+being told twice. This page explains how that works. Later stages build on it.
+
+## One index for everything Kit knows
+
+Everything Kit can recall lives in one searchable index (`kit/knowledge.py`)
+inside `state/memory.db`. Each item has a source, a kind, its text, dates and
+a reference back to where it came from.
+
+| Source | What's in it | Added in |
+| --- | --- | --- |
+| `memory` | Facts about you: about, preference, project, place, person, plan | Stage 1 |
+| `days` | A summary of each finished day | Stage 1 |
+| `conversation` | Every exchange, so old conversations can be found | Stage 1 |
+| `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
+| `files` | NAS documents and folders (names, paths, text) | Stage 5 |
+| `photos` | Photo dates, places, people and captions | Stage 5 |
+| `notes` | The Obsidian vault, by note and heading | Stage 6 |
+
+A later stage adds a source by putting items into the same index. Recall,
+search, the memory page and the accuracy test then work for it with no other
+changes.
+
+## Finding things: words and meaning
+
+Every search runs two ways and merges the results:
+
+- **Words**, with SQLite full-text search. This catches exact names, numbers
+  and file names ("home_app", "C:\Dev", "2023").
+- **Meaning**, with vectors from a small embedding model in Ollama
+  (`nomic-embed-text`). This catches the same idea in different words:
+  "where's my tax stuff?" finds "tax returns are in Documents/Finance/Tax".
+
+A match only counts if it's close enough in meaning (`memory.min_similarity`).
+Sharing a common word like "called" doesn't drag in an unrelated memory, and a
+question about something Kit was never told recalls nothing. That's what lets
+Kit say "I don't know" instead of guessing.
+
+If the embedding model is down, Kit searches by words alone and the status
+says so. Nothing is lost: missing vectors are filled in once it's back.
+
+## Every turn
+
+1. Kit searches for memories relevant to your message: up to 8 facts or day
+   summaries, plus up to 4 older conversation snippets.
+2. Those go into the prompt with their dates, along with pinned facts, which
+   are always there. The prompt tells Kit that newer memories win and never
+   to invent one.
+3. If you mention something Kit can't see, it can search deeper (the `recall`
+   action) and then answer with what it found, or say it doesn't know.
+4. The exchange is indexed, so it can be found later.
+
+Claude gets the same memories when Kit hands a question over.
+
+## Learning without making a mess
+
+A memory that only ever adds things fills up with near-copies and stale facts.
+So a new fact is compared with the five closest facts Kit already has, and the
+local model decides:
+
+- **same:** it's already known, so nothing is added;
+- **update:** it changes a fact ("I sold the Hilux, I drive a Ranger now"), so
+  the new fact supersedes the old one, which stays in its history;
+- **new:** it's about something else, so it's added.
+
+Facts come from two places: "remember that..." in conversation, and the
+end-of-day pass, which writes the day's summary and learns its lasting facts.
+
+## You stay in charge
+
+- The memory page (`/memory`) and `kit memory ...` show everything Kit knows,
+  grouped by kind, with search, edit, pin, history and forget. Forgetting
+  removes a fact and all its earlier versions.
+- `kit eval memory` measures accuracy on a scratch memory: right fact
+  recalled, nothing recalled for unknown things, no stale or duplicate facts.
+  Run it after changing models or memory settings.
+- Memory is backed up daily to `backups/`, and the database records its
+  schema version so future upgrades can migrate it safely.

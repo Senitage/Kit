@@ -18,6 +18,11 @@ in the roadmap linked from README.md. Work one stage at a time.
   tests can use fakes. Tests must pass on Windows and Linux without a GPU, NAS,
   network or API key.
 - NAS shares are read-only for Kit, except the Obsidian vault.
+- Anything Kit should be able to recall (notes, files, projects, photos) goes
+  into the knowledge index (`kit.knowledge.Index`) as a new source, so recall,
+  search, the memory page and `kit eval memory` cover it. See docs/memory.md.
+- Memory schema changes are new entries in `kit.memory.MIGRATIONS`, never edits
+  to old ones.
 
 ## Commands
 

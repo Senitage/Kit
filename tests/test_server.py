@@ -3,10 +3,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from fakes import Clock, FakeAnthropic, FakeModel, reply
+from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, reply
 from kit.brain import Brain
 from kit.expert import Expert
 from kit.memory import Memory
+from kit.recall import Recall
 from kit.server import create_app
 from kit.settings_store import SettingsStore
 
@@ -20,9 +21,9 @@ def setup(paths):
     store = SettingsStore(paths)
     memory = Memory(paths.state_dir / "memory.db", Clock())
     model = FakeModel(reply("Hi Dan.", "Ready."))
-    brain = Brain(
-        store.current, memory, model, Expert(memory, lambda: "k", FakeAnthropic().factory)
-    )
+    recall = Recall(memory, FakeEmbedder(), store.current)
+    expert = Expert(memory, lambda: "k", FakeAnthropic().factory)
+    brain = Brain(store.current, memory, model, expert, recall)
     app = create_app(store, memory, brain, TOKEN, summarise_every_s=None)
     with TestClient(app) as client:
         yield client, store, model
@@ -33,6 +34,7 @@ def test_pages_and_health_need_no_token(setup):
     client, _, _ = setup
     assert "<title>Kit</title>" in client.get("/").text
     assert "Kit settings" in client.get("/settings").text
+    assert "What Kit remembers" in client.get("/memory").text
     assert client.get("/api/health").json()["name"] == "Kit"
 
 
@@ -97,3 +99,52 @@ def test_facts_and_spend(setup):
     assert spend["month_usd"] > 0 and spend["log"][0]["question"] == "ask claude why"
     assert client.get("/api/memory/facts", headers=AUTH).json() == []
     assert client.delete("/api/memory/facts/1", headers=AUTH).status_code == 404
+
+
+def test_memory_api(setup):
+    client, _, _ = setup
+    r = client.post(
+        "/api/memory/facts",
+        json={"text": "Tax returns are in Documents/Tax.", "kind": "place"},
+        headers=AUTH,
+    )
+    assert r.json()["decision"] == "new"
+    fact_id = r.json()["id"]
+    facts = client.get("/api/memory/facts", headers=AUTH).json()
+    assert facts[0]["kind"] == "place" and not facts[0]["pinned"]
+
+    edited = client.patch(
+        f"/api/memory/facts/{fact_id}",
+        json={"text": "Tax returns are in Documents/Finance/Tax.", "pinned": True},
+        headers=AUTH,
+    ).json()
+    assert edited["id"] != fact_id and edited["pinned"]
+    history = client.get(f"/api/memory/facts/{edited['id']}/history", headers=AUTH).json()
+    assert [h["text"] for h in history][1] == "Tax returns are in Documents/Tax."
+    assert client.patch(f"/api/memory/facts/{fact_id}", json={}, headers=AUTH).status_code == 404
+
+    found = client.get("/api/memory/search", params={"q": "tax"}, headers=AUTH).json()
+    assert found["hits"][0]["text"].endswith("Finance/Tax.") and not found["words_only"]
+    assert client.get("/api/memory/days", headers=AUTH).json() == []
+    assert client.delete(f"/api/memory/facts/{edited['id']}", headers=AUTH).json()["ok"]
+    assert client.get("/api/status", headers=AUTH).json()["memory_facts"] == 0
+
+
+def test_upkeep_backs_up_and_indexes(paths):
+    paths.ensure()
+    store = SettingsStore(paths)
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    memory.add_fact("Rex is the dog.")
+    recall = Recall(memory, FakeEmbedder(), store.current)
+    brain = Brain(store.current, memory, FakeModel(), Expert(memory, lambda: None), recall)
+    app = create_app(store, memory, brain, TOKEN, summarise_every_s=3600, paths=paths)
+    with TestClient(app):
+        import time
+
+        for _ in range(50):
+            if list(paths.backups_dir.glob("memory-*.db")):
+                break
+            time.sleep(0.05)
+    assert list(paths.backups_dir.glob("memory-*.db"))
+    assert memory.index.missing_vectors("fake-embed") == []
+    memory.close()

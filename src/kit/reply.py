@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from kit.memory import FACT_KINDS
+
 EMOTIONS: dict[str, str] = {
     "neutral": "calm, nothing special",
     "happy": "pleased or glad",
@@ -38,6 +40,7 @@ GESTURES: dict[str, str] = {
     "lean_in": "listening closely, concerned",
 }
 
+FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
 Emotion = Literal[tuple(EMOTIONS)]  # type: ignore[valid-type]
 Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
 
@@ -50,15 +53,17 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "ask_claude", "remember"] = Field(
-        description="ask_claude hands a question to Claude; remember saves a fact about the "
-        "owner for later; none does nothing."
+    kind: Literal["none", "recall", "remember", "ask_claude"] = Field(
+        description="recall searches memory before answering; remember saves a fact; "
+        "ask_claude hands a question to Claude; none does nothing."
     )
     text: str = Field(
         "",
-        description="For ask_claude: the full question with the context Claude needs. "
-        "For remember: the fact, as one short sentence.",
+        description="For recall: what to search for. For remember: the fact, as one "
+        "sentence that makes sense on its own later. For ask_claude: the full question "
+        "with the context Claude needs.",
     )
+    category: FactKind = Field("other", description="For remember: what kind of fact it is.")
 
 
 class Reply(BaseModel):

@@ -1,3 +1,8 @@
+import json
+
+import pytest
+
+from fakes import FakeEmbedder, FakeModel
 from kit.cli import main
 
 OFFLINE = ["--skip", "gpu", "--skip", "ollama", "--skip", "tailscale", "--skip", "claude"]
@@ -74,13 +79,52 @@ def test_token_is_stable(paths, capsys):
     assert capsys.readouterr().out.strip() == first and len(first) > 30
 
 
-def test_memory_commands(paths, capsys):
+@pytest.fixture
+def offline_models(monkeypatch):
+    """Swap Ollama for fakes so memory commands run without a server."""
+    import kit.embed
+    import kit.local_model
+
+    model = FakeModel()
+    monkeypatch.setattr(kit.local_model, "OllamaModel", lambda settings, client: model)
+    monkeypatch.setattr(kit.embed, "OllamaEmbedder", lambda settings, client: FakeEmbedder())
+    return model
+
+
+def test_memory_commands(paths, capsys, offline_models):
     assert main(["memory", "facts"]) == 0
     assert "nothing remembered" in capsys.readouterr().out
-    main(["memory", "remember", "Dan likes metric units."])
+    main(["memory", "remember", "Dan likes metric units.", "--kind", "preference"])
+    assert "remembered: Dan likes metric units." in capsys.readouterr().out
+    offline_models.outputs.append(
+        json.dumps({"decision": "update", "which": 1, "fact": "Dan likes metric and 24h time."})
+    )
+    main(["memory", "remember", "Dan likes metric units and 24 hour time."])
+    assert "updated: Dan likes metric units." in capsys.readouterr().out
     main(["memory", "facts"])
-    assert "metric" in capsys.readouterr().out
-    main(["memory", "forget", "1"])
-    assert "forgotten" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "preference" in out and "24h time" in out and "units." not in out
+    assert main(["memory", "pin", "2"]) == 0
+    main(["memory", "facts"])
+    assert "    2* " in capsys.readouterr().out
+    main(["memory", "history", "2"])
+    assert "(replaced)" in capsys.readouterr().out
+    main(["memory", "search", "metric"])
+    assert "24h time" in capsys.readouterr().out
+    main(["memory", "reindex"])
+    assert "indexed 0" in capsys.readouterr().out
+    main(["memory", "backup"])
+    assert "backed up to" in capsys.readouterr().out
+    assert main(["memory", "forget", "2"]) == 0
+    assert main(["memory", "forget", "2"]) == 1
     main(["memory", "spend"])
     assert "$0.00 of $20.00" in capsys.readouterr().out
+
+
+def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):
+    code = main(["eval", "memory"])
+    out = capsys.readouterr().out
+    assert "recalled the right fact:" in out
+    assert code in (0, 1)
+    assert not (paths.state_dir / "memory-eval").exists()
+    assert not (paths.state_dir / "memory.db").exists()

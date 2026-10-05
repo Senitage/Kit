@@ -137,9 +137,33 @@ class BrainSettings(_Section):
     history_messages: int = Field(
         20, ge=2, le=200, description="Recent messages Kit sees each turn."
     )
-    facts_in_prompt: int = Field(
-        30, ge=0, le=200, description="Remembered facts Kit sees each turn, newest first."
+
+
+class MemorySettings(_Section):
+    embed_model: str = Field(
+        "nomic-embed-text",
+        description="Ollama model that turns text into meaning vectors, so Kit can find "
+        "memories by meaning as well as by words. Changing it re-indexes everything.",
     )
+    query_prefix: str = Field(
+        "search_query: ", description="Text the embedding model wants before a search."
+    )
+    document_prefix: str = Field(
+        "search_document: ", description="Text the embedding model wants before stored text."
+    )
+    relevant_memories: int = Field(
+        8, ge=0, le=50, description="Memories recalled into each turn, most relevant first."
+    )
+    conversation_snippets: int = Field(
+        4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
+    )
+    min_similarity: float = Field(
+        0.5,
+        ge=0,
+        le=1,
+        description="How close in meaning a memory must be to count as relevant (0 to 1).",
+    )
+    backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
 
 class Settings(_Section):
@@ -149,6 +173,7 @@ class Settings(_Section):
     nas: NasSettings = Field(default_factory=NasSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
 
 
 class SettingsError(Exception):

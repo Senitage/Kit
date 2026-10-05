@@ -1,32 +1,37 @@
 """Kit's conversation loop.
 
-Each message goes to the local model, whose reply streams back as events: the
-spoken words as they arrive, then the whole structured reply. If the reply
-asks for Claude (or Dan said "ask Claude"), Claude's answer follows as a second
-reply. Settings are read on every turn, so persona changes apply at once.
+Each turn:
+
+1. Recall: search memory (facts, past days, old conversations) for anything
+   relevant to the message, by words and meaning, and put it in the prompt.
+2. Answer with the local model; the spoken words stream out as they arrive.
+3. Act on the reply's action:
+   - recall: Kit searches memory for something specific, then answers again
+     with what it found;
+   - remember: the fact is learned, merging with or updating what Kit knew;
+   - ask_claude: Claude answers, seeing the same memories.
+4. Index the exchange so it can be found later.
+
+Settings are read on every turn, so persona changes apply at once.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import AsyncIterator, Callable
 
 from kit.expert import Expert
+from kit.learning import Learner
 from kit.local_model import LocalModel, LocalModelError
-from kit.memory import Memory
-from kit.prompt import history_messages, system_prompt
+from kit.memory import CONVERSATION, DAYS, FACTS, Memory, Message
+from kit.prompt import history_messages, memory_block, recall_results, system_prompt
+from kit.recall import Recall, Recalled
 from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_json, reply_schema
 from kit.settings import Settings
 
 Event = dict
 ASK_CLAUDE = re.compile(r"\bask\s+claude\b", re.IGNORECASE)
-FACTS_SCHEMA = {
-    "type": "object",
-    "properties": {"facts": {"type": "array", "items": {"type": "string"}, "maxItems": 10}},
-    "required": ["facts"],
-    "additionalProperties": False,
-}
+DEEP_RECALL = 10
 
 
 class Brain:
@@ -36,11 +41,14 @@ class Brain:
         memory: Memory,
         model: LocalModel,
         expert: Expert,
+        recall: Recall,
     ) -> None:
         self.settings = settings
         self.memory = memory
         self.model = model
         self.expert = expert
+        self.recall = recall
+        self.learner = Learner(memory, recall, model)
 
     async def chat(self, text: str) -> AsyncIterator[Event]:
         text = text.strip()
@@ -48,45 +56,85 @@ class Brain:
             return
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
-        self.memory.add_message("user", text)
+        user_id = self.memory.add_message("user", text)
+        recent_refs = {str(m.id) for m in history if m.role == "user"}
+        recalled = await self.recall.for_turn(text, recent_refs)
+        said: list[str] = []
 
         if ASK_CLAUDE.search(text):
             reply = Reply.plain("Sure, asking Claude.", "thinking", "nod")
             self._remember_reply(reply, "local")
             yield {"type": "say", "text": reply.text}
             yield {"type": "reply", "source": "local", "reply": reply.model_dump()}
-            async for event in self._ask_claude(text, history, settings):
-                yield event
-            return
+            async for event in self._ask_claude(text, history, recalled, settings):
+                yield self._track(event, said)
+        else:
+            async for event in self._converse(text, history, recalled, settings):
+                yield self._track(event, said)
 
+        if said:
+            self.memory.index_exchange(
+                user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
+            )
+            await self.recall.index_pending()
+
+    @staticmethod
+    def _track(event: Event, said: list[str]) -> Event:
+        if event["type"] == "reply":
+            said.append(Reply.model_validate(event["reply"]).text)
+        return event
+
+    async def _converse(
+        self, text: str, history: list[Message], recalled: Recalled, settings: Settings
+    ) -> AsyncIterator[Event]:
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt(settings.persona, recalled, self.memory.clock()),
+            },
+            *history_messages(history),
+            {"role": "user", "content": text},
+        ]
         reply = None
-        async for event in self._local_reply(text, history, settings):
+        async for event in self._local_reply(messages):
             if event["type"] == "reply":
                 reply = Reply.model_validate(event["reply"])
             yield event
         if reply is None:
             return
+
+        if reply.action.kind == "recall":
+            query = reply.action.text.strip() or text
+            hits = await self.recall.search(query, [FACTS, DAYS, CONVERSATION], DEEP_RECALL)
+            yield {"type": "recalled", "query": query, "found": len(hits)}
+            messages += [
+                {"role": "assistant", "content": reply_json(reply)},
+                {"role": "user", "content": recall_results(query, hits, settings.persona.owner)},
+            ]
+            reply = None
+            async for event in self._local_reply(messages):
+                if event["type"] == "reply":
+                    reply = Reply.model_validate(event["reply"])
+                yield event
+            if reply is None:
+                return
+
         if reply.action.kind == "remember" and reply.action.text.strip():
-            self.memory.add_fact(reply.action.text.strip())
-            yield {"type": "remembered", "fact": reply.action.text.strip()}
+            learned = await self.learner.learn(
+                reply.action.text, reply.action.category, settings.persona.owner
+            )
+            yield {
+                "type": "remembered",
+                "fact": learned.text,
+                "decision": learned.decision,
+                "replaced": learned.replaced,
+            }
         elif reply.action.kind == "ask_claude":
             question = reply.action.text.strip() or text
-            async for event in self._ask_claude(question, history, settings):
+            async for event in self._ask_claude(question, history, recalled, settings):
                 yield event
 
-    async def _local_reply(self, text: str, history, settings: Settings) -> AsyncIterator[Event]:
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt(
-                    settings.persona,
-                    self.memory.facts(settings.brain.facts_in_prompt),
-                    self.memory.clock(),
-                ),
-            },
-            *history_messages(history),
-            {"role": "user", "content": text},
-        ]
+    async def _local_reply(self, messages: list[dict]) -> AsyncIterator[Event]:
         extractor = SayExtractor()
         raw, said = [], []
         try:
@@ -111,14 +159,18 @@ class Brain:
         self._remember_reply(reply, "local")
         yield {"type": "reply", "source": "local", "reply": reply.model_dump()}
 
-    async def _ask_claude(self, question, history, settings: Settings) -> AsyncIterator[Event]:
+    async def _ask_claude(
+        self, question: str, history: list[Message], recalled: Recalled, settings: Settings
+    ) -> AsyncIterator[Event]:
         yield {"type": "asking_claude", "question": question}
         context = [
             {"role": "user" if m.role == "user" else "assistant", "content": m.text}
             for m in history
         ]
-        context = _alternating(context)
-        answer = await self.expert.ask(question, context, settings.claude, settings.persona)
+        notes = "\n".join(memory_block(recalled, settings.persona.owner)).strip()
+        answer = await self.expert.ask(
+            question, _alternating(context), settings.claude, settings.persona, notes
+        )
         reply = Reply.plain(
             answer.text, "proud" if answer.ok else "concerned", "nod" if answer.ok else "shrug"
         )
@@ -137,31 +189,12 @@ class Brain:
         self.memory.add_message("kit", reply.text, reply_json(reply), source)
 
     async def summarise_past_days(self) -> list[str]:
-        """Turn each finished day's conversation into a few facts. Returns days done."""
+        """Summarise each finished day and learn its facts. Returns the days done."""
         done = []
-        settings = self.settings()
-        owner = settings.persona.owner
+        persona = self.settings().persona
         for day in self.memory.days_to_summarise():
-            transcript = "\n".join(
-                f"{owner if m.role == 'user' else settings.persona.name}: {m.text}"
-                for m in self.memory.messages_on(day)
-            )
-            messages = [
-                {
-                    "role": "system",
-                    "content": f"From this conversation, list up to 10 short facts worth "
-                    f"remembering about {owner}: their work, projects, plans, preferences and "
-                    f"anything they asked to be remembered. Each fact is one sentence that "
-                    f"makes sense on its own later. Skip small talk. Answer as JSON.",
-                },
-                {"role": "user", "content": f"Conversation on {day}:\n{transcript[-20000:]}"},
-            ]
-            try:
-                raw = await self.model.complete(messages, FACTS_SCHEMA)
-                facts = json.loads(raw)["facts"]
-            except (LocalModelError, ValueError, KeyError, TypeError):
+            if not await self.learner.summarise_day(day, persona.owner, persona.name):
                 break
-            self.memory.save_facts(day, [str(f) for f in facts])
             done.append(day)
         return done
 

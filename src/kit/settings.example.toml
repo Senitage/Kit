@@ -29,7 +29,14 @@ output_usd_per_mtok = 25.0
 host = "127.0.0.1"
 port = 8600
 history_messages = 20
-facts_in_prompt = 30
+
+[memory]
+# Kit finds memories by words and by meaning. The meaning part needs this
+# embedding model in Ollama (`ollama pull nomic-embed-text`). Without it Kit
+# still remembers, but only finds things by matching words.
+embed_model = "nomic-embed-text"
+relevant_memories = 8
+conversation_snippets = 4
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.

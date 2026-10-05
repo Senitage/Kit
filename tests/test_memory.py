@@ -39,17 +39,52 @@ def test_days_to_summarise(memory, clock):
     clock.now += timedelta(days=1)
     memory.add_message("user", "today")
     assert memory.days_to_summarise() == ["2026-10-05"]
-    memory.save_facts("2026-10-05", ["Dan has a dog called Rex.", " "])
+    memory.save_day("2026-10-05", "Talked about the dog.")
     assert memory.days_to_summarise() == []
-    assert [f.text for f in memory.facts()] == ["Dan has a dog called Rex."]
+    day = memory.index.items("days")[0]
+    assert day.ref == "2026-10-05" and day.day == "2026-10-05"
 
 
-def test_facts_newest_kept_and_forget(memory):
-    for i in range(3):
-        memory.add_fact(f"f{i}")
-    assert [f.text for f in memory.facts(2)] == ["f1", "f2"]
-    first = memory.facts()[0]
-    assert memory.forget(first.id) and not memory.forget(first.id)
+def test_facts_replace_keeps_history(memory):
+    old = memory.add_fact("Dan drives a Hilux.", "other")
+    new = memory.replace_fact(old, "Dan drives a Ranger.")
+    assert [f.text for f in memory.facts()] == ["Dan drives a Ranger."]
+    history = [i.text for i in memory.index.history(new)]
+    assert history == ["Dan drives a Ranger.", "Dan drives a Hilux."]
+    assert memory.index.get(new).kind == "other"
+
+
+def test_pinned_and_forget(memory):
+    a = memory.add_fact("Dan likes metric.", "preference", pinned=True)
+    memory.add_fact("Something else.")
+    assert [f.id for f in memory.pinned_facts()] == [a]
+    assert memory.forget(a) and not memory.forget(a)
+
+
+def test_unknown_kind_becomes_other(memory):
+    memory.add_fact("x", "nonsense")
+    assert memory.facts()[0].kind == "other"
+
+
+def test_backup_keeps_newest(memory, paths, clock):
+    folder = paths.backups_dir
+    memory.add_fact("keep me")
+    for _ in range(3):
+        memory.backup(folder, keep=2)
+        clock.now += timedelta(days=1)
+    copies = sorted(folder.glob("memory-*.db"))
+    assert len(copies) == 2
+    import sqlite3
+
+    db = sqlite3.connect(copies[-1])
+    assert db.execute("SELECT text FROM items").fetchone()[0] == "keep me"
+    db.close()
+    clock.now -= timedelta(days=1)
+    assert memory.backed_up_today(folder)
+
+
+def test_schema_version_is_recorded(memory):
+    assert memory.db.execute("PRAGMA user_version").fetchone()[0] == 1
 
 
 def test_spend_by_month(memory, clock):
@@ -59,3 +94,10 @@ def test_spend_by_month(memory, clock):
     clock.now += timedelta(days=31)
     assert memory.month_spend() == 0
     assert len(memory.spend_log()) == 2
+
+
+def test_forget_removes_earlier_versions_too(memory):
+    old = memory.add_fact("Dan drives a Hilux.")
+    new = memory.replace_fact(old, "Dan drives a Ranger.")
+    assert memory.forget(new)
+    assert memory.facts() == [] and memory.index.get(old) is None

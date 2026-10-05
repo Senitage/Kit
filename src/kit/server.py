@@ -17,11 +17,13 @@ from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
-from kit.memory import Memory
+from kit.knowledge import Item
+from kit.memory import CONVERSATION, DAYS, FACTS, Memory
+from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
 
@@ -30,6 +32,35 @@ SUMMARY_INTERVAL_S = 3600
 
 class ChatIn(BaseModel):
     text: str
+
+
+class FactIn(BaseModel):
+    text: str = Field(min_length=1)
+    kind: str = "other"
+    pinned: bool = False
+
+
+class FactEdit(BaseModel):
+    text: str | None = None
+    kind: str | None = None
+    pinned: bool | None = None
+
+
+def _item(item: Item | None) -> dict:
+    if item is None:
+        return {}
+    return {
+        "id": item.id,
+        "source": item.source,
+        "kind": item.kind,
+        "title": item.title,
+        "text": item.text,
+        "day": item.day,
+        "created": item.created,
+        "updated": item.updated,
+        "pinned": item.pinned,
+        "superseded_by": item.superseded_by,
+    }
 
 
 def _page(name: str) -> str:
@@ -47,12 +78,13 @@ def create_app(
     brain: Brain,
     token: str,
     summarise_every_s: float | None = SUMMARY_INTERVAL_S,
+    paths: KitPaths | None = None,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         task = None
         if summarise_every_s:
-            task = asyncio.create_task(_summarise_loop(brain, summarise_every_s))
+            task = asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s))
         yield
         if task:
             task.cancel()
@@ -89,6 +121,11 @@ def create_app(
             "claude_model": s.claude.model,
             "claude_month_usd": round(memory.month_spend(), 4),
             "claude_cap_usd": s.claude.monthly_cap_usd,
+            "memory_facts": len(memory.facts()),
+            "memory_items": memory.index.count(),
+            "memory_search": "words only: " + brain.recall.embed_problem
+            if brain.recall.embed_problem
+            else "words and meaning",
         }
 
     @app.get("/api/settings", dependencies=auth)
@@ -145,15 +182,60 @@ def create_app(
             for m in memory.recent(min(limit, 500))
         ]
 
+    @app.get("/memory", response_class=HTMLResponse)
+    def memory_page() -> str:
+        return _page("memory.html")
+
     @app.get("/api/memory/facts", dependencies=auth)
     def facts() -> list[dict]:
-        return [{"id": f.id, "day": f.day, "text": f.text} for f in memory.facts()]
+        return [_item(f) for f in reversed(memory.facts())]
+
+    @app.post("/api/memory/facts", dependencies=auth)
+    async def add_fact(body: FactIn) -> dict:
+        owner = store.current().persona.owner
+        learned = await brain.learner.learn(body.text, body.kind, owner)
+        if body.pinned:
+            memory.index.set_pinned(learned.item_id, True)
+        return {"decision": learned.decision, "id": learned.item_id, "replaced": learned.replaced}
+
+    @app.patch("/api/memory/facts/{fact_id}", dependencies=auth)
+    async def edit_fact(fact_id: int, body: FactEdit) -> dict:
+        item = memory.index.get(fact_id)
+        if item is None or item.source != FACTS or item.superseded_by:
+            raise HTTPException(404, "no such current fact")
+        if body.text is not None and body.text.strip() != item.text:
+            fact_id = memory.replace_fact(fact_id, body.text.strip(), body.kind)
+            await brain.recall.index_pending()
+        elif body.kind is not None:
+            memory.index.update(fact_id, kind=body.kind)
+        if body.pinned is not None:
+            memory.index.set_pinned(fact_id, body.pinned)
+        return _item(memory.index.get(fact_id))
+
+    @app.get("/api/memory/facts/{fact_id}/history", dependencies=auth)
+    def fact_history(fact_id: int) -> list[dict]:
+        return [_item(i) for i in memory.index.history(fact_id)]
 
     @app.delete("/api/memory/facts/{fact_id}", dependencies=auth)
     def forget(fact_id: int) -> dict:
         if not memory.forget(fact_id):
             raise HTTPException(404, "no such fact")
         return {"ok": True}
+
+    @app.get("/api/memory/search", dependencies=auth)
+    async def search(q: str, k: int = 10) -> dict:
+        hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION], min(k, 50))
+        return {
+            "words_only": brain.recall.embed_problem is not None,
+            "hits": [
+                {**_item(h.item), "similarity": h.similarity, "word_match": h.word_match}
+                for h in hits
+            ],
+        }
+
+    @app.get("/api/memory/days", dependencies=auth)
+    def days() -> list[dict]:
+        return [_item(i) for i in reversed(memory.index.items(DAYS))]
 
     @app.get("/api/spend", dependencies=auth)
     def spend() -> dict:
@@ -166,8 +248,17 @@ def create_app(
     return app
 
 
-async def _summarise_loop(brain: Brain, every_s: float) -> None:
+async def _upkeep_loop(
+    brain: Brain, paths: KitPaths | None, store: SettingsStore, every_s: float
+) -> None:
+    """Summarise finished days, embed anything not yet indexed, and back up memory daily."""
     while True:
         with contextlib.suppress(Exception):
             await brain.summarise_past_days()
+        with contextlib.suppress(Exception):
+            await brain.recall.index_pending(limit=5000)
+        if paths is not None:
+            with contextlib.suppress(Exception):
+                if not brain.memory.backed_up_today(paths.backups_dir):
+                    brain.memory.backup(paths.backups_dir, store.current().memory.backups_keep)
         await asyncio.sleep(every_s)

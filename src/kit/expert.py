@@ -38,7 +38,13 @@ def estimate_cost(settings: ClaudeSettings, input_tokens: int, output_tokens: in
     ) / 1_000_000
 
 
-def expert_system_prompt(persona: PersonaSettings) -> str:
+def expert_system_prompt(persona: PersonaSettings, memory_notes: str = "") -> str:
+    notes = (
+        f"\nWhat {persona.name} remembers that may be relevant (dated; newer wins):\n"
+        f"{memory_notes}\n"
+        if memory_notes
+        else ""
+    )
     return (
         f"You are answering as {persona.name}, {persona.owner}'s personal assistant. "
         f"{persona.backstory} {persona.knows}\n"
@@ -47,6 +53,7 @@ def expert_system_prompt(persona: PersonaSettings) -> str:
         f"Answer it properly and correctly, in {persona.name}'s voice. Lead with the answer. "
         f"Use plain text that reads well aloud: short paragraphs, no tables, and code only "
         f"when code was asked for."
+        f"{notes}"
     )
 
 
@@ -67,6 +74,7 @@ class Expert:
         context: list[dict],
         claude: ClaudeSettings,
         persona: PersonaSettings,
+        memory_notes: str = "",
     ) -> ExpertAnswer:
         spent = self.memory.month_spend()
         if spent >= claude.monthly_cap_usd:
@@ -87,7 +95,7 @@ class Expert:
             response = await client.beta.messages.create(
                 model=claude.model,
                 max_tokens=claude.max_tokens,
-                system=expert_system_prompt(persona),
+                system=expert_system_prompt(persona, memory_notes),
                 messages=[*context, {"role": "user", "content": question}],
                 output_config={"effort": claude.effort},
                 fallbacks="default",
