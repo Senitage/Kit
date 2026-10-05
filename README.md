@@ -31,11 +31,12 @@ Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
 
 ## How Kit is laid out
 
-- **Code** lives in this repo (`src/kit`). It runs on Windows now and on Linux
-  later, and CI tests both.
+- **Code** lives in this repo (`src/kit`). The server runs on Linux: Ubuntu under
+  WSL on the GPU PC now, a dedicated Linux box later. The desk app runs on
+  Windows, so CI tests both.
 - **Everything Kit owns** (settings, secrets, memory, logs) lives in one data
-  folder outside the repo: `C:\ProgramData\Kit` on Windows, `/var/lib/kit` on
-  Linux, or wherever `KIT_DATA_DIR` points. Moving Kit is copying that folder.
+  folder outside the repo: `/var/lib/kit` on Linux, `C:\ProgramData\Kit` on
+  Windows, or wherever `KIT_DATA_DIR` points. Moving Kit is copying that folder.
 - **Settings** are one TOML file in that folder, checked against a schema.
   Configurators (the built-in page, `kit config`, later home_app) change them
   through Kit's API, which keeps every earlier version for undo. Kit never
@@ -44,8 +45,8 @@ Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
 ## Development
 
 ```
-python -m venv .venv
-.venv\Scripts\activate          # Linux: source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 pytest
 ruff check . && ruff format --check .

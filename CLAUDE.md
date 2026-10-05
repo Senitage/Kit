@@ -5,7 +5,8 @@ in the roadmap linked from README.md. Work one stage at a time.
 
 ## Rules for all code
 
-- Cross-platform server code: it runs on Windows now and moves to Linux later.
+- Cross-platform server code: the server runs on Ubuntu under WSL now and a
+  dedicated Linux box later, and must still run on Windows.
   Use `pathlib`; never hard-code paths, drive letters or `/` vs `\`. Every
   location comes from settings or `kit.paths`.
 - Windows-only code (window control, tray app, desktop input) belongs only in the
