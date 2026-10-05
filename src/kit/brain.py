@@ -17,17 +17,20 @@ Settings are read on every turn, so persona changes apply at once.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import AsyncIterator, Callable
 
 from kit.expert import Expert
 from kit.learning import Learner
 from kit.local_model import LocalModel, LocalModelError
-from kit.memory import CONVERSATION, DAYS, FACTS, Memory, Message
+from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.prompt import history_messages, memory_block, recall_results, system_prompt
 from kit.recall import Recall, Recalled
 from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_json, reply_schema
 from kit.settings import Settings
+
+log = logging.getLogger(__name__)
 
 Event = dict
 ASK_CLAUDE = re.compile(r"\bask\s+claude\b", re.IGNORECASE)
@@ -95,10 +98,11 @@ class Brain:
             *history_messages(history),
             {"role": "user", "content": text},
         ]
-        reply = None
-        async for event in self._local_reply(messages):
+        reply, message_id = None, None
+        async for event in self._local_reply(messages, source="local"):
             if event["type"] == "reply":
                 reply = Reply.model_validate(event["reply"])
+                message_id = event["message_id"]
             yield event
         if reply is None:
             return
@@ -111,8 +115,11 @@ class Brain:
                 {"role": "assistant", "content": reply_json(reply)},
                 {"role": "user", "content": recall_results(query, hits, settings.persona.owner)},
             ]
+            # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
+            # later history shows one answer per message, not a recall habit.
+            self.memory.set_message_source(message_id, RECALL_STEP)
             reply = None
-            async for event in self._local_reply(messages):
+            async for event in self._local_reply(messages, source="local"):
                 if event["type"] == "reply":
                     reply = Reply.model_validate(event["reply"])
                 yield event
@@ -134,7 +141,7 @@ class Brain:
             async for event in self._ask_claude(question, history, recalled, settings):
                 yield event
 
-    async def _local_reply(self, messages: list[dict]) -> AsyncIterator[Event]:
+    async def _local_reply(self, messages: list[dict], source: str) -> AsyncIterator[Event]:
         extractor = SayExtractor()
         raw, said = [], []
         try:
@@ -147,6 +154,10 @@ class Brain:
         except LocalModelError as e:
             yield {"type": "error", "message": f"My local brain isn't answering: {e}"}
             return
+        except Exception as e:  # a bug in the stream reader must not drop the chat
+            log.exception("reading the local model's reply failed")
+            yield {"type": "error", "message": f"I lost my train of thought ({e}). Say again?"}
+            return
         try:
             reply = parse_reply("".join(raw))
         except ReplyError:
@@ -156,8 +167,13 @@ class Brain:
                 yield {"type": "error", "message": "I lost my train of thought. Say again?"}
                 return
             reply = Reply.plain(spoken)
-        self._remember_reply(reply, "local")
-        yield {"type": "reply", "source": "local", "reply": reply.model_dump()}
+        message_id = self._remember_reply(reply, source)
+        yield {
+            "type": "reply",
+            "source": "local",
+            "reply": reply.model_dump(),
+            "message_id": message_id,
+        }
 
     async def _ask_claude(
         self, question: str, history: list[Message], recalled: Recalled, settings: Settings
@@ -185,8 +201,8 @@ class Brain:
             "month_usd": round(self.memory.month_spend(), 4),
         }
 
-    def _remember_reply(self, reply: Reply, source: str) -> None:
-        self.memory.add_message("kit", reply.text, reply_json(reply), source)
+    def _remember_reply(self, reply: Reply, source: str) -> int:
+        return self.memory.add_message("kit", reply.text, reply_json(reply), source)
 
     async def summarise_past_days(self) -> list[str]:
         """Summarise each finished day and learn its facts. Returns the days done."""

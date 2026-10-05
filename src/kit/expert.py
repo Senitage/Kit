@@ -32,9 +32,15 @@ def make_async_client(api_key: str) -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(api_key=api_key, max_retries=2, timeout=300)
 
 
-def estimate_cost(settings: ClaudeSettings, input_tokens: int, output_tokens: int) -> float:
+def estimate_cost(
+    settings: ClaudeSettings, input_tokens: int, output_tokens: int, cached_tokens: int = 0
+) -> float:
+    """Cost of one call. ``input_tokens`` is every input token; ``cached_tokens`` is
+    the part of it that came from the prompt cache at the cheaper rate."""
     return (
-        input_tokens * settings.input_usd_per_mtok + output_tokens * settings.output_usd_per_mtok
+        (input_tokens - cached_tokens) * settings.input_usd_per_mtok
+        + cached_tokens * settings.cached_input_usd_per_mtok
+        + output_tokens * settings.output_usd_per_mtok
     ) / 1_000_000
 
 
@@ -95,7 +101,13 @@ class Expert:
             response = await client.beta.messages.create(
                 model=claude.model,
                 max_tokens=claude.max_tokens,
-                system=expert_system_prompt(persona, memory_notes),
+                system=[
+                    {
+                        "type": "text",
+                        "text": expert_system_prompt(persona, memory_notes),
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
                 messages=[*context, {"role": "user", "content": question}],
                 output_config={"effort": claude.effort},
                 fallbacks="default",
@@ -118,7 +130,9 @@ class Expert:
             + (usage.cache_creation_input_tokens or 0)
             + (usage.cache_read_input_tokens or 0)
         )
-        cost = estimate_cost(claude, input_tokens, usage.output_tokens)
+        cost = estimate_cost(
+            claude, input_tokens, usage.output_tokens, usage.cache_read_input_tokens or 0
+        )
         self.memory.record_spend(response.model, input_tokens, usage.output_tokens, cost, question)
         if response.stop_reason == "refusal":
             return ExpertAnswer(

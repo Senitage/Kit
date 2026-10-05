@@ -47,8 +47,8 @@ Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
 
 class Segment(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    say: str = Field(description="One short sentence to say.")
     gesture: Gesture = Field(description="The gesture that goes with it.")
+    say: str = Field(description="One short sentence to say.")
 
 
 class Action(BaseModel):
@@ -140,6 +140,8 @@ class SayExtractor:
         self._capturing = False
         self._expect_value = False
         self._said_any = False
+        self._pending_space = False
+        self._high_surrogate = ""
 
     def feed(self, chunk: str) -> str:
         out: list[str] = []
@@ -150,8 +152,7 @@ class SayExtractor:
                 self._in_string = True
                 self._string = ""
                 self._capturing = self._expect_value and self._last_key == "say"
-                if self._capturing and self._said_any:
-                    out.append(" ")
+                self._pending_space = self._capturing and self._said_any
             elif ch == ":":
                 self._expect_value = True
             elif ch in ",{}[]":
@@ -164,11 +165,12 @@ class SayExtractor:
             if self._escape[1] == "u":
                 if len(self._escape) < 6:
                     return
-                decoded = chr(int(self._escape[2:], 16))
+                decoded = self._unicode(self._escape[2:])
             else:
                 decoded = _ESCAPES.get(ch, ch)
             self._escape = ""
-            self._emit(decoded, out)
+            if decoded:
+                self._emit(decoded, out)
         elif ch == "\\":
             self._escape = ch
         elif ch == '"':
@@ -181,8 +183,30 @@ class SayExtractor:
         else:
             self._emit(ch, out)
 
+    def _unicode(self, hex4: str) -> str:
+        """Decode one \\uXXXX escape; a surrogate pair waits for its second half.
+        Malformed escapes are dropped rather than crashing the stream."""
+        try:
+            code = int(hex4, 16)
+        except ValueError:
+            self._high_surrogate = ""
+            return ""
+        if 0xD800 <= code <= 0xDBFF:
+            self._high_surrogate = hex4
+            return ""
+        if 0xDC00 <= code <= 0xDFFF:
+            high, self._high_surrogate = self._high_surrogate, ""
+            if not high:
+                return ""
+            return chr(0x10000 + ((int(high, 16) - 0xD800) << 10) + (code - 0xDC00))
+        self._high_surrogate = ""
+        return chr(code)
+
     def _emit(self, ch: str, out: list[str]) -> None:
         if self._capturing:
+            if self._pending_space:
+                out.append(" ")
+                self._pending_space = False
             out.append(ch)
             self._said_any = True
         else:

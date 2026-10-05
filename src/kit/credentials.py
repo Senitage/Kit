@@ -39,5 +39,8 @@ def api_token(paths: KitPaths, create: bool = True) -> str | None:
         return None
     token = secrets.token_urlsafe(32)
     token_file.parent.mkdir(parents=True, exist_ok=True)
-    token_file.write_text(token + "\n", encoding="utf-8")
+    # Owner-only on Linux; Windows ignores the mode (the stage 0 icacls step covers it).
+    fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token + "\n")
     return token

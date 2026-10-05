@@ -126,6 +126,19 @@ def cmd_token(paths: KitPaths) -> int:
     return 0
 
 
+def setup_logging(paths: KitPaths) -> None:
+    """Warnings and errors go to logs/kit.log (rotated), so a bad night is visible later."""
+    import logging
+    from logging.handlers import RotatingFileHandler
+
+    handler = RotatingFileHandler(
+        paths.logs_dir / "kit.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     from kit.brain import Brain
     from kit.embed import OllamaEmbedder
@@ -148,6 +161,8 @@ def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
 
     from kit.server import create_app
 
+    paths.ensure()
+    setup_logging(paths)
     client = httpx.AsyncClient()
     store, memory, brain = _runtime(paths, client)
     settings = store.current()

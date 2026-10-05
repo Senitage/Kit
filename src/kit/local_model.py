@@ -44,7 +44,7 @@ class OllamaModel:
             "stream": True,
             "think": s.think,
             "keep_alive": "30m",
-            "options": {"temperature": s.temperature},
+            "options": {"temperature": s.temperature, "num_ctx": s.num_ctx},
         }
 
     async def stream(self, messages: list[dict], schema: dict) -> AsyncIterator[str]:

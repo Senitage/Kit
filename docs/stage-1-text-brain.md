@@ -26,7 +26,8 @@ visit plain `http://127.0.0.1:8600/` works. `kit token` shows the token again.
 
 To open it from your phone or desk PC, set `brain.host` to `0.0.0.0`
 (`kit config set brain.host 0.0.0.0`), restart `kit serve`, allow port 8600
-through Windows Firewall for the private network, and browse to
+through Windows Firewall for the Tailscale adapter only (remote address
+`100.64.0.0/10`, so nothing else on the LAN can reach it), and browse to
 `http://kit-server:8600/#token=...` over Tailscale.
 
 ## 2. What's new
@@ -134,6 +135,10 @@ then run it again.
   `ollama.temperature` (0.4).
 - **Kit sounds generic:** add more `persona.examples`. Small models copy
   examples much better than they follow descriptions.
+- **Kit forgets its persona mid-conversation:** the context window is full.
+  Raise `ollama.num_ctx` (8192 by default) or lower `brain.history_messages`.
+- **Something went wrong overnight:** `logs/kit.log` in the data folder has
+  the warnings and errors from `kit serve`.
 - **`kit eval memory` misses things:** run `kit memory search "..."` with the
   question to see what Kit finds and how close each match is. If the right
   fact is there but below the cut-off, lower `memory.min_similarity` a little

@@ -35,6 +35,7 @@ def test_streams_pieces_and_sends_schema():
     assert run(model_with(handler)) == ['{"a"', ": 1}"]
     assert seen["format"] == {"x": 1} and seen["stream"] is True
     assert seen["think"] is False and seen["model"] == "qwen3:8b"
+    assert seen["options"] == {"temperature": 0.7, "num_ctx": 8192}
 
 
 def test_http_error_status():

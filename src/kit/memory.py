@@ -24,9 +24,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from kit import knowledge
 from kit.knowledge import Index, Item
 
 Clock = Callable[[], datetime]
+
+RECALL_STEP = "recall-step"  # a message source for Kit's "Let me think..." turns
 
 FACTS = "memory"
 DAYS = "days"
@@ -66,6 +69,8 @@ MIGRATIONS = [
         question TEXT NOT NULL
     );
     """,
+    # 2: the knowledge index (facts, day summaries, conversation and later sources).
+    knowledge.SCHEMA,
 ]
 
 
@@ -153,11 +158,19 @@ class Memory:
 
     @_locked
     def recent(self, limit: int) -> list[Message]:
+        """The latest turns as the model should see them: a recall step ("Let me
+        think...") is a working note, not a turn, so it's left out."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source FROM messages ORDER BY id DESC LIMIT ?",
-            (limit,),
+            "SELECT id, at, role, text, reply_json, source FROM messages"
+            " WHERE source IS NULL OR source != ? ORDER BY id DESC LIMIT ?",
+            (RECALL_STEP, limit),
         ).fetchall()
         return [Message(*row) for row in reversed(rows)]
+
+    @_locked
+    def set_message_source(self, message_id: int, source: str) -> None:
+        with self.db:
+            self.db.execute("UPDATE messages SET source = ? WHERE id = ?", (source, message_id))
 
     @_locked
     def messages_on(self, day: str) -> list[Message]:
@@ -186,9 +199,12 @@ class Memory:
         kind = kind if kind in FACT_KINDS else "other"
         return self.index.add(FACTS, kind, text.strip(), ref=source_ref, pinned=pinned)
 
-    def replace_fact(self, old_id: int, text: str, kind: str | None = None) -> int:
+    def replace_fact(
+        self, old_id: int, text: str, kind: str | None = None, source_ref: str | None = None
+    ) -> int:
         old = self.index.get(old_id)
-        new_id = self.add_fact(text, kind or (old.kind if old else "other"))
+        kind = kind or (old.kind if old else "other")
+        new_id = self.add_fact(text, kind, source_ref=source_ref or (old.ref if old else None))
         self.index.supersede(old_id, new_id)
         return new_id
 

@@ -11,6 +11,8 @@ model = "qwen3:8b"
 # Thinking makes the local model slower to start talking; leave it off for chat.
 think = false
 temperature = 0.7
+# Context window in tokens: must hold the persona, memories and recent history.
+num_ctx = 8192
 
 [claude]
 # The Claude model used for hard tasks, and how hard it works.
@@ -20,8 +22,9 @@ max_tokens = 16000
 # Kit stops asking Claude once this month's spend reaches the cap.
 # Prices are only for the spend log; check them against Anthropic's price list.
 monthly_cap_usd = 20.0
-input_usd_per_mtok = 5.0
-output_usd_per_mtok = 25.0
+input_usd_per_mtok = 4.0
+cached_input_usd_per_mtok = 0.4
+output_usd_per_mtok = 20.0
 
 [brain]
 # 127.0.0.1 keeps the chat page on this PC. Use "0.0.0.0" to let your phone in

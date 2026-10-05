@@ -10,12 +10,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import secrets
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Annotated
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,8 @@ from kit.memory import CONVERSATION, DAYS, FACTS, Memory
 from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
+
+log = logging.getLogger(__name__)
 
 SUMMARY_INTERVAL_S = 3600
 
@@ -223,7 +226,7 @@ def create_app(
         return {"ok": True}
 
     @app.get("/api/memory/search", dependencies=auth)
-    async def search(q: str, k: int = 10) -> dict:
+    async def search(q: str, k: Annotated[int, Query(ge=1, le=100)] = 10) -> dict:
         hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION], min(k, 50))
         return {
             "words_only": brain.recall.embed_problem is not None,
@@ -253,12 +256,19 @@ async def _upkeep_loop(
 ) -> None:
     """Summarise finished days, embed anything not yet indexed, and back up memory daily."""
     while True:
-        with contextlib.suppress(Exception):
+        try:
             await brain.summarise_past_days()
-        with contextlib.suppress(Exception):
+        except Exception:
+            log.exception("summarising past days failed")
+        try:
             await brain.recall.index_pending(limit=5000)
+        except Exception:
+            log.exception("indexing memories failed")
         if paths is not None:
-            with contextlib.suppress(Exception):
+            try:
                 if not brain.memory.backed_up_today(paths.backups_dir):
-                    brain.memory.backup(paths.backups_dir, store.current().memory.backups_keep)
+                    keep = store.current().memory.backups_keep
+                    await asyncio.to_thread(brain.memory.backup, paths.backups_dir, keep)
+            except Exception:
+                log.exception("backing up memory failed")
         await asyncio.sleep(every_s)

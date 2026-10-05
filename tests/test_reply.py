@@ -22,6 +22,17 @@ def test_extractor_handles_unicode_escapes_and_spacing():
     assert feed_all(raw, 1).startswith("café")
 
 
+@pytest.mark.parametrize("size", [1, 3, 1000])
+def test_extractor_joins_surrogate_pairs(size):
+    raw = '{"segments": [{"say": "Go \\ud83d\\ude00 now"}]}'
+    assert feed_all(raw, size) == "Go 😀 now"
+
+
+def test_extractor_survives_bad_escapes_and_empty_sentences():
+    raw = '{"segments": [{"say": "a\\uZZZZb"}, {"say": ""}, {"say": "\\udc00c"}]}'
+    assert feed_all(raw, 1) == "ab c"
+
+
 def test_extractor_ignores_other_fields_named_like_say():
     raw = json.dumps({"emotion": "say", "segments": [{"gesture": "nod", "say": "Yes."}]})
     assert feed_all(raw, 2) == "Yes."

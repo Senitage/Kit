@@ -29,14 +29,26 @@ def test_answer_is_returned_and_spend_logged(memory):
     assert call["model"] == "claude-opus-5-5"
     assert call["fallbacks"] == "default" and call["betas"] == [FALLBACK_BETA]
     assert call["output_config"] == {"effort": "medium"}
-    assert "Kit" in call["system"] and call["messages"][-1]["content"] == "Why?"
-    # 1000 in at $5/M + 2000 out at $25/M
-    assert answer.cost_usd == pytest.approx(0.055)
-    assert memory.month_spend() == pytest.approx(0.055)
+    system = call["system"][0]
+    assert "Kit" in system["text"] and system["cache_control"] == {"type": "ephemeral"}
+    assert call["messages"][-1]["content"] == "Why?"
+    # 1000 in at $4/M + 2000 out at $20/M
+    assert answer.cost_usd == pytest.approx(0.044)
+    assert memory.month_spend() == pytest.approx(0.044)
 
 
 def test_cost_estimate():
-    assert estimate_cost(ClaudeSettings(), 1_000_000, 0) == 5.0
+    assert estimate_cost(ClaudeSettings(), 1_000_000, 0) == 4.0
+    assert estimate_cost(ClaudeSettings(), 0, 1_000_000) == 20.0
+    # Tokens read from the prompt cache cost a tenth of fresh input.
+    assert estimate_cost(ClaudeSettings(), 1_000_000, 0, cached_tokens=1_000_000) == 0.4
+
+
+def test_cached_tokens_are_billed_at_the_cache_rate(memory):
+    fake = FakeAnthropic(cache_read_input_tokens=1000)
+    answer = ask(Expert(memory, lambda: "sk-test", fake.factory))
+    assert answer.ok
+    assert answer.cost_usd == estimate_cost(ClaudeSettings(), 2000, 2000, 1000)
 
 
 def test_cap_stops_calls(memory):

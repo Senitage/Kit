@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -84,7 +85,25 @@ def test_backup_keeps_newest(memory, paths, clock):
 
 
 def test_schema_version_is_recorded(memory):
-    assert memory.db.execute("PRAGMA user_version").fetchone()[0] == 1
+    from kit.memory import MIGRATIONS
+
+    assert memory.db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+
+
+def test_old_database_is_migrated_forward(tmp_path, clock):
+    """A database made by the first schema gains the knowledge index on open."""
+    from kit.memory import MIGRATIONS, Memory
+
+    path = tmp_path / "old.db"
+    db = sqlite3.connect(path)
+    db.executescript(MIGRATIONS[0])
+    db.execute("PRAGMA user_version = 1")
+    db.commit()
+    db.close()
+    memory = Memory(path, clock)
+    assert memory.db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+    memory.add_fact("Dan drives a Hilux.", "about")
+    assert [f.text for f in memory.facts()] == ["Dan drives a Hilux."]
 
 
 def test_spend_by_month(memory, clock):
@@ -94,6 +113,14 @@ def test_spend_by_month(memory, clock):
     clock.now += timedelta(days=31)
     assert memory.month_spend() == 0
     assert len(memory.spend_log()) == 2
+
+
+def test_replace_keeps_where_the_fact_came_from(memory):
+    old = memory.add_fact("Dan drives a Hilux.", source_ref="2026-10-01")
+    new = memory.replace_fact(old, "Dan drives a Ranger.")
+    assert memory.index.get(new).ref == "2026-10-01"
+    newer = memory.replace_fact(new, "Dan drives a blue Ranger.", source_ref="2026-10-04")
+    assert memory.index.get(newer).ref == "2026-10-04"
 
 
 def test_forget_removes_earlier_versions_too(memory):

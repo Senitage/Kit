@@ -59,16 +59,23 @@ class FakeMessages:
                 input_tokens=1000,
                 output_tokens=2000,
                 cache_creation_input_tokens=None,
-                cache_read_input_tokens=0,
+                cache_read_input_tokens=self.owner.cache_read_input_tokens,
             ),
         )
 
 
 class FakeAnthropic:
-    def __init__(self, answer="The answer is 42.", error=None, stop_reason="end_turn"):
+    def __init__(
+        self,
+        answer="The answer is 42.",
+        error=None,
+        stop_reason="end_turn",
+        cache_read_input_tokens=0,
+    ):
         self.answer = answer
         self.error = error
         self.stop_reason = stop_reason
+        self.cache_read_input_tokens = cache_read_input_tokens
         self.calls: list[dict] = []
         self.beta = SimpleNamespace(messages=FakeMessages(self))
         self.keys: list[str] = []

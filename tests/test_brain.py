@@ -68,6 +68,8 @@ def test_relevant_memories_are_in_the_prompt(memory):
     assert "Dan's dog is called Rex." in system and "(2026-10-05, person)" in system
     assert "Always keep in mind" in system and "metric" in system
     assert "thickener" not in system
+    # What changes each turn (clock, memories) comes after the fixed persona text.
+    assert system.index("Rex") > system.index("tilt_head") > system.index("You are Kip")
 
 
 def test_history_is_in_the_prompt(memory):
@@ -122,6 +124,12 @@ def test_recall_action_searches_then_answers(memory):
     assert "Documents/Finance/Tax" in second[-1]["content"]
     assert "Dan: Where did I say" in memory.index.items("conversation")[0].text
     assert "Let me think. They're in" in memory.index.items("conversation")[0].text
+    # Next turn's history shows the answer, not the "Let me think" working step.
+    history = memory.recent(10)
+    assert [m.text for m in history] == [
+        "Where did I say my returns were?",
+        "They're in Documents/Finance/Tax.",
+    ]
 
 
 def test_recall_with_nothing_found_says_so(memory):
@@ -166,7 +174,7 @@ def test_model_asks_for_claude_with_memories(memory):
     assert last["source"] == "claude" and last["cost_usd"] > 0
     call = claude.calls[0]
     assert call["messages"][-1]["content"] == "Kalman maths?"
-    assert "flotation model" in call["system"]
+    assert "flotation model" in call["system"][0]["text"]
     assert memory.recent(1)[0].source == "claude"
 
 
@@ -192,6 +200,12 @@ def test_broken_json_keeps_the_words(memory):
     events = collect(brain.chat("hi"))
     assert events[-1]["type"] == "reply"
     assert events[-1]["reply"]["segments"][0]["say"] == "Half a thou"
+
+
+def test_bad_escape_in_the_stream_keeps_the_words(memory):
+    brain, _, _ = make(memory, '{"segments": [{"say": "Hi\\uZZZZ there')  # bad escape, cut off
+    events = collect(brain.chat("hi"))
+    assert events[-1]["type"] == "reply" and events[-1]["reply"]["segments"][0]["say"] == "Hi there"
 
 
 def test_garbage_is_an_error_and_not_indexed(memory):

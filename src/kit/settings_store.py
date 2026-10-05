@@ -9,7 +9,9 @@ keeps running on the last good version.
 
 from __future__ import annotations
 
+import functools
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -66,6 +68,15 @@ def _safe_name(who: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "-", who).strip("-")[:40] or "unknown"
 
 
+def _locked(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class SettingsStore:
     def __init__(self, paths: KitPaths, clock: Clock = _utc_now) -> None:
         self.paths = paths
@@ -73,6 +84,7 @@ class SettingsStore:
         self._settings: Settings | None = None
         self._seen: tuple[int, int] | None = None
         self.problem: str | None = None
+        self._lock = threading.RLock()  # the server reads from several threads
 
     @property
     def last_good_file(self) -> Path:
@@ -82,6 +94,7 @@ class SettingsStore:
     def history_dir(self) -> Path:
         return self.paths.config_dir / "history"
 
+    @_locked
     def current(self) -> Settings:
         """The settings in force, re-read if the file changed since last time."""
         signature = self._signature()
@@ -119,6 +132,7 @@ class SettingsStore:
         except SettingsError:
             return Settings()
 
+    @_locked
     def update(self, patch: dict, changed_by: str) -> Settings:
         """Apply a partial change. Raises SettingsError, changing nothing, if it's invalid."""
         before = self.current()
@@ -129,6 +143,7 @@ class SettingsStore:
             self._write(after)
         return after
 
+    @_locked
     def replace(self, settings: Settings, changed_by: str) -> Settings:
         before = self.current()
         if settings != before:
@@ -144,6 +159,7 @@ class SettingsStore:
             versions.append(Version(path.stem, stamp, who, path))
         return versions
 
+    @_locked
     def undo(self) -> Settings:
         """Go back to the version before the last change."""
         versions = self.history()
@@ -155,6 +171,7 @@ class SettingsStore:
         latest.path.unlink()
         return restored
 
+    @_locked
     def restore(self, version_id: str, changed_by: str) -> Settings:
         match = [v for v in self.history() if v.id == version_id]
         if not match:

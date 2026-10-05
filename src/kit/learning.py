@@ -83,7 +83,7 @@ class Learner:
         elif what == "update" and 1 <= which <= len(candidates):
             old = candidates[which - 1]
             keep_kind = old.kind if kind == "other" else kind
-            new_id = self.memory.replace_fact(old.id, wording or text, keep_kind)
+            new_id = self.memory.replace_fact(old.id, wording or text, keep_kind, source_ref)
             learned = Learned("update", new_id, wording or text, replaced=old.text)
         else:
             learned = Learned("new", self.memory.add_fact(text, kind, source_ref=source_ref), text)

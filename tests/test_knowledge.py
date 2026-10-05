@@ -107,3 +107,36 @@ def test_delete_source_and_count(memory):
     memory.index.add("notes", "chunk", "b", ref="file2")
     assert memory.index.delete_source("notes", ref="file1") == 1
     assert memory.index.count("notes") == 1
+
+
+def test_meaning_search_in_one_source_is_not_starved_by_another(memory):
+    """Thousands of close chat snippets must not hide the one fact of the same meaning."""
+    embedder = FakeEmbedder()
+    fact = memory.add_fact("Shutdown planning notes are kept in the Shutdown folder.", "place")
+    for n in range(80):
+        memory.index.add(CONVERSATION, "exchange", f"Dan: shutdown planning notes {n}")
+    embed_all(memory, embedder)
+    q = "shutdown planning notes"
+    hits = memory.index.search(q, query(embedder, q), embedder.model, sources=[FACTS], k=3)
+    assert [h.item.id for h in hits] == [fact] and hits[0].similarity is not None
+
+
+def test_new_vectors_are_seen_by_the_next_search(memory):
+    embedder = FakeEmbedder()
+    q = "flotation reagent"
+    before = memory.index.search(q, query(embedder, q), embedder.model)
+    assert before == []
+    memory.add_fact("Flotation reagent dosing is 20 g/t.", "project")
+    embed_all(memory, embedder)
+    after = memory.index.search(q, query(embedder, q), embedder.model)
+    assert len(after) == 1
+
+
+def test_history_follows_every_earlier_version(memory):
+    a = memory.add_fact("Dan has a Hilux.")
+    b = memory.add_fact("Dan has a ute.")
+    c = memory.add_fact("Dan drives a Ranger.")
+    memory.index.supersede(a, c)
+    memory.index.supersede(b, c)
+    assert {i.id for i in memory.index.history(c)} == {a, b, c}
+    assert memory.forget(c) and memory.facts() == []

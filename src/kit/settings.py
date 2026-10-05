@@ -33,6 +33,13 @@ class OllamaSettings(_Section):
             raise ValueError("must start with http:// or https://")
         return value.rstrip("/")
 
+    num_ctx: int = Field(
+        8192,
+        ge=2048,
+        le=131072,
+        description="Context window in tokens. Must hold the persona, memories and history; "
+        "bigger uses more GPU memory.",
+    )
     think: bool = Field(
         False, description="Let the local model think before answering. Slower; off for chat."
     )
@@ -53,10 +60,13 @@ class ClaudeSettings(_Section):
         20.0, ge=0, description="Kit stops asking Claude once this month's spend reaches this."
     )
     input_usd_per_mtok: float = Field(
-        5.0, ge=0, description="Price per million input tokens, for the spend log."
+        4.0, ge=0, description="Price per million input tokens, for the spend log."
+    )
+    cached_input_usd_per_mtok: float = Field(
+        0.4, ge=0, description="Price per million input tokens read from the prompt cache."
     )
     output_usd_per_mtok: float = Field(
-        25.0, ge=0, description="Price per million output tokens, for the spend log."
+        20.0, ge=0, description="Price per million output tokens, for the spend log."
     )
 
 

@@ -51,11 +51,8 @@ def system_prompt(persona: PersonaSettings, recalled: Recalled, now: datetime) -
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
         "",
-        f"It is {now:%A %d %B %Y, %I:%M %p}.",
-        *memory_block(recalled, owner),
-        "",
-        "Answer only with JSON: an emotion, one to three short segments (each a sentence "
-        "to say plus a gesture), and an action.",
+        "Answer only with JSON: an emotion, one to three short segments (each a gesture "
+        "plus a sentence to say), and an action.",
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
         "Actions:",
@@ -77,6 +74,8 @@ def system_prompt(persona: PersonaSettings, recalled: Recalled, now: datetime) -
         lines += ["", "Examples of how you talk:"]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
+    # What changes every turn goes last, so Ollama can reuse the cached prefix above.
+    lines += ["", f"It is {now:%A %d %B %Y, %I:%M %p}.", *memory_block(recalled, owner)]
     return "\n".join(lines)
 
 

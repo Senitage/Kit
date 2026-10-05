@@ -107,6 +107,7 @@ class _VectorCache:
     version: int = -1
     model: str = ""
     ids: list[int] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
     matrix: np.ndarray | None = None
 
 
@@ -129,14 +130,13 @@ class Index:
         self.clock = clock
         self._version = 0
         self._cache = _VectorCache()
-        with self.lock:
-            self.db.executescript(SCHEMA)
 
     def _now(self) -> str:
         return self.clock().isoformat(timespec="seconds")
 
     def _changed(self) -> None:
-        self._version += 1
+        with self.lock:
+            self._version += 1
 
     def _row(self, row) -> Item:
         return Item(
@@ -277,14 +277,18 @@ class Index:
 
     def history(self, item_id: int) -> list[Item]:
         """The item and every earlier version it replaced, newest first."""
-        chain, current = [], self.get(item_id)
-        while current:
+        chain, queue = [], [self.get(item_id)]
+        while queue:
+            current = queue.pop(0)
+            if current is None:
+                continue
             chain.append(current)
             with self.lock:
-                row = self.db.execute(
-                    f"SELECT {self._COLS} FROM items WHERE superseded_by = ?", (current.id,)
-                ).fetchone()
-            current = self._row(row) if row else None
+                rows = self.db.execute(
+                    f"SELECT {self._COLS} FROM items WHERE superseded_by = ? ORDER BY id DESC",
+                    (current.id,),
+                ).fetchall()
+            queue += [self._row(r) for r in rows]
         return chain
 
     def count(self, source: str | None = None) -> int:
@@ -316,23 +320,27 @@ class Index:
             )
         self._changed()
 
-    def _matrix(self, model: str) -> tuple[list[int], np.ndarray | None]:
+    def _matrix(self, model: str) -> _VectorCache:
         cache = self._cache
         if cache.version != self._version or cache.model != model:
             with self.lock:
+                # The version is taken before the read, so a write that lands
+                # while this builds makes the result stale at once, not never.
+                version = self._version
                 rows = self.db.execute(
-                    "SELECT v.item_id, v.vec FROM vectors v JOIN items i ON i.id = v.item_id"
+                    "SELECT v.item_id, i.source, v.vec FROM vectors v"
+                    " JOIN items i ON i.id = v.item_id"
                     " WHERE v.model = ? AND i.superseded_by IS NULL",
                     (model,),
                 ).fetchall()
-            ids = [r[0] for r in rows]
             matrix = None
             if rows:
-                matrix = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in rows])
+                matrix = np.vstack([np.frombuffer(r[2], dtype=np.float32) for r in rows])
                 norms = np.linalg.norm(matrix, axis=1, keepdims=True)
                 matrix = matrix / np.where(norms == 0, 1, norms)
-            self._cache = _VectorCache(self._version, model, ids, matrix)
-        return self._cache.ids, self._cache.matrix
+            cache = _VectorCache(version, model, [r[0] for r in rows], [r[1] for r in rows], matrix)
+            self._cache = cache
+        return cache
 
     # Searching
 
@@ -358,28 +366,27 @@ class Index:
             except sqlite3.OperationalError:
                 return []
 
-    def similarities(self, query_vec: list[float], model: str) -> dict[int, float]:
-        """Cosine similarity of the query to every current item with a vector."""
-        ids, matrix = self._matrix(model)
-        if matrix is None:
+    def similarities(
+        self, query_vec: list[float], model: str, sources: list[str] | None = None
+    ) -> dict[int, float]:
+        """Cosine similarity of the query to every current item (in ``sources``) with a
+        vector."""
+        cache = self._matrix(model)
+        if cache.matrix is None:
             return {}
         q = np.asarray(query_vec, dtype=np.float32)
-        if q.shape[0] != matrix.shape[1]:
+        if q.shape[0] != cache.matrix.shape[1]:
             return {}
         q = q / (np.linalg.norm(q) or 1)
-        return dict(zip(ids, (matrix @ q).tolist(), strict=True))
-
-    def _in_sources(self, ids: Iterable[int], sources: list[str] | None) -> set[int]:
-        ids = list(ids)
-        if not sources or not ids:
-            return set(ids)
-        with self.lock:
-            rows = self.db.execute(
-                f"SELECT id FROM items WHERE source IN ({','.join('?' * len(sources))})"
-                f" AND id IN ({','.join('?' * len(ids))})",
-                [*sources, *ids],
-            ).fetchall()
-        return {r[0] for r in rows}
+        scores = (cache.matrix @ q).tolist()
+        if not sources:
+            return dict(zip(cache.ids, scores, strict=True))
+        wanted = set(sources)
+        return {
+            i: v
+            for i, src, v in zip(cache.ids, cache.sources, scores, strict=True)
+            if src in wanted
+        }
 
     def search(
         self,
@@ -401,7 +408,9 @@ class Index:
         no vector yet (or when the embedding model is down) go on words alone.
         """
         exclude = exclude or set()
-        sims = self.similarities(query_vec, model) if query_vec is not None and model else {}
+        sims = {}
+        if query_vec is not None and model:
+            sims = self.similarities(query_vec, model, sources)
         hits: dict[int, Hit] = {}
 
         for rank, item_id in enumerate(self.word_search(query, sources)):
@@ -417,8 +426,7 @@ class Index:
             key=lambda iv: iv[1],
             reverse=True,
         )[:60]
-        allowed = self._in_sources([i for i, _ in close], sources)
-        for rank, (item_id, sim) in enumerate(i for i in close if i[0] in allowed):
+        for rank, (item_id, sim) in enumerate(close):
             hit = hits.setdefault(item_id, Hit(None, 0.0, sim))  # type: ignore[arg-type]
             hit.score += 1 / (RRF_K + rank)
             hit.similarity = sim
