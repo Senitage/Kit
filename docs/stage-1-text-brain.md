@@ -20,6 +20,17 @@ ollama pull nomic-embed-text    # lets Kit find memories by meaning (about 300 M
 kit serve
 ```
 
+Before the first run, give Ollama room on the 8 GB card. In Windows, open
+**Edit the system environment variables**, add these, then restart Ollama from the
+tray icon:
+
+```
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q8_0        # halves the memory the context takes
+OLLAMA_NUM_PARALLEL=1            # one user; otherwise Ollama may reserve 4 contexts
+OLLAMA_MAX_LOADED_MODELS=3       # chat and embedding models stay loaded together
+```
+
 `kit serve` prints two links with the API token on the end. Open the chat link
 in a browser on the server. The page remembers the token, so after the first
 visit plain `http://127.0.0.1:8600/` works. `kit token` shows the token again.
