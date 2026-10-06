@@ -74,6 +74,9 @@ conversation_snippets = 4
 # [persona]
 # name = "Kit"
 # owner = "Dan"
+# location = "Perth, WA"       # city, state: web searches look near here
+# country = "AU"
+# timezone = "Australia/Perth"
 # traits = ["curious", "dry sense of humour", "loyal and practical"]
 #
 # [[persona.examples]]

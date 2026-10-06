@@ -210,8 +210,16 @@ class PersonaSettings(_Section):
         description="How Kit talks.",
     )
     location: str = Field(
-        "", description="Where the owner is, for weather and local searches, e.g. Perth WA."
+        "",
+        description="Where the owner is, for weather and local searches, as 'city, state', "
+        "e.g. Perth, WA.",
     )
+    country: str = Field(
+        "",
+        pattern=r"^([A-Z]{2})?$",
+        description="The owner's country as a two-letter code, e.g. AU.",
+    )
+    timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
         "in Python, codes in VS Code, and keeps notes in Obsidian.",

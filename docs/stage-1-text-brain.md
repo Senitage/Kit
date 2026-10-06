@@ -127,6 +127,18 @@ firewall rule is needed.
   work model hands over to it when a question deserves it.
 - The **local model** is `ollama.model` (qwen3:8b).
 
+Tell Kit where you are, so weather and local searches find results near you
+(Gemini's search ignores this):
+
+```
+kit config set persona.location "Perth, WA"
+kit config set persona.country AU
+kit config set persona.timezone Australia/Perth
+```
+
+Claude can also open a page it found (for a forecast, the weather service's
+own page) instead of trusting an old search snippet.
+
 Built-in profiles are `sonnet`, `opus`, `gpt-sol` (OpenAI GPT-6.1 Sol) and
 `gemini-flash` (Google Gemini 3.8 Flash). Switch with one command; it applies
 from the next message:

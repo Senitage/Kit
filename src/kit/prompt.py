@@ -107,7 +107,10 @@ def system_prompt(
             lines.append(
                 "- You can search the web. Use it for anything current or that you'd "
                 "otherwise guess at (weather, prices, products, news, opening hours), and put "
-                "the sources in detail."
+                "the sources in detail. Check how old each result is. For live things like "
+                "the weather, open the official source's page if you can (for a forecast, "
+                "the national weather service's page for the place) rather than relying on "
+                "an old search result."
             )
     lines += [
         "",
