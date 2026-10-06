@@ -4,7 +4,16 @@ from datetime import timedelta
 
 import pytest
 
-from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import (
+    Clock,
+    FakeAnthropic,
+    FakeEmbedder,
+    FakeModel,
+    FakeWeather,
+    collect,
+    make_cloud,
+    reply,
+)
 from kit.brain import Brain, route
 from kit.memory import Memory
 from kit.recall import Recall
@@ -444,3 +453,43 @@ def test_job_line_lists_progress():
 
 async def _collect(agen):
     return [e async for e in agen]
+
+
+def test_weather_action_gets_the_forecast_then_answers(memory):
+
+    s = Settings.model_validate(
+        {"memory": {"min_similarity": 0.3}, "persona": {"location": "Perth, WA", "country": "AU"}}
+    )
+    brain, model, claude = make(
+        memory,
+        reply("Checking the forecast.", action="weather"),
+        reply("Mild tonight, about 14 and clear."),
+        settings=s,
+    )
+    brain.weather = FakeWeather()
+    events = collect(brain.chat("What's the weather like tonight?"))
+    assert [e["type"] for e in events].count("reply") == 2
+    assert next(e for e in events if e["type"] == "weather")["place"] == "Perth, WA"
+    assert brain.weather.asked == [("Perth, WA", "AU")]
+    assert "Forecast for Perth" in model.calls[1][-1]["content"]
+    assert "- weather:" in model.calls[0][0]["content"]
+    assert not claude.calls  # no cloud call for the weather
+
+
+def test_weather_failure_is_told_to_the_model(memory):
+
+    brain, model, _ = make(
+        memory,
+        reply("Checking.", action="weather", text="Broome"),
+        reply("I can't get the forecast right now."),
+    )
+    brain.weather = FakeWeather(fail=True)
+    collect(brain.chat("Weather in Broome?"))
+    assert brain.weather.asked == [("Broome", "")]
+    assert "The forecast lookup failed" in model.calls[1][-1]["content"]
+
+
+def test_no_weather_action_without_a_forecast_source(memory):
+    brain, model, _ = make(memory, reply("Hi."))
+    collect(brain.chat("Hi"))
+    assert "- weather:" not in model.calls[0][0]["content"]

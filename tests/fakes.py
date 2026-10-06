@@ -167,3 +167,19 @@ class FakeEmbedder:
                 vec[zlib.crc32(word.encode()) % 256] += 1.0
             out.append(vec)
         return out
+
+
+class FakeWeather:
+    """A forecast service that remembers what it was asked."""
+
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.asked = []
+
+    async def forecast(self, place, country=""):
+        from kit.weather import WeatherError
+
+        self.asked.append((place, country))
+        if self.fail:
+            raise WeatherError("The forecast service returned an error (500).")
+        return f"Forecast for {place} from Open-Meteo: clear, 14°C tonight."

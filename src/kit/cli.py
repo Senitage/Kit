@@ -204,6 +204,7 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     from kit.local_model import OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
+    from kit.weather import Weather
 
     paths.ensure()
     store = SettingsStore(paths)
@@ -211,7 +212,8 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     model = OllamaModel(lambda: store.current().ollama, client)
     cloud = make_cloud(paths, memory, client)
     recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
-    return store, memory, Brain(store.current, memory, model, cloud, recall)
+    weather = Weather(client)
+    return store, memory, Brain(store.current, memory, model, cloud, recall, weather)
 
 
 def make_cloud(paths: KitPaths, memory, client: httpx.AsyncClient):
@@ -307,6 +309,8 @@ def _print_event(event: dict, me: str) -> None:
         print(f"\n  ({event['message']})\n{me}> ", end="", flush=True)
     elif kind == "remembered":
         print(f"  (remembered: {event['fact']})")
+    elif kind == "weather":
+        print("  (checking the forecast)")
     elif kind == "thing_suggested":
         print(f"  (add to the register? {event['thing']['line']}  yes/no)")
     elif kind == "thing_updated" and event["thing"]:

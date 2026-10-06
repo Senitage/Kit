@@ -57,16 +57,20 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "recall", "remember", "thing", "ask_cloud", "ask_expert"] = Field(
-        description="recall searches memory before answering; remember saves a fact; "
-        "thing notes a named thing and where it lives; ask_cloud hands the question to the "
-        "cloud model; ask_expert hands it to the strongest model; none does nothing."
+    kind: Literal["none", "recall", "remember", "thing", "weather", "ask_cloud", "ask_expert"] = (
+        Field(
+            description="recall searches memory before answering; remember saves a fact; "
+            "thing notes a named thing and where it lives; weather gets the forecast before "
+            "answering; ask_cloud hands the question to the "
+            "cloud model; ask_expert hands it to the strongest model; none does nothing."
+        )
     )
     text: str = Field(
         "",
         description="For recall: what to search for. For remember: the fact, as one "
         "sentence that makes sense on its own later. For ask_cloud and ask_expert: the "
-        "full question with the context it needs.",
+        "full question with the context it needs. For weather: the place, or empty for "
+        "home.",
     )
     category: FactKind = Field("other", description="For remember: what kind of fact it is.")
     thing_kind: ThingKind = Field("other", description="For thing: what kind of thing it is.")

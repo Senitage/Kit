@@ -73,6 +73,7 @@ def system_prompt(
     expert: str | None = None,
     web_search: bool = False,
     busy: list[str] | None = None,
+    weather: bool = False,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -140,6 +141,13 @@ def system_prompt(
         f"thing_kind, and if you know where it lives set link_system and link_target. "
         f"For a new name, ask {owner} if you should add it to the register."
     )
+    if weather:
+        lines.append(
+            f"- weather: for any question about the weather, temperature, rain or wind, now "
+            f"or in the next few days. Put the place in text, or leave it empty for where "
+            f"{owner} is, say something short like 'Checking the forecast.', and you'll see "
+            f"the forecast before answering. Use this rather than a web search."
+        )
     if not cloud and helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "
@@ -181,6 +189,17 @@ def busy_block(busy: list[str], owner: str) -> list[str]:
         f"about being rushed is fine. Don't answer that question yourself or make up "
         f"progress: the answer will arrive by itself when it's ready.",
     ]
+
+
+def weather_results(place: str, forecast: str, owner: str) -> str:
+    return "\n".join(
+        [
+            forecast,
+            f"Now answer {owner}'s last message from this forecast, as JSON with action "
+            f"none. Say the useful part (for 'tonight', the evening temperatures and any "
+            f"rain) in a sentence or two, and put more in detail only if asked.",
+        ]
+    )
 
 
 def recall_results(query: str, hits: list[Hit], owner: str) -> str:

@@ -160,8 +160,8 @@ async function send(text) {
         suggestThing(ev.thing);
       } else if (ev.type === "thing_updated" && ev.thing) {
         bubble("error", "Updated the register: " + ev.thing.line).style.color = "var(--muted)";
-      } else if (ev.type === "recalled") {
-        stateEl.textContent = "remembering";
+      } else if (ev.type === "recalled" || ev.type === "weather") {
+        stateEl.textContent = ev.type === "weather" ? "checking the forecast" : "remembering";
         current = null;
       } else if (ev.type === "error") {
         bubble("error", ev.message);

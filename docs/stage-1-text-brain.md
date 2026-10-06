@@ -127,8 +127,11 @@ firewall rule is needed.
   work model hands over to it when a question deserves it.
 - The **local model** is `ollama.model` (qwen3:8b).
 
-Tell Kit where you are, so weather and local searches find results near you
-(Gemini's search ignores this):
+Tell Kit where you are. Weather questions use it: Kit gets the forecast from
+Open-Meteo (free, no key; in Australia it includes the BOM's models) and
+answers from the numbers, usually with the local model, so it's quick and costs
+nothing. Web searches use it too, to find results near you (Gemini's search
+ignores it):
 
 ```
 kit config set persona.location "Perth, WA"

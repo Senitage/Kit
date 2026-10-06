@@ -15,6 +15,7 @@ Each turn:
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
      for a known thing ("no, it's in Tax/2023") corrects the entry;
+   - weather: Kit gets the forecast (kit.weather), then answers again from it;
    - ask_cloud / ask_expert: the question goes to the work or expert model.
    If a cloud model can't answer (offline, no key, budget used up), the local
    model answers instead when ``routing.fallback_to_local`` is on.
@@ -43,7 +44,7 @@ from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
-from kit.prompt import history_messages, recall_results, system_prompt
+from kit.prompt import history_messages, recall_results, system_prompt, weather_results
 from kit.recall import Recall, Recalled
 from kit.reply import (
     Reply,
@@ -56,6 +57,7 @@ from kit.reply import (
 )
 from kit.settings import Settings
 from kit.things import THINGS, Register
+from kit.weather import Weather, WeatherError
 
 log = logging.getLogger(__name__)
 
@@ -122,12 +124,14 @@ class Brain:
         model: LocalModel,
         cloud: Cloud,
         recall: Recall,
+        weather: Weather | None = None,
     ) -> None:
         self.settings = settings
         self.memory = memory
         self.model = model
         self.cloud = cloud
         self.recall = recall
+        self.weather = weather
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -274,6 +278,7 @@ class Brain:
             expert=further,
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
+            weather=self.weather is not None,
         )
 
     async def _converse(
@@ -307,6 +312,7 @@ class Brain:
             if reply is None:
                 return
 
+            look_up = None
             if reply.action.kind == "recall":
                 query = reply.action.text.strip() or text
                 hits = await self.recall.search(
@@ -315,12 +321,21 @@ class Brain:
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
                     job.steps.append(f"looked through your memory for '{query}'")
+                look_up = recall_results(query, hits, settings.persona.owner)
+            elif reply.action.kind == "weather" and self.weather is not None:
+                place = reply.action.text.strip() or settings.persona.location
+                try:
+                    forecast = await self.weather.forecast(place, settings.persona.country)
+                except WeatherError as e:
+                    forecast = f"The forecast lookup failed: {e}"
+                yield {"type": "weather", "place": place}
+                if job:
+                    job.steps.append(f"checked the forecast for {place}")
+                look_up = weather_results(place, forecast, settings.persona.owner)
+            if look_up is not None:
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},
-                    {
-                        "role": "user",
-                        "content": recall_results(query, hits, settings.persona.owner),
-                    },
+                    {"role": "user", "content": look_up},
                 ]
                 # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
                 # later history shows one answer per message, not a recall habit.
