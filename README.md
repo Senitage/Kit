@@ -17,7 +17,8 @@ which NAS folder, Obsidian note, home_app record or Home Assistant area. Small t
 local model; real questions go to a cloud model (Claude, GPT or Gemini, your
 choice) with web search, within a monthly budget. How much stays local is a
 setting, and Kit keeps chatting locally while a slow cloud answer works. It has settings and memory pages with history and undo. Set it up and test it with
-[docs/stage-1-text-brain.md](docs/stage-1-text-brain.md).
+[docs/stage-1-text-brain.md](docs/stage-1-text-brain.md). Ideas waiting for a later stage are in
+[docs/improvements.md](docs/improvements.md).
 
 ```
 kit serve          # run Kit: chat at /, memory at /memory, settings at /settings
