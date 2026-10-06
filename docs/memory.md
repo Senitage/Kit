@@ -53,7 +53,8 @@ says so. Nothing is lost: missing vectors are filled in once it's back.
    action) and then answer with what it found, or say it doesn't know.
 4. The exchange is indexed, so it can be found later.
 
-Claude gets the same memories when Kit hands a question over.
+Cloud models get the same memories, whether Kit hands a question over or the
+cloud answers first, and can use the same recall and remember actions.
 
 ## Learning without making a mess
 

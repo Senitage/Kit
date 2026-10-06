@@ -4,6 +4,7 @@ conversation."""
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from kit.knowledge import Hit, Item
@@ -38,21 +39,78 @@ def memory_block(recalled: Recalled, owner: str) -> list[str]:
     return lines
 
 
-def system_prompt(persona: PersonaSettings, recalled: Recalled, now: datetime) -> str:
+# Where the part of the prompt that changes every turn begins. Everything before
+# it stays the same between turns, so providers can reuse it from their cache.
+TURN_PART = "\n\nIt is"
+
+HAND_OFF = {
+    "local-heavy": "for anything you can't answer well yourself, such as hard maths, long "
+    "code, detailed engineering, current information (weather, prices, news) or facts you're "
+    "unsure of",
+    "balanced": "for anything more than small talk or a quick command: real questions, "
+    "facts, advice, maths, code, engineering, and anything current such as weather, prices "
+    "or news",
+    "cloud-first": "for anything more than small talk",
+}
+
+REPLY_SHAPE = (
+    '{"emotion": "neutral", "segments": [{"gesture": "nod", "say": "One short sentence."}], '
+    '"action": {"kind": "none", "text": "", "category": "other"}, "detail": ""}'
+)
+
+
+def system_prompt(
+    persona: PersonaSettings,
+    recalled: Recalled,
+    now: datetime,
+    role: str = "local",
+    mode: str = "balanced",
+    helper: str | None = "the cloud",
+    expert: str | None = None,
+    web_search: bool = False,
+) -> str:
+    """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
+    cloud model). ``helper`` and ``expert`` name the models a question can be handed
+    to; either is None when there's nowhere to hand it."""
     name, owner = persona.name, persona.owner
+    cloud = role != "local"
     lines = [
         f"You are {name}, {owner}'s personal assistant. {persona.backstory}",
         f"Your traits: {', '.join(persona.traits)}.",
         f"How you talk: {persona.speech}",
         f"What you know about {owner}: {persona.knows}",
+    ]
+    if persona.location:
+        lines.append(f"{owner} is in {persona.location}.")
+    lines += [
         "",
         "Rules:",
-        *(f"- {rule}" for rule in persona.rules),
+        *(f"- {rule}" for rule in persona.rules if not (cloud and "to the cloud" in rule)),
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
+    ]
+    if cloud:
+        lines += [
+            "- You are the cloud half of " + name + ". Answer properly and correctly; lead "
+            "with the answer.",
+            "- The segments are spoken aloud: one to three short sentences. Put anything "
+            "longer (code, steps, lists, tables, workings, sources) in detail, which is "
+            "shown on screen. Keep detail as plain text or simple Markdown.",
+        ]
+        if web_search:
+            lines.append(
+                "- You can search the web. Use it for anything current or that you'd "
+                "otherwise guess at (weather, prices, products, news, opening hours), and put "
+                "the sources in detail."
+            )
+    lines += [
         "",
         "Answer only with JSON: an emotion, one to three short segments (each a gesture "
-        "plus a sentence to say), and an action.",
+        "plus a sentence to say), an action, and detail.",
+    ]
+    if cloud:
+        lines.append(f"No code fences or text outside the JSON. Its shape: {REPLY_SHAPE}")
+    lines += [
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
         "Actions:",
@@ -65,17 +123,31 @@ def system_prompt(persona: PersonaSettings, recalled: Recalled, now: datetime) -
         f"their preferences, projects, where things are kept, people or plans. Put it in "
         f"text as one sentence that makes sense on its own later, with real dates, and set "
         f"category.",
-        f"- ask_claude: for anything you can't answer well yourself, such as hard maths, "
-        f"long code, detailed engineering or facts you're unsure of. Put the full question "
-        f"in text and say something short like 'Let me check with Claude.' {owner} sees "
-        f"Claude's answer next.",
     ]
+    if not cloud and helper:
+        lines.append(
+            f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "
+            f"in text and say something short like 'Let me check with {helper}.' {owner} "
+            f"sees {helper}'s answer next."
+        )
+    if expert:
+        lines.append(
+            f"- ask_expert: for the hardest problems, such as long derivations, tricky "
+            f"debugging or big designs, where a stronger model is worth the wait and cost. "
+            f"Put the full question in text and say something short like 'That one's for "
+            f"{expert}.'"
+        )
+    lines.append("Leave detail empty unless there's something to show.")
     if persona.examples:
         lines += ["", "Examples of how you talk:"]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
-    # What changes every turn goes last, so Ollama can reuse the cached prefix above.
-    lines += ["", f"It is {now:%A %d %B %Y, %I:%M %p}.", *memory_block(recalled, owner)]
+    # What changes every turn goes last, so the cached prefix above can be reused.
+    lines += [
+        "",
+        f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
+        *memory_block(recalled, owner),
+    ]
     return "\n".join(lines)
 
 
@@ -97,16 +169,34 @@ def recall_results(query: str, hits: list[Hit], owner: str) -> str:
     )
 
 
+HISTORY_DETAIL_CHARS = 600
+
+
 def history_messages(history: list[Message]) -> list[dict]:
     """Past turns in chat form. Kit's turns are shown as the JSON it gave, which
-    keeps the model answering in that format."""
+    keeps the model answering in that format. Long written detail (code, lists) is
+    cut short so it doesn't crowd the local model's context."""
     out = []
     for m in history:
         if m.role == "user":
             out.append({"role": "user", "content": m.text})
         else:
-            out.append({"role": "assistant", "content": m.reply_json or _as_json(m.text)})
+            out.append({"role": "assistant", "content": _short(m.reply_json) or _as_json(m.text)})
     return out
+
+
+def _short(reply_json: str | None) -> str | None:
+    if not reply_json:
+        return None
+    try:
+        data = json.loads(reply_json)
+    except ValueError:
+        return reply_json
+    detail = data.get("detail") or ""
+    if len(detail) > HISTORY_DETAIL_CHARS:
+        data["detail"] = detail[:HISTORY_DETAIL_CHARS] + " [...]"
+        return json.dumps(data)
+    return reply_json
 
 
 def _as_json(text: str) -> str:

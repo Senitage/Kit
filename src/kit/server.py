@@ -120,10 +120,12 @@ def create_app(
             "name": s.persona.name,
             "version": kit.__version__,
             "settings_problem": store.problem,
+            "routing": s.routing.mode,
             "local_model": s.ollama.model,
-            "claude_model": s.claude.model,
-            "claude_month_usd": round(memory.month_spend(), 4),
-            "claude_cap_usd": s.claude.monthly_cap_usd,
+            "work_model": s.profile("work").model,
+            "expert_model": s.profile("expert").model,
+            "cloud_month_usd": round(memory.month_spend(), 4),
+            "cloud_cap_usd": s.cloud.monthly_cap_usd,
             "memory_facts": len(memory.facts()),
             "memory_items": memory.index.count(),
             "memory_search": "words only: " + brain.recall.embed_problem
@@ -244,7 +246,7 @@ def create_app(
     def spend() -> dict:
         return {
             "month_usd": round(memory.month_spend(), 4),
-            "cap_usd": store.current().claude.monthly_cap_usd,
+            "cap_usd": store.current().cloud.monthly_cap_usd,
             "log": [s.__dict__ for s in memory.spend_log()],
         }
 

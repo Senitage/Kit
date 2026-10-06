@@ -220,3 +220,108 @@ async def run_memory_eval(memory, learner, recall, owner: str = "Dan") -> Memory
         count = sum(text in f for f in current)
         report.tidy.append((f"one fact about '{text}' ({count} found)", count <= 1))
     return report
+
+
+# Compare: the same real questions through two or more cloud models, side by side.
+
+COMPARE_PROMPTS = [
+    "What's the weather looking like this afternoon?",
+    "How much is a Bambu Lab P1S printer at the moment, and where's cheapest?",
+    "What's a good flotation recovery for a copper sulphide ore, and what drives it?",
+    "Derive the Bond work index power equation and work it for a 150 micron P80 from a "
+    "2 mm F80 with a work index of 14 kWh/t.",
+    "Write a Python function that reads a CSV of pump run hours and flags any pump over "
+    "its service interval.",
+    "My thickener underflow density keeps dropping. Walk me through what to check.",
+    "Explain Kalman filters properly, with the maths, in a way I can use for plant data.",
+    "What's new in the latest Python release that matters for data work?",
+    "Should I use pandas or polars for a 2 GB CSV I process daily? Be specific.",
+    "Plan a two-day test schedule for a new cyclone feed pump, with what to log.",
+]
+
+
+@dataclass
+class CompareResult:
+    prompt: str
+    model: str
+    ok: bool
+    seconds: float
+    cost_usd: float = 0.0
+    searches: int = 0
+    said: str = ""
+    detail: str = ""
+    error: str = ""
+
+
+async def run_compare(
+    cloud,
+    settings: Settings,
+    names: list[str],
+    prompts: list[str],
+    now: datetime,
+    clock: Callable[[], float] = time.perf_counter,
+    on_result: Callable[[CompareResult], None] | None = None,
+) -> list[CompareResult]:
+    """Ask each model profile in ``names`` every prompt, as Kit's work model would be
+    asked (persona included, no memories). Every call is real and is logged as spend."""
+    from kit.cloud import CloudError
+    from kit.reply import parse_cloud_reply
+
+    results = []
+    for prompt in prompts:
+        for name in names:
+            profile = settings.models[name]
+            system = system_prompt(
+                settings.persona,
+                Recalled([], [], []),
+                now,
+                role="work",
+                mode=settings.routing.mode,
+                helper=None,
+                web_search=profile.web_search,
+            )
+            messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+            start = clock()
+            try:
+                answer = await cloud.answer(profile, messages, settings, prompt)
+                reply = parse_cloud_reply(answer.text)
+                result = CompareResult(
+                    prompt,
+                    name,
+                    True,
+                    clock() - start,
+                    answer.cost_usd,
+                    answer.searches,
+                    reply.text,
+                    reply.detail,
+                )
+            except CloudError as e:
+                result = CompareResult(prompt, name, False, clock() - start, error=str(e))
+            results.append(result)
+            if on_result:
+                on_result(result)
+    return results
+
+
+def compare_report(results: list[CompareResult], names: list[str]) -> str:
+    """The full answers as Markdown, one section per question, for reading side by side."""
+    lines = ["# Model comparison", ""]
+    for name in names:
+        mine = [r for r in results if r.model == name]
+        ok = [r for r in mine if r.ok]
+        median = statistics.median(r.seconds for r in ok) if ok else 0.0
+        lines.append(
+            f"- **{name}**: {len(ok)}/{len(mine)} answered, median {median:.1f}s, "
+            f"${sum(r.cost_usd for r in mine):.3f} in total, "
+            f"{sum(r.searches for r in mine)} searches"
+        )
+    for prompt in dict.fromkeys(r.prompt for r in results):
+        lines += ["", f"## {prompt}"]
+        for r in results:
+            if r.prompt != prompt:
+                continue
+            lines += ["", f"### {r.model} ({r.seconds:.1f}s, ${r.cost_usd:.4f})", ""]
+            lines.append(r.said if r.ok else f"Failed: {r.error}")
+            if r.detail:
+                lines += ["", r.detail]
+    return "\n".join(lines) + "\n"

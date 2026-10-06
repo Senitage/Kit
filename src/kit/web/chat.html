@@ -25,6 +25,7 @@
   .user { align-self: flex-end; background: var(--me); color: var(--me-text); }
   .kit { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); }
   .kit.claude { background: var(--claude); }
+  .detail { display: block; margin-top: .5em; white-space: pre-wrap; font: .9em ui-monospace, monospace; }
   .meta { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
   .error { align-self: center; color: var(--error); font-size: 14px; }
   form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line);
@@ -65,6 +66,14 @@ function bubble(cls, text) {
   log.scrollTop = log.scrollHeight;
   return div;
 }
+const isCloud = (source) => source === "cloud" || source === "claude";
+function detail(div, reply) {
+  if (!reply || !reply.detail) return;
+  const pre = document.createElement("span");
+  pre.className = "detail";
+  pre.textContent = reply.detail;
+  div.appendChild(pre);
+}
 function meta(div, reply, extra) {
   const span = document.createElement("span");
   span.className = "meta";
@@ -77,7 +86,10 @@ async function loadHistory() {
   if (r.status === 401) { try { localStorage.removeItem("kitToken"); } catch (e) {} bubble("error", "Wrong token. Reload to enter it again."); return; }
   for (const m of await r.json()) {
     if (m.role === "user") bubble("user", m.text);
-    else { const d = bubble("kit" + (m.source === "claude" ? " claude" : ""), m.text); if (m.reply) meta(d, m.reply, m.source === "claude" ? ["Claude"] : []); }
+    else {
+      const d = bubble("kit" + (isCloud(m.source) ? " claude" : ""), m.reply ? m.reply.segments.map(x => x.say).join(" ") : m.text);
+      if (m.reply) { detail(d, m.reply); meta(d, m.reply, isCloud(m.source) ? ["cloud"] : []); }
+    }
   }
   const s = await fetch("/api/health").then(r => r.json());
   document.getElementById("name").textContent = s.name;
@@ -102,17 +114,23 @@ async function send(text) {
       if (!line.trim()) continue;
       const ev = JSON.parse(line);
       if (ev.type === "say") {
-        if (!current) { current = bubble("kit" + (ev.source === "claude" ? " claude" : ""), ""); stateEl.textContent = "speaking"; }
+        if (!current) { current = bubble("kit" + (isCloud(ev.source) ? " claude" : ""), ""); stateEl.textContent = "speaking"; }
         current.firstChild ? current.firstChild.nodeValue += ev.text : current.textContent = ev.text;
         log.scrollTop = log.scrollHeight;
       } else if (ev.type === "reply") {
         if (!current) current = bubble("kit", "");
         current.textContent = ev.reply.segments.map(s => s.say).join(" ");
-        const extra = ev.source === "claude" ? ["Claude " + ev.model, "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
+        const extra = isCloud(ev.source) ? [ev.label + " (" + ev.model + ")", "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
+        if (ev.searches) extra.push(ev.searches + " search" + (ev.searches > 1 ? "es" : ""));
+        detail(current, ev.reply);
         meta(current, ev.reply, extra);
         current = null;
-      } else if (ev.type === "asking_claude") {
-        stateEl.textContent = "asking Claude";
+      } else if (ev.type === "handing_off") {
+        stateEl.textContent = "asking " + ev.to;
+        current = null;
+      } else if (ev.type === "notice") {
+        bubble("error", ev.message).style.color = "var(--muted)";
+        current = null;
       } else if (ev.type === "remembered") {
         const label = ev.decision === "same" ? "Already knew: " : ev.decision === "update" ? "Updated memory: " : "Remembered: ";
         bubble("error", label + ev.fact).style.color = "var(--muted)";

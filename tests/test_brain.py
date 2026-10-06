@@ -4,9 +4,8 @@ from datetime import timedelta
 
 import pytest
 
-from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, reply
-from kit.brain import Brain
-from kit.expert import Expert
+from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from kit.brain import Brain, route
 from kit.memory import Memory
 from kit.recall import Recall
 from kit.settings import Settings
@@ -24,13 +23,17 @@ def memory(paths, clock):
     m.close()
 
 
-def make(memory, *outputs, settings=None, claude=None, error=None, embedder=None):
+def make(memory, *outputs, settings=None, claude=None, error=None, embedder=None, key="k"):
     model = FakeModel(*outputs, error=error)
     claude = claude or FakeAnthropic()
     s = settings or Settings.model_validate({"memory": {"min_similarity": 0.3}})
     recall = Recall(memory, embedder or FakeEmbedder(), lambda: s)
-    expert = Expert(memory, lambda: "k", claude.factory)
-    return Brain(lambda: s, memory, model, expert, recall), model, claude
+    cloud = make_cloud(memory, claude, key=key)
+    return Brain(lambda: s, memory, model, cloud, recall), model, claude
+
+
+def settings_with(**sections):
+    return Settings.model_validate({"memory": {"min_similarity": 0.3}, **sections})
 
 
 def decision(what, which=0, fact=""):
@@ -101,7 +104,7 @@ def test_persona_change_applies_next_message(memory):
     settings = Settings()
     model = FakeModel()
     recall = Recall(memory, None, lambda: settings)
-    brain = Brain(lambda: settings, memory, model, Expert(memory, lambda: None), recall)
+    brain = Brain(lambda: settings, memory, model, make_cloud(memory, key=None), recall)
     collect(brain.chat("hi"))
     settings = Settings.model_validate({"persona": {"name": "Changed"}})
     collect(brain.chat("hi"))
@@ -163,36 +166,158 @@ def test_remember_action_updates(memory):
     assert [f.text for f in memory.facts()] == ["Dan drives a Ford Ranger."]
 
 
-def test_model_asks_for_claude_with_memories(memory):
+def test_local_model_hands_off_with_memories(memory):
     memory.add_fact("Dan is studying Kalman filters for the flotation model.", "project")
     brain, _, claude = make(
-        memory, reply("Let me check with Claude.", action="ask_claude", text="Kalman maths?")
+        memory, reply("Let me check with Sonnet.", action="ask_cloud", text="Kalman maths?")
     )
     events = collect(brain.chat("Explain Kalman filters properly"))
-    assert "asking_claude" in [e["type"] for e in events]
+    handing = next(e for e in events if e["type"] == "handing_off")
+    assert handing["to"] == "Sonnet" and handing["question"] == "Kalman maths?"
     last = events[-1]
-    assert last["source"] == "claude" and last["cost_usd"] > 0
+    assert last["source"] == "cloud" and last["cost_usd"] > 0 and last["label"] == "Sonnet"
     call = claude.calls[0]
-    assert call["messages"][-1]["content"] == "Kalman maths?"
-    assert "flotation model" in call["system"][0]["text"]
-    assert memory.recent(1)[0].source == "claude"
+    assert call["model"] == "claude-sonnet-5-5"
+    assert call["messages"][-1]["content"] == "Explain Kalman filters properly"
+    fixed, this_turn = (block["text"] for block in call["system"])
+    assert "flotation model" in this_turn and "search the web" in fixed
+    system = fixed + this_turn
+    assert "ask_cloud" not in system  # nowhere further to hand it but the expert
+    assert "ask_expert" in system
+    assert memory.recent(1)[0].source == "cloud"
+
+
+def test_local_prompt_offers_hand_off_by_mode(memory):
+    brain, model, _ = make(memory, settings=settings_with(routing={"mode": "local-heavy"}))
+    collect(brain.chat("hi"))
+    heavy = model.calls[0][0]["content"]
+    brain, model, _ = make(memory, settings=settings_with(routing={"mode": "balanced"}))
+    collect(brain.chat("hi"))
+    balanced = model.calls[0][0]["content"]
+    assert "ask_cloud: for anything you can't answer well" in heavy
+    assert "ask_cloud: for anything more than small talk or a quick command" in balanced
+    assert "Let me check with Sonnet" in balanced
 
 
 def test_saying_ask_claude_skips_the_local_model(memory):
     brain, model, claude = make(memory)
     events = collect(brain.chat("Ask Claude why the sky is blue"))
     assert model.calls == []
+    assert events[0] == {"type": "say", "text": "Sure, asking Sonnet."}
     assert claude.calls[0]["messages"][-1]["content"] == "Ask Claude why the sky is blue"
-    assert events[-1]["source"] == "claude"
+    assert events[-1]["source"] == "cloud"
 
 
-def test_claude_context_alternates(memory):
+def test_think_hard_goes_to_the_expert(memory):
+    brain, model, claude = make(memory)
+    collect(brain.chat("Think hard about the Bond work index for this ore"))
+    assert model.calls == [] and claude.calls[0]["model"] == "claude-opus-5-5"
+
+
+def test_cloud_context_alternates(memory):
     brain, _, claude = make(memory, reply("a"), reply("b"))
     collect(brain.chat("one"))
     collect(brain.chat("two"))
     collect(brain.chat("ask claude three"))
     roles = [m["role"] for m in claude.calls[0]["messages"]]
     assert roles == ["user", "assistant", "user", "assistant", "user"]
+
+
+def test_cloud_first_skips_the_local_model(memory):
+    brain, model, claude = make(memory, settings=settings_with(routing={"mode": "cloud-first"}))
+    events = collect(brain.chat("Morning"))
+    assert model.calls == [] and len(claude.calls) == 1
+    assert [e["type"] for e in events] == ["say", "reply"]
+    assert events[-1]["reply"]["segments"][0]["say"] == "The answer is 42."
+
+
+def test_keep_it_local_wins_over_cloud_first(memory):
+    brain, model, claude = make(
+        memory, reply("Sure."), settings=settings_with(routing={"mode": "cloud-first"})
+    )
+    collect(brain.chat("Keep it local: what's 2 and 2?"))
+    assert claude.calls == [] and len(model.calls) == 1
+    assert "ask_cloud" not in model.calls[0][0]["content"]
+
+
+def test_cloud_down_falls_back_to_local(memory):
+    s = settings_with(routing={"mode": "cloud-first"})
+    brain, model, _ = make(memory, reply("Morning."), settings=s, key=None)
+    events = collect(brain.chat("Morning"))
+    notice = next(e for e in events if e["type"] == "notice")
+    assert "API key" in notice["message"] and "answer myself" in notice["message"]
+    assert events[-1]["source"] == "local" and len(model.calls) == 1
+
+
+def test_cloud_down_without_fallback_says_why(memory):
+    s = settings_with(routing={"mode": "cloud-first", "fallback_to_local": False})
+    brain, model, _ = make(memory, settings=s, key=None)
+    events = collect(brain.chat("Morning"))
+    assert model.calls == [] and "API key" in events[-1]["reply"]["segments"][0]["say"]
+
+
+def test_asked_by_name_and_down_says_why(memory):
+    brain, model, _ = make(memory, key=None)
+    events = collect(brain.chat("ask claude about pumps"))
+    assert model.calls == [] and "API key" in events[-1]["reply"]["segments"][0]["say"]
+
+
+def test_cloud_reply_json_is_used_and_can_remember(memory):
+    answer = reply(
+        "Noted, Emma's on the 14th.", action="remember", text="Emma's birthday is 14 March."
+    )
+    s = settings_with(routing={"mode": "cloud-first"})
+    brain, _, _ = make(memory, settings=s, claude=FakeAnthropic(answer=answer))
+    events = collect(brain.chat("Remember Emma's birthday is 14 March"))
+    assert next(e for e in events if e["type"] == "remembered")["decision"] == "new"
+    assert memory.facts()[0].text == "Emma's birthday is 14 March."
+
+
+def test_cloud_detail_is_shown_and_indexed(memory):
+    answer = json.dumps(
+        {
+            "emotion": "proud",
+            "segments": [{"gesture": "nod", "say": "Here's the function."}],
+            "action": {"kind": "none"},
+            "detail": "def flag(df): ...",
+        }
+    )
+    s = settings_with(routing={"mode": "cloud-first"})
+    brain, _, _ = make(memory, settings=s, claude=FakeAnthropic(answer=answer))
+    events = collect(brain.chat("Write the pump flag function"))
+    assert events[-1]["reply"]["detail"] == "def flag(df): ..."
+    assert "def flag" in memory.index.items("conversation")[0].text
+
+
+def test_work_model_can_ask_the_expert(memory):
+    first = reply("That one's for Opus.", action="ask_expert", text="Derive it")
+    claude = FakeAnthropic(answer=[first, "Here's the derivation."])
+    s = settings_with(routing={"mode": "cloud-first"})
+    brain, _, _ = make(memory, settings=s, claude=claude)
+    events = collect(brain.chat("Derive the Bond equation"))
+    assert [c["model"] for c in claude.calls] == ["claude-sonnet-5-5", "claude-opus-5-5"]
+    assert next(e for e in events if e["type"] == "handing_off")["to"] == "Opus"
+    assert "ask_expert" not in claude.calls[1]["system"][0]["text"]
+
+
+def test_a_local_profile_can_do_the_work(memory):
+    s = settings_with(
+        routing={"mode": "cloud-first", "work": "big"},
+        models={"big": {"provider": "ollama", "model": "qwen3.8:27b"}},
+    )
+    brain, model, claude = make(memory, reply("Sure."), settings=s)
+    collect(brain.chat("hi"))
+    assert claude.calls == [] and model.models == ["qwen3.8:27b"]
+
+
+def test_routing_phrases():
+    s = Settings()
+    assert route("keep it local please", s) == ("local", True)
+    assert route("ask Gemini what it thinks", s) == ("work", True)
+    assert route("think carefully about this", s) == ("expert", True)
+    assert route("morning", s) == ("local", False)
+    cloud_first = Settings.model_validate({"routing": {"mode": "cloud-first"}})
+    assert route("morning", cloud_first) == ("work", False)
 
 
 def test_broken_json_keeps_the_words(memory):

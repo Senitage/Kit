@@ -10,19 +10,32 @@ import secrets
 
 from kit.paths import KitPaths
 
-ANTHROPIC_KEY_ENV = "ANTHROPIC_API_KEY"
-ANTHROPIC_KEY_FILE = "anthropic_api_key"
+# Where each cloud provider's API key is looked for: environment variables first,
+# then a file in the secrets folder.
+API_KEYS: dict[str, tuple[tuple[str, ...], str]] = {
+    "anthropic": (("ANTHROPIC_API_KEY",), "anthropic_api_key"),
+    "openai": (("OPENAI_API_KEY",), "openai_api_key"),
+    "google": (("GEMINI_API_KEY", "GOOGLE_API_KEY"), "gemini_api_key"),
+}
 
 
-def anthropic_api_key(paths: KitPaths) -> str | None:
-    """The Anthropic API key from the environment, else from the secrets folder."""
-    key = os.environ.get(ANTHROPIC_KEY_ENV)
-    if key:
-        return key.strip()
-    key_file = paths.secrets_dir / ANTHROPIC_KEY_FILE
+def cloud_api_key(paths: KitPaths, provider: str) -> str | None:
+    """A provider's API key from the environment, else from the secrets folder."""
+    if provider not in API_KEYS:
+        return None
+    env_names, file_name = API_KEYS[provider]
+    for env in env_names:
+        key = os.environ.get(env)
+        if key and key.strip():
+            return key.strip()
+    key_file = paths.secrets_dir / file_name
     if key_file.is_file():
         return key_file.read_text(encoding="utf-8").strip() or None
     return None
+
+
+def anthropic_api_key(paths: KitPaths) -> str | None:
+    return cloud_api_key(paths, "anthropic")
 
 
 API_TOKEN_FILE = "api_token"

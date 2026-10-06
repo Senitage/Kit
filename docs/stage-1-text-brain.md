@@ -1,12 +1,15 @@
 # Stage 1: text brain
 
 Kit can now chat by text in a browser or terminal, in character, with memory
-that survives restarts. Hard questions go to Claude, and every Claude call's
-cost goes in a spend log with a monthly cap. Settings can be changed from a
-built-in page or `kit config`, with history and undo.
+that survives restarts. Small talk and quick things stay on the local model;
+real questions, work and anything current (weather, prices, news) go to a cloud
+model with web search. Which models do what, and how much stays local, are
+settings you can change at any time. Every cloud call's cost goes in a spend log
+with a monthly cap. Settings can be changed from a built-in page or
+`kit config`, with history and undo.
 
 Finish [stage 0](stage-0-setup.md) first: `kit check` should pass for the data
-folder, GPU, Ollama and Claude.
+folder, GPU, Ollama and the cloud models.
 
 ## 1. Update and start Kit
 
@@ -41,10 +44,12 @@ firewall rule is needed.
   you see the emotion and gestures Kit picked. The on-screen helper uses those
   names in stage 2, and the arm uses them later.
 - **Terminal chat:** `kit chat` does the same thing without a browser.
-- **Claude for hard things:** say "ask Claude ..." to go straight to Claude, or
-  Kit decides itself when a question is beyond the local model. Claude answers
-  in Kit's voice. `kit memory spend` shows the month's spend. Kit stops asking
-  Claude once `claude.monthly_cap_usd` is reached (default $20).
+- **Local and cloud, as one Kit:** the local model and the cloud models get
+  the same persona, memories and conversation, and answer in the same format,
+  so they sound like the same Kit. Cloud answers can carry written detail (code,
+  steps, sources) that shows on screen but isn't spoken. See section 3 for
+  choosing models. `kit memory spend` shows the month's spend, and Kit stops
+  using cloud models once `cloud.monthly_cap_usd` is reached (default $40).
 - **Memory** (how it works is in [memory.md](memory.md)):
   - Every turn, Kit searches what it knows for anything relevant to your
     message, by words and by meaning, and sees those memories with their
@@ -65,7 +70,8 @@ firewall rule is needed.
   from a terminal: `kit memory facts`, `search`, `remember`, `pin`, `forget`,
   `history`, `days`.
 - **Settings page** at `/settings`: a form built from Kit's settings schema.
-  Persona, models, the Claude cap and the brain's address are all there.
+  Persona, routing, each model profile, the cloud budget and the brain's
+  address are all there.
   Changes apply from the next message, with no restart. Every change keeps
   the previous version, and "Undo last change" steps back.
 - **`kit config`** does the same from a terminal. It's the fallback when no
@@ -85,7 +91,71 @@ firewall rule is needed.
   running on the last version that worked and says so on the settings page and
   in `kit config show`. Fix the file or save from the page to clear it.
 
-## 3. Run Kit as a service
+## 3. Choose the models and how much stays local
+
+`kit models` shows the model profiles, what each costs, and which one does what:
+
+- **work** answers real questions and does the web searches (default `sonnet`,
+  Claude Sonnet 5.5).
+- **expert** takes the hardest problems (default `opus`, Claude Opus 5.5). The
+  work model hands over to it when a question deserves it.
+- The **local model** is `ollama.model` (qwen3:8b).
+
+Built-in profiles are `sonnet`, `opus`, `gpt-sol` (OpenAI GPT-6.1 Sol) and
+`gemini-flash` (Google Gemini 3.8 Flash). Switch with one command; it applies
+from the next message:
+
+```
+kit models work gpt-sol                 # GPT does the work from now on
+kit models expert sonnet                # no separate expert
+kit config set models.sonnet.effort medium     # think harder (costs more)
+kit config set models.gemini-flash.input_usd_per_mtok 1.5   # prices change
+```
+
+Each provider needs its own API key in the secrets folder, the same way as the
+Anthropic key in stage 0: `openai_api_key` from platform.openai.com, or
+`gemini_api_key` from aistudio.google.com (use a paid key: Google trains on
+free-tier data). `kit check` tests the keys for the work and expert models.
+
+How much stays local is `routing.mode`:
+
+| Mode | Local model answers | Cloud answers |
+| --- | --- | --- |
+| `local-heavy` | everything it can | only what it can't do well |
+| `balanced` (default) | small talk and quick commands | real questions, work, anything current |
+| `cloud-first` | nothing, unless the cloud is down | everything |
+
+```
+kit config set routing.mode cloud-first
+```
+
+For one message, say "keep it local", "ask Claude" (or "ask GPT", "ask
+Gemini", "ask the cloud", which all mean the work model), or "think hard" for
+the expert. If the cloud can't be reached, or there's no key, or the budget is
+used up, the local model answers instead and says why
+(`routing.fallback_to_local`).
+
+To compare models on real questions before switching, ask them the same ten
+questions side by side. This spends real money, roughly 20 cents to a dollar a
+model:
+
+```
+kit eval compare --models sonnet gpt-sol gemini-flash
+```
+
+It prints each model's time and cost, and writes the full answers side by side
+to `state/evals/` in the data folder.
+
+To try a bigger local model later (a 24 GB card), add a profile and point a
+role at it:
+
+```
+kit config set models.big.provider ollama
+kit config set models.big.model qwen3.8:27b
+kit models work big
+```
+
+## 4. Run Kit as a service
 
 Once you're happy with it, make Kit a systemd service, like Ollama. Stage 0's
 `Kit WSL` scheduled task keeps Ubuntu running, so Kit starts when Ubuntu does
@@ -117,15 +187,25 @@ systemctl status kit
 folder keeps the warnings and errors. After a `git pull` and `pip install -e .`,
 run `sudo systemctl restart kit`.
 
-## 4. Test before moving on
+## 5. Test before moving on
 
 - [ ] **In character over 20 messages:** chat in the browser for 20 messages.
       Kit stays Kit: short replies, the persona's tone, sensible gestures.
 - [ ] **Valid structured output:** run `kit eval`. It sends 50 prompts to the
       local model and needs `valid replies: 50/50`.
-- [ ] **Claude:** "ask Claude why the sky is blue" and a genuinely hard
-      question (for example "explain Kalman filters properly, with the maths")
-      both come back from Claude, and both show in `kit memory spend`.
+- [ ] **Balanced routing:** "morning" is answered locally; "what's the
+      weather this afternoon?" and "explain Kalman filters properly, with the
+      maths" go to the work model, the weather one with a web search. All
+      cloud answers show in `kit memory spend`.
+- [ ] **One message, your choice:** "ask Claude why the sky is blue" goes
+      straight to the cloud; "think hard about ..." goes to the expert; "keep
+      it local: ..." stays local.
+- [ ] **Swap a model:** `kit models work opus`, ask a question, and the chat
+      page shows Opus answered. Switch back with `kit models work sonnet`.
+- [ ] **Cloud-first and back:** `kit config set routing.mode cloud-first`,
+      and small talk now comes from the cloud. Set it back to `balanced`.
+- [ ] **Offline:** with the internet unplugged (or the key file renamed),
+      Kit says the cloud isn't available and answers locally.
 - [ ] **Remembers yesterday:** tell Kit something ("remember my sister's
       birthday is 14 March"). Tomorrow, after restarting `kit serve`, ask about
       it in different words ("when's Emma's birthday?").
@@ -170,5 +250,8 @@ then run it again.
   (try 0.45). If unknown questions recall unrelated facts, raise it.
 - **Status says "words only":** the embedding model isn't answering. Check
   `ollama list` shows `nomic-embed-text`, then run `kit memory reindex`.
-- **Claude says the budget is used up:** raise `claude.monthly_cap_usd`, or
+- **Kit says the cloud budget is used up:** raise `cloud.monthly_cap_usd`, or
   wait for the new month.
+- **Too much goes to the cloud (or too little):** move `routing.mode` one step
+  towards `local-heavy` (or `cloud-first`). In `balanced`, adding a persona
+  rule such as "Answer questions about the time and date yourself" also helps.

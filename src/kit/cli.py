@@ -13,13 +13,13 @@ import httpx
 
 from kit import checks
 from kit.checks import CheckResult, Status
-from kit.credentials import anthropic_api_key, api_token
+from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError, load_settings, settings_to_toml
 from kit.settings_store import SettingsStore
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "claude"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud"]
 
 
 def cmd_paths(paths: KitPaths) -> int:
@@ -61,8 +61,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.append(checks.check_tailscale())
     if "nas" not in skip:
         results.extend(checks.check_nas(settings))
-    if "claude" not in skip:
-        results.append(checks.check_claude(settings, anthropic_api_key(paths)))
+    if "cloud" not in skip:
+        results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
     return results
 
 
@@ -83,6 +83,61 @@ def parse_value(text: str):
         return text
 
 
+def nested_patch(settings: Settings, keys: list[str], value) -> dict:
+    """A change to one setting, however deep (models.sonnet.effort). Deeper tables
+    are sent whole, with the one value changed, because a change replaces a
+    section's fields whole."""
+    section = keys[0]
+    if len(keys) == 2:
+        return {section: {keys[1]: value}}
+    current = settings.model_dump(mode="json").get(section)
+    if not isinstance(current, dict):
+        current = {}
+    table = current.get(keys[1])
+    table = dict(table) if isinstance(table, dict) else {}
+    node = table
+    for key in keys[2:-1]:
+        node[key] = dict(node[key]) if isinstance(node.get(key), dict) else {}
+        node = node[key]
+    node[keys[-1]] = value
+    return {section: {keys[1]: table}}
+
+
+def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
+    """Show the models Kit can use and which one does what, or switch one."""
+    store = SettingsStore(paths)
+    if args.role:
+        if args.name is None:
+            print("give a model name too, for example: kit models work gpt-sol")
+            return 2
+        try:
+            store.update({"routing": {args.role: args.name}}, "cli")
+        except SettingsError as e:
+            print(e)
+            return 1
+        print(f"{args.role} now uses {args.name}; Kit uses it from the next message")
+        return 0
+    s = store.current()
+    roles = {s.routing.work: "work", s.routing.expert: "expert"}
+    if s.routing.work == s.routing.expert:
+        roles[s.routing.work] = "work, expert"
+    print(f"routing: {s.routing.mode}   local model: {s.ollama.model}")
+    print(f"cloud budget: ${s.cloud.monthly_cap_usd:.2f} a month\n")
+    print(
+        f"  {'name':<14} {'role':<13} {'provider':<10} {'model':<20} {'effort':<7}"
+        f" {'$ in/out per M':<15} {'search/1k'}"
+    )
+    for name, m in s.models.items():
+        price = f"{m.input_usd_per_mtok:g}/{m.output_usd_per_mtok:g}"
+        search = f"${m.search_usd_per_k:g}" if m.web_search else "off"
+        print(
+            f"  {name:<14} {roles.get(name, ''):<13} {m.provider:<10} {m.model:<20}"
+            f" {m.effort:<7} {price:<15} {search}"
+        )
+    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-first")
+    return 0
+
+
 def cmd_config(paths: KitPaths, args: argparse.Namespace) -> int:
     store = SettingsStore(paths)
     try:
@@ -91,11 +146,11 @@ def cmd_config(paths: KitPaths, args: argparse.Namespace) -> int:
         elif args.action == "schema":
             print(json.dumps(Settings.model_json_schema(), indent=2))
         elif args.action == "set":
-            section, _, field = args.key.partition(".")
-            if not field:
-                print("use section.field, for example persona.name")
+            keys = args.key.split(".")
+            if len(keys) < 2 or not all(keys):
+                print("use section.field, for example persona.name or models.sonnet.effort")
                 return 2
-            store.update({section: {field: parse_value(args.value)}}, "cli")
+            store.update(nested_patch(store.current(), keys, parse_value(args.value)), "cli")
             print(f"set {args.key}; Kit uses it from the next message")
         elif args.action == "undo":
             store.undo()
@@ -145,7 +200,6 @@ def setup_logging(paths: KitPaths) -> None:
 def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     from kit.brain import Brain
     from kit.embed import OllamaEmbedder
-    from kit.expert import Expert
     from kit.local_model import OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
@@ -154,9 +208,20 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     store = SettingsStore(paths)
     memory = Memory(paths.state_dir / "memory.db")
     model = OllamaModel(lambda: store.current().ollama, client)
-    expert = Expert(memory, lambda: anthropic_api_key(paths))
+    cloud = make_cloud(paths, memory, client)
     recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
-    return store, memory, Brain(store.current, memory, model, expert, recall)
+    return store, memory, Brain(store.current, memory, model, cloud, recall)
+
+
+def make_cloud(paths: KitPaths, memory, client: httpx.AsyncClient):
+    from kit.cloud import AnthropicProvider, Cloud, GoogleProvider, OpenAIProvider
+
+    providers = {
+        "anthropic": AnthropicProvider(),
+        "openai": OpenAIProvider(client),
+        "google": GoogleProvider(client),
+    }
+    return Cloud(memory, lambda provider: cloud_api_key(paths, provider), providers)
 
 
 def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -205,11 +270,17 @@ async def _chat_loop(paths: KitPaths) -> int:
                 elif kind == "reply":
                     r = event["reply"]
                     tags = [r["emotion"], *(s["gesture"] for s in r["segments"])]
-                    if event["source"] == "claude":
+                    if event["source"] == "cloud":
                         tags += [event["model"], f"${event['cost_usd']:.3f}"]
+                        if event["searches"]:
+                            tags.append(f"{event['searches']} search(es)")
                     print(f"  [{' · '.join(t for t in tags if t != 'none')}]")
-                elif kind == "asking_claude":
-                    print(f"{name.lower()}> (asking Claude) ", end="", flush=True)
+                    if r.get("detail"):
+                        print(f"\n{r['detail']}\n")
+                elif kind == "handing_off":
+                    print(f"{name.lower()}> (asking {event['to']}) ", end="", flush=True)
+                elif kind == "notice":
+                    print(f"\n  ({event['message']})\n{name.lower()}> ", end="", flush=True)
                 elif kind == "remembered":
                     print(f"  (remembered: {event['fact']})")
                 elif kind == "error":
@@ -262,8 +333,8 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
         keep = SettingsStore(paths).current().memory.backups_keep
         print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
     elif args.action == "spend":
-        cap = SettingsStore(paths).current().claude.monthly_cap_usd
-        print(f"Claude this month: ${memory.month_spend():.2f} of ${cap:.2f}")
+        cap = SettingsStore(paths).current().cloud.monthly_cap_usd
+        print(f"Cloud models this month: ${memory.month_spend():.2f} of ${cap:.2f}")
         for s in memory.spend_log(20):
             print(
                 f"  {s.at}  {s.model}  in {s.input_tokens}  out {s.output_tokens}"
@@ -344,6 +415,47 @@ async def _eval(paths: KitPaths, n: int) -> int:
     return 0 if report.valid == len(report.results) else 1
 
 
+async def _eval_compare(paths: KitPaths, names: list[str], n: int) -> int:
+    """Ask several cloud models the same questions and write their answers side by side."""
+    from datetime import datetime
+
+    from kit.evals import COMPARE_PROMPTS, compare_report, run_compare
+    from kit.memory import Memory
+
+    paths.ensure()
+    settings = SettingsStore(paths).current()
+    unknown = [name for name in names if name not in settings.models]
+    if unknown:
+        print(f"unknown model(s): {', '.join(unknown)}; see `kit models`")
+        return 2
+    prompts = COMPARE_PROMPTS[: max(1, n)]
+    print(f"asking {', '.join(names)} {len(prompts)} questions each; this spends real money")
+    memory = Memory(paths.state_dir / "memory.db")
+    try:
+        async with httpx.AsyncClient() as client:
+            cloud = make_cloud(paths, memory, client)
+
+            def show(r):
+                mark = "ok  " if r.ok else "FAIL"
+                print(f"{mark} {r.model:<14} {r.seconds:5.1f}s  ${r.cost_usd:.4f}  {r.prompt[:50]}")
+                if r.error:
+                    print(f"       {r.error}")
+
+            results = await run_compare(
+                cloud, settings, names, prompts, datetime.now(), on_result=show
+            )
+    finally:
+        memory.close()
+    out = paths.state_dir / "evals" / f"compare-{datetime.now():%Y%m%d-%H%M%S}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    report = compare_report(results, names)
+    out.write_text(report, encoding="utf-8")
+    print()
+    print("\n".join(line for line in report.splitlines() if line.startswith("- **")))
+    print(f"\nfull answers, side by side: {out}")
+    return 0 if all(r.ok for r in results) else 1
+
+
 async def _eval_memory(paths: KitPaths) -> int:
     """Run the memory test in a scratch memory inside the data folder, then delete it."""
     from kit.embed import OllamaEmbedder
@@ -420,6 +532,10 @@ def main(argv: list[str] | None = None) -> int:
     crestore.add_argument("version")
     csub.add_parser("check", help="check the settings file is valid")
 
+    models = sub.add_parser("models", help="see the models Kit uses, or switch one")
+    models.add_argument("role", nargs="?", choices=["work", "expert"], help="role to switch")
+    models.add_argument("name", nargs="?", help="model profile to use for it")
+
     mem = sub.add_parser("memory", help="see what Kit remembers and spends")
     msub = mem.add_subparsers(dest="action", required=True)
     msub.add_parser("facts", help="list what Kit knows (* = pinned)")
@@ -439,11 +555,16 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("summarise", help="summarise finished days now")
     msub.add_parser("reindex", help="build any missing meaning vectors now")
     msub.add_parser("backup", help="back up memory now")
-    msub.add_parser("spend", help="show this month's Claude spend")
+    msub.add_parser("spend", help="show this month's cloud spend")
 
-    ev = sub.add_parser("eval", help="test the local model's replies, or memory recall")
-    ev.add_argument("which", nargs="?", default="replies", choices=["replies", "memory"])
-    ev.add_argument("--n", type=int, default=50, help="replies: how many prompts (default 50)")
+    ev = sub.add_parser(
+        "eval", help="test the local model's replies or memory recall, or compare cloud models"
+    )
+    ev.add_argument("which", nargs="?", default="replies", choices=["replies", "memory", "compare"])
+    ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10)")
+    ev.add_argument(
+        "--models", nargs="+", default=[], help="compare: model profiles, e.g. sonnet gpt-sol"
+    )
 
     args = parser.parse_args(argv)
     paths = KitPaths.default()
@@ -461,10 +582,17 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_chat_loop(paths))
     if args.command == "memory":
         return cmd_memory(paths, args)
+    if args.command == "models":
+        return cmd_models(paths, args)
     if args.command == "eval":
         if args.which == "memory":
             return asyncio.run(_eval_memory(paths))
-        return asyncio.run(_eval(paths, args.n))
+        if args.which == "compare":
+            if not args.models:
+                print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")
+                return 2
+            return asyncio.run(_eval_compare(paths, args.models, args.n or 10))
+        return asyncio.run(_eval(paths, args.n or 50))
     results = run_checks(paths, set(args.skip))
     print_report(results)
     return 1 if any(r.status is Status.FAIL for r in results) else 0
