@@ -73,7 +73,7 @@ update: run `wsl --shutdown` in PowerShell, open Ubuntu again and retry.
 ## 3. Python and the basics
 
 ```
-sudo apt update && sudo apt install -y git curl cifs-utils
+sudo apt update && sudo apt install -y git curl cifs-utils zstd
 python3 --version
 ```
 
