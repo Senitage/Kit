@@ -142,30 +142,79 @@ def parse_reply(text: str) -> Reply:
         raise ReplyError(f"not a valid reply: {e.errors()[0]['msg']}: {text[:200]!r}") from e
 
 
-FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 SPOKEN_LIMIT = 300
 
 
 def parse_cloud_reply(text: str) -> Reply:
     """A cloud model's reply. Cloud models are asked for the same JSON as the local
-    one but not forced into it, so plain text (or JSON wrapped in prose or a code
-    fence) still becomes a reply: a short answer is said, a long one is shown."""
+    one but not forced into it, so this is forgiving: JSON wrapped in prose or a
+    code fence, a half-written attempt before the real one (a web search can split
+    the answer), or a made-up emotion or gesture still give a proper reply. Plain
+    text becomes a reply too: a short answer is said, a long one is shown."""
     text = text.strip()
-    candidates = [FENCE.sub("", text).strip()]
-    start, end = text.find("{"), text.rfind("}")
-    if 0 <= start < end:
-        candidates.append(text[start : end + 1])
-    for candidate in candidates:
-        try:
-            return parse_reply(candidate)
-        except ReplyError:
-            continue
+    for data in reversed(_json_objects(text)):
+        reply = _lenient_reply(data)
+        if reply is not None:
+            return reply
     if len(text) <= SPOKEN_LIMIT:
         return Reply.plain(text)
     first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0][:SPOKEN_LIMIT]
     reply = Reply.plain(first)
     reply.detail = text
     return reply
+
+
+_DECODER = json.JSONDecoder(strict=False)  # allow raw newlines inside strings
+
+
+def _json_objects(text: str) -> list[dict]:
+    """Every complete JSON object in ``text`` that looks like a reply, in order."""
+    found, i = [], text.find("{")
+    while i != -1:
+        try:
+            data, end = _DECODER.raw_decode(text, i)
+        except ValueError:
+            i = text.find("{", i + 1)
+            continue
+        if isinstance(data, dict) and "segments" in data:
+            found.append(data)
+            i = text.find("{", end)
+        else:
+            i = text.find("{", i + 1)
+    return found
+
+
+def _lenient_reply(data: dict) -> Reply | None:
+    """A reply from JSON that's nearly right, with unknown values set to defaults."""
+    segments = []
+    for seg in data.get("segments") or []:
+        if isinstance(seg, dict) and str(seg.get("say", "")).strip():
+            gesture = seg.get("gesture")
+            segments.append(
+                {"say": str(seg["say"]), "gesture": gesture if gesture in GESTURES else "none"}
+            )
+    if not segments:
+        return None
+    raw = data.get("action") if isinstance(data.get("action"), dict) else {}
+    action = Action(kind="none").model_dump()
+    for name in Action.model_fields:
+        if name in raw:
+            try:
+                Action(**{**action, name: raw[name]})
+            except ValidationError:
+                continue
+            action[name] = raw[name]
+    emotion = data.get("emotion")
+    detail = data.get("detail")
+    try:
+        return Reply(
+            emotion=emotion if emotion in EMOTIONS else "neutral",
+            segments=[Segment(**seg) for seg in segments[:6]],
+            action=Action(**action),
+            detail=detail if isinstance(detail, str) else "",
+        )
+    except ValidationError:
+        return None
 
 
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}

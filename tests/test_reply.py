@@ -80,6 +80,43 @@ def test_cloud_replies_are_read_generously():
     assert long.text == "First sentence here." and long.detail.startswith("First sentence")
 
 
+def test_cloud_reply_survives_split_json_and_made_up_values():
+    from kit.reply import parse_cloud_reply
+
+    # A web search splits the answer: a half-written attempt, then the real one,
+    # with an emotion and a gesture that aren't in the list.
+    real = json.dumps(
+        {
+            "emotion": "shrug",
+            "segments": [{"say": "About 24 and sunny.", "gesture": "point_up"}],
+            "action": {"kind": "none", "category": "weather"},
+            "detail": "Max 26 tomorrow.",
+        }
+    )
+    text = '{"emotion": "neutral", "segments": [{"say": "Let me che' + "\n" + real
+    r = parse_cloud_reply(text)
+    assert r.text == "About 24 and sunny."
+    assert r.emotion == "neutral" and r.segments[0].gesture == "none"
+    assert r.action.kind == "none" and r.action.category == "other"
+    assert r.detail == "Max 26 tomorrow."
+
+
+def test_cloud_reply_keeps_good_action_fields():
+    from kit.reply import parse_cloud_reply
+
+    data = {
+        "emotion": "happy",
+        "segments": [{"say": "Noted."}, {"say": ""}],
+        "action": {"kind": "remember", "text": "Dan likes sun.", "category": "bogus"},
+    }
+    r = parse_cloud_reply(json.dumps(data))
+    assert [s.say for s in r.segments] == ["Noted."]
+    assert r.action.kind == "remember" and r.action.text == "Dan likes sun."
+    assert r.action.category == "other"
+    bad_kind = parse_cloud_reply(json.dumps({**data, "action": {"kind": "explode"}}))
+    assert bad_kind.action.kind == "none" and bad_kind.text == "Noted."
+
+
 def test_full_text_adds_detail():
     from kit.reply import Reply
 
