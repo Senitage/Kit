@@ -238,10 +238,13 @@ run `sudo systemctl restart kit`.
       Kit stays Kit: short replies, the persona's tone, sensible gestures.
 - [ ] **Valid structured output:** run `kit eval`. It sends 50 prompts to the
       local model and needs `valid replies: 50/50`.
-- [ ] **Balanced routing:** "morning" is answered locally; "what's the
-      weather this afternoon?" and "explain Kalman filters properly, with the
-      maths" go to the work model, the weather one with a web search. All
-      cloud answers show in `kit memory spend`.
+- [ ] **Balanced routing:** "morning" is answered locally; "what does a used
+      RTX 3090 cost in Australia right now?" and "explain Kalman filters
+      properly, with the maths" go to the work model, the first with a web
+      search. All cloud answers show in `kit memory spend`.
+- [ ] **Weather:** "what's the weather like tonight?" and then "and
+      tomorrow?" are answered locally, each under a "Checked the forecast"
+      line, and match `kit weather`.
 - [ ] **One message, your choice:** "ask Claude why the sky is blue" goes
       straight to the cloud; "think hard about ..." goes to the expert; "keep
       it local: ..." stays local.
