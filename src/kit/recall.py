@@ -46,7 +46,7 @@ class Recall:
         self.register = Register(memory)
         self._last_query: tuple[str, str, list[float]] | None = None  # (model, text, vector)
 
-    async def _query_vector(self, query: str) -> list[float] | None:
+    async def query_vector(self, query: str) -> list[float] | None:
         if self.embedder is None:
             return None
         model = self.embedder.model
@@ -69,7 +69,7 @@ class Recall:
         exclude: set[int] | None = None,
     ) -> list[Hit]:
         s = self.settings().memory
-        vec = await self._query_vector(query)
+        vec = await self.query_vector(query)
         model = self.embedder.model if self.embedder else ""
         return self.memory.index.search(query, vec, model, sources, k, s.min_similarity, exclude)
 

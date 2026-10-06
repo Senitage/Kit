@@ -543,6 +543,17 @@ async def _eval_memory(paths: KitPaths) -> int:
     print(f"recalled the right fact:    {report.recall_score}/{len(report.found)}")
     print(f"nothing for unknown things: {report.unknown_clean}/{len(report.unknown)}")
     print(f"memory kept tidy:           {report.tidy_score}/{len(report.tidy)}")
+    if report.right and report.unrelated:
+        cutoff = store.current().memory.min_similarity
+        print()
+        print(f"closeness of the right facts:   {min(report.right):.2f} to {max(report.right):.2f}")
+        print(f"closest fact to unknown things: {max(report.unrelated):.2f}")
+        print(f"memory.min_similarity is now:   {cutoff:.2f}")
+        suggested = report.suggested_cutoff()
+        if suggested is None:
+            print("the two overlap, so no cut-off separates them for this embedding model")
+        elif abs(suggested - cutoff) >= 0.02:
+            print(f"try: kit config set memory.min_similarity {suggested}")
     return 0 if report.passed else 1
 
 
