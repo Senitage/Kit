@@ -5,7 +5,7 @@ import pytest
 from fakes import FakeEmbedder, FakeModel
 from kit.cli import main
 
-OFFLINE = ["--skip", "gpu", "--skip", "ollama", "--skip", "tailscale", "--skip", "claude"]
+OFFLINE = ["--skip", "gpu", "--skip", "ollama", "--skip", "tailscale", "--skip", "cloud"]
 
 
 def test_init_creates_folder_and_settings(paths, capsys):
@@ -128,7 +128,7 @@ def test_memory_commands(paths, capsys, offline_models):
     assert main(["memory", "forget", "2"]) == 0
     assert main(["memory", "forget", "2"]) == 1
     main(["memory", "spend"])
-    assert "$0.00 of $20.00" in capsys.readouterr().out
+    assert "$0.00 of $40.00" in capsys.readouterr().out
 
 
 def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):
@@ -138,3 +138,37 @@ def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):
     assert code in (0, 1)
     assert not (paths.state_dir / "memory-eval").exists()
     assert not (paths.state_dir / "memory.db").exists()
+
+
+def test_models_list_and_switch(paths, capsys):
+    main(["init"])
+    assert main(["models"]) == 0
+    out = capsys.readouterr().out
+    assert "routing: balanced" in out and "sonnet" in out and "gemini-3.8-flash" in out
+    assert main(["models", "work", "gpt-sol"]) == 0
+    capsys.readouterr()
+    main(["models"])
+    line = next(x for x in capsys.readouterr().out.splitlines() if "gpt-sol" in x)
+    assert " work " in line
+    assert main(["models", "work", "nope"]) == 1
+    assert "isn't a model" in capsys.readouterr().out
+
+
+def test_config_set_reaches_into_a_model_profile(paths, capsys):
+    main(["init"])
+    assert main(["config", "set", "models.sonnet.effort", "high"]) == 0
+    assert main(["config", "set", "routing.mode", "cloud-first"]) == 0
+    capsys.readouterr()
+    main(["config", "show"])
+    out = capsys.readouterr().out
+    assert 'mode = "cloud-first"' in out
+    sonnet = out[out.index("[models.sonnet]") :]
+    assert 'effort = "high"' in sonnet.split("[models.", 2)[1]
+    assert 'model = "claude-sonnet-5-5"' in sonnet  # the rest of the profile is kept
+
+
+def test_eval_compare_needs_known_models(paths, capsys):
+    main(["init"])
+    assert main(["eval", "compare"]) == 2
+    assert main(["eval", "compare", "--models", "sonnet", "nope"]) == 2
+    assert "unknown model(s): nope" in capsys.readouterr().out

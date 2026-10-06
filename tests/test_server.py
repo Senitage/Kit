@@ -3,9 +3,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, reply
+from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
 from kit.brain import Brain
-from kit.expert import Expert
 from kit.memory import Memory
 from kit.recall import Recall
 from kit.server import create_app
@@ -22,7 +21,7 @@ def setup(paths):
     memory = Memory(paths.state_dir / "memory.db", Clock())
     model = FakeModel(reply("Hi Dan.", "Ready."))
     recall = Recall(memory, FakeEmbedder(), store.current)
-    expert = Expert(memory, lambda: "k", FakeAnthropic().factory)
+    expert = make_cloud(memory, key="k")
     brain = Brain(store.current, memory, model, expert, recall)
     app = create_app(store, memory, brain, TOKEN, summarise_every_s=None)
     with TestClient(app) as client:
@@ -136,7 +135,7 @@ def test_upkeep_backs_up_and_indexes(paths):
     memory = Memory(paths.state_dir / "memory.db", Clock())
     memory.add_fact("Rex is the dog.")
     recall = Recall(memory, FakeEmbedder(), store.current)
-    brain = Brain(store.current, memory, FakeModel(), Expert(memory, lambda: None), recall)
+    brain = Brain(store.current, memory, FakeModel(), make_cloud(memory, key=None), recall)
     app = create_app(store, memory, brain, TOKEN, summarise_every_s=3600, paths=paths)
     with TestClient(app):
         import time

@@ -220,3 +220,256 @@ async def run_memory_eval(memory, learner, recall, owner: str = "Dan") -> Memory
         count = sum(text in f for f in current)
         report.tidy.append((f"one fact about '{text}' ({count} found)", count <= 1))
     return report
+
+
+# Routing: real questions paired with where the answer should come from. Kit
+# passes a question when the register entries it recalls for that question
+# include a link to the right system and place, the way a chat turn would.
+
+ROUTING_THINGS: list[dict] = [
+    {
+        "name": "Emma",
+        "kind": "person",
+        "aliases": ["my sister"],
+        "about": "Dan's sister",
+        "links": [{"system": "obsidian", "target": "People/Emma.md"}],
+    },
+    {
+        "name": "Hilux",
+        "kind": "vehicle",
+        "aliases": ["the ute", "the Toyota"],
+        "about": "Dan's ute",
+        "links": [
+            {"system": "home_app", "target": "vehicles/hilux"},
+            {"system": "nas", "target": "Documents/Cars/Hilux"},
+        ],
+    },
+    {
+        "name": "Tax returns",
+        "kind": "other",
+        "aliases": ["tax", "ATO"],
+        "about": "Dan's tax returns and receipts, one folder per year",
+        "links": [{"system": "nas", "target": "Documents/Tax"}],
+    },
+    {
+        "name": "Shed",
+        "kind": "place",
+        "aliases": ["workshop", "garage"],
+        "about": "the workshop out the back with the 3D printer",
+        "links": [{"system": "home_assistant", "target": "area: shed"}],
+    },
+    {
+        "name": "Kit",
+        "kind": "project",
+        "aliases": ["the robot arm", "desk assistant"],
+        "about": "Dan's desk AI assistant and robot arm",
+        "links": [
+            {"system": "code", "target": "Dev/Kit"},
+            {"system": "obsidian", "target": "Projects/Kit.md"},
+        ],
+    },
+    {
+        "name": "Thickener sizing",
+        "kind": "project",
+        "aliases": ["thickener"],
+        "about": "settling tests and thickener area calcs for the plant",
+        "links": [{"system": "mettools", "target": "thickener/sizing"}],
+    },
+    {
+        "name": "Biscuit",
+        "kind": "pet",
+        "aliases": ["the dog"],
+        "about": "Dan's dog, a kelpie",
+        "links": [{"system": "nas", "target": "Photos/Biscuit"}],
+    },
+    {
+        "name": "Ender 3",
+        "kind": "equipment",
+        "aliases": ["the printer", "3D printer"],
+        "about": "Creality Ender 3 V2 in the shed",
+        "links": [
+            {"system": "home_assistant", "target": "switch.printer_plug"},
+            {"system": "nas", "target": "3D Prints"},
+        ],
+    },
+]
+
+# (question, system, part of the target that must be linked)
+ROUTING_QUESTIONS: list[tuple[str, str, str]] = [
+    ("Find my 2023 tax return.", "nas", "Documents/Tax"),
+    ("When is the ute due for a service?", "home_app", "vehicles/hilux"),
+    ("Where's the rego paperwork for the Hilux?", "nas", "Cars/Hilux"),
+    ("Turn the lights on in the workshop.", "home_assistant", "shed"),
+    ("What did I write about my sister's birthday?", "obsidian", "People/Emma"),
+    ("Open the robot arm code.", "code", "Dev/Kit"),
+    ("What were the settling test results for the thickener?", "mettools", "thickener"),
+    ("Show me photos of the dog.", "nas", "Photos/Biscuit"),
+    ("Switch off the 3D printer.", "home_assistant", "printer_plug"),
+    ("Where are my notes on the desk assistant?", "obsidian", "Projects/Kit"),
+    # No name or alias: found by what the entry is about.
+    ("Which folder has my receipts?", "nas", "Documents/Tax"),
+    ("Find pictures of the kelpie.", "nas", "Photos/Biscuit"),
+]
+
+
+@dataclass
+class RoutingResult:
+    question: str
+    system: str
+    target: str
+    ok: bool
+    got: list[str]  # the recalled entries, one line each
+
+
+@dataclass
+class RoutingReport:
+    results: list[RoutingResult] = field(default_factory=list)
+
+    @property
+    def score(self) -> int:
+        return sum(r.ok for r in self.results)
+
+    @property
+    def passed(self) -> bool:
+        return self.score == len(self.results)
+
+
+def load_routing_questions(path) -> list[tuple[str, str, str]]:
+    """Dan's own routing questions from a TOML file:
+
+    [[question]]
+    text = "Find my 2023 tax return."
+    system = "nas"
+    target = "Tax/2023"
+    """
+    import tomllib
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return [(q["text"], q["system"], q.get("target", "")) for q in data.get("question", [])]
+
+
+def seed_routing_things(register) -> None:
+    for t in ROUTING_THINGS:
+        register.add(t["name"], t["kind"], t["aliases"], t["links"], t["about"])
+
+
+async def run_routing_eval(recall, questions=ROUTING_QUESTIONS) -> RoutingReport:
+    """Ask each question the way a chat turn does and check where Kit would look."""
+    await recall.index_pending()
+    report = RoutingReport()
+    for question, system, target in questions:
+        things = await recall.things_for(question)
+        ok = any(
+            link.system == system and target.lower() in link.target.lower()
+            for t in things
+            for link in t.links
+        )
+        report.results.append(
+            RoutingResult(question, system, target, ok, [t.line() for t in things])
+        )
+    return report
+
+
+# Compare: the same real questions through two or more cloud models, side by side.
+
+COMPARE_PROMPTS = [
+    "What's the weather looking like this afternoon?",
+    "How much is a Bambu Lab P1S printer at the moment, and where's cheapest?",
+    "What's a good flotation recovery for a copper sulphide ore, and what drives it?",
+    "Derive the Bond work index power equation and work it for a 150 micron P80 from a "
+    "2 mm F80 with a work index of 14 kWh/t.",
+    "Write a Python function that reads a CSV of pump run hours and flags any pump over "
+    "its service interval.",
+    "My thickener underflow density keeps dropping. Walk me through what to check.",
+    "Explain Kalman filters properly, with the maths, in a way I can use for plant data.",
+    "What's new in the latest Python release that matters for data work?",
+    "Should I use pandas or polars for a 2 GB CSV I process daily? Be specific.",
+    "Plan a two-day test schedule for a new cyclone feed pump, with what to log.",
+]
+
+
+@dataclass
+class CompareResult:
+    prompt: str
+    model: str
+    ok: bool
+    seconds: float
+    cost_usd: float = 0.0
+    searches: int = 0
+    said: str = ""
+    detail: str = ""
+    error: str = ""
+
+
+async def run_compare(
+    cloud,
+    settings: Settings,
+    names: list[str],
+    prompts: list[str],
+    now: datetime,
+    clock: Callable[[], float] = time.perf_counter,
+    on_result: Callable[[CompareResult], None] | None = None,
+) -> list[CompareResult]:
+    """Ask each model profile in ``names`` every prompt, as Kit's work model would be
+    asked (persona included, no memories). Every call is real and is logged as spend."""
+    from kit.cloud import CloudError
+    from kit.reply import parse_cloud_reply
+
+    results = []
+    for prompt in prompts:
+        for name in names:
+            profile = settings.models[name]
+            system = system_prompt(
+                settings.persona,
+                Recalled([], [], []),
+                now,
+                role="work",
+                mode=settings.routing.mode,
+                helper=None,
+                web_search=profile.web_search,
+            )
+            messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+            start = clock()
+            try:
+                answer = await cloud.answer(profile, messages, settings, prompt)
+                reply = parse_cloud_reply(answer.text)
+                result = CompareResult(
+                    prompt,
+                    name,
+                    True,
+                    clock() - start,
+                    answer.cost_usd,
+                    answer.searches,
+                    reply.text,
+                    reply.detail,
+                )
+            except CloudError as e:
+                result = CompareResult(prompt, name, False, clock() - start, error=str(e))
+            results.append(result)
+            if on_result:
+                on_result(result)
+    return results
+
+
+def compare_report(results: list[CompareResult], names: list[str]) -> str:
+    """The full answers as Markdown, one section per question, for reading side by side."""
+    lines = ["# Model comparison", ""]
+    for name in names:
+        mine = [r for r in results if r.model == name]
+        ok = [r for r in mine if r.ok]
+        median = statistics.median(r.seconds for r in ok) if ok else 0.0
+        lines.append(
+            f"- **{name}**: {len(ok)}/{len(mine)} answered, median {median:.1f}s, "
+            f"${sum(r.cost_usd for r in mine):.3f} in total, "
+            f"{sum(r.searches for r in mine)} searches"
+        )
+    for prompt in dict.fromkeys(r.prompt for r in results):
+        lines += ["", f"## {prompt}"]
+        for r in results:
+            if r.prompt != prompt:
+                continue
+            lines += ["", f"### {r.model} ({r.seconds:.1f}s, ${r.cost_usd:.4f})", ""]
+            lines.append(r.said if r.ok else f"Failed: {r.error}")
+            if r.detail:
+                lines += ["", r.detail]
+    return "\n".join(lines) + "\n"

@@ -8,11 +8,13 @@ on-screen helper now, the arm later) turns those names into movement.
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from kit.memory import FACT_KINDS
+from kit.things import SYSTEMS, THING_KINDS
 
 EMOTIONS: dict[str, str] = {
     "neutral": "calm, nothing special",
@@ -60,6 +62,8 @@ GESTURES: dict[str, str] = {
 FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
 Emotion = Literal[tuple(EMOTIONS)]  # type: ignore[valid-type]
 Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
+ThingKind = Literal[tuple(THING_KINDS)]  # type: ignore[valid-type]
+LinkSystem = Literal[("none", *SYSTEMS)]  # type: ignore[valid-type]
 
 
 class Segment(BaseModel):
@@ -70,17 +74,25 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "recall", "remember", "ask_claude"] = Field(
+    kind: Literal["none", "recall", "remember", "thing", "ask_cloud", "ask_expert"] = Field(
         description="recall searches memory before answering; remember saves a fact; "
-        "ask_claude hands a question to Claude; none does nothing."
+        "thing notes a named thing and where it lives; ask_cloud hands the question to the "
+        "cloud model; ask_expert hands it to the strongest model; none does nothing."
     )
     text: str = Field(
         "",
         description="For recall: what to search for. For remember: the fact, as one "
-        "sentence that makes sense on its own later. For ask_claude: the full question "
-        "with the context Claude needs.",
+        "sentence that makes sense on its own later. For ask_cloud and ask_expert: the "
+        "full question with the context it needs.",
     )
     category: FactKind = Field("other", description="For remember: what kind of fact it is.")
+    thing_kind: ThingKind = Field("other", description="For thing: what kind of thing it is.")
+    link_system: LinkSystem = Field(
+        "none", description="For thing: the system where it lives, if known."
+    )
+    link_target: str = Field(
+        "", description="For thing: where in that system, e.g. a folder path or note name."
+    )
 
 
 class Reply(BaseModel):
@@ -88,10 +100,20 @@ class Reply(BaseModel):
     emotion: Emotion
     segments: list[Segment] = Field(min_length=1, max_length=6)
     action: Action
+    detail: str = Field(
+        "",
+        description="Longer written detail shown on screen but not spoken: code, steps, "
+        "lists, numbers, sources. Usually empty.",
+    )
 
     @property
     def text(self) -> str:
         return " ".join(s.say.strip() for s in self.segments if s.say.strip())
+
+    @property
+    def full_text(self) -> str:
+        """What was said, then any written detail."""
+        return f"{self.text}\n\n{self.detail.strip()}" if self.detail.strip() else self.text
 
     @classmethod
     def plain(cls, text: str, emotion: str = "neutral", gesture: str = "none") -> Reply:
@@ -135,6 +157,32 @@ def parse_reply(text: str) -> Reply:
         return Reply.model_validate_json(text)
     except ValidationError as e:
         raise ReplyError(f"not a valid reply: {e.errors()[0]['msg']}: {text[:200]!r}") from e
+
+
+FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+SPOKEN_LIMIT = 300
+
+
+def parse_cloud_reply(text: str) -> Reply:
+    """A cloud model's reply. Cloud models are asked for the same JSON as the local
+    one but not forced into it, so plain text (or JSON wrapped in prose or a code
+    fence) still becomes a reply: a short answer is said, a long one is shown."""
+    text = text.strip()
+    candidates = [FENCE.sub("", text).strip()]
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        candidates.append(text[start : end + 1])
+    for candidate in candidates:
+        try:
+            return parse_reply(candidate)
+        except ReplyError:
+            continue
+    if len(text) <= SPOKEN_LIMIT:
+        return Reply.plain(text)
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0][:SPOKEN_LIMIT]
+    reply = Reply.plain(first)
+    reply.detail = text
+    return reply
 
 
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}

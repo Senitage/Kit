@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Literal
 
 import tomli_w
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 SCHEMA_VERSION = 1
 
@@ -48,28 +55,119 @@ class OllamaSettings(_Section):
     )
 
 
-class ClaudeSettings(_Section):
-    model: str = Field("claude-opus-5-5", description="Claude model for hard tasks.")
-    effort: Literal["low", "medium", "high", "xhigh", "max"] = Field(
-        "medium", description="How hard Claude works on each question. Higher costs more."
+Provider = Literal["anthropic", "openai", "google", "ollama"]
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
+class ModelProfile(_Section):
+    """One model Kit can use, with what it costs. Swap models by pointing a role
+    (``routing.work``, ``routing.expert``) at a different profile."""
+
+    label: str = Field("", description="Name Kit uses when it mentions this model.")
+    provider: Provider = Field(
+        description="Who runs it. anthropic, openai and google need an API key in "
+        "Kit's secrets folder; ollama runs on this machine."
+    )
+    model: str = Field(min_length=1, description="The provider's model id.")
+    effort: Effort = Field(
+        "medium", description="How hard the model thinks before answering. Higher costs more."
     )
     max_tokens: int = Field(
-        16000, ge=1000, le=64000, description="Longest answer, thinking included, in tokens."
+        16000, ge=1000, le=128000, description="Longest answer, thinking included, in tokens."
     )
-    monthly_cap_usd: float = Field(
-        20.0, ge=0, description="Kit stops asking Claude once this month's spend reaches this."
+    web_search: bool = Field(
+        True, description="Let the model search the web (the provider's own search)."
     )
-    input_usd_per_mtok: float = Field(
-        4.0, ge=0, description="Price per million input tokens, for the spend log."
-    )
+    input_usd_per_mtok: float = Field(0, ge=0, description="Price per million input tokens.")
     cached_input_usd_per_mtok: float = Field(
-        0.2,
-        ge=0,
-        description="Price per million input tokens read from the prompt cache "
-        "(0.05x input on Opus 5.5, 0.1x on most other models).",
+        0, ge=0, description="Price per million input tokens read from the prompt cache."
     )
     output_usd_per_mtok: float = Field(
-        20.0, ge=0, description="Price per million output tokens, for the spend log."
+        0, ge=0, description="Price per million output tokens, thinking included."
+    )
+    search_usd_per_k: float = Field(0, ge=0, description="Price per 1,000 web searches.")
+
+    @property
+    def name(self) -> str:
+        return self.label or self.model
+
+
+# Prices are US dollars from each provider's price list on 6 October 2026.
+DEFAULT_MODELS: dict[str, dict] = {
+    "sonnet": {
+        "label": "Sonnet",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "opus": {
+        "label": "Opus",
+        "provider": "anthropic",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "input_usd_per_mtok": 4.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 20.0,
+        "search_usd_per_k": 10.0,
+    },
+    "gpt-sol": {
+        "label": "GPT",
+        "provider": "openai",
+        "model": "gpt-6.1-sol",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.1,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "gemini-flash": {
+        "label": "Gemini",
+        "provider": "google",
+        "model": "gemini-3.8-flash",
+        "effort": "low",
+        # Introductory prices until 31 December 2026, when they double.
+        "input_usd_per_mtok": 0.75,
+        "cached_input_usd_per_mtok": 0.075,
+        "output_usd_per_mtok": 3.75,
+        # 5,000 grounded requests a month are free; this prices the ones after that.
+        "search_usd_per_k": 14.0,
+    },
+}
+
+
+def _default_models() -> dict[str, ModelProfile]:
+    return {name: ModelProfile.model_validate(p) for name, p in DEFAULT_MODELS.items()}
+
+
+Mode = Literal["local-heavy", "balanced", "cloud-first"]
+
+
+class RoutingSettings(_Section):
+    mode: Mode = Field(
+        "balanced",
+        description="How much Kit leans on the local model. local-heavy: the local model "
+        "answers and only hands over what it can't do. balanced: the local model takes "
+        "small talk and quick commands, the cloud takes real questions and work. "
+        "cloud-first: the cloud answers everything.",
+    )
+    work: str = Field(
+        "sonnet", description="Model profile for real questions, work and web searches."
+    )
+    expert: str = Field("opus", description="Model profile for the hardest questions.")
+    fallback_to_local: bool = Field(
+        True,
+        description="If the cloud can't be reached (offline, no key, budget used up), "
+        "the local model answers instead.",
+    )
+
+
+class CloudSettings(_Section):
+    monthly_cap_usd: float = Field(
+        40.0, ge=0, description="Kit stops using cloud models once this month's spend reaches this."
     )
 
 
@@ -111,6 +209,9 @@ class PersonaSettings(_Section):
         "for detail. Never gushes, never says 'as an AI'.",
         description="How Kit talks.",
     )
+    location: str = Field(
+        "", description="Where the owner is, for weather and local searches, e.g. Perth WA."
+    )
     knows: str = Field(
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
         "in Python, codes in VS Code, and keeps notes in Obsidian.",
@@ -120,7 +221,7 @@ class PersonaSettings(_Section):
         default_factory=lambda: [
             "Keep replies short; offer detail rather than dumping it.",
             "If you are not sure, say so instead of guessing.",
-            "Hand hard maths, long code and deep technical questions to Claude.",
+            "Hand real questions, maths, code and anything current to the cloud.",
         ],
         description="Rules Kit always follows.",
     )
@@ -167,6 +268,13 @@ class MemorySettings(_Section):
     relevant_memories: int = Field(
         8, ge=0, le=50, description="Memories recalled into each turn, most relevant first."
     )
+    relevant_things: int = Field(
+        5,
+        ge=0,
+        le=20,
+        description="Entries from the register of things recalled into each turn, with "
+        "where each lives. Things named in the message always come first.",
+    )
     conversation_snippets: int = Field(
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
     )
@@ -182,11 +290,46 @@ class MemorySettings(_Section):
 class Settings(_Section):
     schema_version: Literal[1] = SCHEMA_VERSION
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
-    claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
+    routing: RoutingSettings = Field(default_factory=RoutingSettings)
+    models: dict[str, ModelProfile] = Field(
+        default_factory=_default_models,
+        description="Models Kit can use, by name. Built-in profiles are always there; "
+        "change their fields or add your own.",
+    )
+    cloud: CloudSettings = Field(default_factory=CloudSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+
+    @field_validator("models", mode="before")
+    @classmethod
+    def _keep_built_in_models(cls, value):
+        """Built-in profiles stay available; settings change their fields or add more."""
+        if not isinstance(value, dict):
+            return value
+        merged = {name: dict(p) for name, p in DEFAULT_MODELS.items()}
+        for name, profile in value.items():
+            if isinstance(profile, BaseModel):
+                profile = profile.model_dump()
+            if isinstance(profile, dict):
+                merged[name] = {**merged.get(name, {}), **profile}
+            else:
+                merged[name] = profile
+        return merged
+
+    @model_validator(mode="after")
+    def _roles_name_models(self) -> Settings:
+        for role in ("work", "expert"):
+            name = getattr(self.routing, role)
+            if name not in self.models:
+                known = ", ".join(sorted(self.models))
+                raise ValueError(f"routing.{role} is '{name}', which isn't a model ({known})")
+        return self
+
+    def profile(self, role: str) -> ModelProfile:
+        """The model profile a role ("work" or "expert") points at."""
+        return self.models[getattr(self.routing, role)]
 
 
 class SettingsError(Exception):

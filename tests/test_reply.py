@@ -13,7 +13,7 @@ def feed_all(text, size):
 
 @pytest.mark.parametrize("size", [1, 2, 3, 7, 1000])
 def test_extractor_gets_spoken_text_at_any_chunk_size(size):
-    raw = reply('Hi "Dan", café\\n time.', "Second one.", action="ask_claude", text="say: no")
+    raw = reply('Hi "Dan", café\\n time.', "Second one.", action="ask_cloud", text="say: no")
     assert feed_all(raw, size) == 'Hi "Dan", café\\n time. Second one.'
 
 
@@ -60,8 +60,30 @@ def test_parse_rejects_bad_replies(bad):
 def test_schema_is_self_contained():
     schema = json.dumps(reply_schema())
     assert "$ref" not in schema and "$defs" not in schema
-    assert list(reply_schema()["properties"]) == ["emotion", "segments", "action"]
+    assert list(reply_schema()["properties"]) == ["emotion", "segments", "action", "detail"]
 
 
 def test_plain_reply():
     assert Reply.plain("Hello").segments[0].gesture == "none"
+
+
+def test_cloud_replies_are_read_generously():
+    from kit.reply import parse_cloud_reply
+
+    good = reply("Sunny.", action="remember", text="Dan likes sun.")
+    assert parse_cloud_reply(good).action.kind == "remember"
+    assert parse_cloud_reply(f"```json\n{good}\n```").text == "Sunny."
+    assert parse_cloud_reply(f"Here you go: {good} Hope that helps.").text == "Sunny."
+    short = parse_cloud_reply("It's 24 and sunny.")
+    assert short.text == "It's 24 and sunny." and short.detail == ""
+    long = parse_cloud_reply("First sentence here. " + "More words. " * 40)
+    assert long.text == "First sentence here." and long.detail.startswith("First sentence")
+
+
+def test_full_text_adds_detail():
+    from kit.reply import Reply
+
+    r = Reply.plain("Here.")
+    assert r.full_text == "Here."
+    r.detail = "x = 1"
+    assert r.full_text == "Here.\n\nx = 1"

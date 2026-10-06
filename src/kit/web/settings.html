@@ -120,6 +120,10 @@ function render(settings) {
   form.innerHTML = ""; fields = [];
   for (const [section, ref] of Object.entries(schema.properties)) {
     const sec = resolve(ref);
+    if (sec && sec.type === "object" && sec.additionalProperties && sec.additionalProperties.$ref) {
+      renderTable(section, resolve(sec.additionalProperties), settings[section] || {});
+      continue;
+    }
     if (!sec || sec.type !== "object" || !sec.properties) continue;
     const fs = document.createElement("fieldset");
     const lg = document.createElement("legend"); lg.textContent = section; fs.appendChild(lg);
@@ -133,6 +137,24 @@ function render(settings) {
       const el = control(kind, prop, settings[section][key]);
       label.append(name, help, el); fs.appendChild(label);
       fields.push({ section, key, kind, el });
+    }
+    form.appendChild(fs);
+  }
+}
+// A table of named entries, such as the model profiles: one box per entry.
+function renderTable(section, entry, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const fs = document.createElement("fieldset");
+    const lg = document.createElement("legend"); lg.textContent = section + ": " + name; fs.appendChild(lg);
+    for (const [key, raw] of Object.entries(entry.properties)) {
+      const prop = resolve(raw);
+      const kind = kindOf(prop);
+      const label = document.createElement("label");
+      const nm = document.createElement("span"); nm.className = "name"; nm.textContent = key.replaceAll("_", " ");
+      const help = document.createElement("span"); help.className = "help"; help.textContent = prop.description || "";
+      const el = control(kind, prop, value[key]);
+      label.append(nm, help, el); fs.appendChild(label);
+      fields.push({ section, entry: name, key, kind, el });
     }
     form.appendChild(fs);
   }
@@ -166,7 +188,10 @@ async function load() {
 document.getElementById("save").addEventListener("click", async () => {
   const patch = {};
   try {
-    for (const f of fields) { (patch[f.section] ||= {})[f.key] = read(f); }
+    for (const f of fields) {
+      const sec = (patch[f.section] ||= {});
+      if (f.entry) (sec[f.entry] ||= {})[f.key] = read(f); else sec[f.key] = read(f);
+    }
   } catch (e) { say("A box holds invalid JSON: " + e.message); return; }
   try {
     const data = await api("/api/settings", { method: "PATCH", body: JSON.stringify(patch) });

@@ -25,7 +25,9 @@
   .user { align-self: flex-end; background: var(--me); color: var(--me-text); }
   .kit { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); }
   .kit.claude { background: var(--claude); }
+  .detail { display: block; margin-top: .5em; white-space: pre-wrap; font: .9em ui-monospace, monospace; }
   .meta { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .msg .choice { padding: 2px 10px; margin: 6px 6px 0 0; font-size: 13px; border-radius: 8px; }
   .error { align-self: center; color: var(--error); font-size: 14px; }
   form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line);
          background: var(--panel); }
@@ -65,6 +67,14 @@ function bubble(cls, text) {
   log.scrollTop = log.scrollHeight;
   return div;
 }
+const isCloud = (source) => source === "cloud" || source === "claude";
+function detail(div, reply) {
+  if (!reply || !reply.detail) return;
+  const pre = document.createElement("span");
+  pre.className = "detail";
+  pre.textContent = reply.detail;
+  div.appendChild(pre);
+}
 function meta(div, reply, extra) {
   const span = document.createElement("span");
   span.className = "meta";
@@ -77,18 +87,40 @@ async function loadHistory() {
   if (r.status === 401) { try { localStorage.removeItem("kitToken"); } catch (e) {} bubble("error", "Wrong token. Reload to enter it again."); return; }
   for (const m of await r.json()) {
     if (m.role === "user") bubble("user", m.text);
-    else { const d = bubble("kit" + (m.source === "claude" ? " claude" : ""), m.text); if (m.reply) meta(d, m.reply, m.source === "claude" ? ["Claude"] : []); }
+    else {
+      const d = bubble("kit" + (isCloud(m.source) ? " claude" : ""), m.reply ? m.reply.segments.map(x => x.say).join(" ") : m.text);
+      if (m.reply) { detail(d, m.reply); meta(d, m.reply, isCloud(m.source) ? ["cloud"] : []); }
+    }
   }
   const s = await fetch("/api/health").then(r => r.json());
   document.getElementById("name").textContent = s.name;
   document.title = s.name;
 }
+function suggestThing(thing) {
+  const div = bubble("error", "Add to the register? " + thing.line + " ");
+  div.style.color = "var(--muted)";
+  const choose = (label, action, done) => {
+    const b = document.createElement("button");
+    b.className = "choice"; b.textContent = label;
+    b.addEventListener("click", async () => {
+      const r = await fetch(`/api/things/${thing.id}/${action}`, { method: "POST", headers });
+      div.textContent = r.ok ? done : "Already answered, or gone. See the memory page.";
+    });
+    div.appendChild(b);
+  };
+  div.appendChild(document.createElement("br"));
+  choose("Add", "confirm", "Added " + thing.name + " to the register.");
+  choose("No", "reject", "Left " + thing.name + " out.");
+}
+let inFlight = 0;
+function idle() { if (--inFlight === 0) stateEl.textContent = "idle"; }
 async function send(text) {
-  bubble("user", text);
+  const asked = bubble("user", text);
+  inFlight++;
   stateEl.textContent = "thinking";
   let current = null;
   const r = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ text }) });
-  if (!r.ok) { bubble("error", "Kit said " + r.status); stateEl.textContent = "idle"; return; }
+  if (!r.ok) { bubble("error", "Kit said " + r.status); idle(); return; }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -102,20 +134,32 @@ async function send(text) {
       if (!line.trim()) continue;
       const ev = JSON.parse(line);
       if (ev.type === "say") {
-        if (!current) { current = bubble("kit" + (ev.source === "claude" ? " claude" : ""), ""); stateEl.textContent = "speaking"; }
+        if (!current) { current = bubble("kit" + (isCloud(ev.source) ? " claude" : ""), ""); stateEl.textContent = "speaking"; }
         current.firstChild ? current.firstChild.nodeValue += ev.text : current.textContent = ev.text;
         log.scrollTop = log.scrollHeight;
       } else if (ev.type === "reply") {
         if (!current) current = bubble("kit", "");
         current.textContent = ev.reply.segments.map(s => s.say).join(" ");
-        const extra = ev.source === "claude" ? ["Claude " + ev.model, "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
+        const extra = isCloud(ev.source) ? [ev.label + " (" + ev.model + ")", "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
+        if (ev.searches) extra.push(ev.searches + " search" + (ev.searches > 1 ? "es" : ""));
+        // A slow answer that arrives after other messages says what it answers.
+        if (ev.question && asked !== lastUserBubble()) extra.unshift("re: " + ev.question);
+        detail(current, ev.reply);
         meta(current, ev.reply, extra);
         current = null;
-      } else if (ev.type === "asking_claude") {
-        stateEl.textContent = "asking Claude";
+      } else if (ev.type === "handing_off") {
+        stateEl.textContent = "asking " + ev.to;
+        current = null;
+      } else if (ev.type === "notice") {
+        bubble("error", ev.message).style.color = "var(--muted)";
+        current = null;
       } else if (ev.type === "remembered") {
         const label = ev.decision === "same" ? "Already knew: " : ev.decision === "update" ? "Updated memory: " : "Remembered: ";
         bubble("error", label + ev.fact).style.color = "var(--muted)";
+      } else if (ev.type === "thing_suggested") {
+        suggestThing(ev.thing);
+      } else if (ev.type === "thing_updated" && ev.thing) {
+        bubble("error", "Updated the register: " + ev.thing.line).style.color = "var(--muted)";
       } else if (ev.type === "recalled") {
         stateEl.textContent = "remembering";
         current = null;
@@ -124,18 +168,18 @@ async function send(text) {
       }
     }
   }
-  stateEl.textContent = "idle";
+  idle();
 }
+function lastUserBubble() { const all = log.querySelectorAll(".msg.user"); return all[all.length - 1]; }
 const form = document.getElementById("form");
 const input = document.getElementById("text");
-const button = document.getElementById("send");
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
-  input.value = ""; button.disabled = true;
-  try { await send(text); } catch (err) { bubble("error", "Lost touch with Kit: " + err.message); stateEl.textContent = "offline"; }
-  button.disabled = false; input.focus();
+  input.value = ""; input.focus();
+  // No waiting for the answer: Kit can chat while a slow question is still working.
+  send(text).catch(err => { bubble("error", "Lost touch with Kit: " + err.message); stateEl.textContent = "offline"; });
 });
 input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
 loadHistory().catch(err => { bubble("error", "Kit is offline: " + err.message); stateEl.textContent = "offline"; });
