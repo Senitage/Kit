@@ -112,12 +112,15 @@ function suggestThing(thing) {
   choose("Add", "confirm", "Added " + thing.name + " to the register.");
   choose("No", "reject", "Left " + thing.name + " out.");
 }
+let inFlight = 0;
+function idle() { if (--inFlight === 0) stateEl.textContent = "idle"; }
 async function send(text) {
-  bubble("user", text);
+  const asked = bubble("user", text);
+  inFlight++;
   stateEl.textContent = "thinking";
   let current = null;
   const r = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ text }) });
-  if (!r.ok) { bubble("error", "Kit said " + r.status); stateEl.textContent = "idle"; return; }
+  if (!r.ok) { bubble("error", "Kit said " + r.status); idle(); return; }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -139,6 +142,8 @@ async function send(text) {
         current.textContent = ev.reply.segments.map(s => s.say).join(" ");
         const extra = isCloud(ev.source) ? [ev.label + " (" + ev.model + ")", "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
         if (ev.searches) extra.push(ev.searches + " search" + (ev.searches > 1 ? "es" : ""));
+        // A slow answer that arrives after other messages says what it answers.
+        if (ev.question && asked !== lastUserBubble()) extra.unshift("re: " + ev.question);
         detail(current, ev.reply);
         meta(current, ev.reply, extra);
         current = null;
@@ -163,18 +168,18 @@ async function send(text) {
       }
     }
   }
-  stateEl.textContent = "idle";
+  idle();
 }
+function lastUserBubble() { const all = log.querySelectorAll(".msg.user"); return all[all.length - 1]; }
 const form = document.getElementById("form");
 const input = document.getElementById("text");
-const button = document.getElementById("send");
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
-  input.value = ""; button.disabled = true;
-  try { await send(text); } catch (err) { bubble("error", "Lost touch with Kit: " + err.message); stateEl.textContent = "offline"; }
-  button.disabled = false; input.focus();
+  input.value = ""; input.focus();
+  // No waiting for the answer: Kit can chat while a slow question is still working.
+  send(text).catch(err => { bubble("error", "Lost touch with Kit: " + err.message); stateEl.textContent = "offline"; });
 });
 input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
 loadHistory().catch(err => { bubble("error", "Kit is offline: " + err.message); stateEl.textContent = "offline"; });

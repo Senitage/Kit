@@ -49,6 +49,8 @@ class FakeMessages:
     async def create(self, **kwargs):
         owner = self.owner
         owner.calls.append(kwargs)
+        if owner.gate is not None:  # a slow answer: waits until the test opens the gate
+            await owner.gate.wait()
         if owner.error:
             raise owner.error
         n = len(owner.calls) - 1
@@ -59,6 +61,10 @@ class FakeMessages:
             stop_reason=stop,
             content=[
                 SimpleNamespace(type="thinking", thinking="hmm"),
+                *(
+                    SimpleNamespace(type="server_tool_use", name="web_search", input={"query": q})
+                    for q in owner.queries
+                ),
                 SimpleNamespace(type="text", text=answer),
             ],
             usage=SimpleNamespace(
@@ -81,7 +87,10 @@ class FakeAnthropic:
         stop_reason="end_turn",
         cache_read_input_tokens=0,
         searches=0,
+        queries=(),
     ):
+        self.queries = list(queries)
+        self.gate = None  # set to an asyncio.Event to hold answers back
         self.answers = answer if isinstance(answer, list) else [answer]
         self.error = error
         self.stop_reason = stop_reason if isinstance(stop_reason, list) else [stop_reason]

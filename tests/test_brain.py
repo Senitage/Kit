@@ -377,3 +377,70 @@ def test_yesterday_is_remembered_after_restart(paths, memory, clock):
     system = model2.calls[0][0]["content"]
     assert "Dan has a dog called Rex." in system
     fresh.close()
+
+
+# Chatting while a slow answer works
+
+
+async def _until(check):
+    for _ in range(200):
+        if check():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("never happened")
+
+
+def test_local_model_chats_while_the_cloud_works(memory):
+    async def run():
+        claude = FakeAnthropic(answer=reply("Pumps push fluid.", emotion="neutral"))
+        claude.gate = asyncio.Event()
+        brain, model, _ = make(memory, reply("Geez, relax, I'm thinking."), claude=claude)
+        slow = asyncio.create_task(_collect(brain.chat("ask Claude how pumps work")))
+        await _until(lambda: brain.jobs)
+        assert brain.busy()[0]["question"] == "ask Claude how pumps work"
+
+        quick = await _collect(brain.chat("how are you going?"))
+        assert quick[-1]["reply"]["segments"][0]["say"] == "Geez, relax, I'm thinking."
+        system = model.calls[-1][0]["content"]
+        assert "still working on this in the background" in system
+        assert '"ask Claude how pumps work": you asked Sonnet' in system
+        assert len(claude.calls) == 1  # the quick one didn't go to the cloud
+
+        claude.gate.set()
+        events = await slow
+        final = events[-1]
+        assert final["source"] == "cloud" and final["question"] == "ask Claude how pumps work"
+        assert brain.jobs == {}
+        # Afterwards, the prompt no longer says Kit is busy.
+        await _collect(brain.chat("thanks"))
+        assert "in the background" not in model.calls[-1][0]["content"]
+
+    asyncio.run(run())
+
+
+def test_slow_answer_is_kept_if_nobody_waits(memory):
+    async def run():
+        claude = FakeAnthropic(answer=reply("Found it.", emotion="neutral"))
+        claude.gate = asyncio.Event()
+        brain, _, _ = make(memory, claude=claude)
+        events = brain.chat("ask Claude where the pump curve is")
+        await events.__anext__()  # "Sure, asking..."
+        await events.aclose()  # the page was closed
+        await _until(lambda: brain.jobs)
+        claude.gate.set()
+        await _until(lambda: not brain._turns)
+        assert memory.recent(5)[-1].text == "Found it."
+
+    asyncio.run(run())
+
+
+def test_job_line_lists_progress():
+    from kit.brain import Job
+
+    job = Job(1, "find pump curves", "Sonnet", steps=["searched the web for 'x'"])
+    assert job.line().startswith('"find pump curves": you asked Sonnet 0 seconds ago.')
+    assert "So far you've searched the web for 'x'." in job.line()
+
+
+async def _collect(agen):
+    return [e async for e in agen]

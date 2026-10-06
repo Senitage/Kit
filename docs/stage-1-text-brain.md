@@ -64,6 +64,15 @@ firewall rule is needed.
     facts the same way. Old conversations are searchable too.
   - Pin a fact to keep it always in mind.
   - Memory is backed up to `backups/` every day; the newest 14 copies are kept.
+- **Keeps chatting while it works:** while a cloud model works on a slow
+  question (a web search, a long answer), you can keep talking, on the chat
+  page or in `kit chat`. The local model answers meanwhile and knows what's
+  in progress: the question, which model has it, how long it's been, and what
+  it has done so far (memory looked up, web searches run). So "how's it going?"
+  gets "still digging, I've searched for x" or "geez, relax, I'm thinking".
+  The slow answer turns up when it's ready, marked with the question it
+  answers, and it's saved even if you close the page. `/api/status` lists
+  what's in progress under `working_on`.
 - **Register of things**, like a plant tag register: one entry per person,
   pet, vehicle, place, project or piece of equipment, with its other names and
   where it lives in each system (Home Assistant area, home_app record, NAS
@@ -231,6 +240,11 @@ run `sudo systemctl restart kit`.
       worded differently from the facts and 3 about things it was never told.
       It needs 10/10 recalled, 3/3 with nothing recalled, and a tidy memory
       (no stale or duplicate facts). Your real memory isn't touched.
+- [ ] **Chats while it works:** ask something slow ("think hard about the
+      best way to size a thickener for 200 t/h, with the maths"). While it's
+      working, ask "how are you going?". The local model answers straight
+      away, in character, saying what it's working on. The slow answer arrives
+      afterwards, marked with its question.
 - [ ] **New name, suggested:** say "we got a puppy called Biscuit, his photos
       are in Photos/Biscuit". Kit suggests adding Biscuit with that NAS link.
       Say "yes" and the memory page shows him under things.

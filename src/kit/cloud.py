@@ -53,9 +53,19 @@ class CloudAnswer:
     truncated: bool
 
 
+# Called with a short note of progress, e.g. "searched the web for 'x'", while a
+# model is still working, so Kit can say how it's going.
+Step = Callable[[str], None]
+
+
 class Provider(Protocol):
     async def complete(
-        self, profile: ModelProfile, system: str, turns: list[dict], key: str
+        self,
+        profile: ModelProfile,
+        system: str,
+        turns: list[dict],
+        key: str,
+        on_step: Step | None = None,
     ) -> Completion: ...
 
 
@@ -108,7 +118,12 @@ class AnthropicProvider:
         self.make_client = make_client
 
     async def complete(
-        self, profile: ModelProfile, system: str, turns: list[dict], key: str
+        self,
+        profile: ModelProfile,
+        system: str,
+        turns: list[dict],
+        key: str,
+        on_step: Step | None = None,
     ) -> Completion:
         client = self.make_client(key)
         tools = (
@@ -135,6 +150,9 @@ class AnthropicProvider:
                 text += [b.text for b in response.content if getattr(b, "type", "") == "text"]
                 if response.stop_reason != "pause_turn":
                     break
+                if on_step:
+                    for query in _searches(response.content):
+                        on_step(f"searched the web for '{query}'")
                 # A long web search paused; send the turn back and it carries on.
                 messages = [*turns, {"role": "assistant", "content": response.content}]
         except anthropic.AuthenticationError as e:
@@ -156,6 +174,18 @@ class AnthropicProvider:
             truncated=response.stop_reason == "max_tokens",
             refused=response.stop_reason == "refusal",
         )
+
+
+def _searches(content) -> list[str]:
+    """The web searches a (paused) Claude response has run so far."""
+    out = []
+    for block in content:
+        if getattr(block, "type", "") == "server_tool_use":
+            given = getattr(block, "input", None) or {}
+            query = given.get("query") if isinstance(given, dict) else None
+            if query:
+                out.append(str(query))
+    return out
 
 
 def system_blocks(system: str) -> list[dict]:
@@ -190,7 +220,12 @@ class OpenAIProvider:
         self.url = url
 
     async def complete(
-        self, profile: ModelProfile, system: str, turns: list[dict], key: str
+        self,
+        profile: ModelProfile,
+        system: str,
+        turns: list[dict],
+        key: str,
+        on_step: Step | None = None,
     ) -> Completion:
         body: dict = {
             "model": profile.model,
@@ -244,7 +279,12 @@ class GoogleProvider:
         self.url = url
 
     async def complete(
-        self, profile: ModelProfile, system: str, turns: list[dict], key: str
+        self,
+        profile: ModelProfile,
+        system: str,
+        turns: list[dict],
+        key: str,
+        on_step: Step | None = None,
     ) -> Completion:
         body: dict = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -323,9 +363,15 @@ class Cloud:
         self.providers = providers
 
     async def answer(
-        self, profile: ModelProfile, messages: list[dict], settings: Settings, question: str = ""
+        self,
+        profile: ModelProfile,
+        messages: list[dict],
+        settings: Settings,
+        question: str = "",
+        on_step: Step | None = None,
     ) -> CloudAnswer:
-        """``question`` is what Dan asked, for the spend log."""
+        """``question`` is what Dan asked, for the spend log. ``on_step`` hears about
+        progress (web searches so far) while the model is still working."""
         provider = self.providers.get(profile.provider)
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
@@ -343,7 +389,7 @@ class Cloud:
                 "secrets folder."
             )
         system, turns = split_messages(messages)
-        done = await provider.complete(profile, system, turns, key)
+        done = await provider.complete(profile, system, turns, key, on_step)
         cost = estimate_cost(profile, done.usage)
         question = question or turns[-1]["content"]
         self.memory.record_spend(

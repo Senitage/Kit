@@ -20,14 +20,24 @@ Each turn:
    model answers instead when ``routing.fallback_to_local`` is on.
 5. Index the exchange so it can be found later.
 
+A turn runs as its own task, so Kit keeps talking while a slow one works. While
+a cloud model is busy, new messages are answered by the local model, which is
+told what Kit is working on, for how long, and what it has done so far ("still
+searching, I've looked up x"), so "how's it going?" gets an answer in character.
+The slow answer arrives when it's ready, even if the page that asked has gone.
+
 Settings are read on every turn, so model, routing and persona changes apply at once.
 """
 
 from __future__ import annotations
 
+import asyncio
+import itertools
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
@@ -68,6 +78,31 @@ ASK_EXPERT = re.compile(r"\b(think (really )?(hard|carefully)|ask (the|your) exp
 ASK_CLOUD = re.compile(r"\b(ask (claude|gpt|gemini|the cloud)|use the cloud)\b", re.IGNORECASE)
 
 
+@dataclass
+class Job:
+    """Something a cloud model is working on while Kit carries on talking."""
+
+    id: int
+    question: str
+    model: str
+    started: float = field(default_factory=time.monotonic)
+    steps: list[str] = field(default_factory=list)
+
+    def line(self) -> str:
+        secs = int(time.monotonic() - self.started)
+        done = f" So far you've {', then '.join(self.steps)}." if self.steps else ""
+        return f'"{self.question}": you asked {self.model} {secs} seconds ago.{done}'
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "question": self.question,
+            "model": self.model,
+            "seconds": round(time.monotonic() - self.started, 1),
+            "steps": list(self.steps),
+        }
+
+
 def route(text: str, settings: Settings) -> tuple[str, bool]:
     """Who answers first: (role, whether Dan chose it for this message)."""
     if KEEP_LOCAL.search(text):
@@ -96,18 +131,42 @@ class Brain:
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
+        self.jobs: dict[int, Job] = {}
+        self._job_ids = itertools.count(1)
+        self._turns: set[asyncio.Task] = set()
 
     async def chat(self, text: str) -> AsyncIterator[Event]:
+        """One message's events, as they happen. The turn runs as its own task, so
+        other messages can be answered meanwhile, and it finishes (and is saved)
+        even if whoever asked stops listening."""
         text = text.strip()
         if not text:
             return
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        task = asyncio.create_task(self._turn(text, queue.put_nowait))
+        self._turns.add(task)
+        task.add_done_callback(self._turns.discard)
+        while (event := await queue.get()) is not None:
+            yield event
+        await task  # raise anything that went wrong
+
+    async def _turn(self, text: str, emit: Callable[[Event | None], None]) -> None:
+        try:
+            await self._run_turn(text, emit)
+        except Exception:
+            log.exception("a chat turn failed")
+            emit({"type": "error", "message": "Something went wrong there. Say again?"})
+        finally:
+            emit(None)
+
+    async def _run_turn(self, text: str, emit: Callable[[Event], None]) -> None:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text)
         answered = self._answer_suggestion(text)
         if answered is not None:
             for event in self._say_locally(answered):
-                yield event
+                emit(event)
             self.memory.index_exchange(
                 user_id, settings.persona.owner, text, settings.persona.name, answered.text
             )
@@ -115,22 +174,28 @@ class Brain:
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         recalled = await self.recall.for_turn(text, recent_refs)
         role, chosen = route(text, settings)
+        if self.jobs and not chosen:
+            role = LOCAL  # busy: chat locally while the cloud works
         said: list[str] = []
 
         if role != LOCAL and chosen:
             name = settings.profile(role).name
-            reply = Reply.plain(f"Sure, asking {name}.", "thinking", "nod")
-            self._remember_reply(reply, LOCAL)
-            yield {"type": "say", "text": reply.text}
-            yield {"type": "reply", "source": LOCAL, "reply": reply.model_dump()}
+            for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
+                emit(event)
         async for event in self._converse(text, history, recalled, settings, role, chosen):
-            yield self._track(event, said)
+            if event["type"] == "reply" and self.jobs:
+                event = {**event, "question": text}
+            emit(self._track(event, said))
 
         if said:
             self.memory.index_exchange(
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    def busy(self) -> list[dict]:
+        """What cloud models are working on right now."""
+        return [job.as_dict() for job in self.jobs.values()]
 
     def _answer_suggestion(self, text: str) -> Reply | None:
         """If Kit just suggested a thing and Dan answers yes or no, act on it without
@@ -208,6 +273,7 @@ class Brain:
             helper=helper,
             expert=further,
             web_search=web,
+            busy=[job.line() for job in self.jobs.values()],
         )
 
     async def _converse(
@@ -219,6 +285,7 @@ class Brain:
         role: str,
         chosen: bool = False,
         hops: int = 0,
+        question: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
         messages = [
@@ -226,9 +293,13 @@ class Brain:
             *history_messages(history),
             {"role": "user", "content": text},
         ]
+        job = None
+        if role != LOCAL:
+            job = Job(next(self._job_ids), question or text, settings.profile(role).name)
+            self.jobs[job.id] = job
         try:
             reply, message_id = None, None
-            async for event in self._reply(messages, role, settings, text):
+            async for event in self._reply(messages, role, settings, text, job):
                 if event["type"] == "reply":
                     reply = Reply.model_validate(event["reply"])
                     message_id = event["message_id"]
@@ -242,6 +313,8 @@ class Brain:
                     query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
                 )
                 yield {"type": "recalled", "query": query, "found": len(hits)}
+                if job:
+                    job.steps.append(f"looked through your memory for '{query}'")
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},
                     {
@@ -253,16 +326,19 @@ class Brain:
                 # later history shows one answer per message, not a recall habit.
                 self.memory.set_message_source(message_id, RECALL_STEP)
                 reply = None
-                async for event in self._reply(messages, role, settings, text):
+                async for event in self._reply(messages, role, settings, text, job):
                     if event["type"] == "reply":
                         reply = Reply.model_validate(event["reply"])
                     yield event
                 if reply is None:
                     return
         except CloudError as e:
+            self._end_job(job)
             async for event in self._cloud_failed(e, text, history, recalled, settings, chosen):
                 yield event
             return
+        finally:
+            self._end_job(job)
 
         kind = reply.action.kind
         if kind == "remember" and reply.action.text.strip():
@@ -284,9 +360,13 @@ class Brain:
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}
             async for event in self._converse(
-                text, history, recalled, settings, to, chosen, hops + 1
+                text, history, recalled, settings, to, chosen, hops + 1, question
             ):
                 yield event
+
+    def _end_job(self, job: Job | None) -> None:
+        if job:
+            self.jobs.pop(job.id, None)
 
     async def _cloud_failed(
         self,
@@ -317,7 +397,12 @@ class Brain:
         }
 
     async def _reply(
-        self, messages: list[dict], role: str, settings: Settings, question: str
+        self,
+        messages: list[dict],
+        role: str,
+        settings: Settings,
+        question: str,
+        job: Job | None = None,
     ) -> AsyncIterator[Event]:
         if role == LOCAL:
             async for event in self._local_reply(messages, LOCAL):
@@ -328,7 +413,8 @@ class Brain:
             async for event in self._local_reply(messages, LOCAL, profile.model):
                 yield event
             return
-        answer = await self.cloud.answer(profile, messages, settings, question)
+        on_step = job.steps.append if job else None
+        answer = await self.cloud.answer(profile, messages, settings, question, on_step)
         reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"

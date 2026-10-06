@@ -16,7 +16,7 @@ as things change ([how memory works](docs/memory.md)). A register of things
 which NAS folder, Obsidian note, home_app record or Home Assistant area. Small talk stays on the
 local model; real questions go to a cloud model (Claude, GPT or Gemini, your
 choice) with web search, within a monthly budget. How much stays local is a
-setting. It has settings and memory pages with history and undo. Set it up and test it with
+setting, and Kit keeps chatting locally while a slow cloud answer works. It has settings and memory pages with history and undo. Set it up and test it with
 [docs/stage-1-text-brain.md](docs/stage-1-text-brain.md).
 
 ```

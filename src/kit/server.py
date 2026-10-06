@@ -148,6 +148,7 @@ def create_app(
             "expert_model": s.profile("expert").model,
             "cloud_month_usd": round(memory.month_spend(), 4),
             "cloud_cap_usd": s.cloud.monthly_cap_usd,
+            "working_on": brain.busy(),
             "memory_facts": len(memory.facts()),
             "memory_items": memory.index.count(),
             "memory_search": "words only: " + brain.recall.embed_problem

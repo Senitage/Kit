@@ -72,10 +72,12 @@ def system_prompt(
     helper: str | None = "the cloud",
     expert: str | None = None,
     web_search: bool = False,
+    busy: list[str] | None = None,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
-    to; either is None when there's nowhere to hand it."""
+    to; either is None when there's nowhere to hand it. ``busy`` describes work a
+    cloud model is still doing in the background."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -158,8 +160,24 @@ def system_prompt(
         "",
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *memory_block(recalled, owner),
+        *busy_block(busy or [], owner),
     ]
     return "\n".join(lines)
+
+
+def busy_block(busy: list[str], owner: str) -> list[str]:
+    """Work still going on in the background, so Kit can say how it's going."""
+    if not busy:
+        return []
+    return [
+        "",
+        "You're still working on this in the background:",
+        *(f"- {line}" for line in busy),
+        f"Keep chatting with {owner} meanwhile. If they ask how it's going or seem "
+        f"impatient, say where it's up to, in character and briefly; a bit of cheek "
+        f"about being rushed is fine. Don't answer that question yourself or make up "
+        f"progress: the answer will arrive by itself when it's ready.",
+    ]
 
 
 def recall_results(query: str, hits: list[Hit], owner: str) -> str:

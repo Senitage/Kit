@@ -76,6 +76,19 @@ def test_paused_search_is_resumed(memory):
     assert answer.cost_usd == pytest.approx(0.088)  # both calls billed
 
 
+def test_progress_is_reported_while_a_search_runs(memory):
+    fake = FakeAnthropic(
+        answer=["Looking. ", "Found it."],
+        stop_reason=["pause_turn", "end_turn"],
+        queries=["pump curves"],
+    )
+    steps = []
+    cloud = make_cloud(memory, fake)
+    profile = Settings().models["sonnet"]
+    asyncio.run(cloud.answer(profile, MESSAGES, Settings(), on_step=steps.append))
+    assert steps == ["searched the web for 'pump curves'"]
+
+
 def test_cost_estimate():
     opus = Settings().models["opus"]
     assert estimate_cost(opus, Usage(input_tokens=1_000_000)) == 4.0

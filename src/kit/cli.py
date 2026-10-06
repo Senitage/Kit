@@ -256,6 +256,15 @@ async def _chat_loop(paths: KitPaths) -> int:
         if store.problem:
             print(f"warning: {store.problem}\n")
         print(f"Talking to {name}. Ctrl+C or an empty line to stop.")
+        print("You can keep typing while a slow answer is on its way.")
+        me = name.lower()
+        turns: set[asyncio.Task] = set()
+
+        async def turn(text: str) -> None:
+            print(f"{me}> ", end="", flush=True)
+            async for event in brain.chat(text):
+                _print_event(event, me)
+
         while True:
             try:
                 text = await asyncio.to_thread(input, "you> ")
@@ -263,35 +272,47 @@ async def _chat_loop(paths: KitPaths) -> int:
                 break
             if not text.strip():
                 break
-            print(f"{name.lower()}> ", end="", flush=True)
-            async for event in brain.chat(text):
-                kind = event["type"]
-                if kind == "say":
-                    print(event["text"], end="", flush=True)
-                elif kind == "reply":
-                    r = event["reply"]
-                    tags = [r["emotion"], *(s["gesture"] for s in r["segments"])]
-                    if event["source"] == "cloud":
-                        tags += [event["model"], f"${event['cost_usd']:.3f}"]
-                        if event["searches"]:
-                            tags.append(f"{event['searches']} search(es)")
-                    print(f"  [{' · '.join(t for t in tags if t != 'none')}]")
-                    if r.get("detail"):
-                        print(f"\n{r['detail']}\n")
-                elif kind == "handing_off":
-                    print(f"{name.lower()}> (asking {event['to']}) ", end="", flush=True)
-                elif kind == "notice":
-                    print(f"\n  ({event['message']})\n{name.lower()}> ", end="", flush=True)
-                elif kind == "remembered":
-                    print(f"  (remembered: {event['fact']})")
-                elif kind == "thing_suggested":
-                    print(f"  (add to the register? {event['thing']['line']}  yes/no)")
-                elif kind == "thing_updated" and event["thing"]:
-                    print(f"  (register: {event['thing']['line']})")
-                elif kind == "error":
-                    print(f"\n  ! {event['message']}")
+            before = set(brain.jobs)
+            task = asyncio.create_task(turn(text))
+            turns.add(task)
+            task.add_done_callback(turns.discard)
+            # Wait for the answer, or until it's gone off to a cloud model.
+            await asyncio.sleep(0.05)
+            while not task.done() and set(brain.jobs) <= before:
+                await asyncio.sleep(0.05)
+        if turns:
+            print("(finishing what I was working on...)")
+            await asyncio.gather(*turns, return_exceptions=True)
         memory.close()
     return 0
+
+
+def _print_event(event: dict, me: str) -> None:
+    kind = event["type"]
+    if kind == "say":
+        print(event["text"], end="", flush=True)
+    elif kind == "reply":
+        r = event["reply"]
+        tags = [r["emotion"], *(s["gesture"] for s in r["segments"])]
+        if event["source"] == "cloud":
+            tags += [event["model"], f"${event['cost_usd']:.3f}"]
+            if event["searches"]:
+                tags.append(f"{event['searches']} search(es)")
+        print(f"  [{' · '.join(t for t in tags if t != 'none')}]")
+        if r.get("detail"):
+            print(f"\n{r['detail']}\n")
+    elif kind == "handing_off":
+        print(f"\n{me}> (asking {event['to']}; keep chatting if you like)\n{me}> ", end="")
+    elif kind == "notice":
+        print(f"\n  ({event['message']})\n{me}> ", end="", flush=True)
+    elif kind == "remembered":
+        print(f"  (remembered: {event['fact']})")
+    elif kind == "thing_suggested":
+        print(f"  (add to the register? {event['thing']['line']}  yes/no)")
+    elif kind == "thing_updated" and event["thing"]:
+        print(f"  (register: {event['thing']['line']})")
+    elif kind == "error":
+        print(f"\n  ! {event['message']}")
 
 
 def _show_item(item) -> str:
