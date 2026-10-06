@@ -74,6 +74,7 @@ def system_prompt(
     web_search: bool = False,
     busy: list[str] | None = None,
     weather: bool = False,
+    forecast: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -172,8 +173,22 @@ def system_prompt(
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *memory_block(recalled, owner),
         *busy_block(busy or [], owner),
+        *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
+
+
+def forecast_block(forecast: str, owner: str) -> list[str]:
+    """The forecast for home, fetched because the message is about the weather."""
+    if not forecast:
+        return []
+    return [
+        "",
+        f"{owner} is asking about the weather. The latest forecast for where they are:",
+        forecast,
+        "Answer from this in a sentence or two (for 'tonight', the evening temperatures "
+        "and any rain). For somewhere else, use the weather action.",
+    ]
 
 
 def busy_block(busy: list[str], owner: str) -> list[str]:

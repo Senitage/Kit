@@ -78,6 +78,13 @@ KEEP_LOCAL = re.compile(
 )
 ASK_EXPERT = re.compile(r"\b(think (really )?(hard|carefully)|ask (the|your) expert)\b", re.I)
 ASK_CLOUD = re.compile(r"\b(ask (claude|gpt|gemini|the cloud)|use the cloud)\b", re.IGNORECASE)
+# Plainly about the weather: Kit fetches the forecast first and the local model
+# answers from it, rather than handing a two-second question to the cloud.
+WEATHER = re.compile(
+    r"\b(weather|forecast|umbrella|rain(ing|y)?|showers|sunny|windy|storms?|"
+    r"how (hot|cold|warm) (is it|will it be)|what'?s the temp(erature)?)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -186,7 +193,13 @@ class Brain:
             name = settings.profile(role).name
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
-        async for event in self._converse(text, history, recalled, settings, role, chosen):
+        forecast = ""
+        if role == LOCAL and self.weather is not None and WEATHER.search(text):
+            forecast = await self._home_forecast(settings)
+            emit({"type": "weather", "place": settings.persona.location})
+        async for event in self._converse(
+            text, history, recalled, settings, role, chosen, forecast=forecast
+        ):
             if event["type"] == "reply" and self.jobs:
                 event = {**event, "question": text}
             emit(self._track(event, said))
@@ -196,6 +209,13 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    async def _home_forecast(self, settings: Settings) -> str:
+        place = settings.persona.location
+        try:
+            return await self.weather.forecast(place, settings.persona.country)
+        except WeatherError as e:
+            return f"The forecast lookup for {place or 'home'} failed: {e}"
 
     def busy(self) -> list[dict]:
         """What cloud models are working on right now."""
@@ -258,7 +278,14 @@ class Brain:
             said.append(Reply.model_validate(event["reply"]).full_text)
         return event
 
-    def _system(self, settings: Settings, recalled: Recalled, role: str, hand_off: bool) -> str:
+    def _system(
+        self,
+        settings: Settings,
+        recalled: Recalled,
+        role: str,
+        hand_off: bool,
+        forecast: str = "",
+    ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
         if role == LOCAL:
@@ -279,6 +306,7 @@ class Brain:
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
             weather=self.weather is not None,
+            forecast=forecast,
         )
 
     async def _converse(
@@ -291,10 +319,12 @@ class Brain:
         chosen: bool = False,
         hops: int = 0,
         question: str = "",
+        forecast: str = "",
     ) -> AsyncIterator[Event]:
-        hand_off = role == LOCAL and not chosen and hops == 0
+        hand_off = role == LOCAL and not chosen and hops == 0 and not forecast
+        system = self._system(settings, recalled, role, hand_off, forecast)
         messages = [
-            {"role": "system", "content": self._system(settings, recalled, role, hand_off)},
+            {"role": "system", "content": system},
             *history_messages(history),
             {"role": "user", "content": text},
         ]

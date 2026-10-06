@@ -455,38 +455,49 @@ async def _collect(agen):
     return [e async for e in agen]
 
 
-def test_weather_action_gets_the_forecast_then_answers(memory):
+PERTH = {"memory": {"min_similarity": 0.3}, "persona": {"location": "Perth, WA", "country": "AU"}}
 
-    s = Settings.model_validate(
-        {"memory": {"min_similarity": 0.3}, "persona": {"location": "Perth, WA", "country": "AU"}}
-    )
+
+def test_weather_question_is_answered_locally_from_the_forecast(memory):
     brain, model, claude = make(
-        memory,
-        reply("Checking the forecast.", action="weather"),
-        reply("Mild tonight, about 14 and clear."),
-        settings=s,
+        memory, reply("Mild tonight, about 14 and clear."), settings=Settings.model_validate(PERTH)
     )
     brain.weather = FakeWeather()
     events = collect(brain.chat("What's the weather like tonight?"))
-    assert [e["type"] for e in events].count("reply") == 2
+    assert [e["type"] for e in events].count("reply") == 1
     assert next(e for e in events if e["type"] == "weather")["place"] == "Perth, WA"
     assert brain.weather.asked == [("Perth, WA", "AU")]
-    assert "Forecast for Perth" in model.calls[1][-1]["content"]
-    assert "- weather:" in model.calls[0][0]["content"]
-    assert not claude.calls  # no cloud call for the weather
+    system = model.calls[0][0]["content"]
+    assert "Forecast for Perth, WA" in system
+    assert "ask_cloud" not in system  # no handing a weather question to the cloud
+    assert not claude.calls
 
 
-def test_weather_failure_is_told_to_the_model(memory):
+def test_engineering_temperatures_are_not_weather(memory):
+    brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(PERTH))
+    brain.weather = FakeWeather()
+    collect(brain.chat("What temperature does the leach tank run at?"))
+    assert brain.weather.asked == []
 
+
+def test_weather_action_for_somewhere_else(memory):
     brain, model, _ = make(
         memory,
         reply("Checking.", action="weather", text="Broome"),
-        reply("I can't get the forecast right now."),
+        reply("Hot and dry up there."),
     )
-    brain.weather = FakeWeather(fail=True)
-    collect(brain.chat("Weather in Broome?"))
+    brain.weather = FakeWeather()
+    events = collect(brain.chat("Is it nice in Broome at the moment?"))
     assert brain.weather.asked == [("Broome", "")]
-    assert "The forecast lookup failed" in model.calls[1][-1]["content"]
+    assert [e["type"] for e in events].count("reply") == 2
+    assert "Forecast for Broome" in model.calls[1][-1]["content"]
+
+
+def test_weather_failure_is_told_to_the_model(memory):
+    brain, model, _ = make(memory, reply("I can't get the forecast right now."))
+    brain.weather = FakeWeather(fail=True)
+    collect(brain.chat("Will it rain tomorrow?"))
+    assert "forecast lookup for home failed" in model.calls[0][0]["content"]
 
 
 def test_no_weather_action_without_a_forecast_source(memory):
