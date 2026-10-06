@@ -150,3 +150,54 @@ def test_app_starts_into_the_tray_and_quits(qapp, desk_dir, monkeypatch):
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def test_glow_dozes_off_when_dan_is_away_and_wakes_when_he_is_back(qapp):
+    from kit.desk.alive import Alive
+
+    face = desk_app.HelperFace(150)
+    face.move(400, 300)
+    face.show()
+    snap = {"idle_seconds": 5.0, "locked": False}
+    looked = []
+    alive = Alive(
+        face, lambda: snap, lambda: looked.append(1) or (0, 0, 800, 600), lambda: 600, lambda: False
+    )
+    alive.step()
+    assert not alive.asleep
+    snap["idle_seconds"] = 700
+    alive.step()
+    assert alive.asleep and alive._awake_pos == face.pos()
+    snap["idle_seconds"] = 1
+    alive.step()
+    assert not alive.asleep and face.face.state == "idle"
+    alive._next_glance = 0
+    alive.step()
+    assert looked
+    alive.timer.stop()
+    face.close()
+
+
+def test_a_pipe_up_shows_in_the_chat_and_on_the_face(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    acted = []
+    desk.performer.perform = acted.append
+    try:
+        desk._on_life({"type": "fidget", "gesture": "yawn"})
+        desk._on_life(
+            {"type": "pipe_up", "reply": reply_event("Still on pumps.py, mate?")["reply"]}
+        )
+        import time as _t
+
+        end = _t.time() + 1.5
+        while _t.time() < end:
+            qapp.processEvents()
+        assert "Still on pumps.py, mate?" in desk.chat.text()
+        assert acted and acted[0]["segments"][0]["say"] == "Still on pumps.py, mate?"
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 import kit
 from kit.brain import Brain
 from kit.knowledge import Item
+from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, Memory
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
@@ -107,14 +108,17 @@ def create_app(
     token: str,
     summarise_every_s: float | None = SUMMARY_INTERVAL_S,
     paths: KitPaths | None = None,
+    life_every_s: float | None = TICK_S,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = None
+        tasks = []
         if summarise_every_s:
-            task = asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s))
+            tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
+        if life_every_s:
+            tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
         yield
-        if task:
+        for task in tasks:
             task.cancel()
 
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
@@ -340,6 +344,28 @@ def create_app(
         """What Kit can see of Dan's PC, as Kit sees it."""
         return brain.pc.as_dict(store.current().persona.owner)
 
+    @app.get("/api/life", dependencies=auth)
+    def life() -> dict:
+        """Kit's mood and drives, and whether he's been told to keep quiet."""
+        s = store.current().life
+        return {**brain.life.state(), "quirks": brain.quirks, "settings": s.model_dump()}
+
+    @app.get("/api/life/events", dependencies=auth)
+    async def life_events(after: int = 0, wait: Annotated[float, Query(ge=0, le=60)] = 25) -> dict:
+        """Fidgets and pipe-ups after event ``after``. Waits up to ``wait`` seconds for
+        one, so the desk app (and later the arm) hears about them at once."""
+        events = await brain.life.wait_for_events(after, wait)
+        return {"events": events, "last": brain.life.state()["last_event"]}
+
+    @app.post("/api/life/snooze", dependencies=auth)
+    def snooze(minutes: Annotated[float, Body(embed=True, ge=0, le=24 * 60)] = 60) -> dict:
+        """Keep Kit from piping up for a while (0 lets him again)."""
+        if minutes:
+            brain.life.snooze(minutes)
+        else:
+            brain.life.wake()
+        return brain.life.state()
+
     @app.get("/api/spend", dependencies=auth)
     def spend() -> dict:
         return {
@@ -349,6 +375,35 @@ def create_app(
         }
 
     return app
+
+
+async def _life_loop(brain: Brain, every_s: float) -> None:
+    """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up."""
+    while True:
+        await asyncio.sleep(every_s)
+        try:
+            await life_tick(brain)
+        except Exception:
+            log.exception("Kit's heartbeat failed")
+
+
+async def life_tick(brain: Brain) -> None:
+    reason = brain.life.tick()
+    if reason is None or brain.jobs:
+        return
+    reply = None
+    async for event in brain.pipe_up(reason):
+        if event["type"] == "reply":
+            reply = event
+    if reply:
+        brain.life.publish(
+            {
+                "type": "pipe_up",
+                "reason": reason,
+                "reply": reply["reply"],
+                "message_id": reply["message_id"],
+            }
+        )
 
 
 async def _upkeep_loop(

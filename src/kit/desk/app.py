@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 
 import kit
 from kit.desk import startup
+from kit.desk.alive import Alive
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError
@@ -284,9 +285,13 @@ class _NoDesktop:
     def locked(self) -> bool:
         return False
 
+    def focused_rect(self) -> tuple[int, int, int, int] | None:
+        return None
+
 
 class _Signals(QObject):
     online = Signal(bool, str)
+    life = Signal(dict)
 
 
 class DeskApp(QObject):
@@ -300,6 +305,8 @@ class DeskApp(QObject):
         self._stop = threading.Event()
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
+        self._signals.life.connect(self._on_life)
+        self.sleep_after_s = 600.0
 
         self.face = HelperFace(self.config.face_size)
         self.face.setWindowIcon(face_icon())
@@ -336,11 +343,19 @@ class DeskApp(QObject):
         self.reporter = Reporter(
             desktop, self._report, lambda: self.config, system_status, browser=self.browser.current
         )
+        self.alive = Alive(
+            self.face,
+            lambda: self.reporter.last,
+            desktop.focused_rect,
+            lambda: self.sleep_after_s,
+            self._busy,
+        )
         self.health = QTimer(self)
         self.health.timeout.connect(self.check_health)
         self.health.start(HEALTH_EVERY_MS)
         self.check_health()
         threading.Thread(target=self._watch_loop, name="kit-watch", daemon=True).start()
+        threading.Thread(target=self._life_loop, name="kit-life", daemon=True).start()
 
         if not self.token:
             QTimer.singleShot(0, lambda: self.open_settings(first_run=True))
@@ -365,6 +380,7 @@ class DeskApp(QObject):
         menu.addAction(
             "What Kit remembers", lambda: webbrowser.open(self.config.brain_url + "/memory")
         )
+        menu.addAction("Quiet for an hour", lambda: self.quiet(60))
         menu.addAction("Set up the Chrome extension...", self.extension_help)
         menu.addAction("Settings...", self.open_settings)
         menu.addSeparator()
@@ -534,6 +550,61 @@ class DeskApp(QObject):
                 log.exception("watching the desktop failed")
             self._stop.wait(max(0.5, self.config.poll_seconds))
 
+    # Kit's inner life (kit.life on the brain decides; this acts it out)
+
+    def _life_loop(self) -> None:
+        after: int | None = None
+        while not self._stop.is_set():
+            client = self.client
+            if client is None:
+                self._stop.wait(5)
+                continue
+            try:
+                if after is None:  # start from now, not from old fidgets
+                    state = client.life()
+                    after = state["last_event"]
+                    self.sleep_after_s = 60.0 * state["settings"]["sleep_after_minutes"]
+                got = client.life_events(after)
+                for event in got["events"]:
+                    self._signals.life.emit(event)
+                after = got["events"][-1]["id"] if got["events"] else max(after, 0)
+                if got["last"] < after:  # the brain restarted: its event ids began again
+                    after = None
+            except (BrainError, KeyError, TypeError):
+                after = None
+                self._stop.wait(10)
+
+    def _on_life(self, event: dict) -> None:
+        face = self.face.face
+        if event.get("type") == "fidget":
+            if not self._busy() and not self.alive.asleep:
+                face.play(event.get("gesture", "look_away"), time.monotonic())
+        elif event.get("type") == "pipe_up":
+            reply = event.get("reply") or {}
+            if self.alive.asleep:
+                self.alive.wake_up()
+            face.play("perk_up", time.monotonic())
+            QTimer.singleShot(700, lambda: self.chat.on_event(0, {"type": "reply", "reply": reply}))
+            if not self.face.isVisible() and not self.chat.isVisible():
+                said = " ".join(s.get("say", "") for s in reply.get("segments", []))
+                self.tray.showMessage("Kit", said, face_icon(), 8000)
+
+    def _busy(self) -> bool:
+        return self.chat._in_flight > 0 or self.face.face.state in (
+            "speaking",
+            "thinking",
+            "working",
+        )
+
+    def quiet(self, minutes: float) -> None:
+        client = self.client
+        if client is None:
+            return
+        threading.Thread(
+            target=lambda: _quietly(client.snooze, minutes), name="kit-snooze", daemon=True
+        ).start()
+        self.tray.showMessage("Kit", "Righto, zipping it for an hour.", face_icon(), 2500)
+
     # The face
 
     def _chat_state(self, state: str) -> None:
@@ -553,6 +624,13 @@ class DeskApp(QObject):
         self.bubble.enabled = not self.chat.isVisible()
         if reply.get("segments"):
             self.performer.perform(reply)
+
+
+def _quietly(call, *args) -> None:
+    try:
+        call(*args)
+    except BrainError:
+        log.exception("telling Kit to be quiet failed")
 
 
 def _single_instance() -> QLocalServer | None:

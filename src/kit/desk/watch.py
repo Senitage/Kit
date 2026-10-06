@@ -91,6 +91,7 @@ class OpenWindow:
 class Desktop(Protocol):
     def windows(self) -> list[OpenWindow]: ...
     def focused(self) -> OpenWindow | None: ...
+    def focused_rect(self) -> tuple[int, int, int, int] | None: ...
     def idle_seconds(self) -> float: ...
     def locked(self) -> bool: ...
 
@@ -213,6 +214,7 @@ class Reporter:
         self._last_sent = float("-inf")
         self._system: dict | None = None
         self._system_at = float("-inf")
+        self.last: dict | None = None  # the latest look at the desktop, sent or not
 
     def tick(self) -> bool:
         """Check the desktop once; returns True if a report went to Kit."""
@@ -225,6 +227,7 @@ class Reporter:
                 log.exception("reading system status failed")
             self._system_at = now
         snap = build_snapshot(self.desktop, config, self.host, self._system, self.browser())
+        self.last = snap
         focus = snap["focus"] or {}
         key = (
             focus.get("app"),
@@ -332,6 +335,7 @@ class WindowsDesktop:
         u.OpenInputDesktop.restype = wintypes.HANDLE
         u.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         u.CloseDesktop.argtypes = [wintypes.HANDLE]
+        u.GetWindowRect.argtypes = [hwnd, ctypes.POINTER(wintypes.RECT)]
         self.dwmapi.DwmGetWindowAttribute.argtypes = [
             hwnd,
             wintypes.DWORD,
@@ -414,6 +418,14 @@ class WindowsDesktop:
     def focused(self) -> OpenWindow | None:
         hwnd = self.user32.GetForegroundWindow()
         return self._window(hwnd) if hwnd else None
+
+    def focused_rect(self) -> tuple[int, int, int, int] | None:
+        """Where the focused window is on screen (x, y, width, height), in pixels."""
+        hwnd = self.user32.GetForegroundWindow()
+        rect = self._wt.RECT()
+        if not hwnd or not self.user32.GetWindowRect(hwnd, self._ct.byref(rect)):
+            return None
+        return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
 
     def idle_seconds(self) -> float:
         info = self._LastInput(self._ct.sizeof(self._LastInput), 0)

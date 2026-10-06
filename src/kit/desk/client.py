@@ -52,6 +52,19 @@ class BrainClient:
     def messages(self, limit: int = 40) -> list[dict]:
         return self._call("GET", "/api/messages", params={"limit": limit}).json()
 
+    def life_events(self, after: int, wait: float = 25.0) -> dict:
+        """Kit's fidgets and pipe-ups after event ``after``; waits up to ``wait`` s."""
+        timeout = httpx.Timeout(10.0, read=wait + 10)
+        return self._call(
+            "GET", "/api/life/events", params={"after": after, "wait": wait}, timeout=timeout
+        ).json()
+
+    def life(self) -> dict:
+        return self._call("GET", "/api/life").json()
+
+    def snooze(self, minutes: float) -> dict:
+        return self._call("POST", "/api/life/snooze", json={"minutes": minutes}).json()
+
     def report(self, snapshot: dict) -> None:
         self._call("POST", "/api/pc/context", json=snapshot)
 

@@ -73,6 +73,8 @@ MIGRATIONS = [
     knowledge.SCHEMA,
     # 3: which way each message came in (kit.channels): desk, voice, phone, web, terminal.
     "ALTER TABLE messages ADD COLUMN channel TEXT;",
+    # 4: things about Kit himself, such as the quirks he picked (kit.life).
+    "CREATE TABLE IF NOT EXISTS kit_self (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
 ]
 
 
@@ -136,6 +138,22 @@ class Memory:
 
     def today(self) -> str:
         return self.clock().date().isoformat()
+
+    # Kit himself
+
+    @_locked
+    def self_value(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM kit_self WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    @_locked
+    def set_self_value(self, key: str, value: str) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO kit_self (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
 
     # Conversation
 

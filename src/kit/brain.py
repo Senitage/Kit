@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
+from kit.life import SHUSH, UNSHUSH, Life, my_quirks, pipe_up_prompt
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.pc_context import PcContext
@@ -70,6 +71,7 @@ log = logging.getLogger(__name__)
 
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
+PIPE_UP = "pipe_up"  # the source of a message Kit said of his own accord
 DEEP_RECALL = 10
 
 # Where the message being answered came from. Each turn is its own task, so each
@@ -142,6 +144,8 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.pc = PcContext(memory.clock)
+        self.life = Life(settings, self.pc, memory.clock)
+        self.quirks = my_quirks(memory)
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -179,7 +183,8 @@ class Brain:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
-        answered = self._answer_suggestion(text)
+        self.life.note_chat()
+        answered = self._answer_suggestion(text) or self._answer_shush(text)
         if answered is not None:
             for event in self._say_locally(answered):
                 emit(event)
@@ -229,6 +234,44 @@ class Brain:
             self.register.reject(pending)
             return Reply.plain(f"Okay, I'll leave {thing.name} out.", "neutral", "nod")
         return None
+
+    def _answer_shush(self, text: str) -> Reply | None:
+        """ "Shush" or "not now" keeps Kit from piping up for an hour; "you can talk
+        again" lets him. Answered on the spot, so it works even when models are down."""
+        if UNSHUSH.search(text):
+            self.life.wake()
+            return Reply.plain("Oh good. I had things to say.", "excited", "perk_up")
+        if SHUSH.search(text) and len(text) < 60:
+            self.life.snooze(60)
+            return Reply.plain("Righto, zipping it for an hour.", "shy", "nod")
+        return None
+
+    async def pipe_up(self, reason: str) -> AsyncIterator[Event]:
+        """Kit says something of his own accord (see kit.life): one short line, written
+        by the local model from what Dan's doing and what Kit remembers."""
+        settings = self.settings()
+        owner = settings.persona.owner
+        history = self.memory.recent(settings.brain.history_messages)
+        token = CHANNEL.set("desk")
+        try:
+            about = self.pc.now_line(owner) or "what Dan is up to"
+            recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
+            quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
+            prompt = pipe_up_prompt(
+                reason, owner, settings.life.cheek, self.life.curious_about, quiet_h
+            )
+            messages = [
+                {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
+                *history_messages(history, "desk"),
+                {"role": "user", "content": prompt},
+            ]
+            async for event in self._local_reply(messages, PIPE_UP):
+                if event["type"] == "reply":
+                    event = {**event, "piped_up": reason}
+                yield event
+        finally:
+            CHANNEL.reset(token)
+        self.life.piped_up()
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -290,6 +333,7 @@ class Brain:
             expert=further,
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
+            quirks=self.quirks,
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
         )

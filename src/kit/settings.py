@@ -253,6 +253,38 @@ class BrainSettings(_Section):
     )
 
 
+class LifeSettings(_Section):
+    enabled: bool = Field(
+        True, description="Kit fidgets, gets bored and sometimes pipes up on his own."
+    )
+    cheek: float = Field(
+        0.6, ge=0, le=1, description="How cheeky Kit is when he pipes up: 0 polite, 1 larrikin."
+    )
+    chattiness: float = Field(
+        0.5,
+        ge=0,
+        le=1,
+        description="How readily Kit speaks first. 0 never (he still fidgets), 1 whenever he "
+        "feels like it, within the hourly limit.",
+    )
+    max_per_hour: int = Field(
+        3, ge=0, le=12, description="Most times an hour Kit pipes up unprompted."
+    )
+    quiet_from: str = Field("22:00", description="Kit doesn't pipe up from this time...")
+    quiet_until: str = Field("07:00", description="...until this time.")
+    sleep_after_minutes: int = Field(
+        10, ge=1, le=240, description="Kit dozes off after you've been away this long."
+    )
+
+    @field_validator("quiet_from", "quiet_until")
+    @classmethod
+    def _clock_time(cls, value: str) -> str:
+        h, _, m = value.partition(":")
+        if not (h.isdigit() and m.isdigit() and int(h) < 24 and int(m) < 60 and len(m) == 2):
+            raise ValueError("must be a time like 22:00")
+        return f"{int(h):02d}:{m}"
+
+
 class MemorySettings(_Section):
     embed_model: str = Field(
         "nomic-embed-text",
@@ -301,6 +333,7 @@ class Settings(_Section):
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    life: LifeSettings = Field(default_factory=LifeSettings)
 
     @field_validator("models", mode="before")
     @classmethod

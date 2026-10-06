@@ -76,6 +76,7 @@ def system_prompt(
     busy: list[str] | None = None,
     pc: str = "",
     channel: str = "",
+    quirks: list[str] | None = None,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -93,6 +94,12 @@ def system_prompt(
     ]
     if persona.location:
         lines.append(f"{owner} is in {persona.location}.")
+    if quirks:
+        lines.append(
+            "Quirks you picked for yourself (let them show now and then, not every time): "
+            + "; ".join(quirks)
+            + "."
+        )
     lines += [
         "",
         "Rules:",
