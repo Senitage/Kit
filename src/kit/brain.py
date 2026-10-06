@@ -97,9 +97,11 @@ WEATHER_FOLLOW_UP = timedelta(minutes=15)
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
     r"nearly (done|there)|done yet|any luck|still (going|working|thinking)|hurry up|"
-    r"what'?s taking so long|status)\b",
+    r"what'?s taking so long|status|anything yet)\b",
     re.IGNORECASE,
 )
+# A bare "hello?" or "hey" while Kit is busy is checking in too.
+NUDGE = re.compile(r"^\W*(hello|hey|hi|oi|kit|um+|so+|and|well|anything)?\W*\?+\W*$", re.I)
 
 
 @dataclass
@@ -246,13 +248,17 @@ class Brain:
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
         long prompt, so when Dan checks in, say it again right next to his words."""
-        if role != LOCAL or not self.jobs or not CHECKING_IN.search(text):
+        if role != LOCAL or not self.jobs:
+            return text
+        if not (CHECKING_IN.search(text) or NUDGE.search(text)):
             return text
         work = " ".join(job.line() for job in self.jobs.values())
         return (
             f"{text}\n\n(Note for you, not from {self.settings().persona.owner}: they're "
-            f"checking in on the work you're doing in the background. {work} Say where "
-            f"it's up to, briefly and in character. Don't answer it yet.)"
+            f"checking in on the work you're doing in the background. {work} Say which "
+            f"question you're on (in a few words, e.g. 'the cavitation one'), how long "
+            f"it's been and anything you've done so far, briefly and in character, and "
+            f"word it differently from your last reply. Don't answer the question itself.)"
         )
 
     def busy(self) -> list[dict]:

@@ -545,3 +545,13 @@ def test_small_talk_while_busy_has_no_note(memory):
     brain.jobs[1] = Job(1, "size a thickener", "Opus")
     collect(brain.chat("hello"))
     assert model.calls[0][-1]["content"] == "hello"
+
+
+@pytest.mark.parametrize("text", ["hello?", "anything?", "?", "hey?", "well?"])
+def test_nudges_while_busy_count_as_checking_in(memory, text):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Still on it."))
+    brain.jobs[1] = Job(1, "pump cavitation", "Opus")
+    collect(brain.chat(text))
+    assert '"pump cavitation"' in model.calls[0][-1]["content"]
