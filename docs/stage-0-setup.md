@@ -50,7 +50,10 @@ closes, which would stop Kit. A Windows scheduled task keeps it up:
 1. Open **Task Scheduler**, **Create Task**. Name: `Kit WSL`.
 2. General: **Run only when user is logged on**, and tick **Hidden**.
 3. Triggers: **At log on** of your user.
-4. Actions: Program `wsl.exe`, arguments `-d Ubuntu --exec sleep infinity`.
+4. Actions: Program `conhost.exe`, arguments
+   `--headless wsl.exe -d Ubuntu --exec sleep infinity`. (`conhost --headless`
+   runs it with no window; started directly, `wsl.exe` opens a console window
+   that stops Ubuntu when closed, even with Hidden ticked.)
 5. Settings: untick **Stop the task if it runs longer than**, and tick **If the
    task fails, restart every 1 minute** (up to 999 times), so it comes back
    after a `wsl --shutdown`.
