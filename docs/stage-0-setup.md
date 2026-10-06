@@ -51,7 +51,10 @@ closes, which would stop Kit. A Windows scheduled task keeps it up:
 2. General: **Run only when user is logged on**, and tick **Hidden**.
 3. Triggers: **At log on** of your user.
 4. Actions: Program `wsl.exe`, arguments `-d Ubuntu --exec sleep infinity`.
-5. Settings: untick **Stop the task if it runs longer than**.
+5. Settings: untick **Stop the task if it runs longer than**, and tick **If the
+   task fails, restart every 1 minute** (up to 999 times), so it comes back
+   after a `wsl --shutdown`.
+6. Right-click the task and **Run** it now.
 
 Set Windows to sign you in automatically after a restart (or just stay signed
 in), so Kit comes back on its own after updates. Use the name from
@@ -69,6 +72,8 @@ It should list the RTX 2070 SUPER with 8192 MiB. If the command isn't found, the
 Windows driver is too old: update it and run `wsl --shutdown`. If it crashes
 with `Segmentation fault`, WSL is still using the libraries from before a driver
 update: run `wsl --shutdown` in PowerShell, open Ubuntu again and retry.
+`wsl --shutdown` also stops the Kit WSL task; run it again from Task Scheduler
+afterwards (or wait a minute if it's set to restart).
 
 ## 3. Python and the basics
 
@@ -253,5 +258,5 @@ then repeat steps 2 to 8. Copy `/var/lib/kit` across before running `kit init`
 - [ ] The desk PC and phone reach `kit-server` over Tailscale, including from mobile data
 - [ ] Each read-only share is readable and refuses writes; the vault accepts them (`kit check`: nas)
 - [ ] The Claude API key works (`kit check`: cloud: sonnet and cloud: opus)
-- [ ] After closing every Ubuntu window and waiting five minutes, `ollama ps` in a new window still answers (Ubuntu stayed up)
+- [ ] After closing every Ubuntu window and waiting five minutes, `uptime -s` in a new window shows an earlier start time (Ubuntu stayed up)
 - [ ] CI is green on Windows and Linux for this pull request
