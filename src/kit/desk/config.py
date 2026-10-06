@@ -1,0 +1,103 @@
+"""The desk app's own settings, kept on the desk PC.
+
+The desk app runs on Dan's Windows PC, not on Kit's server, so it can't use
+Kit's data folder. Its few settings (where the brain is, what to hide) live in
+``%APPDATA%\\Kit Desk`` (``~/.config/kit-desk`` elsewhere, for trying it out),
+or wherever ``KIT_DESK_DIR`` points. The API token sits in its own file there,
+never in desk.toml, so the settings can be shown and shared freely.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import tomllib
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+
+import tomli_w
+
+DESK_DIR_ENV = "KIT_DESK_DIR"
+CONFIG_FILE = "desk.toml"
+TOKEN_FILE = "api_token"
+
+# Titles from these apps are never sent to Kit (matched against the app or exe name).
+HIDDEN_APPS = ["KeePass", "KeePassXC", "1Password", "Bitwarden", "LastPass", "Dashlane"]
+# Nor titles containing these whole words: banking, private browsing, passwords.
+HIDDEN_WORDS = [
+    "bank",
+    "banking",
+    "netbank",
+    "commbank",
+    "westpac",
+    "anz",
+    "nab",
+    "ing",
+    "paypal",
+    "password",
+    "passwords",
+    "inprivate",
+    "incognito",
+    "private browsing",
+]
+
+
+def desk_dir() -> Path:
+    override = os.environ.get(DESK_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "Kit Desk"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kit-desk"
+
+
+@dataclass
+class DeskConfig:
+    brain_url: str = "http://kit-server:8600"
+    watch: bool = True  # report open windows and focus to Kit
+    poll_seconds: float = 2.0  # how often the desktop is checked
+    heartbeat_seconds: float = 20.0  # report at least this often, even with no change
+    hidden_apps: list[str] = field(default_factory=lambda: list(HIDDEN_APPS))
+    hidden_words: list[str] = field(default_factory=lambda: list(HIDDEN_WORDS))
+    show_face: bool = True
+    face_size: int = 150
+    face_x: int | None = None  # where Dan last left the face; None puts it bottom right
+    face_y: int | None = None
+
+    @classmethod
+    def load(cls, folder: Path | None = None) -> DeskConfig:
+        path = (folder or desk_dir()) / CONFIG_FILE
+        if not path.is_file():
+            return cls()
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return cls()  # a broken file must never stop the app; Settings rewrites it
+        known = {f.name for f in fields(cls)}
+        config = cls(**{k: v for k, v in data.items() if k in known})
+        config.brain_url = config.brain_url.rstrip("/")
+        return config
+
+    def save(self, folder: Path | None = None) -> None:
+        folder = folder or desk_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        data = {k: v for k, v in asdict(self).items() if v is not None}
+        (folder / CONFIG_FILE).write_text(tomli_w.dumps(data), encoding="utf-8")
+
+
+def load_token(folder: Path | None = None) -> str:
+    path = (folder or desk_dir()) / TOKEN_FILE
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def save_token(token: str, folder: Path | None = None) -> None:
+    folder = folder or desk_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / TOKEN_FILE
+    # Owner-only on Linux; on Windows %APPDATA% is already private to Dan's account.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token.strip() + "\n")
