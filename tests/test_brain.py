@@ -525,3 +525,23 @@ def test_weather_follow_up_gets_a_fresh_forecast(memory, clock):
     clock.now += timedelta(minutes=30)
     collect(brain.chat("what's on tomorrow?"))
     assert len(brain.weather.asked) == 2  # long after, "tomorrow" isn't about the weather
+
+
+def test_checking_in_while_busy_names_the_work(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Still on the thickener, give me a sec."))
+    brain.jobs[1] = Job(1, "size a thickener", "Opus")
+    collect(brain.chat("how are you going?"))
+    last = model.calls[0][-1]["content"]
+    assert last.startswith("how are you going?") and '"size a thickener"' in last
+    assert memory.recent(10)[0].text == "how are you going?"  # the note isn't saved
+
+
+def test_small_talk_while_busy_has_no_note(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Hi."))
+    brain.jobs[1] = Job(1, "size a thickener", "Opus")
+    collect(brain.chat("hello"))
+    assert model.calls[0][-1]["content"] == "hello"

@@ -93,6 +93,13 @@ WHEN = re.compile(
     re.IGNORECASE,
 )
 WEATHER_FOLLOW_UP = timedelta(minutes=15)
+# "How are you going?" while a slow answer is still coming means "how's that going?".
+CHECKING_IN = re.compile(
+    r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
+    r"nearly (done|there)|done yet|any luck|still (going|working|thinking)|hurry up|"
+    r"what'?s taking so long|status)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -236,6 +243,18 @@ class Brain:
         except WeatherError as e:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
 
+    def _with_busy_note(self, text: str, role: str) -> str:
+        """A small local model can miss the background work listed at the end of a
+        long prompt, so when Dan checks in, say it again right next to his words."""
+        if role != LOCAL or not self.jobs or not CHECKING_IN.search(text):
+            return text
+        work = " ".join(job.line() for job in self.jobs.values())
+        return (
+            f"{text}\n\n(Note for you, not from {self.settings().persona.owner}: they're "
+            f"checking in on the work you're doing in the background. {work} Say where "
+            f"it's up to, briefly and in character. Don't answer it yet.)"
+        )
+
     def busy(self) -> list[dict]:
         """What cloud models are working on right now."""
         return [job.as_dict() for job in self.jobs.values()]
@@ -345,7 +364,7 @@ class Brain:
         messages = [
             {"role": "system", "content": system},
             *history_messages(history),
-            {"role": "user", "content": text},
+            {"role": "user", "content": self._with_busy_note(text, role)},
         ]
         job = None
         if role != LOCAL:
