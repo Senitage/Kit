@@ -203,6 +203,10 @@ Once you're happy with it, make Kit a systemd service, like Ollama. Stage 0's
 and restarts if it crashes. The same service file works unchanged on the Linux
 server later.
 
+Stop the `kit serve` you started by hand first (Ctrl+C), since the service
+uses the same port. Then run this from the repo folder (`cd ~/Kit`), so the
+service points at this checkout:
+
 ```
 sudo tee /etc/systemd/system/kit.service > /dev/null <<UNIT
 [Unit]
@@ -212,7 +216,7 @@ Wants=network-online.target
 
 [Service]
 User=$USER
-ExecStart=$HOME/kit/.venv/bin/kit serve
+ExecStart=$PWD/.venv/bin/kit serve
 Restart=always
 RestartSec=10
 
