@@ -14,6 +14,8 @@ a reference back to where it came from.
 | --- | --- | --- |
 | `memory` | Facts about you: about, preference, project, place, person, plan | Stage 1 |
 | `days` | A summary of each finished day | Stage 1 |
+| `things` | The register of things: one entry per person, vehicle, place, project or equipment, with where it lives | Stage 1 |
+| `thing-suggestions` | Names Kit met and suggested adding, waiting for a yes or no | Stage 1 |
 | `conversation` | Every exchange, so old conversations can be found | Stage 1 |
 | `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
 | `files` | NAS documents and folders (names, paths, text) | Stage 5 |
@@ -56,6 +58,34 @@ says so. Nothing is lost: missing vectors are filled in once it's back.
 Cloud models get the same memories, whether Kit hands a question over or the
 cloud answers first, and can use the same recall and remember actions.
 
+## The register of things
+
+Facts say what's true; the register says where things are. Like a plant tag
+register, it has one entry per person, pet, vehicle, place, project or piece of
+equipment, with:
+
+- its name and other names ("Hilux", "the ute");
+- a few words about it;
+- a link into each system where it lives: Home Assistant (area or entity),
+  home_app (record), NAS (folder), MetTools (folder), Obsidian (note), code
+  (project folder).
+
+Every turn, things named in the message (by name or other name, as whole
+words) come first, then the closest entries by words and meaning, up to
+`memory.relevant_things` (5). They go into the prompt as "Things you know and
+where they live", so Kit looks in the right place first.
+
+Kit uses the `thing` action when you name something. A new name becomes a
+suggestion for you to confirm with "yes" (or on the chat or memory page); a
+place for a known thing ("no, it's in Tax/2023") replaces that system's link.
+Each change is a new version that supersedes the old one, so the history is
+kept. The code is `kit/things.py`; entries keep their links in the item's
+`meta`, so no schema change was needed.
+
+`kit eval routing` checks that questions bring back the entry linked to the
+right system and place: a built-in set on a scratch register, and your own
+questions from `config/routing-questions.toml` against the real one.
+
 ## Learning without making a mess
 
 A memory that only ever adds things fills up with near-copies and stale facts.
@@ -75,6 +105,8 @@ end-of-day pass, which writes the day's summary and learns its lasting facts.
 - The memory page (`/memory`) and `kit memory ...` show everything Kit knows,
   grouped by kind, with search, edit, pin, history and forget. Forgetting
   removes a fact and all its earlier versions.
+- The memory page and `kit things ...` show the register, with links,
+  suggestions to confirm or reject, other names, history and forget.
 - `kit eval memory` measures accuracy on a scratch memory: right fact
   recalled, nothing recalled for unknown things, no stale or duplicate facts.
   Run it after changing models or memory settings.

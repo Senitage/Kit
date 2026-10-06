@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from kit.memory import FACT_KINDS
+from kit.things import SYSTEMS, THING_KINDS
 
 EMOTIONS: dict[str, str] = {
     "neutral": "calm, nothing special",
@@ -44,6 +45,8 @@ GESTURES: dict[str, str] = {
 FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
 Emotion = Literal[tuple(EMOTIONS)]  # type: ignore[valid-type]
 Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
+ThingKind = Literal[tuple(THING_KINDS)]  # type: ignore[valid-type]
+LinkSystem = Literal[("none", *SYSTEMS)]  # type: ignore[valid-type]
 
 
 class Segment(BaseModel):
@@ -54,10 +57,10 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "recall", "remember", "ask_cloud", "ask_expert"] = Field(
+    kind: Literal["none", "recall", "remember", "thing", "ask_cloud", "ask_expert"] = Field(
         description="recall searches memory before answering; remember saves a fact; "
-        "ask_cloud hands the question to the cloud model; ask_expert hands it to the "
-        "strongest model; none does nothing."
+        "thing notes a named thing and where it lives; ask_cloud hands the question to the "
+        "cloud model; ask_expert hands it to the strongest model; none does nothing."
     )
     text: str = Field(
         "",
@@ -66,6 +69,13 @@ class Action(BaseModel):
         "full question with the context it needs.",
     )
     category: FactKind = Field("other", description="For remember: what kind of fact it is.")
+    thing_kind: ThingKind = Field("other", description="For thing: what kind of thing it is.")
+    link_system: LinkSystem = Field(
+        "none", description="For thing: the system where it lives, if known."
+    )
+    link_target: str = Field(
+        "", description="For thing: where in that system, e.g. a folder path or note name."
+    )
 
 
 class Reply(BaseModel):

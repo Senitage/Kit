@@ -11,7 +11,9 @@ the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee
 
 Kit chats by text in a browser or terminal. It recalls what's relevant from
 everything it has learned, by words and by meaning, and keeps its facts tidy
-as things change ([how memory works](docs/memory.md)). Small talk stays on the
+as things change ([how memory works](docs/memory.md)). A register of things
+(people, vehicles, places, projects, equipment) tells it where each one lives:
+which NAS folder, Obsidian note, home_app record or Home Assistant area. Small talk stays on the
 local model; real questions go to a cloud model (Claude, GPT or Gemini, your
 choice) with web search, within a monthly budget. How much stays local is a
 setting. It has settings and memory pages with history and undo. Set it up and test it with
@@ -24,7 +26,9 @@ kit config ...     # show, set, undo or check settings without a browser
 kit models         # which models do what; `kit models work gpt-sol` switches
 kit memory ...     # see, search, teach, pin or forget what Kit knows; cloud spend
 kit eval           # 50 prompts: are replies valid, and how fast do words start?
+kit things ...     # the register of things and where each one lives
 kit eval memory    # does Kit recall the right facts and keep its memory tidy?
+kit eval routing   # do questions bring back the right thing and where it lives?
 kit eval compare --models sonnet gpt-sol   # same questions, side by side
 kit token          # the API token for the pages and home_app
 ```

@@ -64,7 +64,24 @@ firewall rule is needed.
     facts the same way. Old conversations are searchable too.
   - Pin a fact to keep it always in mind.
   - Memory is backed up to `backups/` every day; the newest 14 copies are kept.
-- **Memory page** at `/memory`: see what Kit knows, grouped by kind (about
+- **Register of things**, like a plant tag register: one entry per person,
+  pet, vehicle, place, project or piece of equipment, with its other names and
+  where it lives in each system (Home Assistant area, home_app record, NAS
+  folder, MetTools folder, Obsidian note, code folder).
+  - When a message names a thing, or is about one, Kit sees the entry with its
+    links, so "where's the rego for the ute?" goes to the Hilux's NAS folder
+    without being told.
+  - When Kit meets a new name it suggests an entry. Answer "yes" or "no", or
+    use the Add and No buttons on the chat page. Unanswered suggestions wait on
+    the memory page.
+  - A correction like "no, it's in Tax/2023" replaces that system's link and
+    keeps the old one in the entry's history.
+  - From a terminal: `kit things list`, `suggestions`, `add NAME --kind vehicle
+    --alias ute --link nas=Documents/Cars/Hilux`, `link ID nas Tax/2023`,
+    `confirm`, `reject`, `forget`, `history`.
+  - Seed it with the things you talk about most. The stage 4 app connections
+    will use these links to know which app to ask.
+- **Memory page** at `/memory`: the register of things, then what Kit knows, grouped by kind (about
   you, preferences, projects, where things are, people, plans), search it the
   way Kit does, teach it something, and pin, edit or forget facts. The same
   from a terminal: `kit memory facts`, `search`, `remember`, `pin`, `forget`,
@@ -214,6 +231,20 @@ run `sudo systemctl restart kit`.
       worded differently from the facts and 3 about things it was never told.
       It needs 10/10 recalled, 3/3 with nothing recalled, and a tidy memory
       (no stale or duplicate facts). Your real memory isn't touched.
+- [ ] **New name, suggested:** say "we got a puppy called Biscuit, his photos
+      are in Photos/Biscuit". Kit suggests adding Biscuit with that NAS link.
+      Say "yes" and the memory page shows him under things.
+- [ ] **Asked another way:** later, "show me pictures of the dog" or "where are
+      Biscuit's photos?" brings back the entry, and Kit answers with the
+      Photos/Biscuit folder.
+- [ ] **Corrections stick:** add "Tax returns" with a NAS link, then tell Kit
+      "no, my tax stuff is in Tax/2023". The entry's NAS link changes and the
+      old one is in its history.
+- [ ] **Knows where to look:** run `kit eval routing`. It seeds a scratch
+      register with 8 things and asks 12 questions, each paired with the system
+      and place the answer should come from. It needs 12/12. Add your own
+      questions to `routing-questions.toml` in the config folder (see below)
+      and they're checked against your real register too.
 - [ ] **Updates replace old facts:** tell Kit "remember I drive a Hilux", then
       later "I've swapped the Hilux for a Ranger". The memory page shows one
       fact about the Ranger, with the Hilux in its history.
@@ -231,7 +262,21 @@ run `sudo systemctl restart kit`.
 If `kit eval` shows invalid replies or slow first words, try the fixes below,
 then run it again.
 
+Your own routing questions go in `config/routing-questions.toml` in the data
+folder (`kit paths` shows where), one block per question:
+
+```
+[[question]]
+text = "Find my 2023 tax return."
+system = "nas"            # home_assistant, home_app, nas, mettools, obsidian, code, other
+target = "Tax/2023"       # part of the link the answer should come from
+```
+
 ## If something's off
+
+- **`kit eval routing` misses a question:** the output shows what Kit recalled
+  instead. Usually the entry needs another name (`kit things add` with
+  `--alias`, or "Other names" on the memory page) or a few words in `--about`.
 
 - **First words take several seconds:** the first message after a while loads
   the model into the GPU. Kit asks Ollama to keep it loaded for 30 minutes. If

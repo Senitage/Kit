@@ -33,6 +33,9 @@ def memory_block(recalled: Recalled, owner: str) -> list[str]:
     if recalled.memories:
         lines += ["", "Memories that may be relevant now (newer ones win if they disagree):"]
         lines += [_memory_line(h.item) for h in recalled.memories]
+    if recalled.things:
+        lines += ["", "Things you know and where they live (look there first):"]
+        lines += [f"- {t.line()}" for t in recalled.things]
     if recalled.conversation:
         lines += ["", "Earlier conversations that may be relevant:"]
         lines += [_snippet(h) for h in recalled.conversation]
@@ -55,7 +58,8 @@ HAND_OFF = {
 
 REPLY_SHAPE = (
     '{"emotion": "neutral", "segments": [{"gesture": "nod", "say": "One short sentence."}], '
-    '"action": {"kind": "none", "text": "", "category": "other"}, "detail": ""}'
+    '"action": {"kind": "none", "text": "", "category": "other", "thing_kind": "other", '
+    '"link_system": "none", "link_target": ""}, "detail": ""}'
 )
 
 
@@ -124,6 +128,13 @@ def system_prompt(
         f"text as one sentence that makes sense on its own later, with real dates, and set "
         f"category.",
     ]
+    lines.append(
+        f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
+        f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
+        f"one lives (a folder, a note, an app record). Put its name in text, set "
+        f"thing_kind, and if you know where it lives set link_system and link_target. "
+        f"For a new name, ask {owner} if you should add it to the register."
+    )
     if not cloud and helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "

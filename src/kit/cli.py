@@ -18,6 +18,7 @@ from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError, load_settings, settings_to_toml
 from kit.settings_store import SettingsStore
+from kit.things import SYSTEMS, THING_KINDS
 
 CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud"]
 
@@ -283,6 +284,10 @@ async def _chat_loop(paths: KitPaths) -> int:
                     print(f"\n  ({event['message']})\n{name.lower()}> ", end="", flush=True)
                 elif kind == "remembered":
                     print(f"  (remembered: {event['fact']})")
+                elif kind == "thing_suggested":
+                    print(f"  (add to the register? {event['thing']['line']}  yes/no)")
+                elif kind == "thing_updated" and event["thing"]:
+                    print(f"  (register: {event['thing']['line']})")
                 elif kind == "error":
                     print(f"\n  ! {event['message']}")
         memory.close()
@@ -502,6 +507,125 @@ async def _eval_memory(paths: KitPaths) -> int:
     return 0 if report.passed else 1
 
 
+async def _eval_routing(paths: KitPaths) -> int:
+    """Check Kit knows where to look: the built-in questions against a scratch
+    register, then Dan's own questions (routing-questions.toml) against his register."""
+    from kit.embed import OllamaEmbedder
+    from kit.evals import load_routing_questions, run_routing_eval, seed_routing_things
+    from kit.memory import Memory
+    from kit.recall import Recall
+    from kit.things import Register
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    scratch = paths.state_dir / "routing-eval"
+    shutil.rmtree(scratch, ignore_errors=True)
+    reports = []
+    async with httpx.AsyncClient() as client:
+        embedder = OllamaEmbedder(store.current, client)
+        memory = Memory(scratch / "memory.db")
+        try:
+            seed_routing_things(Register(memory))
+            recall = Recall(memory, embedder, store.current)
+            reports.append(("built-in questions", await run_routing_eval(recall), recall))
+        finally:
+            memory.close()
+            shutil.rmtree(scratch, ignore_errors=True)
+        own = paths.config_dir / "routing-questions.toml"
+        if own.exists():
+            memory = Memory(paths.state_dir / "memory.db")
+            try:
+                recall = Recall(memory, embedder, store.current)
+                questions = load_routing_questions(own)
+                reports.append(
+                    (
+                        f"your questions ({own.name})",
+                        await run_routing_eval(recall, questions),
+                        recall,
+                    )
+                )
+            finally:
+                memory.close()
+    passed = True
+    for title, report, recall in reports:
+        print(f"{title}:")
+        if recall.embed_problem:
+            print(f"  warning: searching by words only: {recall.embed_problem}")
+        for r in report.results:
+            print(f"  {'ok  ' if r.ok else 'MISS'} {r.question}")
+            if not r.ok:
+                print(f"         wanted {r.system}: {r.target}")
+                for line in r.got[:3] or ["(nothing recalled)"]:
+                    print(f"         recalled: {line}")
+        print(f"  knew where to look: {report.score}/{len(report.results)}\n")
+        passed = passed and report.passed
+    if len(reports) == 1:
+        print(f"add your own questions in {own} to test your real register")
+    return 0 if passed else 1
+
+
+def _parse_link(text: str) -> dict:
+    system, _, target = text.partition("=")
+    if not target:
+        raise SystemExit(f"links look like system=target, e.g. nas=Documents/Tax (got {text!r})")
+    return {"system": system.strip(), "target": target.strip()}
+
+
+def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.memory import Memory
+    from kit.things import Register
+
+    paths.ensure()
+    memory = Memory(paths.state_dir / "memory.db")
+    register = Register(memory)
+    code = 0
+    try:
+        if args.action == "list":
+            things = sorted(register.all(), key=lambda t: t.name.lower())
+            if not things:
+                print("the register is empty")
+            for t in things:
+                print(f"{t.id:>5}  {t.line()}")
+        elif args.action == "suggestions":
+            things = register.suggestions()
+            if not things:
+                print("no suggestions waiting")
+            for t in things:
+                print(f"{t.id:>5}  {t.line()}")
+        elif args.action == "add":
+            links = [_parse_link(x) for x in args.link]
+            new_id = register.add(args.name, args.kind, args.alias, links, args.about)
+            print(f"{new_id:>5}  {register.get(new_id).line()}")
+        elif args.action == "link":
+            try:
+                new_id = register.set_link(args.id, args.system, args.target)
+                print(f"{new_id:>5}  {register.get(new_id).line()}")
+            except KeyError:
+                print(f"no thing {args.id}")
+                code = 1
+        elif args.action == "confirm":
+            new_id = register.confirm(args.id)
+            if new_id is None:
+                print(f"no suggestion {args.id}")
+                code = 1
+            else:
+                print(f"{new_id:>5}  {register.get(new_id).line()}")
+        elif args.action in ("reject", "forget"):
+            done = getattr(register, args.action)(args.id)
+            print(
+                f"{args.action}ed"
+                if done
+                else f"no {'suggestion' if args.action == 'reject' else 'thing'} {args.id}"
+            )
+            code = 0 if done else 1
+        elif args.action == "history":
+            for t in register.history(args.id):
+                print(f"{t.id:>5}  {t.line()}")
+    finally:
+        memory.close()
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kit", description="Kit, your personal assistant.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -557,10 +681,37 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
 
-    ev = sub.add_parser(
-        "eval", help="test the local model's replies or memory recall, or compare cloud models"
+    things = sub.add_parser("things", help="the register of things and where they live")
+    tsub = things.add_subparsers(dest="action", required=True)
+    tsub.add_parser("list", help="list the register")
+    tsub.add_parser("suggestions", help="list names Kit suggested adding")
+    tadd = tsub.add_parser("add", help="add a thing, e.g. Hilux --kind vehicle --link nas=Cars")
+    tadd.add_argument("name")
+    tadd.add_argument("--kind", default="other", choices=list(THING_KINDS))
+    tadd.add_argument("--alias", action="append", default=[], help="another name (repeatable)")
+    tadd.add_argument(
+        "--link", action="append", default=[], help="system=target, e.g. nas=Documents/Tax"
     )
-    ev.add_argument("which", nargs="?", default="replies", choices=["replies", "memory", "compare"])
+    tadd.add_argument("--about", default="", help="a few words on what it is")
+    tlink = tsub.add_parser("link", help="set where a thing lives in one system")
+    tlink.add_argument("id", type=int)
+    tlink.add_argument("system", choices=list(SYSTEMS))
+    tlink.add_argument("target")
+    for name, text in [
+        ("confirm", "add a suggested thing to the register"),
+        ("reject", "drop a suggested thing"),
+        ("forget", "delete a thing"),
+        ("history", "show a thing's earlier versions"),
+    ]:
+        tsub.add_parser(name, help=text).add_argument("id", type=int)
+
+    ev = sub.add_parser(
+        "eval",
+        help="test the local model's replies, memory recall or routing, or compare cloud models",
+    )
+    ev.add_argument(
+        "which", nargs="?", default="replies", choices=["replies", "memory", "routing", "compare"]
+    )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10)")
     ev.add_argument(
         "--models", nargs="+", default=[], help="compare: model profiles, e.g. sonnet gpt-sol"
@@ -584,7 +735,11 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_memory(paths, args)
     if args.command == "models":
         return cmd_models(paths, args)
+    if args.command == "things":
+        return cmd_things(paths, args)
     if args.command == "eval":
+        if args.which == "routing":
+            return asyncio.run(_eval_routing(paths))
         if args.which == "memory":
             return asyncio.run(_eval_memory(paths))
         if args.which == "compare":

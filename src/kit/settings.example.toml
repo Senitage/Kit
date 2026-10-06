@@ -55,6 +55,7 @@ history_messages = 20
 # still remembers, but only finds things by matching words.
 embed_model = "nomic-embed-text"
 relevant_memories = 8
+relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
 
 [nas]

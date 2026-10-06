@@ -27,6 +27,7 @@
   .kit.claude { background: var(--claude); }
   .detail { display: block; margin-top: .5em; white-space: pre-wrap; font: .9em ui-monospace, monospace; }
   .meta { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .msg .choice { padding: 2px 10px; margin: 6px 6px 0 0; font-size: 13px; border-radius: 8px; }
   .error { align-self: center; color: var(--error); font-size: 14px; }
   form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line);
          background: var(--panel); }
@@ -95,6 +96,22 @@ async function loadHistory() {
   document.getElementById("name").textContent = s.name;
   document.title = s.name;
 }
+function suggestThing(thing) {
+  const div = bubble("error", "Add to the register? " + thing.line + " ");
+  div.style.color = "var(--muted)";
+  const choose = (label, action, done) => {
+    const b = document.createElement("button");
+    b.className = "choice"; b.textContent = label;
+    b.addEventListener("click", async () => {
+      const r = await fetch(`/api/things/${thing.id}/${action}`, { method: "POST", headers });
+      div.textContent = r.ok ? done : "Already answered, or gone. See the memory page.";
+    });
+    div.appendChild(b);
+  };
+  div.appendChild(document.createElement("br"));
+  choose("Add", "confirm", "Added " + thing.name + " to the register.");
+  choose("No", "reject", "Left " + thing.name + " out.");
+}
 async function send(text) {
   bubble("user", text);
   stateEl.textContent = "thinking";
@@ -134,6 +151,10 @@ async function send(text) {
       } else if (ev.type === "remembered") {
         const label = ev.decision === "same" ? "Already knew: " : ev.decision === "update" ? "Updated memory: " : "Remembered: ";
         bubble("error", label + ev.fact).style.color = "var(--muted)";
+      } else if (ev.type === "thing_suggested") {
+        suggestThing(ev.thing);
+      } else if (ev.type === "thing_updated" && ev.thing) {
+        bubble("error", "Updated the register: " + ev.thing.line).style.color = "var(--muted)";
       } else if (ev.type === "recalled") {
         stateEl.textContent = "remembering";
         current = null;

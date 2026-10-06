@@ -12,6 +12,9 @@ Each turn:
 4. Act on the reply's action:
    - recall: Kit searches memory for something specific, then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
+   - thing: a named thing goes in the register of things. A new name becomes a
+     suggestion Dan confirms with a quick "yes" (or on the memory page); a link
+     for a known thing ("no, it's in Tax/2023") corrects the entry;
    - ask_cloud / ask_expert: the question goes to the work or expert model.
    If a cloud model can't answer (offline, no key, budget used up), the local
    model answers instead when ``routing.fallback_to_local`` is on.
@@ -42,12 +45,19 @@ from kit.reply import (
     reply_schema,
 )
 from kit.settings import Settings
+from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
 
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
 DEEP_RECALL = 10
+
+# A short answer to "shall I add it?" that confirms or rejects a suggested thing.
+# The whole message must be the answer, so "ok, open VS Code" isn't a yes.
+_END = r"(,? (please|thanks|mate|kit))?[.!]*"
+YES = re.compile(rf"(yes|yep|yeah|yup|sure|ok|okay|do it|add it|go ahead){_END}", re.I)
+NO = re.compile(rf"(no|nope|nah|skip it|don'?t|leave it|no thanks){_END}", re.I)
 
 # Ways to choose who answers one message.
 KEEP_LOCAL = re.compile(
@@ -84,6 +94,8 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.learner = Learner(memory, recall, model)
+        self.register = Register(memory)
+        self.pending_thing: int | None = None
 
     async def chat(self, text: str) -> AsyncIterator[Event]:
         text = text.strip()
@@ -92,6 +104,14 @@ class Brain:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text)
+        answered = self._answer_suggestion(text)
+        if answered is not None:
+            for event in self._say_locally(answered):
+                yield event
+            self.memory.index_exchange(
+                user_id, settings.persona.owner, text, settings.persona.name, answered.text
+            )
+            return
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         recalled = await self.recall.for_turn(text, recent_refs)
         role, chosen = route(text, settings)
@@ -111,6 +131,57 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    def _answer_suggestion(self, text: str) -> Reply | None:
+        """If Kit just suggested a thing and Dan answers yes or no, act on it without
+        asking a model. Anything else leaves the suggestion for the memory page."""
+        pending, self.pending_thing = self.pending_thing, None
+        if pending is None:
+            return None
+        thing = self.register.get(pending)
+        if thing is None or not thing.suggested:
+            return None
+        if YES.fullmatch(text):
+            self.register.confirm(pending)
+            return Reply.plain(f"Done, {thing.name} is in the register.", "happy", "nod")
+        if NO.fullmatch(text):
+            self.register.reject(pending)
+            return Reply.plain(f"Okay, I'll leave {thing.name} out.", "neutral", "nod")
+        return None
+
+    def _say_locally(self, reply: Reply) -> list[Event]:
+        message_id = self._remember_reply(reply, LOCAL)
+        return [
+            {"type": "say", "text": reply.text},
+            {
+                "type": "reply",
+                "source": LOCAL,
+                "reply": reply.model_dump(),
+                "message_id": message_id,
+            },
+        ]
+
+    def _note_thing(self, reply: Reply) -> Event | None:
+        """Act on a ``thing`` action: update a known thing's link, or suggest a new one."""
+        a = reply.action
+        name = a.text.strip()
+        if not name:
+            return None
+        link = (
+            []
+            if a.link_system == "none" or not a.link_target.strip()
+            else [{"system": a.link_system, "target": a.link_target}]
+        )
+        known = self.register.named(name)
+        if known:
+            if not link:
+                return None
+            new_id = self.register.set_link(known.id, a.link_system, a.link_target)
+            thing = self.register.get(new_id)
+            return {"type": "thing_updated", "thing": thing.as_dict() if thing else None}
+        thing = self.register.suggest(name, a.thing_kind, link)
+        self.pending_thing = thing.id
+        return {"type": "thing_suggested", "thing": thing.as_dict()}
 
     @staticmethod
     def _track(event: Event, said: list[str]) -> Event:
@@ -167,7 +238,9 @@ class Brain:
 
             if reply.action.kind == "recall":
                 query = reply.action.text.strip() or text
-                hits = await self.recall.search(query, [FACTS, DAYS, CONVERSATION], DEEP_RECALL)
+                hits = await self.recall.search(
+                    query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
+                )
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},
@@ -202,6 +275,10 @@ class Brain:
                 "decision": learned.decision,
                 "replaced": learned.replaced,
             }
+        elif kind == "thing":
+            event = self._note_thing(reply)
+            if event:
+                yield event
         elif (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
             to = WORK if kind == "ask_cloud" else EXPERT
             question = reply.action.text.strip() or text

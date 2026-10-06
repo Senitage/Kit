@@ -268,6 +268,13 @@ class MemorySettings(_Section):
     relevant_memories: int = Field(
         8, ge=0, le=50, description="Memories recalled into each turn, most relevant first."
     )
+    relevant_things: int = Field(
+        5,
+        ge=0,
+        le=20,
+        description="Entries from the register of things recalled into each turn, with "
+        "where each lives. Things named in the message always come first.",
+    )
     conversation_snippets: int = Field(
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
     )
