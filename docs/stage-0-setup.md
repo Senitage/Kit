@@ -66,7 +66,9 @@ nvidia-smi
 ```
 
 It should list the RTX 2070 SUPER with 8192 MiB. If the command isn't found, the
-Windows driver is too old: update it and run `wsl --shutdown`.
+Windows driver is too old: update it and run `wsl --shutdown`. If it crashes
+with `Segmentation fault`, WSL is still using the libraries from before a driver
+update: run `wsl --shutdown` in PowerShell, open Ubuntu again and retry.
 
 ## 3. Python and the basics
 
