@@ -104,6 +104,20 @@ def nested_patch(settings: Settings, keys: list[str], value) -> dict:
     return {section: {keys[1]: table}}
 
 
+async def _weather(paths: KitPaths, place: str | None) -> int:
+    """Print the forecast exactly as Kit is given it."""
+    from kit.weather import Weather, WeatherError
+
+    persona = SettingsStore(paths).current().persona
+    async with httpx.AsyncClient() as client:
+        try:
+            print(await Weather(client).forecast(place or persona.location, persona.country))
+        except WeatherError as e:
+            print(e)
+            return 1
+    return 0
+
+
 def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
     """Show the models Kit can use and which one does what, or switch one."""
     store = SettingsStore(paths)
@@ -685,6 +699,9 @@ def main(argv: list[str] | None = None) -> int:
     models.add_argument("role", nargs="?", choices=["work", "expert"], help="role to switch")
     models.add_argument("name", nargs="?", help="model profile to use for it")
 
+    weather = sub.add_parser("weather", help="show the forecast Kit sees")
+    weather.add_argument("place", nargs="?", help="somewhere else, e.g. 'Broome, WA'")
+
     mem = sub.add_parser("memory", help="see what Kit remembers and spends")
     msub = mem.add_subparsers(dest="action", required=True)
     msub.add_parser("facts", help="list what Kit knows (* = pinned)")
@@ -762,6 +779,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "weather":
+        return asyncio.run(_weather(paths, args.place))
     if args.command == "eval":
         if args.which == "routing":
             return asyncio.run(_eval_routing(paths))
