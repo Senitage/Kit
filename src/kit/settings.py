@@ -287,10 +287,11 @@ class MemorySettings(_Section):
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
     )
     min_similarity: float = Field(
-        0.5,
+        0.59,  # measured for nomic-embed-text with `kit eval memory` (2026-10-06)
         ge=0,
         le=1,
-        description="How close in meaning a memory must be to count as relevant (0 to 1).",
+        description="How close in meaning a memory must be to count as relevant (0 to 1). "
+        "It depends on the embedding model: `kit eval memory` suggests a value.",
     )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
