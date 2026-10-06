@@ -11,6 +11,8 @@ Each turn:
    answers in one piece. Both answer in the same JSON, as the same Kit.
 4. Act on the reply's action:
    - recall: Kit searches memory for something specific, then answers again;
+   - look_at_pc: Kit reads the full picture from the desk app (open windows,
+     what's had focus this hour and today, PC health), then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
@@ -43,6 +45,7 @@ from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
+from kit.pc_context import PcContext
 from kit.prompt import history_messages, recall_results, system_prompt
 from kit.recall import Recall, Recalled
 from kit.reply import (
@@ -128,6 +131,7 @@ class Brain:
         self.model = model
         self.cloud = cloud
         self.recall = recall
+        self.pc = PcContext(memory.clock)
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -274,6 +278,7 @@ class Brain:
             expert=further,
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
+            pc=self.pc.now_line(settings.persona.owner),
         )
 
     async def _converse(
@@ -307,20 +312,25 @@ class Brain:
             if reply is None:
                 return
 
-            if reply.action.kind == "recall":
-                query = reply.action.text.strip() or text
-                hits = await self.recall.search(
-                    query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
-                )
-                yield {"type": "recalled", "query": query, "found": len(hits)}
+            if reply.action.kind in ("recall", "look_at_pc"):
+                owner = settings.persona.owner
+                if reply.action.kind == "recall":
+                    query = reply.action.text.strip() or text
+                    hits = await self.recall.search(
+                        query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
+                    )
+                    yield {"type": "recalled", "query": query, "found": len(hits)}
+                    found = recall_results(query, hits, owner)
+                    step = f"looked through your memory for '{query}'"
+                else:
+                    yield {"type": "looked_at_pc", "online": self.pc.online()}
+                    found = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
+                    step = "looked at what's open on your PC"
                 if job:
-                    job.steps.append(f"looked through your memory for '{query}'")
+                    job.steps.append(step)
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},
-                    {
-                        "role": "user",
-                        "content": recall_results(query, hits, settings.persona.owner),
-                    },
+                    {"role": "user", "content": found},
                 ]
                 # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
                 # later history shows one answer per message, not a recall habit.

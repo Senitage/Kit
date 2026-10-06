@@ -25,6 +25,7 @@ from kit.brain import Brain
 from kit.knowledge import Item
 from kit.memory import CONVERSATION, DAYS, FACTS, Memory
 from kit.paths import KitPaths
+from kit.pc_context import Snapshot
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
 from kit.things import THINGS, Register
@@ -154,6 +155,7 @@ def create_app(
             "memory_search": "words only: " + brain.recall.embed_problem
             if brain.recall.embed_problem
             else "words and meaning",
+            "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
         }
 
     @app.get("/api/settings", dependencies=auth)
@@ -323,6 +325,17 @@ def create_app(
     @app.get("/api/memory/days", dependencies=auth)
     def days() -> list[dict]:
         return [_item(i) for i in reversed(memory.index.items(DAYS))]
+
+    @app.post("/api/pc/context", dependencies=auth)
+    def pc_report(snap: Snapshot) -> dict:
+        """The desk app's report: open windows, focus, idle time and PC health."""
+        brain.pc.update(snap)
+        return {"ok": True}
+
+    @app.get("/api/pc/context", dependencies=auth)
+    def pc_context() -> dict:
+        """What Kit can see of Dan's PC, as Kit sees it."""
+        return brain.pc.as_dict(store.current().persona.owner)
 
     @app.get("/api/spend", dependencies=auth)
     def spend() -> dict:

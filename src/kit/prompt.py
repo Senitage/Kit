@@ -73,11 +73,13 @@ def system_prompt(
     expert: str | None = None,
     web_search: bool = False,
     busy: list[str] | None = None,
+    pc: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
     to; either is None when there's nowhere to hand it. ``busy`` describes work a
-    cloud model is still doing in the background."""
+    cloud model is still doing in the background. ``pc`` is the desk app's one-line
+    "right now" from Dan's PC, empty when it has never reported."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -125,6 +127,15 @@ def system_prompt(
         f"project, a person, where something is kept) and it isn't above. Put a search in "
         f"text, say something short like 'Let me think...', and you'll see what you find "
         f"before answering properly.",
+    ]
+    if pc:
+        lines.append(
+            f"- look_at_pc: when knowing more about what's on {owner}'s PC would help (every "
+            f"open window, what they've had in focus this hour and today, whether the PC is "
+            f"struggling) and the line about their PC below isn't enough. Say something "
+            f"short like 'Let me have a look.' and you'll see it before answering properly."
+        )
+    lines += [
         f"- remember: when {owner} tells you something worth keeping: about themselves, "
         f"their preferences, projects, where things are kept, people or plans. Put it in "
         f"text as one sentence that makes sense on its own later, with real dates, and set "
@@ -161,6 +172,7 @@ def system_prompt(
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *memory_block(recalled, owner),
         *busy_block(busy or [], owner),
+        *([pc] if pc else []),
     ]
     return "\n".join(lines)
 

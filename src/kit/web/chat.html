@@ -163,6 +163,9 @@ async function send(text) {
       } else if (ev.type === "recalled") {
         stateEl.textContent = "remembering";
         current = null;
+      } else if (ev.type === "looked_at_pc") {
+        stateEl.textContent = "looking at your PC";
+        current = null;
       } else if (ev.type === "error") {
         bubble("error", ev.message);
       }
