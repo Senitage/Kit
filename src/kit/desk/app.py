@@ -10,7 +10,8 @@
   titles and app names only, no screenshots. Watching can be paused from the
   menu.
 
-The app only connects out to the brain, so nothing here listens on the network.
+The app connects out to the brain. The only thing it listens on is 127.0.0.1
+(local to this PC) for Kit's Chrome extension (``kit.desk.browser``).
 Run it with ``kit-desk`` (or ``python -m kit.desk``) after installing the
 ``desk`` extra, or install it with Kit-Desk-Setup.exe.
 """
@@ -25,6 +26,7 @@ import threading
 import time
 import webbrowser
 from dataclasses import replace
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QMouseEvent, QPainter, QPixmap
@@ -49,6 +51,7 @@ from PySide6.QtWidgets import (
 
 import kit
 from kit.desk import startup
+from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError
 from kit.desk.config import DeskConfig, desk_dir, load_token, save_token
@@ -68,6 +71,13 @@ FACE_STATES = {
     "looking at your PC": "working",
     "speaking": "speaking",
 }
+
+
+def extension_folder() -> Path:
+    """Kit's Chrome extension: beside Kit.exe once installed, else in the package."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "chrome-extension"
+    return Path(__file__).parent / "browser_extension"
 
 
 def face_icon(offline: bool = False, size: int = 64) -> QIcon:
@@ -315,8 +325,17 @@ class DeskApp(QObject):
         if self.config.show_face:
             self.face.show()
 
+        self.browser = BrowserFeed()
+        self.listener: BrowserListener | None = None
+        try:
+            self.listener = BrowserListener(self.browser, lambda: self.config.watch)
+            self.listener.start()
+        except OSError:
+            log.exception("can't listen for the Chrome extension (is another Kit running?)")
         desktop = WindowsDesktop() if sys.platform == "win32" else _NoDesktop()
-        self.reporter = Reporter(desktop, self._report, lambda: self.config, system_status)
+        self.reporter = Reporter(
+            desktop, self._report, lambda: self.config, system_status, browser=self.browser.current
+        )
         self.health = QTimer(self)
         self.health.timeout.connect(self.check_health)
         self.health.start(HEALTH_EVERY_MS)
@@ -346,6 +365,7 @@ class DeskApp(QObject):
         menu.addAction(
             "What Kit remembers", lambda: webbrowser.open(self.config.brain_url + "/memory")
         )
+        menu.addAction("Set up the Chrome extension...", self.extension_help)
         menu.addAction("Settings...", self.open_settings)
         menu.addSeparator()
         menu.addAction("Quit Kit", self.quit)
@@ -439,8 +459,29 @@ class DeskApp(QObject):
         self._connect()
         self.check_health()
 
+    def extension_help(self) -> None:
+        folder = extension_folder()
+        state = (
+            "It's connected and sending your tabs."
+            if self.browser.connected
+            else "It isn't connected yet."
+        )
+        QMessageBox.information(
+            None,
+            "Kit's Chrome extension",
+            f"{state}\n\nTo add it: open chrome://extensions in Chrome (or edge://extensions "
+            "in Edge), turn on Developer mode, choose Load unpacked, and pick this folder:\n\n"
+            f"{folder}\n\nThe folder opens when you press OK.",
+        )
+        if sys.platform == "win32":
+            os.startfile(folder)  # noqa: S606 (opens the folder in Explorer)
+        else:
+            webbrowser.open(folder.as_uri())
+
     def quit(self) -> None:
         self._stop.set()
+        if self.listener:
+            self.listener.stop()
         self.tray.hide()
         self.app.quit()
 

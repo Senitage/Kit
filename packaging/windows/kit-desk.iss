@@ -33,6 +33,8 @@ Name: "desktopicon"; Description: "Put Kit on the desktop"; GroupDescription: "S
 
 [Files]
 Source: "build\dist\Kit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Kit's Chrome extension, for Load unpacked in chrome://extensions (tray menu > Set up the Chrome extension).
+Source: "..\..\src\kit\desk\browser_extension\*"; DestDir: "{app}\chrome-extension"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Kit"; Filename: "{app}\Kit.exe"

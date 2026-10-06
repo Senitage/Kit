@@ -19,6 +19,9 @@ The desk app puts Kit on your desk PC:
   no screenshots and no image processing.
 - **PC health.** CPU, memory, free disk space, battery, network, uptime and the
   busiest apps.
+- **Chrome extension.** Kit's own extension tells the desk app which tabs are
+  open in Chrome (or Edge) and which one you're looking at, so Kit knows the
+  site and address, not just the page title. See "The Chrome extension" below.
 
 Kit sees one line about your PC on every message, for example *On Dan's PC
 right now: VS Code: "pumps.py - METTOOLS", for 25 min. Also open: Excel,
@@ -27,12 +30,42 @@ is my PC slow?"), he looks at the full picture: every open window, what had
 focus in the last hour, time per app today, and PC health. The chat shows
 "looking at your PC" while he does.
 
+## The Chrome extension
+
+The extension sends every open tab's title and address, and which tab you're
+looking at, to the desk app whenever tabs change, and every 30 seconds. It
+never reads what's on a page, and it skips incognito windows. It only talks to
+the desk app on this PC (`127.0.0.1:8765`), never to the internet, and the desk
+app only accepts Kit's own extension, so a website can't feed it fake tabs.
+
+With it, the line Kit sees reads *Chrome: "Pump sizing - MetTools"
+(mettools.lan), for 12 min*. When Kit looks at the full picture, he also sees
+every tab (marking the ones showing and any playing sound) and the time spent
+per website today.
+
+**Add it** (once per browser):
+1. Right-click Kit in the tray and choose **Set up the Chrome extension...**. It
+   opens the extension's folder (`chrome-extension` beside Kit.exe).
+2. In Chrome, go to `chrome://extensions` (in Edge, `edge://extensions`), turn
+   on **Developer mode**, choose **Load unpacked** and pick that folder.
+3. Pin Kit's icon if you like. Clicking it shows "Connected. Kit can see your
+   tabs."
+
+It isn't on the Chrome Web Store, which is why it goes in through Developer
+mode. Chrome may remind you about developer-mode extensions now and then; keep
+it. After a Kit update, press the reload arrow on Kit's card in
+`chrome://extensions` to pick up the new version.
+
 ## Privacy
 
 - Titles from password managers (KeePass, 1Password, Bitwarden and others), and
   titles containing words like bank, NetBank, PayPal, password, InPrivate or
   incognito, are blanked **on the PC** before anything is sent. Kit only learns
   that the app is open. Edit both lists in Settings.
+- Addresses lose everything after `?` or `#` (search terms, session ids and
+  tokens live there) before they leave the PC. A tab whose title or address
+  contains a hidden word is blanked, address and all; Kit only sees that a
+  hidden tab is open.
 - Untick **Share what I'm working on** in the tray menu to pause. Kit is told
   it's paused and sees no windows at all. A locked PC shares nothing either.
 - Today's activity is held in the brain's working memory only. It isn't saved
@@ -61,8 +94,9 @@ focus in the last hour, time per app today, and PC health. The chat shows
 
    Press **Test connection**. It should say "Connected to Kit". Save.
 
-The desk app only connects out to the brain. Nothing on the desk PC listens on
-the network, so Windows won't ask about the firewall and no ports need opening.
+The desk app only connects out to the brain. The one thing it listens on is
+127.0.0.1:8765 for the Chrome extension, which nothing off the PC can reach, so
+Windows won't ask about the firewall and no ports need opening.
 Stage 4 PC control reuses the same outgoing link.
 
 Settings and the token live in `%APPDATA%\Kit Desk` (`desk.toml` and
@@ -88,6 +122,11 @@ reconnects without asking.
       at your PC", and the answer covers the apps you actually used.
 - [ ] Open your bank's website. Neither the line in `/api/status` nor the
       `/api/pc/context` detail shows its title.
+- [ ] Add the Chrome extension. Its popup says it's connected. With a MetTools
+      page in front, Kit's `/api/status` `pc` line names the site, and
+      "what tabs have I got open?" lists them.
+- [ ] Open NetBank in a tab. It shows as a hidden tab, with no title or address.
+- [ ] Close Chrome. Within about 90 seconds Kit stops listing tabs.
 - [ ] Untick Share what I'm working on. Kit says he can't see the screen. Tick
       it again and he can.
 - [ ] Lock the PC (Win+L) for a minute. The activity shows as away, not as time
@@ -124,6 +163,10 @@ face and chat; there it reports PC health but no windows.
 - `kit.desk.watch`: `WindowsDesktop` (Win32 through ctypes: windows, focus, idle
   time, lock screen), `system_status` (psutil), the privacy filter, and
   `Reporter`, which decides when to send.
+- `kit.desk.browser`: the 127.0.0.1-only listener for the extension, which
+  checks that requests come from Kit's extension ID, and address cleaning.
+  The extension itself is in `kit/desk/browser_extension` (Manifest V3; its
+  fixed `key` gives it the same ID everywhere).
 - `kit.desk.client`: the brain's HTTP API (`/api/status`, `/api/chat`,
   `/api/messages`, `/api/pc/context`).
 - `kit.pc_context` (brain side, cross-platform): keeps the latest report and

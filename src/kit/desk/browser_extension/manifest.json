@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Kit",
+  "version": "0.1.0",
+  "description": "Lets Kit, Dan's desk assistant, see which sites and tabs are open. Sends only to the Kit desk app on this PC.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvDx3oQJXcH0DgSLWSs/WC+y/lWY1zuh85fC+6avq7sUE2GeMiiIB0H3DCB/R4LgA8Jzal0d5/cm5xZGofxfDqMk6tNu+C8GFvFnx2SnlOR6/6tp4VNPeWS+s1SYerfS9W9b0yc1ys1zO+wsglBK8CdzilN9hcr/hAeMwZ1fmi0nZXn0UZshABKEa1OfCP4oEifl8YorQKyrHvMHOs+G7sX9GOU2D/zq9B6nOGfFD2aZEjTqt85SNFy840PbMq92j+cAgZjvOMl96edIIcbeTpJuc+cv2Dq9HeUmZgeBoMYcQn/trObq5iGYsryIFQgGjmx2RhRb0MyHNJtSsdr03FwIDAQAB",
+  "permissions": ["tabs", "alarms", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Kit", "default_popup": "popup.html", "default_icon": "icon.png" },
+  "icons": { "128": "icon.png" },
+  "incognito": "not_allowed"
+}

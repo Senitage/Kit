@@ -23,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from kit.desk.browser import BROWSER_APPS, clean_url
 from kit.desk.config import DeskConfig
 
 log = logging.getLogger(__name__)
@@ -129,9 +130,31 @@ class Privacy:
         title = "" if self.hides(w.exe, app, w.title) else w.title
         return {"app": app, "title": title, "minimised": w.minimised}
 
+    def tab(self, t: dict) -> dict:
+        """One browser tab: the address without its query, blanked if it's private."""
+        url, site = clean_url(str(t.get("url", "")))
+        title = str(t.get("title", ""))
+        if self.words and (self.words.search(title) or self.words.search(url)):
+            title, url = "", ""
+            site = "" if self.words.search(site) else site
+        return {
+            "title": title[:500],
+            "url": url[:1000],
+            "site": site[:200],
+            "active": bool(t.get("active")),
+            "audible": bool(t.get("audible")),
+        }
 
-def build_snapshot(desktop: Desktop, config: DeskConfig, host: str, system: dict | None) -> dict:
-    """One report, in the brain's ``kit.pc_context.Snapshot`` shape."""
+
+def build_snapshot(
+    desktop: Desktop,
+    config: DeskConfig,
+    host: str,
+    system: dict | None,
+    browser: dict | None = None,
+) -> dict:
+    """One report, in the brain's ``kit.pc_context.Snapshot`` shape. ``browser`` is
+    the latest from Kit's browser extension (``kit.desk.browser.BrowserFeed``)."""
     snap: dict = {
         "host": host,
         "watching": config.watch,
@@ -149,6 +172,19 @@ def build_snapshot(desktop: Desktop, config: DeskConfig, host: str, system: dict
     if focus and focus.pid != own:
         snap["focus"] = privacy.window(focus)
     snap["windows"] = [privacy.window(w) for w in desktop.windows() if w.pid != own][:MAX_WINDOWS]
+    if browser:
+        snap["browser"] = {
+            "name": browser["name"],
+            "tabs": [privacy.tab(t) for t in browser["tabs"]],
+        }
+        focus_tab = browser.get("focused")
+        f = snap["focus"]
+        if f and focus_tab and f["app"] in BROWSER_APPS | {browser["name"]}:
+            # The window title is the page title; the extension adds the site.
+            tab = privacy.tab(focus_tab)
+            f["site"] = tab["site"]
+            if not tab["title"]:
+                f["title"] = ""
     return snap
 
 
@@ -163,8 +199,10 @@ class Reporter:
         system: Callable[[], dict | None] = lambda: None,
         clock: Callable[[], float] = time.monotonic,
         host: str | None = None,
+        browser: Callable[[], dict | None] = lambda: None,
     ) -> None:
         self.desktop = desktop
+        self.browser = browser
         self.send = send
         self.config = config
         self.system = system
@@ -186,11 +224,12 @@ class Reporter:
             except Exception:  # health numbers are a nice-to-have; never stop reporting
                 log.exception("reading system status failed")
             self._system_at = now
-        snap = build_snapshot(self.desktop, config, self.host, self._system)
+        snap = build_snapshot(self.desktop, config, self.host, self._system, self.browser())
         focus = snap["focus"] or {}
         key = (
             focus.get("app"),
             focus.get("title"),
+            focus.get("site"),
             snap["watching"],
             snap["locked"],
             snap["idle_seconds"] >= 60,

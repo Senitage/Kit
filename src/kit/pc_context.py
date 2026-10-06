@@ -2,7 +2,9 @@
 
 The desk app (Windows) sends a snapshot every few seconds: which window has
 focus, what else is open, how long since he touched the keyboard or mouse, and
-the PC's health. No screenshots, only window titles and app names; titles from
+the PC's health. With Kit's Chrome extension installed it also carries the
+browser's tabs, and the focused browser window names the site Dan is on. No
+screenshots, only window titles, app names and tab addresses; titles from
 hidden apps or with hidden words are blanked on the PC before they're sent.
 
 Kit sees a one-line "right now" in every prompt, and the ``look_at_pc`` action
@@ -27,12 +29,30 @@ STALE_AFTER = timedelta(minutes=3)  # the desk app reports every few seconds
 AWAY_AFTER_S = 300  # no keyboard or mouse for this long counts as away
 KEEP_FOR = timedelta(hours=16)
 MAX_WINDOWS = 40
+MAX_TABS = 40
+MAX_SITES = 10
 
 
 class Window(BaseModel):
     app: str = Field(max_length=200)
     title: str = Field("", max_length=500)
     minimised: bool = False
+    site: str = Field("", max_length=200)  # for a browser: the active tab's site
+
+
+class Tab(BaseModel):
+    title: str = Field("", max_length=500)
+    url: str = Field("", max_length=1000)  # without the query string or #fragment
+    site: str = Field("", max_length=200)
+    active: bool = False  # the tab showing in its window
+    audible: bool = False
+
+
+class Browser(BaseModel):
+    """What the Chrome extension sees: every tab in normal (not incognito) windows."""
+
+    name: str = Field("Chrome", max_length=50)
+    tabs: list[Tab] = Field(default_factory=list, max_length=300)
 
 
 class Disk(BaseModel):
@@ -74,6 +94,7 @@ class Snapshot(BaseModel):
     locked: bool = False
     windows: list[Window] = Field(default_factory=list, max_length=200)
     system: System | None = None
+    browser: Browser | None = None
 
 
 @dataclass
@@ -84,6 +105,7 @@ class Span:
     title: str
     start: datetime
     end: datetime
+    site: str = ""
 
     @property
     def away(self) -> bool:
@@ -103,7 +125,14 @@ def _mins(minutes: float) -> str:
 
 
 def _title(w: Window) -> str:
-    return f'{w.app}: "{w.title}"' if w.title else w.app
+    text = f'{w.app}: "{w.title}"' if w.title else w.app
+    return f"{text} ({w.site})" if w.site else text
+
+
+def _tab(t: Tab) -> str:
+    text = f'"{t.title}"' if t.title else "(title hidden)"
+    where = t.url or t.site
+    return f"{text} {where}".strip() + (" (playing sound)" if t.audible else "")
 
 
 def health_line(s: System) -> str:
@@ -149,17 +178,18 @@ class PcContext:
         now = self.clock()
         self.latest, self.seen = snap, now
         away = snap.locked or snap.idle_seconds >= AWAY_AFTER_S or not snap.watching
-        app, title = ("", "") if away or snap.focus is None else (snap.focus.app, snap.focus.title)
+        f = None if away else snap.focus
+        app, title, site = (f.app, f.title, f.site) if f else ("", "", "")
         last = self.spans[-1] if self.spans else None
         if last and now - last.end > STALE_AFTER:
             # The app was off for a while: the gap is unknown, not time in one window.
             last = None
-        if last and (last.app, last.title) == (app, title):
+        if last and (last.app, last.title, last.site) == (app, title, site):
             last.end = now
         else:
             if last:
                 last.end = now
-            self.spans.append(Span(app, title, now, now))
+            self.spans.append(Span(app, title, now, now, site))
         cutoff = now - KEEP_FOR
         self.spans = [s for s in self.spans if s.end >= cutoff]
 
@@ -218,6 +248,13 @@ class PcContext:
                 lines.append(f"Open windows ({len(snap.windows)}):")
                 for w in snap.windows[:MAX_WINDOWS]:
                     lines.append(f"- {_title(w)}{' (minimised)' if w.minimised else ''}")
+            if snap.browser and snap.browser.tabs:
+                tabs = snap.browser.tabs
+                lines.append(f"{snap.browser.name} tabs ({len(tabs)}, showing ones marked *):")
+                for t in tabs[:MAX_TABS]:
+                    lines.append(f"- {'* ' if t.active else ''}{_tab(t)}")
+                if len(tabs) > MAX_TABS:
+                    lines.append(f"- and {len(tabs) - MAX_TABS} more")
         hour = self._summary(now - timedelta(hours=1), now, titles=True)
         if hour:
             lines += ["In focus over the last hour:", *hour]
@@ -225,6 +262,9 @@ class PcContext:
         today = self._summary(start_of_day, now, titles=False)
         if today:
             lines += ["Today so far, by app:", *today]
+        sites = self._sites(start_of_day, now)
+        if sites:
+            lines += ["Websites today:", *sites]
         if snap.system:
             lines.append(f"PC health: {health_line(snap.system)}.")
         return "\n".join(lines)
@@ -258,6 +298,15 @@ class PcContext:
         if away >= 1:
             lines.append(f"- away or paused: {_mins(away)}")
         return lines
+
+    def _sites(self, since: datetime, until: datetime) -> list[str]:
+        per_site: dict[str, float] = defaultdict(float)
+        for s in self.spans:
+            start, end = max(s.start, since), min(s.end, until)
+            if s.site and end > start:
+                per_site[s.site] += (end - start).total_seconds() / 60
+        top = sorted(per_site.items(), key=lambda x: -x[1])[:MAX_SITES]
+        return [f"- {site}: {_mins(m)}" for site, m in top if m >= 0.5]
 
     def as_dict(self, owner: str) -> dict:
         return {
