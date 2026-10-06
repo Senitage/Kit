@@ -28,12 +28,17 @@ told what Kit is working on, for how long, and what it has done so far ("still
 searching, I've looked up x"), so "how's it going?" gets an answer in character.
 The slow answer arrives when it's ready, even if the page that asked has gone.
 
+Each message says where Dan is talking from (kit.channels: the desk app, voice,
+his phone, the chat page or the terminal). Kit is told in the prompt and answers
+to suit, and the message is stored with it.
+
 Settings are read on every turn, so model, routing and persona changes apply at once.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import itertools
 import logging
 import re
@@ -41,6 +46,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
+from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
 from kit.local_model import LocalModel, LocalModelError
@@ -65,6 +71,10 @@ log = logging.getLogger(__name__)
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
 DEEP_RECALL = 10
+
+# Where the message being answered came from. Each turn is its own task, so each
+# sees its own channel without passing it through every call.
+CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
 
 # A short answer to "shall I add it?" that confirms or rejects a suggested thing.
 # The whole message must be the answer, so "ok, open VS Code" isn't a yes.
@@ -139,7 +149,7 @@ class Brain:
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
 
-    async def chat(self, text: str) -> AsyncIterator[Event]:
+    async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
         even if whoever asked stops listening."""
@@ -147,7 +157,9 @@ class Brain:
         if not text:
             return
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
-        task = asyncio.create_task(self._turn(text, queue.put_nowait))
+        context = contextvars.copy_context()
+        context.run(CHANNEL.set, known(channel))
+        task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
         task.add_done_callback(self._turns.discard)
         while (event := await queue.get()) is not None:
@@ -166,7 +178,7 @@ class Brain:
     async def _run_turn(self, text: str, emit: Callable[[Event], None]) -> None:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
-        user_id = self.memory.add_message("user", text)
+        user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         answered = self._answer_suggestion(text)
         if answered is not None:
             for event in self._say_locally(answered):
@@ -279,6 +291,7 @@ class Brain:
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
             pc=self.pc.now_line(settings.persona.owner),
+            channel=channel_line(CHANNEL.get(), settings.persona.owner),
         )
 
     async def _converse(
@@ -295,7 +308,7 @@ class Brain:
         hand_off = role == LOCAL and not chosen and hops == 0
         messages = [
             {"role": "system", "content": self._system(settings, recalled, role, hand_off)},
-            *history_messages(history),
+            *history_messages(history, CHANNEL.get()),
             {"role": "user", "content": text},
         ]
         job = None

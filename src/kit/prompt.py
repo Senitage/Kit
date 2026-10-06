@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.memory import DAYS, Message
 from kit.recall import Recalled
@@ -74,12 +75,14 @@ def system_prompt(
     web_search: bool = False,
     busy: list[str] | None = None,
     pc: str = "",
+    channel: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
     to; either is None when there's nowhere to hand it. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
-    "right now" from Dan's PC, empty when it has never reported."""
+    "right now" from Dan's PC, empty when it has never reported. ``channel`` says
+    where Dan is talking from (kit.channels)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -172,6 +175,7 @@ def system_prompt(
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *memory_block(recalled, owner),
         *busy_block(busy or [], owner),
+        *([channel] if channel else []),
         *([pc] if pc else []),
     ]
     return "\n".join(lines)
@@ -213,14 +217,17 @@ def recall_results(query: str, hits: list[Hit], owner: str) -> str:
 HISTORY_DETAIL_CHARS = 600
 
 
-def history_messages(history: list[Message]) -> list[dict]:
+def history_messages(history: list[Message], channel: str | None = None) -> list[dict]:
     """Past turns in chat form. Kit's turns are shown as the JSON it gave, which
     keeps the model answering in that format. Long written detail (code, lists) is
-    cut short so it doesn't crowd the local model's context."""
+    cut short so it doesn't crowd the local model's context. Messages that came in
+    another way than ``channel`` say where from, e.g. "(from their phone)"."""
     out = []
     for m in history:
         if m.role == "user":
-            out.append({"role": "user", "content": m.text})
+            where = SHORT.get(m.channel or "")
+            note = f"(from {where}) " if where and m.channel != channel else ""
+            out.append({"role": "user", "content": note + m.text})
         else:
             out.append({"role": "assistant", "content": _short(m.reply_json) or _as_json(m.text)})
     return out

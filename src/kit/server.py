@@ -37,6 +37,8 @@ SUMMARY_INTERVAL_S = 3600
 
 class ChatIn(BaseModel):
     text: str
+    # Where Dan is talking from (kit.channels): desk, voice, phone, web or terminal.
+    channel: str = Field("web", max_length=20)
 
 
 class FactIn(BaseModel):
@@ -194,7 +196,7 @@ def create_app(
     @app.post("/api/chat", dependencies=auth)
     async def chat(body: ChatIn) -> StreamingResponse:
         async def events() -> AsyncIterator[str]:
-            async for event in brain.chat(body.text):
+            async for event in brain.chat(body.text, body.channel):
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -207,6 +209,7 @@ def create_app(
                 "role": m.role,
                 "text": m.text,
                 "source": m.source,
+                "channel": m.channel,
                 "reply": json.loads(m.reply_json) if m.reply_json else None,
             }
             for m in memory.recent(min(limit, 500))

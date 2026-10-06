@@ -71,6 +71,8 @@ MIGRATIONS = [
     """,
     # 2: the knowledge index (facts, day summaries, conversation and later sources).
     knowledge.SCHEMA,
+    # 3: which way each message came in (kit.channels): desk, voice, phone, web, terminal.
+    "ALTER TABLE messages ADD COLUMN channel TEXT;",
 ]
 
 
@@ -82,6 +84,7 @@ class Message:
     text: str
     reply_json: str | None = None
     source: str | None = None
+    channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -138,13 +141,18 @@ class Memory:
 
     @_locked
     def add_message(
-        self, role: str, text: str, reply_json: str | None = None, source: str | None = None
+        self,
+        role: str,
+        text: str,
+        reply_json: str | None = None,
+        source: str | None = None,
+        channel: str | None = None,
     ) -> int:
         now = self.clock()
         with self.db:
             cur = self.db.execute(
-                "INSERT INTO messages (at, day, role, text, reply_json, source)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO messages (at, day, role, text, reply_json, source, channel)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.date().isoformat(),
@@ -152,6 +160,7 @@ class Memory:
                     text,
                     reply_json,
                     source,
+                    channel,
                 ),
             )
         return int(cur.lastrowid)
@@ -161,7 +170,7 @@ class Memory:
         """The latest turns as the model should see them: a recall step ("Let me
         think...") is a working note, not a turn, so it's left out."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source FROM messages"
+            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
             " WHERE source IS NULL OR source != ? ORDER BY id DESC LIMIT ?",
             (RECALL_STEP, limit),
         ).fetchall()
@@ -175,7 +184,8 @@ class Memory:
     @_locked
     def messages_on(self, day: str) -> list[Message]:
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source FROM messages WHERE day = ? ORDER BY id",
+            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            " WHERE day = ? ORDER BY id",
             (day,),
         ).fetchall()
         return [Message(*row) for row in rows]

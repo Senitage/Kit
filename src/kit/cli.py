@@ -262,7 +262,7 @@ async def _chat_loop(paths: KitPaths) -> int:
 
         async def turn(text: str) -> None:
             print(f"{me}> ", end="", flush=True)
-            async for event in brain.chat(text):
+            async for event in brain.chat(text, "terminal"):
                 _print_event(event, me)
 
         while True:

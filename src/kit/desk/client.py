@@ -59,7 +59,7 @@ class BrainClient:
         """Kit's reply events as they arrive (see kit.brain for the kinds)."""
         try:
             with self._http.stream(
-                "POST", "/api/chat", json={"text": text}, timeout=CHAT_TIMEOUT
+                "POST", "/api/chat", json={"text": text, "channel": "desk"}, timeout=CHAT_TIMEOUT
             ) as r:
                 if r.status_code >= 400:
                     r.read()

@@ -56,6 +56,8 @@ function token() {
 }
 const TOKEN = token();
 const headers = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
+// Where Dan is talking from: a phone browser (over Tailscale) counts as his phone.
+const channel = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "phone" : "web";
 const log = document.getElementById("log");
 const stateEl = document.getElementById("state");
 
@@ -119,7 +121,7 @@ async function send(text) {
   inFlight++;
   stateEl.textContent = "thinking";
   let current = null;
-  const r = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ text }) });
+  const r = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ text, channel }) });
   if (!r.ok) { bubble("error", "Kit said " + r.status); idle(); return; }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();

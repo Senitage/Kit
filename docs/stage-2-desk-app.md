@@ -30,6 +30,24 @@ is my PC slow?"), he looks at the full picture: every open window, what had
 focus in the last hour, time per app today, and PC health. The chat shows
 "looking at your PC" while he does.
 
+## Where you're talking from
+
+Every message tells Kit which way it came in, and he's told on each turn:
+
+| From | Kit is told | So he |
+|---|---|---|
+| Desk app | you're typing at your PC | takes "this" to mean what's on screen |
+| Chat page on a phone (over Tailscale) | you're on your phone, probably out | keeps it short and doesn't assume you can see the PC |
+| Chat page on a computer | you're on the chat page | answers as usual |
+| Voice at the desk (stage 3) | you're talking out loud at the desk | keeps it short and spoken |
+| `kit chat` | you're in the terminal | answers as usual |
+
+Each message is stored with where it came from, so a message from earlier
+shows as "(from their phone) ..." when you pick the conversation up at the
+desk. It's one conversation and one memory whichever way you talk. With the PC
+line beside it, Kit can also tell when you're on your phone but your PC is
+busy, or locked and idle.
+
 ## The Chrome extension
 
 The extension sends every open tab's title and address, and which tab you're
