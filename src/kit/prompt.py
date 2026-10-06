@@ -147,7 +147,9 @@ def system_prompt(
             f"- weather: for any question about the weather, temperature, rain or wind, now "
             f"or in the next few days. Put the place in text, or leave it empty for where "
             f"{owner} is, say something short like 'Checking the forecast.', and you'll see "
-            f"the forecast before answering. Use this rather than a web search."
+            f"the forecast before answering. Use this rather than a web search. Never give "
+            f"temperatures, rain or wind from memory or from earlier in the conversation: "
+            f"forecasts change, so use the weather action unless a forecast is below."
         )
     if not cloud and helper:
         lines.append(
@@ -184,10 +186,11 @@ def forecast_block(forecast: str, owner: str) -> list[str]:
         return []
     return [
         "",
-        f"{owner} is asking about the weather. The latest forecast for where they are:",
+        f"The latest forecast for where {owner} is (fetched just now):",
         forecast,
-        "Answer from this in a sentence or two (for 'tonight', the evening temperatures "
-        "and any rain). For somewhere else, use the weather action.",
+        "If the message is about the weather, answer from this in a sentence or two (for "
+        "'tonight', the evening temperatures and any rain; for 'tomorrow', tomorrow's "
+        "line). For somewhere else, use the weather action.",
     ]
 
 

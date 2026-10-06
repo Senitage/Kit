@@ -504,3 +504,24 @@ def test_no_weather_action_without_a_forecast_source(memory):
     brain, model, _ = make(memory, reply("Hi."))
     collect(brain.chat("Hi"))
     assert "- weather:" not in model.calls[0][0]["content"]
+
+
+def test_weather_follow_up_gets_a_fresh_forecast(memory, clock):
+    brain, model, _ = make(
+        memory,
+        reply("Clear tonight."),
+        reply("Drizzle early."),
+        reply("Ok."),
+        settings=Settings.model_validate(PERTH),
+    )
+    brain.weather = FakeWeather()
+    collect(brain.chat("What's the weather like tonight?"))
+    clock.now += timedelta(minutes=2)
+    collect(brain.chat("whats it going to be like tomorrow?"))
+    assert len(brain.weather.asked) == 2
+    follow_up = model.calls[1][0]["content"]
+    assert "Forecast for Perth" in follow_up
+    assert "ask_cloud" in follow_up  # not plainly weather, so it can still be handed on
+    clock.now += timedelta(minutes=30)
+    collect(brain.chat("what's on tomorrow?"))
+    assert len(brain.weather.asked) == 2  # long after, "tomorrow" isn't about the weather

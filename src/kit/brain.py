@@ -39,6 +39,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
@@ -85,6 +86,13 @@ WEATHER = re.compile(
     r"how (hot|cold|warm) (is it|will it be)|what'?s the temp(erature)?)\b",
     re.IGNORECASE,
 )
+# A follow-up like "and tomorrow?" soon after a weather answer is about the weather too.
+WHEN = re.compile(
+    r"\b(today|tonight|tomorrow|this (morning|afternoon|arvo|evening)|weekend|later|"
+    r"(mon|tues|wednes|thurs|fri|satur|sun)day|next few days|this week)\b",
+    re.IGNORECASE,
+)
+WEATHER_FOLLOW_UP = timedelta(minutes=15)
 
 
 @dataclass
@@ -139,6 +147,7 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.weather = weather
+        self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -194,9 +203,12 @@ class Brain:
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
         forecast = ""
-        if role == LOCAL and self.weather is not None and WEATHER.search(text):
-            forecast = await self._home_forecast(settings)
-            emit({"type": "weather", "place": settings.persona.location})
+        if role == LOCAL and self.weather is not None:
+            plainly = bool(WEATHER.search(text))
+            if plainly or (WHEN.search(text) and self._weather_recently()):
+                forecast = await self._home_forecast(settings)
+                emit({"type": "weather", "place": settings.persona.location})
+                chosen = chosen or plainly  # a weather question stays local
         async for event in self._converse(
             text, history, recalled, settings, role, chosen, forecast=forecast
         ):
@@ -210,7 +222,14 @@ class Brain:
             )
             await self.recall.index_pending()
 
+    def _weather_recently(self) -> bool:
+        return (
+            self._weather_at is not None
+            and self.memory.clock() - self._weather_at < WEATHER_FOLLOW_UP
+        )
+
     async def _home_forecast(self, settings: Settings) -> str:
+        self._weather_at = self.memory.clock()
         place = settings.persona.location
         try:
             return await self.weather.forecast(place, settings.persona.country)
@@ -321,7 +340,7 @@ class Brain:
         question: str = "",
         forecast: str = "",
     ) -> AsyncIterator[Event]:
-        hand_off = role == LOCAL and not chosen and hops == 0 and not forecast
+        hand_off = role == LOCAL and not chosen and hops == 0
         system = self._system(settings, recalled, role, hand_off, forecast)
         messages = [
             {"role": "system", "content": system},
@@ -358,6 +377,7 @@ class Brain:
                     forecast = await self.weather.forecast(place, settings.persona.country)
                 except WeatherError as e:
                     forecast = f"The forecast lookup failed: {e}"
+                self._weather_at = self.memory.clock()
                 yield {"type": "weather", "place": place}
                 if job:
                     job.steps.append(f"checked the forecast for {place}")
