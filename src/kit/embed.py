@@ -42,7 +42,11 @@ class OllamaEmbedder:
     async def embed(self, texts: list[str], purpose: Purpose) -> list[list[float]]:
         s = self.settings()
         prefix = s.memory.query_prefix if purpose == "query" else s.memory.document_prefix
-        body = {"model": s.memory.embed_model, "input": [prefix + t for t in texts]}
+        body = {
+            "model": s.memory.embed_model,
+            "input": [prefix + t for t in texts],
+            "keep_alive": "30m",  # stay loaded beside the chat model, like it
+        }
         try:
             response = await self.client.post(f"{s.ollama.url}/api/embed", json=body, timeout=60)
         except httpx.HTTPError as e:
