@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 import sys
 import threading
 import time
@@ -538,11 +539,27 @@ def _log_to_file() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
+def _selftest(argv: list[str]) -> int:
+    """Prove a built exe has everything it needs (Qt plugins, the face), then exit.
+    The installer build runs this before packaging."""
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    app = QApplication(argv[:1])
+    if face_icon().isNull():
+        return 2
+    chat = ChatWindow()
+    chat.on_event(1, {"type": "say", "text": "Self-test."})
+    ok = "Self-test." in chat.text() and QLocalServer is not None
+    app.quit()
+    return 0 if ok else 3
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
     if "--version" in argv:
         print(f"Kit desk app {kit.__version__}")
         return 0
+    if "--selftest" in argv:
+        return _selftest(argv)
     _log_to_file()
     app = QApplication(argv)
     app.setApplicationName("Kit")
