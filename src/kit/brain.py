@@ -97,7 +97,7 @@ WEATHER_FOLLOW_UP = timedelta(minutes=15)
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
     r"nearly (done|there)|done yet|any luck|still (going|working|thinking)|hurry up|"
-    r"what'?s taking so long|status|anything yet)\b",
+    r"what'?s taking so long|status|anything yet|any (update|news|luck|progress)s?)\b",
     re.IGNORECASE,
 )
 # A bare "hello?" or "hey" while Kit is busy is checking in too.
@@ -250,11 +250,19 @@ class Brain:
         long prompt, so when Dan checks in, say it again right next to his words."""
         if role != LOCAL or not self.jobs:
             return text
-        if not (CHECKING_IN.search(text) or NUDGE.search(text)):
-            return text
         work = " ".join(job.line() for job in self.jobs.values())
+        owner = self.settings().persona.owner
+        # A few words while Kit is busy ("hey", "kit", "you there") is getting its
+        # attention about the work, the same as asking how it's going.
+        short = len(re.findall(r"\w+", text)) <= 3
+        if not (CHECKING_IN.search(text) or NUDGE.search(text) or short):
+            return (
+                f"{text}\n\n(Note for you, not from {owner}: you're still working on this "
+                f"in the background: {work} Answer this message normally; mention the "
+                f"background work only if it fits.)"
+            )
         return (
-            f"{text}\n\n(Note for you, not from {self.settings().persona.owner}: they're "
+            f"{text}\n\n(Note for you, not from {owner}: they're "
             f"checking in on the work you're doing in the background. {work} Say which "
             f"question you're on (in a few words, e.g. 'the cavitation one'), how long "
             f"it's been and anything you've done so far, briefly and in character, and "

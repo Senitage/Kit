@@ -538,16 +538,25 @@ def test_checking_in_while_busy_names_the_work(memory):
     assert memory.recent(10)[0].text == "how are you going?"  # the note isn't saved
 
 
-def test_small_talk_while_busy_has_no_note(memory):
+def test_other_messages_while_busy_get_a_light_note(memory):
     from kit.brain import Job
 
-    brain, model, _ = make(memory, reply("Hi."))
+    brain, model, _ = make(memory, reply("It's Tuesday."))
     brain.jobs[1] = Job(1, "size a thickener", "Opus")
-    collect(brain.chat("hello"))
-    assert model.calls[0][-1]["content"] == "hello"
+    collect(brain.chat("what day is it today again?"))
+    last = model.calls[0][-1]["content"]
+    assert "Answer this message normally" in last and '"size a thickener"' in last
 
 
-@pytest.mark.parametrize("text", ["hello?", "anything?", "?", "hey?", "well?"])
+def test_no_note_when_not_busy(memory):
+    brain, model, _ = make(memory, reply("Hi."))
+    collect(brain.chat("hey"))
+    assert model.calls[0][-1]["content"] == "hey"
+
+
+@pytest.mark.parametrize(
+    "text", ["hello?", "anything?", "?", "hey", "kit", "any update?", "you there"]
+)
 def test_nudges_while_busy_count_as_checking_in(memory, text):
     from kit.brain import Job
 
