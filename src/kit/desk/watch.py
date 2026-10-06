@@ -214,7 +214,6 @@ class Reporter:
         self._last_sent = float("-inf")
         self._system: dict | None = None
         self._system_at = float("-inf")
-        self.last: dict | None = None  # the latest look at the desktop, sent or not
 
     def tick(self) -> bool:
         """Check the desktop once; returns True if a report went to Kit."""
@@ -227,7 +226,6 @@ class Reporter:
                 log.exception("reading system status failed")
             self._system_at = now
         snap = build_snapshot(self.desktop, config, self.host, self._system, self.browser())
-        self.last = snap
         focus = snap["focus"] or {}
         key = (
             focus.get("app"),

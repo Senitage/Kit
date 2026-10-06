@@ -152,24 +152,19 @@ def test_app_starts_into_the_tray_and_quits(qapp, desk_dir, monkeypatch):
         desk.face.close()
 
 
-def test_glow_dozes_off_when_dan_is_away_and_wakes_when_he_is_back(qapp):
+def test_glow_sleeps_and_wakes_when_the_brain_says_and_glances_by_himself(qapp):
     from kit.desk.alive import Alive
 
     face = desk_app.HelperFace(150)
     face.move(400, 300)
     face.show()
-    snap = {"idle_seconds": 5.0, "locked": False}
     looked = []
-    alive = Alive(
-        face, lambda: snap, lambda: looked.append(1) or (0, 0, 800, 600), lambda: 600, lambda: False
-    )
-    alive.step()
-    assert not alive.asleep
-    snap["idle_seconds"] = 700
-    alive.step()
+    alive = Alive(face, lambda: looked.append(1) or (0, 0, 800, 600), lambda: False)
+    alive.fall_asleep()
     assert alive.asleep and alive._awake_pos == face.pos()
-    snap["idle_seconds"] = 1
     alive.step()
+    assert not looked  # asleep: no glancing
+    alive.wake_up()
     assert not alive.asleep and face.face.state == "idle"
     alive._next_glance = 0
     alive.step()
@@ -187,6 +182,8 @@ def test_a_pipe_up_shows_in_the_chat_and_on_the_face(qapp, desk_dir, monkeypatch
     desk.performer.perform = acted.append
     try:
         desk._on_life({"type": "fidget", "gesture": "yawn"})
+        desk._on_life({"type": "state", "state": "asleep"})
+        assert desk.alive.asleep
         desk._on_life(
             {"type": "pipe_up", "reply": reply_event("Still on pumps.py, mate?")["reply"]}
         )

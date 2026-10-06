@@ -306,7 +306,6 @@ class DeskApp(QObject):
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
         self._signals.life.connect(self._on_life)
-        self.sleep_after_s = 600.0
 
         self.face = HelperFace(self.config.face_size)
         self.face.setWindowIcon(face_icon())
@@ -343,13 +342,7 @@ class DeskApp(QObject):
         self.reporter = Reporter(
             desktop, self._report, lambda: self.config, system_status, browser=self.browser.current
         )
-        self.alive = Alive(
-            self.face,
-            lambda: self.reporter.last,
-            desktop.focused_rect,
-            lambda: self.sleep_after_s,
-            self._busy,
-        )
+        self.alive = Alive(self.face, desktop.focused_rect, self._busy)
         self.health = QTimer(self)
         self.health.timeout.connect(self.check_health)
         self.health.start(HEALTH_EVERY_MS)
@@ -563,7 +556,8 @@ class DeskApp(QObject):
                 if after is None:  # start from now, not from old fidgets
                     state = client.life()
                     after = state["last_event"]
-                    self.sleep_after_s = 60.0 * state["settings"]["sleep_after_minutes"]
+                    if state.get("mood") == "asleep":
+                        self._signals.life.emit({"type": "state", "state": "asleep"})
                 got = client.life_events(after)
                 for event in got["events"]:
                     self._signals.life.emit(event)
@@ -576,7 +570,12 @@ class DeskApp(QObject):
 
     def _on_life(self, event: dict) -> None:
         face = self.face.face
-        if event.get("type") == "fidget":
+        if event.get("type") == "state":
+            if event.get("state") == "asleep":
+                self.alive.fall_asleep()
+            elif event.get("state") == "awake":
+                self.alive.wake_up()
+        elif event.get("type") == "fidget":
             if not self._busy() and not self.alive.asleep:
                 face.play(event.get("gesture", "look_away"), time.monotonic())
         elif event.get("type") == "pipe_up":

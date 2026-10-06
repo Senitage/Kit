@@ -337,6 +337,7 @@ def create_app(
     def pc_report(snap: Snapshot) -> dict:
         """The desk app's report: open windows, focus, idle time and PC health."""
         brain.pc.update(snap)
+        brain.life.on_report()
         return {"ok": True}
 
     @app.get("/api/pc/context", dependencies=auth)

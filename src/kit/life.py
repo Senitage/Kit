@@ -115,6 +115,7 @@ class Life:
         self.sulky = False
         self.snoozed_until: datetime | None = None
         self.curious_about = ""
+        self.asleep = False
         self._seen: set[str] = set()
         self._day = now.date()
         self._events: deque[dict] = deque(maxlen=MAX_EVENTS)
@@ -140,8 +141,25 @@ class Life:
         self.snoozed_until = None
         self.ignored = 0
 
+    def on_report(self) -> None:
+        """A report from the desk app: wake at once if Dan's back, or doze off if
+        he's been gone long enough. Every body (desk face, arm) follows these."""
+        snap = self.pc.latest
+        if snap is None:
+            return
+        away_s = self.settings().life.sleep_after_minutes * 60
+        if not self.asleep and (snap.locked or snap.idle_seconds >= away_s):
+            self.asleep = True
+            self.publish({"type": "state", "state": "asleep"})
+        elif self.asleep and not snap.locked and snap.idle_seconds < 60:
+            self.asleep = False
+            self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
+            self.publish({"type": "state", "state": "awake"})
+
     def mood(self) -> str:
         d = self.drives
+        if self.asleep:
+            return "asleep"
         if self.sulky:
             return "sulky"
         if d.energy < 0.5:
@@ -185,7 +203,7 @@ class Life:
             self.ignored = min(self.ignored + 1, 3)
             self.sulky = True
             self.publish({"type": "fidget", "gesture": "sigh", "mood": "sulky"})
-        elif self.rng.random() < 0.12 + 0.3 * d.boredom:
+        elif not self.asleep and self.rng.random() < 0.12 + 0.3 * d.boredom:
             mood = self.mood()
             self.publish(
                 {"type": "fidget", "gesture": self.rng.choice(FIDGETS[mood]), "mood": mood}

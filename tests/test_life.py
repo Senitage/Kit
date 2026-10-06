@@ -191,3 +191,19 @@ def test_life_api_waits_for_events(paths):
             is None
         )
     memory.close()
+
+
+def test_the_brain_decides_when_kit_sleeps_and_wakes():
+    life, pc, clock = setup(sleep_after_minutes=10)
+    pc.update(snap(idle=300))
+    life.on_report()
+    assert not life.asleep
+    pc.update(snap(idle=601))
+    life.on_report()
+    assert life.asleep and life.mood() == "asleep"
+    run(life, pc, clock, 5, snap(idle=900))
+    assert not [e for e in life.events_after(0) if e["type"] == "fidget"]  # no fidgets asleep
+    pc.update(snap(idle=2))
+    life.on_report()
+    states = [e["state"] for e in life.events_after(0) if e["type"] == "state"]
+    assert states == ["asleep", "awake"] and not life.asleep

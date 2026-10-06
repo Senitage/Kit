@@ -46,15 +46,22 @@ lets him back, and so does "Quiet for an hour" in the tray menu.
 `life.chattiness = 0` means he never speaks first but still fidgets.
 `life.enabled = false` turns it all off.
 
-## On the desk (`kit.desk.alive`, no brain needed)
+## One brain, many bodies
 
-These run in the desk app every second, so they're instant:
+Everything above lives in the brain (`kit.life` on the server), including when
+Kit falls asleep and wakes up. The desk app, the chat and later the arm are
+bodies: they listen to `/api/life/events` and act out what he decides, so
+they always agree. The brain decides he's asleep after
+`life.sleep_after_minutes` away (10 by default) or when the PC is locked, and
+awake the moment the desk app reports you're back.
+
+The desk app adds only reflexes, the way your body blinks without asking your
+brain. They're instant and need nothing from the server:
 - every 20 to 70 seconds (random) Glow glances at the window you're working in,
   as if reading over your shoulder;
-- after `life.sleep_after_minutes` away (10 by default), or when the PC is
-  locked, he yawns, dozes off and slides down to lie on the bottom of the
-  screen;
-- when you're back he startles awake, perks up and climbs back to his spot.
+- when the brain says he's asleep, he yawns, dozes off and slides down to lie on
+  the bottom of the screen. When it says he's awake, he startles, perks up and
+  climbs back to his spot.
 
 Pipe-ups appear in his speech bubble and in the chat, so you can answer them.
 If his face is hidden, they show as a Windows notification.
