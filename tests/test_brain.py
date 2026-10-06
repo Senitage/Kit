@@ -564,3 +564,15 @@ def test_nudges_while_busy_count_as_checking_in(memory, text):
     brain.jobs[1] = Job(1, "pump cavitation", "Opus")
     collect(brain.chat(text))
     assert '"pump cavitation"' in model.calls[0][-1]["content"]
+
+
+def test_kit_gets_shorter_with_repeated_check_ins(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Sec."), reply("Patience."), reply("Sigh."))
+    brain.jobs[1] = Job(1, "cabbages", "Opus")
+    for text in ["hey", "kit", "anything?"]:
+        collect(brain.chat(text))
+    notes = [call[-1]["content"] for call in model.calls]
+    assert "first time" in notes[0] and "twice" in notes[1] and "Third time" in notes[2]
+    assert "don't invent progress" in notes[0]

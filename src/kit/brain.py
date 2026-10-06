@@ -104,6 +104,20 @@ CHECKING_IN = re.compile(
 NUDGE = re.compile(r"^\W*(hello|hey|hi|oi|kit|um+|so+|and|well|anything)?\W*\?+\W*$", re.I)
 
 
+def _patience(asked: int) -> str:
+    """How Kit takes being asked again and again while it's busy."""
+    if asked <= 1:
+        return "This is the first time they've asked: easy-going, like 'give me a sec'."
+    if asked == 2:
+        return "They've asked twice now: a touch of mock impatience."
+    if asked == 3:
+        return "Third time they've asked: openly exasperated, cheeky about it."
+    return (
+        f"They've asked {asked} times: theatrically fed up, a sigh or a one-word answer, "
+        f"still fond underneath."
+    )
+
+
 @dataclass
 class Job:
     """Something a cloud model is working on while Kit carries on talking."""
@@ -113,10 +127,14 @@ class Job:
     model: str
     started: float = field(default_factory=time.monotonic)
     steps: list[str] = field(default_factory=list)
+    check_ins: int = 0  # how often Dan has asked how it's going
 
     def line(self) -> str:
         secs = int(time.monotonic() - self.started)
-        done = f" So far you've {', then '.join(self.steps)}." if self.steps else ""
+        if self.steps:
+            done = f" So far you've {', then '.join(self.steps)}."
+        else:
+            done = " Nothing to report yet, it's still thinking; don't invent progress."
         return f'"{self.question}": you asked {self.model} {secs} seconds ago.{done}'
 
     def as_dict(self) -> dict:
@@ -261,12 +279,15 @@ class Brain:
                 f"in the background: {work} Answer this message normally; mention the "
                 f"background work only if it fits.)"
             )
+        for job in self.jobs.values():
+            job.check_ins += 1
+        asked = max(job.check_ins for job in self.jobs.values())
         return (
             f"{text}\n\n(Note for you, not from {owner}: they're "
             f"checking in on the work you're doing in the background. {work} Say which "
-            f"question you're on (in a few words, e.g. 'the cavitation one'), how long "
-            f"it's been and anything you've done so far, briefly and in character, and "
-            f"word it differently from your last reply. Don't answer the question itself.)"
+            f"question you're on (in a few words, e.g. 'the cabbage one') and roughly how "
+            f"long it's been, in one short line, in character. {_patience(asked)} Never "
+            f"reuse a line you've already said. Don't answer the question itself.)"
         )
 
     def busy(self) -> list[dict]:
