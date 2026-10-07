@@ -79,6 +79,7 @@ def system_prompt(
     quirks: list[str] | None = None,
     weather: bool = False,
     forecast: str = "",
+    pc_detail: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -188,7 +189,10 @@ def system_prompt(
             f"Put the full question in text and say something short like 'That one's for "
             f"{expert}.'"
         )
-    lines.append("Leave detail empty unless there's something to show.")
+    lines.append(
+        "Leave detail empty unless there's something new to show for this message. Never "
+        "repeat detail from an earlier reply."
+    )
     if persona.examples:
         lines += ["", "Examples of how you talk:"]
         for ex in persona.examples:
@@ -201,9 +205,23 @@ def system_prompt(
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
+        *pc_block(pc_detail, owner),
         *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
+
+
+def pc_block(detail: str, owner: str) -> list[str]:
+    """The full picture of the PC, fetched because the message is about it."""
+    if not detail:
+        return []
+    return [
+        "",
+        f"What you can see on {owner}'s PC (looked just now, because they asked about it):",
+        detail,
+        "Answer from this in a sentence or two, with the numbers or names that matter. "
+        "Don't list everything unless asked.",
+    ]
 
 
 def forecast_block(forecast: str, owner: str) -> list[str]:
@@ -269,21 +287,25 @@ HISTORY_DETAIL_CHARS = 600
 
 def history_messages(history: list[Message], channel: str | None = None) -> list[dict]:
     """Past turns in chat form. Kit's turns are shown as the JSON it gave, which
-    keeps the model answering in that format. Long written detail (code, lists) is
-    cut short so it doesn't crowd the local model's context. Messages that came in
-    another way than ``channel`` say where from, e.g. "(from their phone)"."""
+    keeps the model answering in that format. Only Kit's latest reply keeps its
+    written detail (cut short so it doesn't crowd the local model's context), for
+    "explain step 3"; older detail is dropped, or a small model copies it under every
+    answer. Messages that came in another way than ``channel`` say where from, e.g.
+    "(from their phone)"."""
     out = []
-    for m in history:
+    last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
+    for i, m in enumerate(history):
         if m.role == "user":
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
             out.append({"role": "user", "content": note + m.text})
         else:
-            out.append({"role": "assistant", "content": _short(m.reply_json) or _as_json(m.text)})
+            short = _short(m.reply_json, keep_detail=i == last_kit)
+            out.append({"role": "assistant", "content": short or _as_json(m.text)})
     return out
 
 
-def _short(reply_json: str | None) -> str | None:
+def _short(reply_json: str | None, keep_detail: bool = True) -> str | None:
     if not reply_json:
         return None
     try:
@@ -291,6 +313,9 @@ def _short(reply_json: str | None) -> str | None:
     except ValueError:
         return reply_json
     detail = data.get("detail") or ""
+    if detail and not keep_detail:
+        data["detail"] = ""
+        return json.dumps(data)
     if len(detail) > HISTORY_DETAIL_CHARS:
         data["detail"] = detail[:HISTORY_DETAIL_CHARS] + " [...]"
         return json.dumps(data)

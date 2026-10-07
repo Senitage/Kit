@@ -135,7 +135,9 @@ def _tab(t: Tab) -> str:
     return f"{text} {where}".strip() + (" (playing sound)" if t.audible else "")
 
 
-def health_line(s: System) -> str:
+def health_line(s: System, apps: bool = True) -> str:
+    """CPU, memory, disks and so on. ``apps`` False leaves out the busiest apps'
+    names (while watching is paused)."""
     parts = []
     if s.cpu_percent is not None:
         parts.append(f"CPU {s.cpu_percent:.0f}%")
@@ -157,7 +159,7 @@ def health_line(s: System) -> str:
     if s.online is False:
         parts.append("no network")
     line = ", ".join(parts)
-    if s.busiest:
+    if s.busiest and apps:
         busy = "; ".join(
             f"{b.app} {b.cpu_percent:.0f}% CPU {b.memory_mb / 1024:.1f} GB" for b in s.busiest[:3]
         )
@@ -237,7 +239,10 @@ class PcContext:
         if not self.online():
             lines.append("The desk app has stopped reporting, so this is out of date.")
         if not snap.watching:
-            lines.append(f"{owner} has paused watching; window titles aren't shared.")
+            lines.append(
+                f"{owner} has paused watching: you can't see their windows, tabs or what "
+                f"they've been doing. Only the PC's health is shared."
+            )
         elif snap.locked:
             lines.append("The PC is locked.")
         else:
@@ -255,18 +260,21 @@ class PcContext:
                     lines.append(f"- {'* ' if t.active else ''}{_tab(t)}")
                 if len(tabs) > MAX_TABS:
                     lines.append(f"- and {len(tabs) - MAX_TABS} more")
-        hour = self._summary(now - timedelta(hours=1), now, titles=True)
-        if hour:
-            lines += ["In focus over the last hour:", *hour]
-        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today = self._summary(start_of_day, now, titles=False)
-        if today:
-            lines += ["Today so far, by app:", *today]
-        sites = self._sites(start_of_day, now)
-        if sites:
-            lines += ["Websites today:", *sites]
+        if snap.watching:
+            # While paused, what came before stays private too, not just the screen.
+            hour = self._summary(now - timedelta(hours=1), now, titles=True)
+            if hour:
+                lines += ["In focus over the last hour:", *hour]
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today = self._summary(start_of_day, now, titles=False)
+            if today:
+                lines += ["Today so far, by app:", *today]
+            sites = self._sites(start_of_day, now)
+            if sites:
+                lines += ["Websites today:", *sites]
         if snap.system:
-            lines.append(f"PC health: {health_line(snap.system)}.")
+            health = health_line(snap.system, apps=snap.watching)
+            lines.append(f"PC health: {health}.")
         return "\n".join(lines)
 
     def _summary(self, since: datetime, until: datetime, titles: bool) -> list[str]:

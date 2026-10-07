@@ -2,9 +2,10 @@
 
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
-from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
 from kit.brain import Brain
 from kit.memory import Memory
 from kit.pc_context import PcContext, Snapshot
@@ -99,6 +100,62 @@ def test_paused_and_locked_hide_the_screen():
     assert pc.now_line("Dan") == "Dan's PC is locked."
 
 
+def test_paused_detail_keeps_earlier_focus_private():
+    clock = Clock()
+    pc = PcContext(clock)
+    run(pc, clock, 20, snap())
+    pc.update(snap(watching=False, windows=[], focus=None))
+    detail = pc.detail("Dan")
+    assert "paused watching" in detail
+    assert "pump.py" not in detail and "Visual Studio Code" not in detail
+    assert "Today so far" not in detail
+    assert "PC health: CPU 12%" in detail and "Busiest" not in detail
+
+
+def make_brain(paths, *outputs):
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    store = SettingsStore(paths)
+    recall = Recall(memory, FakeEmbedder(), store.current)
+    claude = FakeAnthropic()
+    brain = Brain(
+        store.current, memory, FakeModel(*outputs), make_cloud(memory, claude, key="k"), recall
+    )
+    return brain, memory, claude
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "what have I been doing for the last hour?",
+        "is my PC struggling?",
+        "look at what i have open on my PC",
+        "what's open?",
+    ],
+)
+def test_pc_questions_are_answered_locally_from_a_fresh_look(paths, question):
+    brain, memory, claude = make_brain(paths, reply("Mostly the pump code."))
+    brain.pc.update(snap())
+    events = collect(brain.chat(question))
+    assert "looked_at_pc" in [e["type"] for e in events]
+    system = brain.model.calls[0][0]["content"]
+    assert "Open windows (3):" in system and "PC health: CPU 12%" in system
+    assert "ask_cloud" not in system  # the cloud can't see the PC, so no hand-off
+    assert not claude.calls
+    memory.close()
+
+
+@pytest.mark.parametrize(
+    "question", ["what have I been doing wrong with this pump calc?", "how's the thickener?"]
+)
+def test_other_questions_dont_look_at_the_pc(paths, question):
+    brain, memory, _ = make_brain(paths, reply("Hmm."))
+    brain.pc.update(snap())
+    events = collect(brain.chat(question))
+    assert "looked_at_pc" not in [e["type"] for e in events]
+    assert "Open windows" not in brain.model.calls[0][0]["content"]
+    memory.close()
+
+
 def test_look_at_pc_action_shows_the_detail_then_answers(paths):
     memory = Memory(paths.state_dir / "memory.db", Clock())
     model = FakeModel(
@@ -109,7 +166,7 @@ def test_look_at_pc_action_shows_the_detail_then_answers(paths):
     store = SettingsStore(paths)
     brain = Brain(store.current, memory, model, make_cloud(memory, key="k"), recall)
     brain.pc.update(snap())
-    events = collect(brain.chat("What have I been up to?"))
+    events = collect(brain.chat("Should I take a break?"))
     assert "looked_at_pc" in [e["type"] for e in events]
     system = model.calls[0][0]["content"]
     assert "- look_at_pc:" in system

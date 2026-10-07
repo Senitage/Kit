@@ -10,12 +10,13 @@ from types import SimpleNamespace
 from kit.local_model import LocalModelError
 
 
-def reply(*says, emotion="happy", gesture="nod", action="none", text=""):
+def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail=""):
     return json.dumps(
         {
             "emotion": emotion,
             "segments": [{"say": s, "gesture": gesture} for s in says],
             "action": {"kind": action, "text": text},
+            **({"detail": detail} if detail else {}),
         }
     )
 

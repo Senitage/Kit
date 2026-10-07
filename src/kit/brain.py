@@ -108,6 +108,15 @@ WHEN = re.compile(
     re.IGNORECASE,
 )
 WEATHER_FOLLOW_UP = timedelta(minutes=15)
+# Plainly about Dan's PC: Kit looks first and the local model answers, since the
+# cloud can't see the PC and window titles stay at home.
+PC_QUESTION = re.compile(
+    r"\b(my (pc|computer|laptop|desktop|screen)|on (my|the) (pc|computer|screen)|"
+    r"what('?s| is| have i got| do i have| have i) open|have (i )?(got )?open|"
+    r"(have|had) i been (doing|working on|up to)\s*(\?|$|today|this|for|in the|over|all|"
+    r"since|lately)|cpu|ram usage|disk space|memory usage|tabs? (open|i have))",
+    re.IGNORECASE,
+)
 # "How are you going?" while a slow answer is still coming means "how's that going?".
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
@@ -257,6 +266,15 @@ class Brain:
             name = settings.profile(role).name
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
+        pc_detail = ""
+        if (
+            self.pc.latest is not None
+            and PC_QUESTION.search(text)
+            and not (chosen and role != LOCAL)
+        ):
+            role, chosen = LOCAL, True
+            pc_detail = self.pc.detail(settings.persona.owner)
+            emit({"type": "looked_at_pc", "online": self.pc.online()})
         forecast = ""
         if role == LOCAL and self.weather is not None:
             plainly = bool(WEATHER.search(text))
@@ -265,7 +283,7 @@ class Brain:
                 emit({"type": "weather", "place": settings.persona.location})
                 chosen = chosen or plainly  # a weather question stays local
         async for event in self._converse(
-            text, history, recalled, settings, role, chosen, forecast=forecast
+            text, history, recalled, settings, role, chosen, forecast=forecast, pc_detail=pc_detail
         ):
             if event["type"] == "reply" and self.jobs:
                 event = {**event, "question": text}
@@ -443,6 +461,7 @@ class Brain:
         role: str,
         hand_off: bool,
         forecast: str = "",
+        pc_detail: str = "",
     ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
@@ -468,6 +487,7 @@ class Brain:
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
             forecast=forecast,
+            pc_detail=pc_detail,
         )
 
     async def _converse(
@@ -481,9 +501,10 @@ class Brain:
         hops: int = 0,
         question: str = "",
         forecast: str = "",
+        pc_detail: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
-        system = self._system(settings, recalled, role, hand_off, forecast)
+        system = self._system(settings, recalled, role, hand_off, forecast, pc_detail)
         messages = [
             {"role": "system", "content": system},
             *history_messages(history, CHANNEL.get()),

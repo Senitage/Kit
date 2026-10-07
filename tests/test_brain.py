@@ -576,3 +576,18 @@ def test_kit_gets_shorter_with_repeated_check_ins(memory):
     notes = [call[-1]["content"] for call in model.calls]
     assert "first time" in notes[0] and "twice" in notes[1] and "Third time" in notes[2]
     assert "don't invent progress" in notes[0]
+
+
+def test_only_the_latest_reply_keeps_its_detail_in_history(memory):
+    brain, model, _ = make(
+        memory,
+        reply("CPU is fine.", detail="Your PC is running smoothly with 15% CPU"),
+        reply("Sure.", detail="Step 1: fill the tank"),
+        reply("Ok."),
+    )
+    collect(brain.chat("is my pc ok?"))
+    collect(brain.chat("how do I start the pump?"))
+    collect(brain.chat("thanks"))
+    history = " ".join(m["content"] for m in model.calls[2][1:])
+    assert "running smoothly" not in history
+    assert "Step 1: fill the tank" in history
