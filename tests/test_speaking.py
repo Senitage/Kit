@@ -7,8 +7,18 @@ import pytest
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, plan, reply
 from kit.brain import Brain
 from kit.memory import Memory
+from kit.prompt import IN_WORDS
 from kit.recall import Recall
-from kit.reply import Plan, SpokenStream, early_plan, parse_plan, sentences, spoken_reply
+from kit.reply import (
+    Plan,
+    Reply,
+    SpokenStream,
+    early_plan,
+    parse_plan,
+    reply_json,
+    sentences,
+    spoken_reply,
+)
 from kit.settings import Settings
 
 
@@ -128,6 +138,24 @@ def test_words_that_come_back_as_json_are_still_read(memory):
     assert events[-1]["reply"]["segments"][0]["say"] == "Hi there."
 
 
+def test_a_plan_instead_of_words_is_never_said_and_he_is_asked_for_words(memory):
+    brain, model = make(memory, plan(), plan(gesture="wink"), "Fair enough, mate.")
+    events = collect(brain.chat("haha"))
+    assert says(events) == "Fair enough, mate."
+    assert events[-1]["reply"]["segments"][0]["say"] == "Fair enough, mate."
+    assert model.speak_calls[1][-1]["content"].endswith(IN_WORDS)
+
+
+def test_plan_json_already_in_the_chat_isnt_shown_to_him_again(memory):
+    # Once one got into the chat, he wrote it above every line after.
+    leaked = '{"emotion": "amused", "gesture": "laugh", "action": "none"}\nNot my snacks, I hope.'
+    memory.add_message("kit", leaked, reply_json(Reply.plain(leaked)), "local")
+    brain, model = make(memory, reply("Ha, fair."))
+    collect(brain.chat("well it kinda is"))
+    assert {"role": "assistant", "content": "Not my snacks, I hope."} in model.speak_calls[0]
+    assert '{"emotion"' not in model.calls[0][0]["content"]  # nor in his last few lines
+
+
 def test_no_words_twice_is_a_lost_train_of_thought(memory):
     brain, model = make(memory, plan(), "", "")
     events = collect(brain.chat("Hello"))
@@ -206,6 +234,21 @@ def test_detail_after_a_blank_line_and_json_by_mistake():
     only_detail = SpokenStream()
     only_detail.feed("*grins*\n\nSteps:\n1. Do it.")
     assert only_detail.result() == ("Steps:", "1. Do it.")
+
+
+def test_a_plan_written_again_with_his_words_is_dropped():
+    # A small model put {"emotion": ..., "gesture": ..., "action": ...} above his words.
+    words = "So that is it then. You want me to watch your face all day?"
+    stream = SpokenStream()
+    raw = '{"emotion": "playful", "gesture": "wink", "action": "none"}\n' + words
+    assert feed(stream, raw) == words and stream.result() == (words, "")
+    fenced = SpokenStream()
+    fenced_raw = '```json\n{"emotion": "happy", "gesture": "nod"}\n```\nRighto.'
+    assert feed(fenced, fenced_raw) == "Righto."
+    after = SpokenStream()
+    assert feed(after, 'Righto, done. {"emotion": "happy", "gesture": "nod"}') == "Righto, done."
+    only = SpokenStream()
+    assert feed(only, plan()) == "" and only.result() == ("", "") and only.wrote_json()
 
 
 def test_he_says_three_sentences_at_most_and_starts_none_past_thirty_words():

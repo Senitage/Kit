@@ -20,6 +20,7 @@ from kit.reply import (
     ReplyError,
     Segment,
     reply_json,
+    without_plans,
     written,
 )
 from kit.settings import PersonaSettings
@@ -35,7 +36,7 @@ def _memory_line(item: Item) -> str:
 
 
 def _snippet(hit: Hit) -> str:
-    text = " / ".join(hit.item.text.splitlines())
+    text = " / ".join(without_plans(hit.item.text).splitlines())
     return f"- ({hit.item.day}) {text[:400]}"
 
 
@@ -353,6 +354,10 @@ def not_again(line: str) -> str:
     return f' (Not "{line}": you\'ve said that, or near enough. Say something new.)'
 
 
+# Added to the speaking note when the last try gave JSON instead of words.
+IN_WORDS = " (Just your words this time, as plain text: no JSON, emotion or gesture.)"
+
+
 PIPED_CHARS = 200  # Kit's pipe-up, quoted beside the answer to it
 
 
@@ -491,17 +496,20 @@ def history_messages(
 
 
 def _plain(m: Message, keep_detail: bool) -> str:
+    """Kit's words in an earlier turn, without any plan JSON that got into them: one
+    left in the history and he copies it every time after."""
     if not m.reply_json:
-        return m.text
+        return without_plans(m.text) or "..."
     try:
         reply = Reply.model_validate_json(m.reply_json)
     except (ValueError, ReplyError):
-        return m.text
+        return without_plans(m.text) or "..."
     # Only something to read: an old second line of chat there taught him to add one.
     detail = reply.detail.strip() if keep_detail and written(reply.detail) else ""
     if len(detail) > HISTORY_DETAIL_CHARS:
         detail = detail[:HISTORY_DETAIL_CHARS] + " [...]"
-    return f"{reply.text}\n\n{detail}" if detail else reply.text
+    text = without_plans(reply.text) or "..."
+    return f"{text}\n\n{detail}" if detail else text
 
 
 def _short(reply_json: str | None, keep_detail: bool = True) -> str | None:

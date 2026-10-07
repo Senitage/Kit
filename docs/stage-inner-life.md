@@ -179,3 +179,5 @@ replaces a journal entry written early by `kit life reflect`.
   with `kit eval voice`, where a dropped pipe-up shows as "kept quiet".
 - **A grey box under his words.** That's something to read that he didn't say
   aloud: code, steps, a list, a link or a path. Nothing else goes there.
+- **A grey line like `curious · tilt_head` under his words.** That's how he
+  felt and the gesture he made.

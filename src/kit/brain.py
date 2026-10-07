@@ -87,6 +87,7 @@ from kit.notebook import (
 )
 from kit.pc_context import PcContext
 from kit.prompt import (
+    IN_WORDS,
     answering_pipe_up,
     history_messages,
     not_again,
@@ -115,6 +116,7 @@ from kit.reply import (
     reply_schema,
     sentences,
     spoken_reply,
+    without_plans,
 )
 from kit.settings import Settings
 from kit.things import THINGS, Register
@@ -142,6 +144,10 @@ SAID_CHARS = 160
 _END = r"(,? (please|thanks|mate|kit))?[.!]*"
 YES = re.compile(rf"(yes|yep|yeah|yup|sure|ok|okay|do it|add it|go ahead){_END}", re.I)
 NO = re.compile(rf"(no|nope|nah|skip it|don'?t|leave it|no thanks){_END}", re.I)
+# "Where?" or "what's that?" back: the question is still open, so a "yes" after
+# Kit explains still adds the thing.
+ASKED_BACK = re.compile(r"^\W*(where|what|which|why|how|huh|eh|sorry|pardon)\b|\?\W*$", re.I)
+ASKED_BACK_WORDS = 3
 
 # Ways to choose who answers one message.
 KEEP_LOCAL = re.compile(
@@ -526,7 +532,8 @@ class Brain:
 
     def _answer_suggestion(self, text: str) -> Reply | None:
         """If Kit just suggested a thing and Dan answers yes or no, act on it without
-        asking a model. Anything else leaves the suggestion for the memory page."""
+        asking a model. A short question back ("where?") keeps the question open;
+        anything else leaves the suggestion for the memory page."""
         pending, self.pending_thing = self.pending_thing, None
         if pending is None:
             return None
@@ -539,6 +546,8 @@ class Brain:
         if NO.fullmatch(text):
             self.register.reject(pending)
             return Reply.plain(f"Okay, I'll leave {thing.name} out.", "neutral", "nod")
+        if ASKED_BACK.search(text) and len(text.split()) <= ASKED_BACK_WORDS:
+            self.pending_thing = pending
         return None
 
     def _answer_shush(self, text: str) -> Reply | None:
@@ -645,7 +654,9 @@ class Brain:
             sheet = self.notebook.sheet()
             who = sheet.text if sheet else f"{persona.backstory} {', '.join(persona.traits)}."
             said_today = [
-                f"{owner if m.role == 'user' else persona.name}: {quoted(m.text, 200)}"
+                f"{owner}: {quoted(m.text, 200)}"
+                if m.role == "user"
+                else f"{persona.name}: {quoted(without_plans(m.text), 200)}"
                 for m in self.memory.messages_on(self.memory.today())[-8:]
             ]
             messages = thinking_messages(
@@ -709,7 +720,8 @@ class Brain:
 
     def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
         persona = settings.persona
-        said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
+        said = [without_plans(m.text)[:SAID_CHARS] for m in history if m.role != "user"]
+        said = [line for line in said if line][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
         mind = self.notebook.mind(persona.owner)
         return self.life.voice(persona.owner, own, said, self.quirks, text, mind)
@@ -1124,6 +1136,8 @@ class Brain:
                 spoken, detail = stream.result()
                 if spoken:
                     break
+                if stream.wrote_json():  # his plan again rather than words
+                    talk = [*talk[:-1], {"role": "user", "content": note + IN_WORDS}]
         except LocalModelError as e:
             yield {"type": "error", "message": f"My local brain isn't answering: {e}"}
             return

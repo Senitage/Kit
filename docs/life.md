@@ -286,7 +286,10 @@ repeat is never shown. He says three sentences at most. Anything after a blank
 line is shown under his words in a grey box, but only if it's something to read
 (code, a list or steps, a table, a link or a path, or a proper explanation);
 another line of chat there is dropped, since in the box it looked like he was
-answering himself. Cloud models still answer in one piece.
+answering himself. If he writes his plan again where his words should be
+(`{"emotion": ..., "gesture": ...}`), it's dropped, never shown, and he's asked
+again for plain words; JSON that got into earlier lines is kept out of what he
+sees of the chat, so he doesn't copy it. Cloud models still answer in one piece.
 
 `kit eval voice` compares local models on this: see
 [stage-inner-life.md](stage-inner-life.md).

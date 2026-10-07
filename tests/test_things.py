@@ -171,6 +171,17 @@ def test_a_longer_message_is_not_an_answer(memory, text):
     assert len(model.calls) == 2 and len(Register(memory).suggestions()) == 1
 
 
+def test_a_question_back_keeps_the_suggestion_open(memory):
+    # "Want me to jot it down?" "where" "The register. Should I add Bob?" "yes"
+    brain, model = make_brain(memory, thing_reply("Bob", "person"), reply("The register."))
+    collect(brain.chat("Bob from work called"))
+    collect(brain.chat("where"))
+    events = collect(brain.chat("yes"))
+    assert len(model.calls) == 2  # the yes was answered without a model
+    assert "Bob is in the register" in events[-1]["reply"]["segments"][0]["say"]
+    assert [t.name for t in Register(memory).all()] == ["Bob"]
+
+
 def test_anything_else_leaves_the_suggestion_waiting(memory):
     brain, model = make_brain(memory, thing_reply("Bob", "person"), reply("Sure."))
     collect(brain.chat("Bob from work called"))

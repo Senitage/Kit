@@ -284,6 +284,29 @@ def _lenient_reply(data: dict) -> Reply | None:
         return None
 
 
+def without_plans(text: str) -> str:
+    """``text`` without any whole JSON object in it that isn't a reply. Asked for his
+    words, a small model sometimes writes its plan again first ({"emotion": ...,
+    "gesture": ...}), and once one is in the chat it copies it every time."""
+    kept, start, at = [], 0, text.find("{")
+    while at != -1:
+        try:
+            data, end = _DECODER.raw_decode(text, at)
+        except ValueError:
+            at = text.find("{", at + 1)
+            continue
+        if isinstance(data, dict) and "segments" not in data:
+            kept.append(text[start:at])
+            start = end
+        at = text.find("{", end)
+    kept.append(text[start:])
+    return _EMPTY_FENCE.sub("", "".join(kept)).strip()
+
+
+_EMPTY_FENCE = re.compile(r"```(?:json)?\s*```")
+_JSON_START = re.compile(r"(```\w*\s*)?\{")
+
+
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
 
 
@@ -435,7 +458,7 @@ class SpokenStream:
     what's said: anything after it is written detail, shown but not spoken, if it's
     something to read (``written``); more chat after it is dropped. If the model
     answers in JSON anyway, nothing comes out until the end, when the words are read
-    from it.
+    from it; JSON with no words in it (his plan again) is dropped, never said.
     """
 
     def __init__(self, name: str = "") -> None:
@@ -449,17 +472,28 @@ class SpokenStream:
     def feed(self, chunk: str) -> None:
         self.raw += chunk
 
-    def _json(self) -> bool:
-        return _THINKING.sub("", self.raw).lstrip().startswith("{")
+    def _text(self) -> str:
+        """What he wrote, without any thinking or a plan he wrote again."""
+        return without_plans(_THINKING.sub("", self.raw))
+
+    def in_json(self) -> bool:
+        """Is he answering in JSON (or still writing a plan he wasn't asked for)?"""
+        return bool(_JSON_START.match(self._text()))
+
+    def wrote_json(self) -> bool:
+        """Did any JSON turn up where his words should be?"""
+        return "{" in _THINKING.sub("", self.raw)
 
     def _spoken(self, final: bool) -> str:
-        text = _THINKING.sub("", self.raw).lstrip()
+        text = self._text()
         if self._prefix is not None:
             text = self._prefix.sub("", text, count=1)
         text = text.lstrip('"\u201c ').split("\n\n", 1)[0]
         text = _STAGE.sub("", text)
         if "*" in text:  # a stage direction still being written, or a stray star
             text = text.replace("*", "") if final else text[: text.index("*")]
+        if "{" in text:  # JSON that's still being written, or broken: never words
+            text = text[: text.index("{")]
         text = _cap(re.sub(r"\s+", " ", text))
         if final:
             return text.strip().rstrip('"\u201d').strip()
@@ -469,7 +503,7 @@ class SpokenStream:
     def first(self) -> str | None:
         """The opening once it's long enough to judge: whole sentences, at least
         ``JUDGED_WORDS`` words of them (None until then, and in JSON)."""
-        if self._json():
+        if self.in_json():
             return None
         text = self._spoken(final=False)
         for end in _SENTENCE_END.finditer(text):
@@ -485,7 +519,7 @@ class SpokenStream:
 
     def take(self) -> str:
         """Spoken text that's ready and hasn't been handed out yet."""
-        if not self.released or self._json():
+        if not self.released or self.in_json():
             return ""
         return self._hand_out(self._spoken(final=False))
 
@@ -502,11 +536,16 @@ class SpokenStream:
 
     def result(self) -> tuple[str, str]:
         """(what was said, written detail)."""
-        if self._json():
-            reply = parse_cloud_reply(_THINKING.sub("", self.raw))
-            return _cap(reply.text), reply.detail if written(reply.detail) else ""
+        if self.in_json():
+            # Words in reply JSON count. Any other JSON is nothing said: read out as
+            # text, it showed in the chat as {"emotion": ...}.
+            for data in reversed(_json_objects(self._text())):
+                reply = _lenient_reply(data)
+                if reply is not None:
+                    return _cap(reply.text), reply.detail if written(reply.detail) else ""
+            return "", ""
         spoken = self._spoken(final=True)
-        rest = _THINKING.sub("", self.raw).lstrip().split("\n\n", 1)
+        rest = self._text().split("\n\n", 1)
         detail = rest[1].strip() if len(rest) > 1 else ""
         if not spoken and detail:
             first, _, more = detail.partition("\n")
