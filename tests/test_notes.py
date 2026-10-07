@@ -221,3 +221,27 @@ def test_note_requests_are_spotted_in_dans_words():
     )
     for chat in ["whats up kit", "what do you think about holidays", "yes", "tell me a joke"]:
         assert request(chat, names) is None
+
+
+def test_kit_never_takes_a_note_dan_didnt_ask_for(memory, vault):
+    s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
+    working_on = "Dan and Claude are giving Kit computer vision and a voice."
+    brain, model = make(memory, s, note_reply("Kit upgrades", working_on))
+    events = collect(brain.chat("yeah claude and i are working on giving you vision and a voice"))
+    assert not list(vault.rglob("*.md"))  # nothing written
+    assert "whether they'd like that written down" in model.speak_calls[0][-1]["content"]
+    assert not any(e["type"] == "notice" for e in events)
+
+    events = collect(brain.chat("yes"))
+    assert (vault / "Kit upgrades.md").read_text(encoding="utf-8").endswith(working_on + "\n")
+    said = "".join(e["text"] for e in events if e["type"] == "say")
+    assert said == "Done, it's in Kit upgrades.md."
+
+
+def test_a_note_offer_can_be_turned_down(memory, vault):
+    s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
+    brain, _ = make(memory, s, note_reply("Bins", "Bins go out Thursday."))
+    collect(brain.chat("the bins go out thursday now"))
+    collect(brain.chat("nah"))
+    collect(brain.chat("yes"))  # too late: the offer has gone
+    assert not list(vault.rglob("*.md"))
