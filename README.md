@@ -7,16 +7,35 @@ on-screen helper and later gets a body: a desk robot arm.
 Kit is built in tested stages. The plan and each stage's test checklist are in
 the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91).
 
-## Current stage: 0, foundations
+## Current stage: 1, text brain
 
-Set up the server machine with [docs/stage-0-setup.md](docs/stage-0-setup.md),
-then run `kit check` until every line passes.
+Kit chats by text in a browser or terminal. It recalls what's relevant from
+everything it has learned, by words and by meaning, and keeps its facts tidy
+as things change ([how memory works](docs/memory.md)). A register of things
+(people, vehicles, places, projects, equipment) tells it where each one lives:
+which NAS folder, Obsidian note, home_app record or Home Assistant area. Small talk stays on the
+local model; real questions go to a cloud model (Claude, GPT or Gemini, your
+choice) with web search, within a monthly budget. How much stays local is a
+setting, and Kit keeps chatting locally while a slow cloud answer works. It has settings and memory pages with history and undo. Set it up and test it with
+[docs/stage-1-text-brain.md](docs/stage-1-text-brain.md). Ideas waiting for a later stage are in
+[docs/improvements.md](docs/improvements.md).
 
 ```
-kit init     # create Kit's data folder and a starter settings file
-kit paths    # show where Kit keeps its files
-kit check    # check this machine is ready (GPU, Ollama, Tailscale, NAS, Claude)
+kit serve          # run Kit: chat at /, memory at /memory, settings at /settings
+kit chat           # talk to Kit in the terminal
+kit config ...     # show, set, undo or check settings without a browser
+kit models         # which models do what; `kit models work gpt-sol` switches
+kit memory ...     # see, search, teach, pin or forget what Kit knows; cloud spend
+kit eval           # 50 prompts: are replies valid, and how fast do words start?
+kit things ...     # the register of things and where each one lives
+kit eval memory    # does Kit recall the right facts and keep its memory tidy?
+kit eval routing   # do questions bring back the right thing and where it lives?
+kit eval compare --models sonnet gpt-sol   # same questions, side by side
+kit token          # the API token for the pages and home_app
 ```
+
+Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
+`kit init`, `kit paths` and `kit check` are still there.
 
 ## How Kit is laid out
 
@@ -27,7 +46,9 @@ kit check    # check this machine is ready (GPU, Ollama, Tailscale, NAS, Claude)
   folder outside the repo: `/var/lib/kit` on Linux, `C:\ProgramData\Kit` on
   Windows, or wherever `KIT_DATA_DIR` points. Moving Kit is copying that folder.
 - **Settings** are one TOML file in that folder, checked against a schema.
-  Configurators such as home_app change them through Kit, never directly.
+  Configurators (the built-in page, `kit config`, later home_app) change them
+  through Kit's API, which keeps every earlier version for undo. Kit never
+  calls a configurator, so it runs fine without them.
 
 ## Development
 

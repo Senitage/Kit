@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit settings</title>
+<style>
+  :root { --bg: #f6f5f2; --panel: #fff; --text: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+          --accent: #1f5fbf; --error: #b3261e; --error-bg: #fbeceb; --ok: #1e6b35; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #222220; --text: #ecebe7; --muted: #9c9a94; --line: #34332f;
+            --accent: #3b78d8; --error: #f2b8b5; --error-bg: #3a1d1b; --ok: #8fd19e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; gap: 12px; }
+  header h1 { flex: 1; font-size: 22px; margin: 8px 0 16px; }
+  a { color: var(--accent); }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+             margin: 0 0 16px; padding: 12px 16px 4px; }
+  legend { font-weight: 600; padding: 0 6px; text-transform: capitalize; }
+  label { display: block; margin-bottom: 12px; }
+  .name { font-weight: 500; }
+  .help { display: block; color: var(--muted); font-size: 13px; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; font: inherit; padding: 7px 10px; margin-top: 4px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  .bar { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: center; padding: 12px 0;
+         background: var(--bg); }
+  button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border: 0; }
+  #msg { flex: 1; font-size: 14px; white-space: pre-wrap; }
+  .problem { background: var(--error-bg); color: var(--error); border-radius: 10px; padding: 10px 14px;
+             margin-bottom: 16px; white-space: pre-wrap; }
+  .ok { color: var(--ok); }
+  #history li { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Kit settings</h1><a href="/">Chat</a><a href="/memory">Memory</a></header>
+  <div id="problem" class="problem" hidden></div>
+  <form id="form"></form>
+  <div class="bar">
+    <button class="primary" id="save">Save</button>
+    <button id="undo">Undo last change</button>
+    <span id="msg"></span>
+  </div>
+  <h2>Earlier versions</h2>
+  <ul id="history"></ul>
+</main>
+<script>
+function token() {
+  const m = location.hash.match(/token=([^&]+)/);
+  if (m) { try { localStorage.setItem("kitToken", m[1]); } catch (e) {} history.replaceState(null, "", location.pathname); return m[1]; }
+  let t = null;
+  try { t = localStorage.getItem("kitToken"); } catch (e) {}
+  if (!t) { t = prompt("Kit's API token (run `kit token` on the server):") || ""; try { localStorage.setItem("kitToken", t); } catch (e) {} }
+  return t;
+}
+const headers = { "Authorization": "Bearer " + token(), "Content-Type": "application/json", "X-Changed-By": "settings-page" };
+const form = document.getElementById("form");
+const msg = document.getElementById("msg");
+let schema = null, fields = [];
+
+const resolve = (node) => node && node.$ref ? schema.$defs[node.$ref.split("/").pop()] : node;
+function kindOf(prop) {
+  if (prop.enum) return "enum";
+  if (prop.anyOf) { const real = prop.anyOf.find(p => p.type !== "null"); return real && real.type === "string" ? "optional-string" : "json"; }
+  if (prop.type === "array" && prop.items && prop.items.type === "string") return "lines";
+  if (prop.type === "object" && prop.additionalProperties && prop.additionalProperties.type === "string") return "table";
+  if (["string", "number", "integer", "boolean"].includes(prop.type)) return prop.type;
+  return "json";
+}
+function control(kind, prop, value) {
+  let el;
+  if (kind === "enum") {
+    el = document.createElement("select");
+    for (const v of prop.enum) { const o = document.createElement("option"); o.value = o.textContent = v; el.appendChild(o); }
+    el.value = value;
+  } else if (kind === "boolean") {
+    el = document.createElement("input"); el.type = "checkbox"; el.checked = !!value;
+  } else if (kind === "number" || kind === "integer") {
+    el = document.createElement("input"); el.type = "number"; el.value = value;
+    el.step = kind === "integer" ? "1" : "any";
+    if (prop.minimum !== undefined) el.min = prop.minimum;
+    if (prop.maximum !== undefined) el.max = prop.maximum;
+  } else if (kind === "lines") {
+    el = document.createElement("textarea"); el.value = (value || []).join("\n");
+  } else if (kind === "table") {
+    el = document.createElement("textarea"); el.value = Object.entries(value || {}).map(([k, v]) => k + " = " + v).join("\n");
+  } else if (kind === "json") {
+    el = document.createElement("textarea"); el.value = JSON.stringify(value, null, 2); el.rows = 8;
+  } else {
+    const long = typeof value === "string" && value.length > 70;
+    el = document.createElement(long ? "textarea" : "input");
+    if (!long) el.type = "text";
+    el.value = value ?? "";
+  }
+  return el;
+}
+function read(f) {
+  const el = f.el;
+  switch (f.kind) {
+    case "boolean": return el.checked;
+    case "number": return el.value === "" ? null : Number(el.value);
+    case "integer": return el.value === "" ? null : parseInt(el.value, 10);
+    case "lines": return el.value.split("\n").map(s => s.trim()).filter(Boolean);
+    case "table": return Object.fromEntries(el.value.split("\n").map(s => s.trim()).filter(Boolean).map(s => { const i = s.indexOf("="); return [s.slice(0, i).trim(), s.slice(i + 1).trim()]; }));
+    case "json": return JSON.parse(el.value);
+    case "optional-string": return el.value.trim() === "" ? null : el.value;
+    default: return el.value;
+  }
+}
+function render(settings) {
+  form.innerHTML = ""; fields = [];
+  for (const [section, ref] of Object.entries(schema.properties)) {
+    const sec = resolve(ref);
+    if (sec && sec.type === "object" && sec.additionalProperties && sec.additionalProperties.$ref) {
+      renderTable(section, resolve(sec.additionalProperties), settings[section] || {});
+      continue;
+    }
+    if (!sec || sec.type !== "object" || !sec.properties) continue;
+    const fs = document.createElement("fieldset");
+    const lg = document.createElement("legend"); lg.textContent = section; fs.appendChild(lg);
+    for (const [key, raw] of Object.entries(sec.properties)) {
+      const prop = resolve(raw);
+      const kind = kindOf(prop);
+      const label = document.createElement("label");
+      const name = document.createElement("span"); name.className = "name"; name.textContent = key.replaceAll("_", " ");
+      const help = document.createElement("span"); help.className = "help";
+      help.textContent = (prop.description || "") + (kind === "lines" ? " One per line." : kind === "table" ? " One per line, as name = path." : "");
+      const el = control(kind, prop, settings[section][key]);
+      label.append(name, help, el); fs.appendChild(label);
+      fields.push({ section, key, kind, el });
+    }
+    form.appendChild(fs);
+  }
+}
+// A table of named entries, such as the model profiles: one box per entry.
+function renderTable(section, entry, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const fs = document.createElement("fieldset");
+    const lg = document.createElement("legend"); lg.textContent = section + ": " + name; fs.appendChild(lg);
+    for (const [key, raw] of Object.entries(entry.properties)) {
+      const prop = resolve(raw);
+      const kind = kindOf(prop);
+      const label = document.createElement("label");
+      const nm = document.createElement("span"); nm.className = "name"; nm.textContent = key.replaceAll("_", " ");
+      const help = document.createElement("span"); help.className = "help"; help.textContent = prop.description || "";
+      const el = control(kind, prop, value[key]);
+      label.append(nm, help, el); fs.appendChild(label);
+      fields.push({ section, entry: name, key, kind, el });
+    }
+    form.appendChild(fs);
+  }
+}
+function showProblem(text) {
+  const p = document.getElementById("problem");
+  p.hidden = !text; p.textContent = text || "";
+}
+function say(text, ok) { msg.textContent = text; msg.className = ok ? "ok" : ""; if (!ok) msg.style.color = "var(--error)"; else msg.style.color = ""; }
+async function api(path, opts) {
+  const r = await fetch(path, { headers, ...opts });
+  const body = await r.json();
+  if (r.status === 401) { try { localStorage.removeItem("kitToken"); } catch (e) {} throw new Error("wrong token; reload and enter it again"); }
+  if (!r.ok) { const d = body.detail; throw new Error(typeof d === "string" ? d : d.message + "\n" + d.problems.join("\n")); }
+  return body;
+}
+async function loadHistory() {
+  const list = document.getElementById("history");
+  list.innerHTML = "";
+  for (const v of (await api("/api/settings/history")).slice(0, 15)) {
+    const li = document.createElement("li");
+    li.textContent = v.saved_at + ", before a change by " + v.replaced_by;
+    list.appendChild(li);
+  }
+}
+async function load() {
+  schema = await api("/api/settings/schema");
+  const data = await api("/api/settings");
+  render(data.settings); showProblem(data.problem); await loadHistory();
+}
+document.getElementById("save").addEventListener("click", async () => {
+  const patch = {};
+  try {
+    for (const f of fields) {
+      const sec = (patch[f.section] ||= {});
+      if (f.entry) (sec[f.entry] ||= {})[f.key] = read(f); else sec[f.key] = read(f);
+    }
+  } catch (e) { say("A box holds invalid JSON: " + e.message); return; }
+  try {
+    const data = await api("/api/settings", { method: "PATCH", body: JSON.stringify(patch) });
+    render(data.settings); showProblem(data.problem); say("Saved. Kit uses it from the next message.", true); await loadHistory();
+  } catch (e) { say("Not saved: " + e.message); }
+});
+document.getElementById("undo").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/settings/undo", { method: "POST" });
+    render(data.settings); showProblem(data.problem); say("Went back to the previous version.", true); await loadHistory();
+  } catch (e) { say(e.message); }
+});
+load().catch(e => say("Can't reach Kit: " + e.message));
+</script>
+</body>
+</html>

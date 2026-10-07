@@ -161,13 +161,19 @@ def api_error(cls, status):
     return cls("nope", response=httpx.Response(status, request=request), body=None)
 
 
+def keys(**found):
+    return lambda provider: found.get(provider)
+
+
 def test_claude_key_works():
-    r = checks.check_claude(Settings(), "sk-test", fake_factory())
-    assert r.status is Status.PASS and "Opus 5.5" in r.detail
+    results = checks.check_cloud(Settings(), keys(anthropic="sk-test"), fake_factory())
+    assert [r.name for r in results] == ["cloud: sonnet", "cloud: opus"]
+    assert all(r.status is Status.PASS for r in results) and "Opus 5.5" in results[0].detail
 
 
 def test_claude_no_key():
-    assert checks.check_claude(Settings(), None, fake_factory()).status is Status.FAIL
+    results = checks.check_cloud(Settings(), keys(), fake_factory())
+    assert results[0].status is Status.FAIL and "anthropic API key" in results[0].detail
 
 
 @pytest.mark.parametrize(
@@ -175,8 +181,39 @@ def test_claude_no_key():
     [(anthropic.AuthenticationError, 401, "rejected"), (anthropic.NotFoundError, 404, "not found")],
 )
 def test_claude_errors_are_explained(cls, status, words):
-    r = checks.check_claude(Settings(), "sk-test", fake_factory(api_error(cls, status)))
+    factory = fake_factory(api_error(cls, status))
+    r = checks.check_cloud(Settings(), keys(anthropic="sk-test"), factory)[0]
     assert r.status is Status.FAIL and words in r.detail
+
+
+def test_other_providers_and_local_profiles():
+    s = Settings.model_validate(
+        {
+            "routing": {"work": "gpt-sol", "expert": "big"},
+            "models": {"big": {"provider": "ollama", "model": "qwen3.8:27b"}},
+        }
+    )
+    gpt, big = checks.check_cloud(s, keys(openai="sk-o"), fake_factory())
+    assert gpt.status is Status.PASS and "openai key found" in gpt.detail
+    assert big.status is Status.PASS and "locally" in big.detail
+    gpt, _ = checks.check_cloud(s, keys(), fake_factory())
+    assert gpt.status is Status.FAIL
+
+
+def test_keys_for_each_provider(paths, monkeypatch):
+    from kit.credentials import cloud_api_key
+
+    paths.ensure()
+    for env in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(env, raising=False)
+    assert cloud_api_key(paths, "openai") is None
+    (paths.secrets_dir / "openai_api_key").write_text("sk-o\n", encoding="utf-8")
+    (paths.secrets_dir / "gemini_api_key").write_text("g-file\n", encoding="utf-8")
+    assert cloud_api_key(paths, "openai") == "sk-o"
+    assert cloud_api_key(paths, "google") == "g-file"
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-env")
+    assert cloud_api_key(paths, "google") == "g-env"
+    assert cloud_api_key(paths, "nobody") is None
 
 
 def test_api_key_from_secrets_folder(paths):

@@ -50,6 +50,11 @@ class KitPaths:
         return self.root / "state"
 
     @property
+    def backups_dir(self) -> Path:
+        """Daily copies of Kit's memory."""
+        return self.root / "backups"
+
+    @property
     def logs_dir(self) -> Path:
         return self.root / "logs"
 

@@ -8,9 +8,55 @@ schema_version = 1
 url = "http://127.0.0.1:11434"
 model = "qwen3:8b"
 
-[claude]
-# The Claude model used for hard tasks.
-model = "claude-opus-5-5"
+# Thinking makes the local model slower to start talking; leave it off for chat.
+think = false
+temperature = 0.7
+# Context window in tokens: must hold the persona, memories and recent history.
+num_ctx = 8192
+
+[routing]
+# How much Kit leans on the local model:
+#   local-heavy  the local model answers; the cloud only gets what it can't do
+#   balanced     the local model takes small talk and quick commands, the cloud
+#                takes real questions, work and anything current
+#   cloud-first  the cloud answers everything
+# Say "keep it local", "ask Claude" or "think hard" to choose for one message.
+mode = "balanced"
+# Which model profile (see [models] below, or `kit models`) does what.
+work = "sonnet"
+expert = "opus"
+# If the cloud can't be reached, the local model answers instead.
+fallback_to_local = true
+
+[cloud]
+# Kit stops using cloud models once this month's spend reaches the cap.
+monthly_cap_usd = 40.0
+
+# Built-in model profiles: sonnet, opus, gpt-sol and gemini-flash. Change any
+# field here (prices change), or add your own and point a role at it.
+# Each needs its provider's API key in the secrets folder; see docs/stage-0-setup.md.
+# [models.sonnet]
+# effort = "medium"
+#
+# [models.big-local]
+# provider = "ollama"
+# model = "qwen3.8:27b"
+
+[brain]
+# 127.0.0.1 keeps the chat page on this PC. Use "0.0.0.0" to let your phone in
+# over the home network or Tailscale (the API token still protects it).
+host = "127.0.0.1"
+port = 8600
+history_messages = 20
+
+[memory]
+# Kit finds memories by words and by meaning. The meaning part needs this
+# embedding model in Ollama (`ollama pull nomic-embed-text`). Without it Kit
+# still remembers, but only finds things by matching words.
+embed_model = "nomic-embed-text"
+relevant_memories = 8
+relevant_things = 5          # register entries (people, vehicles, places...) per turn
+conversation_snippets = 4
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.
@@ -22,3 +68,17 @@ model = "claude-opus-5-5"
 [nas.read_only_shares]
 # photos = '\\NAS\photo'
 # documents = '\\NAS\home\Documents'
+
+# Kit's character. Leave this out to use the built-in persona, or copy it from
+# `kit config show` and change it. Changes apply from the next message.
+# [persona]
+# name = "Kit"
+# owner = "Dan"
+# location = "Perth, WA"       # city, state: web searches look near here
+# country = "AU"
+# timezone = "Australia/Perth"
+# traits = ["curious", "dry sense of humour", "loyal and practical"]
+#
+# [[persona.examples]]
+# user = "Morning."
+# kit = "Morning. Coffee first, or straight into it?"
