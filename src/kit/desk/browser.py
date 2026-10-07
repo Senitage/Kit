@@ -120,6 +120,14 @@ class BrowserListener:
                 self.end_headers()
 
             def do_POST(self) -> None:  # noqa: N802
+                # Read the body before any answer, even a refusal: closing a socket with
+                # unread data makes Windows reset the connection under the reply.
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > MAX_BODY:
+                    self.close_connection = True
+                    self._send(413, {"error": "too big"})
+                    return
+                body = self.rfile.read(length) if length > 0 else b""
                 if not self._allowed():
                     self._send(403, {"error": "not Kit's extension"})
                     return
@@ -129,12 +137,11 @@ class BrowserListener:
                 if self.path != "/tabs":
                     self._send(404, {"error": "no such page"})
                     return
-                length = int(self.headers.get("Content-Length") or 0)
-                if length <= 0 or length > MAX_BODY:
-                    self._send(413, {"error": "too big"})
+                if not body:
+                    self._send(400, {"error": "not JSON"})
                     return
                 try:
-                    payload = json.loads(self.rfile.read(length))
+                    payload = json.loads(body)
                     if not isinstance(payload, dict):
                         raise ValueError("not an object")
                 except ValueError:
