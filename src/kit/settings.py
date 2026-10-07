@@ -53,6 +53,33 @@ class OllamaSettings(_Section):
     temperature: float = Field(
         0.7, ge=0, le=2, description="Higher is livelier, lower is steadier."
     )
+    speak_pass: bool = Field(
+        True,
+        description="Kit decides what to do in a quick JSON pass, then says his words in a "
+        "second, plain-text pass at a livelier temperature. He sounds more like himself and "
+        "repeats himself less; his first words come about half a second later. Off: one "
+        "JSON pass, as in stage 1.",
+    )
+    speak_temperature: float = Field(
+        0.95,
+        ge=0,
+        le=2,
+        description="Temperature for Kit's spoken words (with speak_pass) and his private "
+        "thoughts. Higher is livelier and less predictable.",
+    )
+    min_p: float = Field(
+        0.05,
+        ge=0,
+        le=1,
+        description="For his spoken words and thoughts: words less likely than this share of "
+        "the likeliest one are never picked, which keeps a high temperature sensible. 0 is off.",
+    )
+    repeat_penalty: float = Field(
+        1.08,
+        ge=1,
+        le=2,
+        description="For his spoken words: discourages reusing the same words. 1 is off.",
+    )
 
 
 Provider = Literal["anthropic", "openai", "google", "ollama"]
@@ -302,6 +329,32 @@ class LifeSettings(_Section):
     sleep_after_minutes: int = Field(
         10, ge=1, le=240, description="Kit dozes off after you've been away this long."
     )
+    think_every_minutes: int = Field(
+        8,
+        ge=2,
+        le=120,
+        description="Roughly how often Kit has a private thought in a quiet moment while "
+        "you're around. Things happening (you coming back, something new on screen, a build "
+        "failing, a chat ending) prompt one sooner.",
+    )
+    thoughts_per_hour: int = Field(
+        6,
+        ge=0,
+        le=30,
+        description="Most thoughts Kit has in an hour (each is a quick local model call). "
+        "0 stops him thinking between conversations.",
+    )
+    reflect_with: Literal["cloud", "local", "off"] = Field(
+        "cloud",
+        description="Who writes Kit's journal and self-sheet each night. cloud: the work "
+        "model, a few cents a day, logged as spend (the local model steps in if the cloud "
+        "can't). local: the local model only. off: Kit doesn't reflect or change.",
+    )
+    weekly_review: bool = Field(
+        True,
+        description="Once a week the expert model reads how Kit has changed and writes a "
+        "short review on the memory page, where you can undo any change (a few cents).",
+    )
 
     @field_validator("quiet_from", "quiet_until")
     @classmethod
@@ -336,6 +389,13 @@ class MemorySettings(_Section):
     )
     conversation_snippets: int = Field(
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
+    )
+    own_memories: int = Field(
+        3,
+        ge=0,
+        le=20,
+        description="Entries from Kit's own notebook (his thoughts, opinions, moments and "
+        "journal) recalled into each turn, most relevant first.",
     )
     min_similarity: float = Field(
         0.59,  # measured for nomic-embed-text with `kit eval memory` (2026-10-06)

@@ -3,6 +3,11 @@
 The local model is forced to answer with JSON matching ``Reply``, so it picks
 words, an emotion and named gestures but never invents a motion. The body (the
 on-screen helper now, the arm later) turns those names into movement.
+
+With the speaking pass on (``ollama.speak_pass``), the local model answers in
+two steps instead: a quick ``Plan`` in JSON (emotion, gesture, action), then
+his words in plain text, read as they stream by ``SpokenStream``. Both end up
+as the same ``Reply``.
 """
 
 from __future__ import annotations
@@ -127,6 +132,46 @@ class Reply(BaseModel):
             segments=[Segment(say=text, gesture=gesture)],
             action=Action(kind="none"),
         )
+
+
+class Plan(BaseModel):
+    """The quick first pass of a two-pass reply: how Kit feels, a gesture, and what
+    to do. His words come next, in plain text."""
+
+    model_config = ConfigDict(extra="forbid")
+    emotion: Emotion
+    gesture: Gesture = Field(description="The gesture that goes with what you'll say.")
+    action: Action
+
+    @classmethod
+    def default(cls) -> Plan:
+        return cls(emotion="neutral", gesture="none", action=Action(kind="none"))
+
+
+def plan_schema() -> dict:
+    return inline_refs(Plan.model_json_schema())
+
+
+def parse_plan(text: str) -> Plan:
+    try:
+        return Plan.model_validate_json(text)
+    except ValidationError as e:
+        raise ReplyError(f"not a valid plan: {e.errors()[0]['msg']}: {text[:200]!r}") from e
+
+
+_PLAN_FIELD = re.compile(r'"(emotion|gesture|kind)"\s*:\s*"([a-z_]+)"')
+
+
+def early_plan(text: str) -> Plan | None:
+    """The plan from the start of its JSON, once it's plain the action is "none": the
+    rest of the action would only be empty fields, so Kit can start talking now."""
+    found = dict(_PLAN_FIELD.findall(text))
+    if found.get("kind") != "none" or "emotion" not in found or "gesture" not in found:
+        return None
+    try:
+        return Plan(emotion=found["emotion"], gesture=found["gesture"], action=Action(kind="none"))
+    except ValidationError:
+        return None
 
 
 def inline_refs(schema: dict) -> dict:
@@ -334,3 +379,124 @@ class SayExtractor:
 
 def reply_json(reply: Reply) -> str:
     return json.dumps(reply.model_dump(mode="json"))
+
+
+_THINKING = re.compile(r"^\s*<think>.*?(</think>|$)", re.DOTALL)
+_STAGE = re.compile(r"\*[^*\n]{1,80}\*")  # *grins*
+_SENTENCE_END = re.compile(r"[.!?\u2026](?=\s)")
+FIRST_LINE_MAX = 160  # a first "sentence" longer than this is let through as it is
+
+
+class SpokenStream:
+    """Kit's plain-text words as they stream in from the speaking pass.
+
+    The first sentence is held back until it's whole, so the brain can catch a
+    line he's said before and ask again, and so a "Kit:" in front can be dropped.
+    After that, words come out as they arrive, minus *stage directions*. A blank
+    line ends what's said: anything after it is written detail, shown but not
+    spoken. If the model answers in JSON anyway, nothing comes out until the end,
+    when the words are read from it.
+    """
+
+    def __init__(self, name: str = "") -> None:
+        self.raw = ""
+        self.released = False
+        self._given = ""  # spoken text already handed out
+        self._prefix = (
+            re.compile(rf"^\**\s*{re.escape(name)}\s*\**\s*:\s*\**\s*", re.I) if name else None
+        )
+
+    def feed(self, chunk: str) -> None:
+        self.raw += chunk
+
+    def _json(self) -> bool:
+        return _THINKING.sub("", self.raw).lstrip().startswith("{")
+
+    def _spoken(self, final: bool) -> str:
+        text = _THINKING.sub("", self.raw).lstrip()
+        if self._prefix is not None:
+            text = self._prefix.sub("", text, count=1)
+        text = text.lstrip('"\u201c ').split("\n\n", 1)[0]
+        text = _STAGE.sub("", text)
+        if "*" in text:  # a stage direction still being written, or a stray star
+            text = text.replace("*", "") if final else text[: text.index("*")]
+        text = re.sub(r"\s+", " ", text)
+        if final:
+            return text.strip().rstrip('"\u201d').strip()
+        text = text.rstrip()  # a space or newline may yet turn out to end what's said
+        return text[:-1] if text.endswith(('"', "\u201d")) else text
+
+    def first(self) -> str | None:
+        """The first sentence once it's whole (None until then, and in JSON)."""
+        if self._json():
+            return None
+        text = self._spoken(final=False)
+        end = _SENTENCE_END.search(text)
+        if end is not None:
+            return text[: end.end()].strip()
+        if len(text) > FIRST_LINE_MAX or "\n\n" in self.raw:
+            return text.strip()
+        return None
+
+    def release(self) -> None:
+        self.released = True
+
+    def take(self) -> str:
+        """Spoken text that's ready and hasn't been handed out yet."""
+        if not self.released or self._json():
+            return ""
+        return self._hand_out(self._spoken(final=False))
+
+    def end(self) -> str:
+        """Whatever's left to hand out, now the stream has finished."""
+        self.released = True
+        return self._hand_out(self.result()[0])
+
+    def _hand_out(self, spoken: str) -> str:
+        if not spoken.startswith(self._given):
+            return ""  # the cleaned text changed under us; the final reply has it all
+        new, self._given = spoken[len(self._given) :], spoken
+        return new
+
+    def result(self) -> tuple[str, str]:
+        """(what was said, written detail)."""
+        if self._json():
+            reply = parse_cloud_reply(_THINKING.sub("", self.raw))
+            return reply.text, reply.detail
+        spoken = self._spoken(final=True)
+        rest = _THINKING.sub("", self.raw).lstrip().split("\n\n", 1)
+        detail = rest[1].strip() if len(rest) > 1 else ""
+        if not spoken and detail:
+            first, _, more = detail.partition("\n")
+            spoken, detail = first.strip(), more.strip()
+        return spoken, detail
+
+
+_BETWEEN_SENTENCES = re.compile(r"(?<=[.!?\u2026])\s+(?=\S)")
+MAX_SEGMENTS = 6
+
+
+def sentences(text: str) -> list[str]:
+    """``text`` as sentences, at most ``MAX_SEGMENTS`` (the rest join the last)."""
+    parts = [p for p in _BETWEEN_SENTENCES.split(text.strip()) if p]
+    if len(parts) > MAX_SEGMENTS:
+        parts = [*parts[: MAX_SEGMENTS - 1], " ".join(parts[MAX_SEGMENTS - 1 :])]
+    return parts or [text.strip()]
+
+
+def spoken_reply(plan: Plan, spoken: str, detail: str = "") -> Reply:
+    """The reply a two-pass answer adds up to: a segment per sentence, the planned
+    gesture with the first."""
+    return Reply(
+        emotion=plan.emotion,
+        segments=[
+            Segment(say=line, gesture=plan.gesture if n == 0 else "none")
+            for n, line in enumerate(sentences(spoken))
+        ],
+        action=plan.action,
+        detail=detail,
+    )
+
+
+def plan_json(plan: Plan) -> str:
+    return json.dumps(plan.model_dump(mode="json"))

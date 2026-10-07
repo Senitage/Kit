@@ -132,7 +132,8 @@ def test_recall_action_searches_then_answers(memory):
     assert kinds.count("reply") == 2 and "recalled" in kinds
     assert next(e for e in events if e["type"] == "recalled")["found"] == 1
     second = model.calls[1]
-    assert second[-2]["role"] == "assistant" and "recall" in second[-2]["content"]
+    assert second[-2] == {"role": "assistant", "content": "Let me think."}
+    assert "searched your memory for 'tax returns folder'" in second[-1]["content"]
     assert "Documents/Finance/Tax" in second[-1]["content"]
     assert "Dan: Where did I say" in memory.index.items("conversation")[0].text
     assert "Let me think. They're in" in memory.index.items("conversation")[0].text
@@ -329,21 +330,29 @@ def test_routing_phrases():
     assert route("morning", cloud_first) == ("work", False)
 
 
+ONE_PASS = {"ollama": {"speak_pass": False}}
+
+
 def test_broken_json_keeps_the_words(memory):
-    brain, _, _ = make(memory, '{"emotion": "happy", "segments": [{"say": "Half a thou')
+    brain, _, _ = make(
+        memory,
+        '{"emotion": "happy", "segments": [{"say": "Half a thou',
+        settings=settings_with(**ONE_PASS),
+    )
     events = collect(brain.chat("hi"))
     assert events[-1]["type"] == "reply"
     assert events[-1]["reply"]["segments"][0]["say"] == "Half a thou"
 
 
 def test_bad_escape_in_the_stream_keeps_the_words(memory):
-    brain, _, _ = make(memory, '{"segments": [{"say": "Hi\\uZZZZ there')  # bad escape, cut off
+    cut_off = '{"segments": [{"say": "Hi\\uZZZZ there'  # a bad escape, then cut off
+    brain, _, _ = make(memory, cut_off, settings=settings_with(**ONE_PASS))
     events = collect(brain.chat("hi"))
     assert events[-1]["type"] == "reply" and events[-1]["reply"]["segments"][0]["say"] == "Hi there"
 
 
 def test_garbage_is_an_error_and_not_indexed(memory):
-    brain, _, _ = make(memory, "nonsense")
+    brain, _, _ = make(memory, "nonsense", settings=settings_with(**ONE_PASS))
     assert collect(brain.chat("hi"))[-1]["type"] == "error"
     assert memory.index.items("conversation") == []
 

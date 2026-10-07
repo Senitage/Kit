@@ -13,6 +13,14 @@ think = false
 temperature = 0.7
 # Context window in tokens: must hold the persona, memories and recent history.
 num_ctx = 8192
+# Kit decides what to do in a quick JSON pass, then says his words in a second,
+# plain-text pass at a livelier temperature. He sounds more like himself and
+# repeats himself less; he starts talking about half a second later.
+# false goes back to one JSON pass.
+speak_pass = true
+speak_temperature = 0.95     # his spoken words and his private thoughts
+min_p = 0.05                 # keeps a high temperature sensible; 0 is off
+repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
 
 [routing]
 # How much Kit leans on the local model:
@@ -57,6 +65,7 @@ embed_model = "nomic-embed-text"
 relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
+own_memories = 3             # from his own notebook: thoughts, opinions, moments, journal
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.
@@ -83,12 +92,18 @@ conversation_snippets = 4
 # user = "Morning."
 # kit = "Morning. Coffee first, or straight into it?"
 
-# Kit's inner life: fidgets, boredom, and piping up on his own.
+# Kit's inner life: fidgets, boredom, piping up on his own, his own thoughts,
+# and a nightly look back at his day (docs/life.md).
 # [life]
 # enabled = true
 # cheek = 0.6            # 0 polite .. 1 larrikin
 # chattiness = 0.5       # 0 never speaks first .. 1 whenever he feels like it
 # max_per_hour = 3
 # quiet_from = "22:00"
-# quiet_until = "07:00"
+# quiet_until = "07:00"  # also when things he means to bring up "tomorrow" are due
 # sleep_after_minutes = 10
+# think_every_minutes = 8   # a private thought in a quiet moment while you're around
+# thoughts_per_hour = 6     # each is a quick local model call; 0 stops them
+# reflect_with = "cloud"    # who writes his journal and self-sheet each night:
+#                           # cloud (the work model, a few cents), local, or off
+# weekly_review = true      # the expert model reviews how he's changed, weekly

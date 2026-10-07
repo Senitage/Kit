@@ -214,6 +214,16 @@ class Index:
                 self.db.execute("UPDATE items SET kind = ? WHERE id = ?", (kind, item_id))
         self._changed()
 
+    def set_meta(self, item_id: int, meta: dict) -> bool:
+        """Replace an item's meta, e.g. to mark one of Kit's wants as said. Its text and
+        vectors stay as they are."""
+        with self.lock, self.db:
+            cur = self.db.execute(
+                "UPDATE items SET meta = ?, updated = ? WHERE id = ?",
+                (json.dumps(meta), self._now(), item_id),
+            )
+        return cur.rowcount > 0
+
     def set_pinned(self, item_id: int, pinned: bool) -> bool:
         with self.lock, self.db:
             cur = self.db.execute(
@@ -261,9 +271,13 @@ class Index:
         include_superseded: bool = False,
         pinned_only: bool = False,
         limit: int = 10_000,
+        kind: str | None = None,
     ) -> list[Item]:
-        """Items from one source, oldest first."""
-        where = "source = ?"
+        """Items from one source (of one kind, if given), oldest first."""
+        where, params = "source = ?", [source]
+        if kind is not None:
+            where += " AND kind = ?"
+            params.append(kind)
         if not include_superseded:
             where += " AND superseded_by IS NULL"
         if pinned_only:
@@ -271,7 +285,7 @@ class Index:
         with self.lock:
             rows = self.db.execute(
                 f"SELECT {self._COLS} FROM items WHERE {where} ORDER BY id DESC LIMIT ?",
-                (source, limit),
+                (*params, limit),
             ).fetchall()
         return [self._row(r) for r in reversed(rows)]
 

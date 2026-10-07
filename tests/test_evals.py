@@ -78,3 +78,62 @@ def test_fact_similarities_cover_every_fact(paths):
     sims = dict(asyncio.run(_fact_similarities(memory, recall, "How does Dan take coffee?")))
     assert sims["Dan drinks his coffee black."] > sims["Dan drives a Ford Ranger."]
     memory.close()
+
+
+def test_voice_eval_reads_his_lines_thoughts_and_pipe_ups(paths):
+    import json
+
+    from fakes import Clock
+    from kit.brain import Brain
+    from kit.cloud import Cloud
+    from kit.evals import VOICE_THOUGHTS, run_voice_eval, seed_voice, voice_report
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    s = Settings.model_validate({"ollama": {"speak_pass": False}})
+    idea = {
+        "thought": "That pump curve looks off.",
+        "kind": "opinion",
+        "want": "Ask about the curve.",
+        "feeling": "amused",
+        "why": "the curve",
+    }
+    model = FakeModel(
+        reply("G'day. The flotation model awaits."),
+        reply("How can I help you today?"),
+        reply("Morning. You look like a man who hasn't had coffee yet."),
+        json.dumps(idea),
+        reply("Oi, still on pumps.py?"),
+    )
+    brain = Brain(
+        lambda: s, memory, model, Cloud(memory, lambda p: None, {}), Recall(memory, None, lambda: s)
+    )
+    seed_voice(brain)
+    ticks = count()
+    report = asyncio.run(
+        run_voice_eval(
+            brain,
+            "fake:1b",
+            ["Morning Kit.", "Hi.", "Morning."],
+            ["curious"],
+            VOICE_THOUGHTS[:1],
+            clock=lambda: next(ticks),
+        )
+    )
+    memory.close()
+    chat = report.spoken
+    assert report.answered == 4 and len(chat) == 4 and not report.two_pass
+    assert not chat[0].echo and chat[1].canned and chat[2].echo  # copied an example line
+    assert report.thoughts[0].text == "That pump curve looks off."
+    assert "wants to say: Ask about the curve." in report.thoughts[0].note
+    assert chat[3].kind == "pipe_up" and chat[3].text == "Oi, still on pumps.py?"
+    assert report.first_words is not None and 0 < report.variety <= 1
+    system = model.calls[0][0]["content"]
+    assert "I live on Dan's desk" in system and "Your traits:" not in system  # seeded sheet
+    assert "pumps and impeller sizes" in system  # fixed quirks, the same for every model
+    assert "pumps.py" in model.calls[-1][-1]["content"]  # curious about what's on screen
+    md = voice_report([report])
+    assert "**fake:1b** (one pass): 4/4 answered" in md
+    assert "## Morning Kit." in md and "## Thinking: chat_ended" in md
+    assert "## Piping up: curious" in md and "**[canned]**" in md and "**[echo]**" in md

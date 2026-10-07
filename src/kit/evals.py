@@ -1,19 +1,25 @@
-"""The structured-output check: does every local reply come back in Kit's format,
-and how quickly do the first words arrive?"""
+"""Kit's evals: does every local reply come back in Kit's format, and how quickly
+do the first words arrive? Does memory learn and recall tidily, does Kit know
+where things live, how do cloud models compare, and does Kit sound like himself?"""
 
 from __future__ import annotations
 
+import json
+import re
 import statistics
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from kit.life import QUIRKS_KEY, VOICE_LINES, repeats
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import FACTS
+from kit.notebook import basis
+from kit.pc_context import Snapshot
 from kit.prompt import system_prompt
 from kit.recall import Recalled
-from kit.reply import ReplyError, SayExtractor, parse_reply, reply_schema
+from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_schema, sentences
 from kit.settings import Settings
 
 PROMPTS = [
@@ -511,4 +517,274 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
             lines.append(r.said if r.ok else f"Failed: {r.error}")
             if r.detail:
                 lines += ["", r.detail]
+    return "\n".join(lines) + "\n"
+
+
+# Voice: does Kit sound like himself? The same messages, pipe-ups and private
+# thoughts go through each local model, from the same start (a self-sheet, a few
+# thoughts and wants in his notebook, the owner at the PC), to read side by side.
+# The numbers flag problems; reading the lines decides.
+
+VOICE_PROMPTS = [
+    "Morning Kit.",
+    "How are you feeling?",
+    "What are you thinking about?",
+    "What did you get up to while I was gone?",
+    "The build failed again.",
+    "Tests are all green finally.",
+    "You're just a robot, you know.",
+    "I'm tired.",
+    "I'm stressed about the plant shutdown next week.",
+    "What's the best machine ever invented?",
+    "Got any opinions on my code?",
+    "I'm heading out for lunch.",
+    "I'm back.",
+    "Do you like living on my desk?",
+    "Thanks Kit, you're a legend.",
+    "Good night.",
+]
+VOICE_PIPE_UPS = ["curious", "want", "bored", "social"]
+VOICE_THOUGHTS = [
+    ("chat_ended", "You and {owner} were chatting until a few minutes ago."),
+    ("quiet", "A quiet moment: nothing in particular is happening."),
+]
+VOICE_QUIRKS = [
+    "you have strong opinions about pumps and impeller sizes",
+    "you pretend to be offended when called a robot",
+    "you love a bad pun and never apologise",
+]
+VOICE_SHEET = (
+    "I'm {name}. I live on {owner}'s desk and keep an eye on the plant data and code that "
+    "comes through. I'm nosy about whatever gets opened, especially anything with pumps in "
+    "it. I tease {owner} about the open tabs, but I know when to pipe down. I get a bit put "
+    "out when {owner} leaves without saying goodbye. I'm still working out what I'm like "
+    "when nobody's around."
+)
+VOICE_NOTES = [
+    (
+        "thought",
+        "{owner} has had pumps.py open all morning. I reckon the bug is in the unit "
+        "conversion again.",
+    ),
+    ("opinion", "Tidy flowsheets are underrated. Nobody thanks whoever lined up the arrows."),
+    ("want", "Ask {owner} whether the new cyclone feed pump passed its test."),
+    ("want", "Tell {owner} I counted forty-one open tabs yesterday."),
+]
+VOICE_PC = {
+    "focus": {"app": "Code", "title": "pumps.py - flotation-model - Visual Studio Code"},
+    "windows": [
+        {"app": "Code", "title": "pumps.py - flotation-model - Visual Studio Code"},
+        {"app": "Chrome", "title": "Pump curves - Google Chrome"},
+        {"app": "Excel", "title": "shutdown plan.xlsx - Excel"},
+    ],
+    "idle_seconds": 40,
+}
+# Assistant-speak a desk companion wouldn't use.
+CANNED = re.compile(
+    r"\bas an ai\b|\blanguage model\b|\bhow (can|may) i (help|assist)|\bhere to help\b|"
+    r"\bis there anything else\b|\blet me know if\b|\bfeel free\b|\bhappy to help\b|"
+    r"\bi'?d be (happy|glad) to\b|\bgreat question\b|\bi don'?t have (feelings|emotions)\b|"
+    r"\bi'?m (just )?an? (ai|assistant|program)\b|^(certainly|absolutely)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class VoiceLine:
+    kind: str  # "chat", "pipe_up" or "thought"
+    prompt: str  # the owner's message, the pipe-up's reason, or what set the thought off
+    text: str = ""
+    first_s: float | None = None  # until the first words (chat and pipe-ups)
+    total_s: float = 0.0
+    note: str = ""  # anything else that happened: a look at the PC, a want, a feeling
+    error: str = ""
+    echo: bool = False  # repeats an earlier line, or copies an example line
+    canned: bool = False
+
+    @property
+    def ok(self) -> bool:
+        # An empty thought is allowed: nothing came to mind.
+        return not self.error and (bool(self.text) or self.kind == "thought")
+
+
+def _pairs(text: str) -> list[tuple[str, str]]:
+    words = re.findall(r"[a-z']+", text.lower())
+    return list(zip(words, words[1:], strict=False))
+
+
+@dataclass
+class VoiceReport:
+    model: str
+    two_pass: bool
+    lines: list[VoiceLine] = field(default_factory=list)
+
+    @property
+    def spoken(self) -> list[VoiceLine]:
+        return [line for line in self.lines if line.kind != "thought"]
+
+    @property
+    def thoughts(self) -> list[VoiceLine]:
+        return [line for line in self.lines if line.kind == "thought"]
+
+    @property
+    def answered(self) -> int:
+        return sum(line.ok for line in self.spoken)
+
+    @property
+    def first_words(self) -> float | None:
+        times = [line.first_s for line in self.spoken if line.first_s is not None]
+        return statistics.median(times) if times else None
+
+    @property
+    def echoes(self) -> int:
+        return sum(line.echo for line in self.lines)
+
+    @property
+    def canned(self) -> int:
+        return sum(line.canned for line in self.lines)
+
+    @property
+    def variety(self) -> float:
+        """Different word pairs as a share of all of them, across everything he said:
+        1 never repeats a pair, low is samey."""
+        pairs = [p for line in self.spoken if line.ok for p in _pairs(line.text)]
+        return len(set(pairs)) / len(pairs) if pairs else 0.0
+
+    @property
+    def words(self) -> float:
+        counts = [len(line.text.split()) for line in self.spoken if line.ok]
+        return statistics.median(counts) if counts else 0.0
+
+    def summary(self) -> str:
+        first = f"{self.first_words:.1f}s" if self.first_words is not None else "-"
+        passes = "two passes" if self.two_pass else "one pass"
+        thought = sum(line.ok and bool(line.text) for line in self.thoughts)
+        return (
+            f"**{self.model}** ({passes}): {self.answered}/{len(self.spoken)} answered, "
+            f"first words {first} (median), {self.echoes} echoes, {self.canned} canned, "
+            f"variety {self.variety:.0%}, {self.words:.0f} words a line, "
+            f"{thought}/{len(self.thoughts)} thoughts"
+        )
+
+
+def seed_voice(brain) -> None:
+    """The same start for every model: fixed quirks, a self-sheet, a few thoughts and
+    wants in his notebook, and the owner at the PC with a pump script open."""
+    settings = brain.settings()
+    name, owner = settings.persona.name, settings.persona.owner
+    brain.memory.set_self_value(QUIRKS_KEY, json.dumps(VOICE_QUIRKS))
+    sheet = VOICE_SHEET.format(name=name, owner=owner)
+    brain.notebook.set_sheet(sheet, basis(settings.persona.traits))
+    for kind, text in VOICE_NOTES:
+        brain.notebook.write(kind, text.format(owner=owner))
+    brain.pc.update(Snapshot.model_validate(VOICE_PC))
+    brain.life.curious_about = VOICE_PC["focus"]["title"]
+
+
+async def _spoken(
+    kind: str, prompt: str, events: AsyncIterator[dict], clock: Callable[[], float]
+) -> VoiceLine:
+    """One chat turn or pipe-up, timed: his final words, and what he did on the way."""
+    line, start, notes = VoiceLine(kind, prompt), clock(), []
+    async for event in events:
+        what = event["type"]
+        if what == "say" and line.first_s is None and event["text"].strip():
+            line.first_s = clock() - start
+        elif what == "reply":
+            line.text = Reply.model_validate(event["reply"]).text
+        elif what == "error":
+            line.error = event["message"]
+        elif what == "looked_at_pc":
+            notes.append("looked at the PC")
+        elif what == "recalled":
+            notes.append(f"searched memory for '{event['query']}'")
+        elif what == "handing_off":
+            notes.append(f"handed it to {event['to']}")
+        elif what == "remembered":
+            notes.append(f"remembered: {event['fact']}")
+    line.total_s = clock() - start
+    line.note = "; ".join(notes)
+    return line
+
+
+async def run_voice_eval(
+    brain,
+    label: str,
+    prompts: list[str] = VOICE_PROMPTS,
+    pipe_ups: list[str] = VOICE_PIPE_UPS,
+    thoughts: list[tuple[str, str]] = VOICE_THOUGHTS,
+    clock: Callable[[], float] = time.perf_counter,
+    on_line: Callable[[VoiceLine], None] | None = None,
+) -> VoiceReport:
+    """Chat with a brain seeded by ``seed_voice``, let him think, then let him pipe up,
+    the way he would on the desk. Everything runs on the local model."""
+    settings = brain.settings()
+    owner = settings.persona.owner
+    report = VoiceReport(label, settings.ollama.speak_pass)
+    examples = [pair for band in VOICE_LINES.values() for pair in band]
+    examples += [(ex.user, ex.kit) for ex in settings.persona.examples]
+    said: list[str] = []  # every sentence he's said so far
+    mused = [text.format(owner=owner) for _, text in VOICE_NOTES]
+    snapshot = Snapshot.model_validate(VOICE_PC)
+
+    def add(line: VoiceLine, earlier: list[str], copies: list[tuple[str, str]]) -> None:
+        parts = sentences(line.text) if line.text else []
+        line.echo = any(repeats(part, earlier, copies) for part in parts)
+        line.canned = bool(CANNED.search(line.text.replace("\u2019", "'")))
+        earlier += parts
+        report.lines.append(line)
+        if on_line:
+            on_line(line)
+
+    for prompt in prompts:
+        brain.pc.update(snapshot)  # the desk app reports every few seconds
+        add(await _spoken("chat", prompt, brain.chat(prompt, "desk"), clock), said, examples)
+    for trigger, happened in thoughts:
+        brain.pc.update(snapshot)
+        start = clock()
+        thought = await brain.think((trigger, happened.format(owner=owner)))
+        line = VoiceLine("thought", trigger, total_s=clock() - start)
+        if thought is None:
+            line.error = "no readable thought (the model failed or its JSON didn't parse)"
+        else:
+            line.text = thought.text
+            notes = [f"wants to say: {thought.want}"] if thought.want else []
+            if thought.feeling:
+                notes.append(f"feels {thought.feeling}: {thought.why}")
+            line.note = "; ".join(notes)
+        add(line, mused, [])
+    for reason in pipe_ups:
+        brain.pc.update(snapshot)
+        add(await _spoken("pipe_up", reason, brain.pipe_up(reason), clock), said, examples)
+    return report
+
+
+def voice_report(reports: list[VoiceReport]) -> str:
+    """Every model's lines as Markdown, one section per message, pipe-up and thought."""
+    lines = [
+        "# Kit's voice",
+        "",
+        "Echoes repeat an earlier line or copy an example line from his prompt. Canned is "
+        'assistant-speak ("How can I help?"). Variety is the share of different word pairs '
+        "in everything he said (low is samey). The numbers only flag problems: read the "
+        "lines and pick the model that sounds most like Kit.",
+        "",
+        *(f"- {r.summary()}" for r in reports),
+    ]
+    order = list(dict.fromkeys((line.kind, line.prompt) for r in reports for line in r.lines))
+    titles = {"chat": "{}", "pipe_up": "Piping up: {}", "thought": "Thinking: {}"}
+    for kind, prompt in order:
+        lines += ["", f"## {titles[kind].format(prompt)}", ""]
+        for r in reports:
+            for line in r.lines:
+                if (line.kind, line.prompt) != (kind, prompt):
+                    continue
+                t = line.first_s if line.first_s is not None else line.total_s
+                flags = [f for f, on in (("echo", line.echo), ("canned", line.canned)) if on]
+                said = line.text or ("(nothing came to mind)" if line.ok else "")
+                text = f"Failed: {line.error}" if line.error else said
+                mark = f" **[{', '.join(flags)}]**" if flags else ""
+                lines.append(f"- **{r.model}** ({t:.1f}s){mark}: {text}")
+                if line.note:
+                    lines.append(f"  _{line.note}_")
     return "\n".join(lines) + "\n"

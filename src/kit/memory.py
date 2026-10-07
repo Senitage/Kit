@@ -9,9 +9,12 @@
 - **Days:** a summary of each finished day, so "what were we doing last
   Tuesday?" has an answer.
 - **Spend:** what each Claude call cost.
+- **Kit himself:** his own notebook (thoughts, opinions, wants, moments and a
+  journal, ``kit.notebook``), his self-sheet, and small things such as the
+  quirks he picked (``kit_self``).
 
-Facts, days and exchanges all live in the knowledge index (``kit.knowledge``),
-which later stages extend with notes, documents and projects.
+Facts, days, exchanges and Kit's notebook all live in the knowledge index
+(``kit.knowledge``), which later stages extend with notes, documents and projects.
 """
 
 from __future__ import annotations
@@ -35,6 +38,8 @@ CHAT_FROM = "chat_from"  # kit_self key: the last message before the current cha
 FACTS = "memory"
 DAYS = "days"
 CONVERSATION = "conversation"
+SELF = "self"  # Kit's own notebook: what he thinks, wants and keeps (kit.notebook)
+SHEET = "self-sheet"  # who Kit thinks he is, and reviews of it: always in mind, never recalled
 FACT_KINDS = {
     "about": "who the owner is: work, background, health, habits",
     "preference": "likes, dislikes and how they want things done",
