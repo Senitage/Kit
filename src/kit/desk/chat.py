@@ -30,12 +30,13 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QKeyEvent, QTextDocument
+from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QKeySequence, QShortcut, QTextDocument
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -77,14 +78,11 @@ class Bubble(QFrame):
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.body.setOpenExternalLinks(True)
+        self.body.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)  # the row's menu
         self.body.setTextFormat(
             Qt.TextFormat.PlainText if line.role == "you" else Qt.TextFormat.RichText
         )
         self.link = ""
-        self.detail = QLabel()
-        self.detail.setWordWrap(True)
-        self.detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.detail.setTextFormat(Qt.TextFormat.PlainText)
         self.meta = QLabel()
         self.meta.setObjectName("meta")
         self.text = ""
@@ -93,7 +91,6 @@ class Bubble(QFrame):
         layout.setContentsMargins(PAD_X, 9, PAD_X, 9)
         layout.setSpacing(6)
         layout.addWidget(self.body)
-        layout.addWidget(self.detail)
         layout.addWidget(self.meta)
         self.restyle(palette)
         self.set_line(line)
@@ -103,14 +100,6 @@ class Bubble(QFrame):
         small = self.font()
         small.setPointSizeF(max(7.0, small.pointSizeF() - 1.5))
         self.meta.setFont(small)
-        mono = self.font()
-        mono.setFamilies(["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace"])
-        mono.setPointSizeF(max(7.0, mono.pointSizeF() - 1.0))
-        self.detail.setFont(mono)
-        self.detail.setStyleSheet(
-            f"background: {palette.code}; color: {palette.text}; border-radius: 8px;"
-            " padding: 6px 8px;"
-        )
         # Links in the accent colour, lightened on dark bubbles so they stay readable.
         link = QColor(palette.accent)
         self.link = (link.lighter(150) if palette.dark else link).name()
@@ -118,11 +107,11 @@ class Bubble(QFrame):
             self.body.setText(self._html(self.text))
 
     def set_line(self, line: Line) -> None:
-        self.text = line.text
-        self.body.setText(self._html(line.text))
-        self.body.setVisible(bool(line.text))
-        self.detail.setText(line.detail)
-        self.detail.setVisible(bool(line.detail))
+        # A reply's written detail (steps, code, paths) follows what Kit said in the
+        # same bubble, so it reads as one message rather than a second voice.
+        self.text = message_text(line)
+        self.body.setText(self._html(self.text))
+        self.body.setVisible(bool(self.text))
         self.meta.setText(" · ".join(line.meta))
         self.meta.setVisible(bool(line.meta))
         self.fit(self.limit)
@@ -143,35 +132,67 @@ class Bubble(QFrame):
         self.limit = limit
         self.setMaximumWidth(limit)
         room = limit - 2 * PAD_X - 4
-        widest = max(self._natural(self.body, self.text), self._natural(self.detail, ""))
-        self.body.setMinimumWidth(min(widest, room))
+        self.body.setMinimumWidth(min(self._natural(), room))
 
-    def _natural(self, label: QLabel, text: str) -> int:
-        text = text or label.text()
-        if not text or label.isHidden() and label is not self.body:
+    def _natural(self) -> int:
+        if not self.text:
             return 0
         doc = QTextDocument()
         doc.setDocumentMargin(0)
-        label.ensurePolished()
-        doc.setDefaultFont(label.font())
-        if label is self.body and self.role != "you":
-            doc.setMarkdown(text)
+        self.body.ensurePolished()
+        doc.setDefaultFont(self.body.font())
+        if self.role == "you":
+            doc.setPlainText(self.text)
         else:
-            doc.setPlainText(text)
-        extra = 20 if label is self.detail else 2  # the detail box's own padding
-        return int(doc.idealWidth()) + extra
+            doc.setMarkdown(self.text)
+        return int(doc.idealWidth()) + 2
+
+
+def message_text(line: Line) -> str:
+    """A message as shown and as copied: what was said, then any written detail."""
+    if line.detail.strip():
+        return f"{line.text}\n\n{line.detail.strip()}" if line.text else line.detail.strip()
+    return line.text
+
+
+SPEAKER = {"you": "Me", "kit": "Kit", "claude": "Kit (via Claude)"}
+
+
+def transcript(lines: list[Line]) -> str:
+    """The conversation as plain text, ready to paste into another chat."""
+    parts = []
+    for line in lines:
+        if line.role in SPEAKER:
+            parts.append(f"{SPEAKER[line.role]}: {message_text(line)}")
+        elif line.text:
+            parts.append(f"[{line.text}]")
+    return "\n\n".join(parts)
 
 
 class Row(QWidget):
-    """A bubble pushed to its side, or a centred note."""
+    """A bubble pushed to its side, or a centred note. Hovering shows a Copy button
+    beside the bubble; right-click offers copying the message or the conversation."""
+
+    copied = Signal(str)  # text to put on the clipboard
+    copy_all = Signal()
 
     def __init__(self, line: Line, palette: theme.Palette) -> None:
         super().__init__()
         self.line = line
         self.bubble: Bubble | None = None
         self.note: QLabel | None = None
+        self.copy = QPushButton("Copy")
+        self.copy.setObjectName("flat")
+        self.copy.setToolTip("Copy this message")
+        self.copy.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy.clicked.connect(lambda: self.copied.emit(message_text(self.line)))
+        keep = self.copy.sizePolicy()
+        keep.setRetainSizeWhenHidden(True)  # so the bubble doesn't shift on hover
+        self.copy.setSizePolicy(keep)
+        self.copy.hide()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 3, 12, 3)
+        layout.setSpacing(4)
         if line.role in ("note", "error"):
             self.note = QLabel(line.text)
             self.note.setWordWrap(True)
@@ -183,10 +204,31 @@ class Row(QWidget):
             self.bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
             if line.role == "you":
                 layout.addStretch(1)
-            layout.addWidget(self.bubble)
-            if line.role != "you":
+                layout.addWidget(self.copy, 0, Qt.AlignmentFlag.AlignVCenter)
+                layout.addWidget(self.bubble)
+            else:
+                layout.addWidget(self.bubble)
+                layout.addWidget(self.copy, 0, Qt.AlignmentFlag.AlignVCenter)
                 layout.addStretch(1)
         self.restyle(palette)
+
+    def enterEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        if self.bubble is not None:
+            self.copy.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self.copy.hide()
+        super().leaveEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        menu = QMenu(self)
+        picked = self.bubble.body.selectedText() if self.bubble is not None else ""
+        if picked:
+            menu.addAction("Copy selection", lambda: self.copied.emit(picked))
+        menu.addAction("Copy message", lambda: self.copied.emit(message_text(self.line)))
+        menu.addAction("Copy whole conversation", self.copy_all.emit)
+        menu.exec(event.globalPos())
 
     def restyle(self, palette: theme.Palette) -> None:
         if self.note is not None:
@@ -296,6 +338,11 @@ class ChatWindow(QWidget):
         fresh.setObjectName("flat")
         fresh.setToolTip("Start a fresh conversation. Kit still remembers this one.")
         fresh.clicked.connect(self.new_chat)
+        copy_all = QPushButton("Copy")
+        copy_all.setObjectName("flat")
+        copy_all.setToolTip("Copy the whole conversation (Ctrl+Shift+C), to paste anywhere")
+        copy_all.clicked.connect(self.copy_conversation)
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.copy_conversation)
         gear = QPushButton("⚙")
         gear.setObjectName("flat")
         gear.setToolTip("Memory, settings and how Kit looks")
@@ -307,6 +354,7 @@ class ChatWindow(QWidget):
         top.addWidget(self.title)
         top.addSpacing(8)
         top.addWidget(self.status, 1)
+        top.addWidget(copy_all)
         top.addWidget(fresh)
         top.addWidget(gear)
 
@@ -568,6 +616,8 @@ class ChatWindow(QWidget):
     def _add(self, line: Line, animate: bool = True) -> int:
         self.lines.append(line)
         row = Row(line, self.palette)
+        row.copied.connect(self.copy_text)
+        row.copy_all.connect(self.copy_conversation)
         row.fit(self.scroll.viewport().width())
         self.rows.append(row)
         self.column.insertWidget(self.column.count() - 1, row)  # above the typing dots
@@ -671,6 +721,20 @@ class ChatWindow(QWidget):
         self.input.setVerticalScrollBarPolicy(
             bar.ScrollBarAsNeeded if over else bar.ScrollBarAlwaysOff
         )
+
+    # Copying, for pasting Kit's words somewhere else
+
+    def copy_conversation(self) -> None:
+        self.copy_text(transcript(self.lines), "Copied the conversation")
+
+    def copy_text(self, text: str, said: str = "Copied") -> None:
+        QGuiApplication.clipboard().setText(text)
+        self.status.setText(said)
+        QTimer.singleShot(1800, self._restore_status)
+
+    def _restore_status(self) -> None:
+        if self.status.text().startswith("Copied"):
+            self.status.setText("idle" if self._in_flight == 0 else "thinking")
 
     def text(self) -> str:
         """Everything shown, as plain text (for tests)."""

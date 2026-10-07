@@ -440,3 +440,26 @@ def test_a_new_topic_shows_as_a_note(qapp):
     chat = ChatWindow()
     chat.on_event(1, {"type": "new_topic"})
     assert chat.lines[-1].role == "note" and "started fresh" in chat.text()
+
+
+def test_a_replys_detail_reads_as_part_of_the_same_message(qapp):
+    chat = ChatWindow()
+    chat.on_event(1, reply_event("Pump's sized.", detail="450 m3/h @ 32 m"))
+    bubble = chat.rows[-1].bubble
+    assert bubble.text == "Pump's sized.\n\n450 m3/h @ 32 m"
+    assert not hasattr(bubble, "detail")  # no separate grey box
+
+
+def test_messages_and_the_conversation_copy_as_plain_text(qapp):
+    from PySide6.QtGui import QGuiApplication
+
+    chat = ChatWindow()
+    chat.send("How big a pump?")  # no brain: an error note follows
+    chat.on_event(2, reply_event("An 8/6 AH.", detail="1,050 rpm"))
+    chat.rows[-1].copy.click()
+    assert QGuiApplication.clipboard().text() == "An 8/6 AH.\n\n1,050 rpm"
+    chat.copy_conversation()
+    pasted = QGuiApplication.clipboard().text()
+    assert pasted.startswith("Me: How big a pump?\n\n[Kit isn't set up yet")
+    assert pasted.endswith("Kit: An 8/6 AH.\n\n1,050 rpm")
+    assert chat.status.text() == "Copied the conversation"

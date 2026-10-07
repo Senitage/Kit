@@ -19,7 +19,10 @@ The desk app puts Kit on your desk PC:
   back. Drag any edge or the bottom-right corner to resize, and Kit remembers
   the size. Enter sends, Shift+Enter starts a new line, and the box grows as
   you type. You can ask again before he's answered. **New chat** starts fresh,
-  and ⚙ opens Kit's window.
+  and ⚙ opens Kit's window. To paste Kit's words elsewhere, hover over a
+  message and press **Copy**, or right-click it (copy the selection, the message
+  or the whole conversation). **Copy** at the top (Ctrl+Shift+C) copies the
+  whole conversation as plain text.
 - **Kit's window.** Open it from ⚙ in the chat or from the tray menu. It has
   five pages:
   - **Memory**: search what Kit knows the way he does, teach him something, and
