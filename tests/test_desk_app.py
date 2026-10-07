@@ -220,3 +220,217 @@ def test_reopening_the_chat_shows_the_brains_current_conversation(qapp):
     chat._replace = True  # a later open: the brain's conversation is the truth
     chat._show_history([])
     assert "Old question" not in chat.text()
+
+
+def pump(qapp, seconds=0.4):
+    import time as _t
+
+    end = _t.time() + seconds
+    while _t.time() < end:
+        qapp.processEvents()
+
+
+def test_kits_markdown_shows_formatted_with_links_in_the_theme_colour(qapp):
+    from kit.desk import theme
+
+    chat = ChatWindow(palette=theme.palette("dark", "#14a39a"))
+    chat.on_event(1, reply_event("**Bold** and a [link](http://mettools.lan)"))
+    bubble = chat.rows[-1].bubble
+    html = bubble.body.text()
+    assert "font-weight" in html and "http://mettools.lan" in html
+    assert "#0000ff" not in html.lower()  # Qt's default blue is replaced
+    chat.send("**not markdown**")
+    you = next(r.bubble for r in chat.rows if r.line.role == "you")
+    assert you.body.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_the_chat_stays_at_the_bottom_unless_dan_scrolls_up(qapp):
+    chat = ChatWindow()
+    chat.resize(420, 400)
+    chat.show()
+    for i in range(30):
+        chat.on_event(i, reply_event(f"Line {i} " + "words " * 20))
+    pump(qapp)
+    bar = chat.scroll.verticalScrollBar()
+    assert bar.maximum() > 0 and bar.value() == bar.maximum()
+    bar.setValue(0)  # Dan scrolls up to read
+    chat.on_event(99, reply_event("A new one " + "words " * 20))
+    pump(qapp)
+    assert bar.value() == 0 and chat.jump.isVisible()
+    chat.scroll_to_end()
+    chat.on_event(100, reply_event("And another " + "words " * 20))
+    pump(qapp)
+    assert bar.value() == bar.maximum() and not chat.jump.isVisible()
+    chat.close()
+
+
+def test_the_typing_dots_show_until_kit_starts_talking(qapp):
+    chat = ChatWindow()
+    chat._in_flight = 1
+    chat._set_state("thinking")
+    assert not chat.typing_row.isHidden()
+    chat.on_event(1, {"type": "say", "text": "Hi"})
+    assert chat.typing_row.isHidden()
+
+
+class FakeBrain:
+    def __init__(self):
+        from kit.settings import Settings
+
+        self.saved = []
+        self.store = Settings().model_dump(mode="json")
+        self.fact_list = [
+            {"id": 1, "text": "Tax is in Finance/Tax", "kind": "place", "pinned": False}
+        ]
+        self.edits = []
+
+    def settings_schema(self):
+        from kit.settings import Settings
+
+        return Settings.model_json_schema()
+
+    def settings(self):
+        return {"settings": self.store, "problem": None}
+
+    def save_settings(self, patch):
+        self.saved.append(patch)
+        return {"settings": self.store, "problem": None}
+
+    def facts(self):
+        return self.fact_list
+
+    def remember(self, text, pinned=False):
+        self.fact_list = [
+            {"id": 2, "text": text, "kind": "other", "pinned": False},
+            *self.fact_list,
+        ]
+        return {"decision": "new"}
+
+    def edit_fact(self, fact_id, **changes):
+        self.edits.append((fact_id, changes))
+
+    def search(self, q, k=15):
+        return {"hits": [{"source": "facts", "title": "", "text": "Tax is in Finance/Tax"}]}
+
+
+@pytest.fixture
+def sync_window(monkeypatch):
+    from kit.desk import window
+
+    monkeypatch.setattr(window, "SYNC", True)
+    return window
+
+
+def make_window(window, brain, tmp_path, config=None):
+    return window.KitWindow(
+        config or DeskConfig(), "tok", "", lambda: brain, lambda: "http://kit:8600", tmp_path
+    )
+
+
+def test_kits_settings_page_round_trips_the_brains_settings(qapp, sync_window, tmp_path):
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    win.show_page("Kit's settings")
+    page = win.brain_settings
+    assert page.fields
+    page.save()
+    patch = brain.saved[-1]
+    assert patch["brain"]["history_messages"] == brain.store["brain"]["history_messages"]
+    assert patch["life"]["cheek"] == pytest.approx(brain.store["life"]["cheek"])
+    win.close()
+
+
+def test_settings_controls_read_back_what_they_show(qapp, sync_window):
+    w = sync_window
+    for prop, value in [
+        ({"type": "string"}, "qwen3:8b"),
+        ({"type": "integer", "minimum": 2}, 20),
+        ({"type": "boolean"}, True),
+        ({"enum": ["a", "b"]}, "b"),
+        ({"type": "array", "items": {"type": "string"}}, ["x", "y"]),
+        ({"type": "object", "additionalProperties": {"type": "string"}}, {"tax": "Finance/Tax"}),
+        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, None),
+        ({"type": "object"}, {"nested": [1, 2]}),
+    ]:
+        kind = w.kind_of(prop)
+        assert w.read_control(kind, w.make_control(kind, prop, value)) == value, kind
+
+
+def test_memory_page_lists_teaches_and_pins(qapp, sync_window, tmp_path):
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    page = win.memory
+    win.show_page("Memory")
+    assert page.facts.count() == 1
+    page.teach.setText("The Hilux is in Documents/Cars")
+    page.remember()
+    assert page.facts.count() == 2 and "Remembered" in page.note.text()
+    page.facts.setCurrentRow(1)
+    page.toggle_pin()
+    assert brain.edits == [(1, {"pinned": True})]
+    page.query.setText("tax")
+    page.search()
+    assert "Finance/Tax" in page.results.item(0).text()
+    win.close()
+
+
+def test_look_changes_show_at_once_and_only_touch_the_look(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    try:
+        desk.open_window("Look")
+        look = desk.window.look
+        look.eyes.pick("#ffc66b")
+        look.size.setValue(200)
+        assert desk.face.eye.name() == "#ffc66b" and desk.face.width() == 200
+        desk.window.pc.form.url.setText("http://elsewhere:8600")  # typed, not saved
+        look.theme.setCurrentIndex(look.theme.findData("light"))
+        saved = DeskConfig.load(desk_dir)
+        assert saved.eye_colour == "#ffc66b" and saved.theme == "light"
+        assert saved.brain_url == "http://127.0.0.1:9"
+        assert not desk.chat.palette.dark
+    finally:
+        desk.quit()
+        desk.window.close()
+        desk.chat.close()
+        desk.face.close()
+
+
+def test_updates_page_offers_a_newer_version(qapp, sync_window, tmp_path):
+    from kit.desk.update import Release
+
+    class FakeUpdater:
+        def __init__(self, found):
+            self.found = found
+
+        def newer(self):
+            return self.found
+
+        def download(self, release, folder, progress=None):
+            path = folder / release.asset
+            path.write_bytes(b"MZ")
+            return path
+
+        def close(self):
+            pass
+
+    found = Release("0.1.0.99", "desk-v0.1.0.99", "New chat look", "", "", "K.exe", "u", 2, "")
+    win = sync_window.KitWindow(
+        DeskConfig(),
+        "",
+        "",
+        lambda: None,
+        lambda: "",
+        tmp_path,
+        updater=lambda c, t: FakeUpdater(found),
+    )
+    installs = []
+    win.updates.install.connect(installs.append)
+    win.show_page("Updates")
+    win.updates.check()
+    assert "0.1.0.99" in win.updates.status.text() and not win.updates.install_button.isHidden()
+    win.updates.download()
+    assert installs and installs[0].name == "K.exe"
+    win.close()

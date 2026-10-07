@@ -4,14 +4,35 @@ The desk app puts Kit on your desk PC:
 
 - **Tray icon.** Kit's Glow face sits in the taskbar tray. Click it to open the
   chat. Right-click it for the menu: Open chat, Show Kit's face, Share what I'm
-  working on, Kit in the browser, What Kit remembers, Settings, Quit Kit.
+  working on, What Kit remembers, Settings, Look, Quiet for an hour, Kit in the
+  browser, Set up the Chrome extension, Check for updates, Quit Kit.
 - **Face on the desktop.** Glow floats on top of your windows. Drag him anywhere
   and he stays there next time. Click him to open the chat beside him. His eyes
   follow the mouse, he acts out every reply, and when the chat is closed he says
   it in a little speech bubble. He goes grey when he can't reach the brain.
 - **Chat.** It's the same conversation as the web chat page, with the same
-  memory. Enter sends and Shift+Enter starts a new line. You can ask again
-  before he's answered.
+  memory. Your messages are on the right in the accent colour and Kit's are on
+  the left, as rounded bubbles. Kit's replies show markdown: bold, lists, code,
+  tables and clickable links. New messages fade in. Three dots show while
+  he's thinking. While you're at the bottom the chat follows the newest
+  message; scroll up to read and it stays put, with a **Latest** button to jump
+  back. Drag any edge or the bottom-right corner to resize, and Kit remembers
+  the size. Enter sends, Shift+Enter starts a new line, and the box grows as
+  you type. You can ask again before he's answered. **New chat** starts fresh,
+  and ⚙ opens Kit's window.
+- **Kit's window.** Open it from ⚙ in the chat or from the tray menu. It has
+  five pages:
+  - **Memory**: search what Kit knows the way he does, teach him something, and
+    pin, edit or forget facts. It's the same memory as the browser's memory page.
+  - **Kit's settings**: the brain's settings, the same as the browser's
+    settings page, with Save and Undo.
+  - **This PC**: the brain's address and token, what Kit may see, and start at
+    logon.
+  - **Look**: dark, light or match Windows; the accent colour; Kit's eye
+    colour; face size; text size; and whether he talks in a speech bubble.
+    Changes show straight away.
+  - **Updates**: the version you have, and new versions from GitHub (see
+    [desk-app/README.md](desk-app/README.md)).
 - **What you're working on.** Every couple of seconds the app checks which
   windows are open, which one has focus, and how long it's been since you
   touched the keyboard or mouse. It tells the brain when focus changes, and at
@@ -95,10 +116,12 @@ it. After a Kit update, press the reload arrow on Kit's card in
 
 ## Install
 
-1. On GitHub, open **Actions > Desk app**, pick the latest run on this branch,
-   and download **Kit-Desk-Setup** under Artifacts. Unzip it to get
-   `Kit-Desk-Setup-<version>.exe`. To build it yourself instead, see Building
-   below.
+1. On GitHub, open **Releases** on the repo's front page and download
+   `Kit-Desk-Setup-<version>.exe` from the latest one. Releases appear once
+   the desk app is on `main`. Until then, or to try a pull request, open
+   **Actions > Desk app**, pick the run, and download **Kit-Desk-Setup** under
+   Artifacts (a zip with the exe inside). After the first install, Kit updates
+   himself (see [desk-app/README.md](desk-app/README.md)).
 2. Run it. It installs for your account only, so no admin prompt appears. Leave
    **Start Kit when I log on** ticked. Windows SmartScreen may warn about an
    unknown publisher, because the exe isn't code-signed: choose More info >
@@ -154,6 +177,20 @@ reconnects without asking.
 - [ ] Log off and on again. Kit starts by himself, quietly in the tray.
 - [ ] Run the installer again (an upgrade). It closes the running Kit, and Kit
       keeps his settings.
+- [ ] Ask something with a list or a link. It shows formatted, and the link
+      opens in the browser.
+- [ ] Scroll up during a long reply. The chat stays where you are and shows
+      **Latest**. Press it, and the chat follows new messages again.
+- [ ] Resize the chat, close and reopen it. It keeps the size.
+- [ ] In Kit's window, Memory: teach Kit something. It shows in the list and on
+      the browser's memory page. Pin it, then forget it.
+- [ ] Kit's settings: change `life.chattiness` and save. The browser's settings
+      page shows the new value. Undo puts it back.
+- [ ] Look: pick another eye colour, accent and Light. The face, tray icon,
+      chat and window change straight away, and stay that way after a restart.
+- [ ] Updates: paste the GitHub token (desk-app/README.md) and press Check now.
+      It says you're up to date, or offers the newer version. Installing closes
+      Kit, and he comes back by himself on the new version.
 
 ## Building
 
@@ -166,7 +203,9 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
 
 It installs the desk extra and PyInstaller, draws `kit.ico` from the Glow face,
 builds `Kit.exe` as one folder, runs `Kit.exe --selftest`, and packs the
-installer into `packaging\windows\build\installer`.
+installer into `packaging\windows\build\installer`. How the build, GitHub's
+workflow, releases and updates fit together is in
+[desk-app/README.md](desk-app/README.md).
 
 To run from source without installing: `pip install -e ".[desk]"`, then
 `kit-desk` (or `python -m kit.desk`). It also runs on Linux for trying out the

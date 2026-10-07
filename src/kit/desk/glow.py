@@ -49,8 +49,15 @@ def _eye_path(cx: float, cy: float, w: float, h: float, s: float, f: FaceFrame, 
     return eye
 
 
-def paint_glow(p: QPainter, rect: QRectF, f: FaceFrame, background: QColor | None = None) -> None:
-    """Paint one frame of the Glow face into ``rect`` (drawn square, centred)."""
+def paint_glow(
+    p: QPainter,
+    rect: QRectF,
+    f: FaceFrame,
+    background: QColor | None = None,
+    eye: QColor | None = None,
+) -> None:
+    """Paint one frame of the Glow face into ``rect`` (drawn square, centred), with
+    the eyes in ``eye`` (Glow's own teal unless Dan picked another on the Look page)."""
     s = min(rect.width(), rect.height())
     ox = rect.x() + (rect.width() - s) / 2
     oy = rect.y() + (rect.height() - s) / 2
@@ -71,7 +78,7 @@ def paint_glow(p: QPainter, rect: QRectF, f: FaceFrame, background: QColor | Non
     p.drawRoundedRect(screen, s * 0.16, s * 0.16)
 
     pulse = 1 + f.talk * 0.08
-    colour = EYE_OFFLINE if f.offline else EYE
+    colour = EYE_OFFLINE if f.offline else (eye or EYE)
     for side, open_ in ((-1, f.open_left), (1, f.open_right)):
         cx = s / 2 + side * s * 0.155 + f.look_x * s * 0.07
         cy = s * 0.5 + f.look_y * s * 0.055
@@ -114,6 +121,7 @@ class FaceWidget(QWidget):
         super().__init__(parent)
         self.face = face or Face()
         self.background: QColor | None = None
+        self.eye: QColor | None = None
         self.follow_mouse = True
         self._frame = self.face.tick(time.monotonic())
         self._cursor = QCursor.pos()
@@ -135,5 +143,5 @@ class FaceWidget(QWidget):
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         p = QPainter(self)
-        paint_glow(p, QRectF(self.rect()), self._frame, self.background)
+        paint_glow(p, QRectF(self.rect()), self._frame, self.background, self.eye)
         p.end()

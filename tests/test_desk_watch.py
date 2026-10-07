@@ -255,3 +255,32 @@ def test_windows_desktop_reads_this_pc():
     assert desktop.idle_seconds() >= 0
     assert isinstance(desktop.locked(), bool)
     Snapshot.model_validate(build_snapshot(desktop, DeskConfig(), "CI", system_status()))
+
+
+def test_kits_window_saves_settings_and_memory_through_the_real_api(brain_api, monkeypatch):
+    pytest.importorskip("PySide6.QtWidgets", reason="desk extra (PySide6) not installed")
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from kit.desk import window
+
+    QApplication.instance() or QApplication([])
+    monkeypatch.setattr(window, "SYNC", True)
+    tc, brain = brain_api
+    client = client_for(tc)
+    page = window.BrainSettingsPage(lambda: client, lambda: "")
+    page.refresh()
+    assert page.fields and page.note.text() == ""
+    for section, _entry, key, _kind, control in page.fields:
+        if (section, key) == ("brain", "history_messages"):
+            control.setValue(12)
+    page.save()
+    assert page.note.text().startswith("Saved"), page.note.text()
+    assert brain.settings().brain.history_messages == 12
+
+    memory = window.MemoryPage(lambda: client, lambda: "")
+    memory.teach.setText("Dan's tax returns are in Documents/Finance/Tax")
+    memory.remember()
+    assert memory.facts.count() == 1, memory.note.text()
