@@ -140,7 +140,10 @@ def system_prompt(
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
         f"one lives (a folder, a note, an app record). Put its name in text, set "
         f"thing_kind, and if you know where it lives set link_system and link_target. "
-        f"For a new name, ask {owner} if you should add it to the register."
+        f"For a new name, ask {owner} if you should add it to the register. A correction "
+        f"counts too: if {owner} says a thing under 'Things you know' is actually "
+        f"somewhere else ('no, my tax stuff is in Tax/2023'), use thing with that thing's "
+        f"exact name and the new link_system and link_target."
     )
     if weather:
         lines.append(

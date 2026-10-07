@@ -100,6 +100,13 @@ CHECKING_IN = re.compile(
     r"what'?s taking so long|status|anything yet|any (update|news|luck|progress)s?)\b",
     re.IGNORECASE,
 )
+# "No, it's actually in Tax/2023": a correction naming a folder-like place.
+CORRECTION = re.compile(
+    r"\b(actually|not in|it'?s in|they'?re in|are in|is in|moved|lives? in|kept in|"
+    r"keep (it|them) in|live in)\b|^\s*no\b",
+    re.IGNORECASE,
+)
+PLACE = re.compile(r"\b[\w.\-]+(?:/[\w.\-]+)+")
 # A bare "hello?" or "hey" while Kit is busy is checking in too.
 NUDGE = re.compile(r"^\W*(hello|hey|hi|oi|kit|um+|so+|and|well|anything)?\W*\?+\W*$", re.I)
 
@@ -345,6 +352,25 @@ class Brain:
         self.pending_thing = thing.id
         return {"type": "thing_suggested", "thing": thing.as_dict()}
 
+    def _implied_correction(self, text: str, recalled: Recalled) -> Event | None:
+        """A correction the model didn't act on: "my tax stuff is actually in Tax/2023"
+        names a place, and the thing it's about is the closest one recalled with a
+        link. Update that link (the old one stays in its history)."""
+        place = PLACE.search(text)
+        if not place or not CORRECTION.search(text):
+            return None
+        linked = [t for t in recalled.things if t.links]
+        if not linked:
+            return None
+        thing, target = linked[0], place.group(0).rstrip(".")
+        if any(link.target == target for link in thing.links):
+            return None
+        systems = [link.system for link in thing.links]
+        system = "nas" if "nas" in systems else systems[0]
+        new_id = self.register.set_link(thing.id, system, target)
+        updated = self.register.get(new_id)
+        return {"type": "thing_updated", "thing": updated.as_dict() if updated else None}
+
     @staticmethod
     def _track(event: Event, said: list[str]) -> Event:
         if event["type"] == "reply":
@@ -474,7 +500,11 @@ class Brain:
             event = self._note_thing(reply)
             if event:
                 yield event
-        elif (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
+        if kind in ("none", "remember") and hops == 0:
+            event = self._implied_correction(text, recalled)
+            if event:
+                yield event
+        if (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
             to = WORK if kind == "ask_cloud" else EXPERT
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}

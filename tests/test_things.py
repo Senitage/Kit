@@ -191,6 +191,33 @@ def test_correction_updates_a_known_thing(memory):
     assert not reg.suggestions()
 
 
+def test_correction_the_model_missed_still_updates_the_register(memory):
+    reg = Register(memory)
+    reg.add("Tax returns", links=[{"system": "nas", "target": "Documents/Tax"}])
+    brain, _ = make_brain(memory, reply("Got it. Tax/2023 is where you keep your docs."))
+    events = collect(brain.chat("the tax documents are actually in Tax/2023"))
+    updated = next(e for e in events if e["type"] == "thing_updated")
+    assert updated["thing"]["links"] == [{"system": "nas", "target": "Tax/2023"}]
+    assert reg.history(reg.named("Tax returns").id)[1].links == [Link("nas", "Documents/Tax")]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what's in Documents/Tax?",
+        "the tax documents are actually important",
+        "tax is in Documents/Tax",
+    ],
+)
+def test_no_correction_without_a_new_place(memory, text):
+    reg = Register(memory)
+    reg.add("Tax returns", links=[{"system": "nas", "target": "Documents/Tax"}])
+    brain, _ = make_brain(memory, reply("Ok."))
+    events = collect(brain.chat(text))
+    assert not any(e["type"] == "thing_updated" for e in events)
+    assert reg.named("Tax returns").links == [Link("nas", "Documents/Tax")]
+
+
 # Pages and API
 
 
