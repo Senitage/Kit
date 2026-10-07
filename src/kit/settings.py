@@ -210,8 +210,16 @@ class PersonaSettings(_Section):
         description="How Kit talks.",
     )
     location: str = Field(
-        "", description="Where the owner is, for weather and local searches, e.g. Perth WA."
+        "",
+        description="Where the owner is, for weather and local searches, as 'city, state', "
+        "e.g. Perth, WA.",
     )
+    country: str = Field(
+        "",
+        pattern=r"^([A-Z]{2})?$",
+        description="The owner's country as a two-letter code, e.g. AU.",
+    )
+    timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
         "in Python, codes in VS Code, and keeps notes in Obsidian.",
@@ -311,10 +319,11 @@ class MemorySettings(_Section):
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
     )
     min_similarity: float = Field(
-        0.5,
+        0.59,  # measured for nomic-embed-text with `kit eval memory` (2026-10-06)
         ge=0,
         le=1,
-        description="How close in meaning a memory must be to count as relevant (0 to 1).",
+        description="How close in meaning a memory must be to count as relevant (0 to 1). "
+        "It depends on the embedding model: `kit eval memory` suggests a value.",
     )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 

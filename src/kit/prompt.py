@@ -77,6 +77,8 @@ def system_prompt(
     pc: str = "",
     channel: str = "",
     quirks: list[str] | None = None,
+    weather: bool = False,
+    forecast: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -119,7 +121,10 @@ def system_prompt(
             lines.append(
                 "- You can search the web. Use it for anything current or that you'd "
                 "otherwise guess at (weather, prices, products, news, opening hours), and put "
-                "the sources in detail."
+                "the sources in detail. Check how old each result is. For live things like "
+                "the weather, open the official source's page if you can (for a forecast, "
+                "the national weather service's page for the place) rather than relying on "
+                "an old search result."
             )
     lines += [
         "",
@@ -156,8 +161,20 @@ def system_prompt(
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
         f"one lives (a folder, a note, an app record). Put its name in text, set "
         f"thing_kind, and if you know where it lives set link_system and link_target. "
-        f"For a new name, ask {owner} if you should add it to the register."
+        f"For a new name, ask {owner} if you should add it to the register. A correction "
+        f"counts too: if {owner} says a thing under 'Things you know' is actually "
+        f"somewhere else ('no, my tax stuff is in Tax/2023'), use thing with that thing's "
+        f"exact name and the new link_system and link_target."
     )
+    if weather:
+        lines.append(
+            f"- weather: for any question about the weather, temperature, rain or wind, now "
+            f"or in the next few days. Put the place in text, or leave it empty for where "
+            f"{owner} is, say something short like 'Checking the forecast.', and you'll see "
+            f"the forecast before answering. Use this rather than a web search. Never give "
+            f"temperatures, rain or wind from memory or from earlier in the conversation: "
+            f"forecasts change, so use the weather action unless a forecast is below."
+        )
     if not cloud and helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "
@@ -184,8 +201,23 @@ def system_prompt(
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
+        *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
+
+
+def forecast_block(forecast: str, owner: str) -> list[str]:
+    """The forecast for home, fetched because the message is about the weather."""
+    if not forecast:
+        return []
+    return [
+        "",
+        f"The latest forecast for where {owner} is (fetched just now):",
+        forecast,
+        "If the message is about the weather, answer from this in a sentence or two (for "
+        "'tonight', the evening temperatures and any rain; for 'tomorrow', tomorrow's "
+        "line). For somewhere else, use the weather action.",
+    ]
 
 
 def busy_block(busy: list[str], owner: str) -> list[str]:
@@ -201,6 +233,17 @@ def busy_block(busy: list[str], owner: str) -> list[str]:
         f"about being rushed is fine. Don't answer that question yourself or make up "
         f"progress: the answer will arrive by itself when it's ready.",
     ]
+
+
+def weather_results(place: str, forecast: str, owner: str) -> str:
+    return "\n".join(
+        [
+            forecast,
+            f"Now answer {owner}'s last message from this forecast, as JSON with action "
+            f"none. Say the useful part (for 'tonight', the evening temperatures and any "
+            f"rain) in a sentence or two, and put more in detail only if asked.",
+        ]
+    )
 
 
 def recall_results(query: str, hits: list[Hit], owner: str) -> str:

@@ -26,7 +26,7 @@
            background: var(--panel); color: var(--text); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; border: 0; }
   .note { color: var(--muted); font-size: 13px; min-height: 1.4em; white-space: pre-wrap; }
-  h2 { font-size: 16px; margin: 20px 0 8px; text-transform: capitalize; }
+  h2 { font-size: 16px; margin: 20px 0 8px; }
   .item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
           padding: 9px 12px; margin-bottom: 6px; }
   .item .text { overflow-wrap: anywhere; }
@@ -52,7 +52,7 @@
     <button class="primary" id="add">Remember</button>
   </div>
   <div class="note" id="note"></div>
-  <h2 style="text-transform: none">Things and where they live</h2>
+  <h2>Things and where they live</h2>
   <div id="suggestions"></div>
   <div class="row">
     <input type="text" id="thing" placeholder="Name, e.g. Hilux">
@@ -179,7 +179,7 @@ async function load() {
   for (const kind of KINDS) {
     const group = facts.filter(f => f.kind === kind).sort((a, b) => b.pinned - a.pinned);
     if (!group.length) continue;
-    box.appendChild(el("h2", "", kind === "about" ? "About you" : kind === "place" ? "Where things are" : kind + "s"));
+    box.appendChild(el("h2", "", ({ about: "About you", place: "Where things are", person: "People", preference: "Preferences", project: "Projects", plan: "Plans", other: "Other" })[kind] || kind));
     for (const f of group) box.appendChild(factCard(f));
   }
   const days = document.getElementById("days");

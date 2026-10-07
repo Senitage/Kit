@@ -53,3 +53,28 @@ def test_compare_asks_every_model_every_prompt(paths):
     report = compare_report(results, ["sonnet", "opus", "gpt-sol"])
     assert "**sonnet**: 2/2 answered" in report and "**gpt-sol**: 0/2" in report
     assert "## weather?" in report and "### opus" in report
+
+
+def test_cutoff_is_suggested_between_right_and_unrelated():
+    from kit.evals import MemoryReport
+
+    report = MemoryReport(right=[0.71, 0.64, 0.80], unrelated=[0.52, 0.58])
+    assert report.suggested_cutoff() == 0.61
+    assert MemoryReport(right=[0.55], unrelated=[0.6]).suggested_cutoff() is None
+    assert MemoryReport().suggested_cutoff() is None
+
+
+def test_fact_similarities_cover_every_fact(paths):
+    from fakes import Clock, FakeEmbedder
+    from kit.evals import _fact_similarities
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    recall = Recall(memory, FakeEmbedder(), lambda: Settings())
+    memory.add_fact("Dan drinks his coffee black.", "preference")
+    memory.add_fact("Dan drives a Ford Ranger.", "about")
+    asyncio.run(recall.index_pending())
+    sims = dict(asyncio.run(_fact_similarities(memory, recall, "How does Dan take coffee?")))
+    assert sims["Dan drinks his coffee black."] > sims["Dan drives a Ford Ranger."]
+    memory.close()

@@ -17,6 +17,7 @@ Each turn:
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
      for a known thing ("no, it's in Tax/2023") corrects the entry;
+   - weather: Kit gets the forecast (kit.weather), then answers again from it;
    - ask_cloud / ask_expert: the question goes to the work or expert model.
    If a cloud model can't answer (offline, no key, budget used up), the local
    model answers instead when ``routing.fallback_to_local`` is on.
@@ -45,6 +46,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
@@ -53,7 +55,7 @@ from kit.life import SHUSH, UNSHUSH, Life, my_quirks, pipe_up_prompt
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.pc_context import PcContext
-from kit.prompt import history_messages, recall_results, system_prompt
+from kit.prompt import history_messages, recall_results, system_prompt, weather_results
 from kit.recall import Recall, Recalled
 from kit.reply import (
     Reply,
@@ -66,6 +68,7 @@ from kit.reply import (
 )
 from kit.settings import Settings
 from kit.things import THINGS, Register
+from kit.weather import Weather, WeatherError
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +94,50 @@ KEEP_LOCAL = re.compile(
 )
 ASK_EXPERT = re.compile(r"\b(think (really )?(hard|carefully)|ask (the|your) expert)\b", re.I)
 ASK_CLOUD = re.compile(r"\b(ask (claude|gpt|gemini|the cloud)|use the cloud)\b", re.IGNORECASE)
+# Plainly about the weather: Kit fetches the forecast first and the local model
+# answers from it, rather than handing a two-second question to the cloud.
+WEATHER = re.compile(
+    r"\b(weather|forecast|umbrella|rain(ing|y)?|showers|sunny|windy|storms?|"
+    r"how (hot|cold|warm) (is it|will it be)|what'?s the temp(erature)?)\b",
+    re.IGNORECASE,
+)
+# A follow-up like "and tomorrow?" soon after a weather answer is about the weather too.
+WHEN = re.compile(
+    r"\b(today|tonight|tomorrow|this (morning|afternoon|arvo|evening)|weekend|later|"
+    r"(mon|tues|wednes|thurs|fri|satur|sun)day|next few days|this week)\b",
+    re.IGNORECASE,
+)
+WEATHER_FOLLOW_UP = timedelta(minutes=15)
+# "How are you going?" while a slow answer is still coming means "how's that going?".
+CHECKING_IN = re.compile(
+    r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
+    r"nearly (done|there)|done yet|any luck|still (going|working|thinking)|hurry up|"
+    r"what'?s taking so long|status|anything yet|any (update|news|luck|progress)s?)\b",
+    re.IGNORECASE,
+)
+# "No, it's actually in Tax/2023": a correction naming a folder-like place.
+CORRECTION = re.compile(
+    r"\b(actually|not in|it'?s in|they'?re in|are in|is in|moved|lives? in|kept in|"
+    r"keep (it|them) in|live in)\b|^\s*no\b",
+    re.IGNORECASE,
+)
+PLACE = re.compile(r"\b[\w.\-]+(?:/[\w.\-]+)+")
+# A bare "hello?" or "hey" while Kit is busy is checking in too.
+NUDGE = re.compile(r"^\W*(hello|hey|hi|oi|kit|um+|so+|and|well|anything)?\W*\?+\W*$", re.I)
+
+
+def _patience(asked: int) -> str:
+    """How Kit takes being asked again and again while it's busy."""
+    if asked <= 1:
+        return "This is the first time they've asked: easy-going, like 'give me a sec'."
+    if asked == 2:
+        return "They've asked twice now: a touch of mock impatience."
+    if asked == 3:
+        return "Third time they've asked: openly exasperated, cheeky about it."
+    return (
+        f"They've asked {asked} times: theatrically fed up, a sigh or a one-word answer, "
+        f"still fond underneath."
+    )
 
 
 @dataclass
@@ -102,10 +149,14 @@ class Job:
     model: str
     started: float = field(default_factory=time.monotonic)
     steps: list[str] = field(default_factory=list)
+    check_ins: int = 0  # how often Dan has asked how it's going
 
     def line(self) -> str:
         secs = int(time.monotonic() - self.started)
-        done = f" So far you've {', then '.join(self.steps)}." if self.steps else ""
+        if self.steps:
+            done = f" So far you've {', then '.join(self.steps)}."
+        else:
+            done = " Nothing to report yet, it's still thinking; don't invent progress."
         return f'"{self.question}": you asked {self.model} {secs} seconds ago.{done}'
 
     def as_dict(self) -> dict:
@@ -137,6 +188,7 @@ class Brain:
         model: LocalModel,
         cloud: Cloud,
         recall: Recall,
+        weather: Weather | None = None,
     ) -> None:
         self.settings = settings
         self.memory = memory
@@ -146,6 +198,8 @@ class Brain:
         self.pc = PcContext(memory.clock)
         self.life = Life(settings, self.pc, memory.clock)
         self.quirks = my_quirks(memory)
+        self.weather = weather
+        self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -203,7 +257,16 @@ class Brain:
             name = settings.profile(role).name
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
-        async for event in self._converse(text, history, recalled, settings, role, chosen):
+        forecast = ""
+        if role == LOCAL and self.weather is not None:
+            plainly = bool(WEATHER.search(text))
+            if plainly or (WHEN.search(text) and self._weather_recently()):
+                forecast = await self._home_forecast(settings)
+                emit({"type": "weather", "place": settings.persona.location})
+                chosen = chosen or plainly  # a weather question stays local
+        async for event in self._converse(
+            text, history, recalled, settings, role, chosen, forecast=forecast
+        ):
             if event["type"] == "reply" and self.jobs:
                 event = {**event, "question": text}
             emit(self._track(event, said))
@@ -213,6 +276,47 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    def _weather_recently(self) -> bool:
+        return (
+            self._weather_at is not None
+            and self.memory.clock() - self._weather_at < WEATHER_FOLLOW_UP
+        )
+
+    async def _home_forecast(self, settings: Settings) -> str:
+        self._weather_at = self.memory.clock()
+        place = settings.persona.location
+        try:
+            return await self.weather.forecast(place, settings.persona.country)
+        except WeatherError as e:
+            return f"The forecast lookup for {place or 'home'} failed: {e}"
+
+    def _with_busy_note(self, text: str, role: str) -> str:
+        """A small local model can miss the background work listed at the end of a
+        long prompt, so when Dan checks in, say it again right next to his words."""
+        if role != LOCAL or not self.jobs:
+            return text
+        work = " ".join(job.line() for job in self.jobs.values())
+        owner = self.settings().persona.owner
+        # A few words while Kit is busy ("hey", "kit", "you there") is getting its
+        # attention about the work, the same as asking how it's going.
+        short = len(re.findall(r"\w+", text)) <= 3
+        if not (CHECKING_IN.search(text) or NUDGE.search(text) or short):
+            return (
+                f"{text}\n\n(Note for you, not from {owner}: you're still working on this "
+                f"in the background: {work} Answer this message normally; mention the "
+                f"background work only if it fits.)"
+            )
+        for job in self.jobs.values():
+            job.check_ins += 1
+        asked = max(job.check_ins for job in self.jobs.values())
+        return (
+            f"{text}\n\n(Note for you, not from {owner}: they're "
+            f"checking in on the work you're doing in the background. {work} Say which "
+            f"question you're on (in a few words, e.g. 'the cabbage one') and roughly how "
+            f"long it's been, in one short line, in character. {_patience(asked)} Never "
+            f"reuse a line you've already said. Don't answer the question itself.)"
+        )
 
     def busy(self) -> list[dict]:
         """What cloud models are working on right now."""
@@ -307,13 +411,39 @@ class Brain:
         self.pending_thing = thing.id
         return {"type": "thing_suggested", "thing": thing.as_dict()}
 
+    def _implied_correction(self, text: str, recalled: Recalled) -> Event | None:
+        """A correction the model didn't act on: "my tax stuff is actually in Tax/2023"
+        names a place, and the thing it's about is the closest one recalled with a
+        link. Update that link (the old one stays in its history)."""
+        place = PLACE.search(text)
+        if not place or not CORRECTION.search(text):
+            return None
+        linked = [t for t in recalled.things if t.links]
+        if not linked:
+            return None
+        thing, target = linked[0], place.group(0).rstrip(".")
+        if any(link.target == target for link in thing.links):
+            return None
+        systems = [link.system for link in thing.links]
+        system = "nas" if "nas" in systems else systems[0]
+        new_id = self.register.set_link(thing.id, system, target)
+        updated = self.register.get(new_id)
+        return {"type": "thing_updated", "thing": updated.as_dict() if updated else None}
+
     @staticmethod
     def _track(event: Event, said: list[str]) -> Event:
         if event["type"] == "reply":
             said.append(Reply.model_validate(event["reply"]).full_text)
         return event
 
-    def _system(self, settings: Settings, recalled: Recalled, role: str, hand_off: bool) -> str:
+    def _system(
+        self,
+        settings: Settings,
+        recalled: Recalled,
+        role: str,
+        hand_off: bool,
+        forecast: str = "",
+    ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
         if role == LOCAL:
@@ -336,6 +466,8 @@ class Brain:
             quirks=self.quirks,
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
+            weather=self.weather is not None,
+            forecast=forecast,
         )
 
     async def _converse(
@@ -348,12 +480,14 @@ class Brain:
         chosen: bool = False,
         hops: int = 0,
         question: str = "",
+        forecast: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
+        system = self._system(settings, recalled, role, hand_off, forecast)
         messages = [
-            {"role": "system", "content": self._system(settings, recalled, role, hand_off)},
+            {"role": "system", "content": system},
             *history_messages(history, CHANNEL.get()),
-            {"role": "user", "content": text},
+            {"role": "user", "content": self._with_busy_note(text, role)},
         ]
         job = None
         if role != LOCAL:
@@ -369,25 +503,37 @@ class Brain:
             if reply is None:
                 return
 
-            if reply.action.kind in ("recall", "look_at_pc"):
-                owner = settings.persona.owner
-                if reply.action.kind == "recall":
-                    query = reply.action.text.strip() or text
-                    hits = await self.recall.search(
-                        query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
-                    )
-                    yield {"type": "recalled", "query": query, "found": len(hits)}
-                    found = recall_results(query, hits, owner)
-                    step = f"looked through your memory for '{query}'"
-                else:
-                    yield {"type": "looked_at_pc", "online": self.pc.online()}
-                    found = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
-                    step = "looked at what's open on your PC"
+            look_up = None
+            owner = settings.persona.owner
+            if reply.action.kind == "recall":
+                query = reply.action.text.strip() or text
+                hits = await self.recall.search(
+                    query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
+                )
+                yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
-                    job.steps.append(step)
+                    job.steps.append(f"looked through your memory for '{query}'")
+                look_up = recall_results(query, hits, owner)
+            elif reply.action.kind == "look_at_pc":
+                yield {"type": "looked_at_pc", "online": self.pc.online()}
+                if job:
+                    job.steps.append("looked at what's open on your PC")
+                look_up = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
+            elif reply.action.kind == "weather" and self.weather is not None:
+                place = reply.action.text.strip() or settings.persona.location
+                try:
+                    forecast = await self.weather.forecast(place, settings.persona.country)
+                except WeatherError as e:
+                    forecast = f"The forecast lookup failed: {e}"
+                self._weather_at = self.memory.clock()
+                yield {"type": "weather", "place": place}
+                if job:
+                    job.steps.append(f"checked the forecast for {place}")
+                look_up = weather_results(place, forecast, owner)
+            if look_up is not None:
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},
-                    {"role": "user", "content": found},
+                    {"role": "user", "content": look_up},
                 ]
                 # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
                 # later history shows one answer per message, not a recall habit.
@@ -422,7 +568,11 @@ class Brain:
             event = self._note_thing(reply)
             if event:
                 yield event
-        elif (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
+        if kind in ("none", "remember") and hops == 0:
+            event = self._implied_correction(text, recalled)
+            if event:
+                yield event
+        if (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
             to = WORK if kind == "ask_cloud" else EXPERT
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}

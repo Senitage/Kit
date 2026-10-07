@@ -104,6 +104,20 @@ def nested_patch(settings: Settings, keys: list[str], value) -> dict:
     return {section: {keys[1]: table}}
 
 
+async def _weather(paths: KitPaths, place: str | None) -> int:
+    """Print the forecast exactly as Kit is given it."""
+    from kit.weather import Weather, WeatherError
+
+    persona = SettingsStore(paths).current().persona
+    async with httpx.AsyncClient() as client:
+        try:
+            print(await Weather(client).forecast(place or persona.location, persona.country))
+        except WeatherError as e:
+            print(e)
+            return 1
+    return 0
+
+
 def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
     """Show the models Kit can use and which one does what, or switch one."""
     store = SettingsStore(paths)
@@ -204,6 +218,7 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     from kit.local_model import OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
+    from kit.weather import Weather
 
     paths.ensure()
     store = SettingsStore(paths)
@@ -211,7 +226,8 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     model = OllamaModel(lambda: store.current().ollama, client)
     cloud = make_cloud(paths, memory, client)
     recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
-    return store, memory, Brain(store.current, memory, model, cloud, recall)
+    weather = Weather(client)
+    return store, memory, Brain(store.current, memory, model, cloud, recall, weather)
 
 
 def make_cloud(paths: KitPaths, memory, client: httpx.AsyncClient):
@@ -307,6 +323,8 @@ def _print_event(event: dict, me: str) -> None:
         print(f"\n  ({event['message']})\n{me}> ", end="", flush=True)
     elif kind == "remembered":
         print(f"  (remembered: {event['fact']})")
+    elif kind == "weather":
+        print("  (checking the forecast)")
     elif kind == "thing_suggested":
         print(f"  (add to the register? {event['thing']['line']}  yes/no)")
     elif kind == "thing_updated" and event["thing"]:
@@ -525,6 +543,17 @@ async def _eval_memory(paths: KitPaths) -> int:
     print(f"recalled the right fact:    {report.recall_score}/{len(report.found)}")
     print(f"nothing for unknown things: {report.unknown_clean}/{len(report.unknown)}")
     print(f"memory kept tidy:           {report.tidy_score}/{len(report.tidy)}")
+    if report.right and report.unrelated:
+        cutoff = store.current().memory.min_similarity
+        print()
+        print(f"closeness of the right facts:   {min(report.right):.2f} to {max(report.right):.2f}")
+        print(f"closest fact to unknown things: {max(report.unrelated):.2f}")
+        print(f"memory.min_similarity is now:   {cutoff:.2f}")
+        suggested = report.suggested_cutoff()
+        if suggested is None:
+            print("the two overlap, so no cut-off separates them for this embedding model")
+        elif abs(suggested - cutoff) >= 0.02:
+            print(f"try: kit config set memory.min_similarity {suggested}")
     return 0 if report.passed else 1
 
 
@@ -681,6 +710,9 @@ def main(argv: list[str] | None = None) -> int:
     models.add_argument("role", nargs="?", choices=["work", "expert"], help="role to switch")
     models.add_argument("name", nargs="?", help="model profile to use for it")
 
+    weather = sub.add_parser("weather", help="show the forecast Kit sees")
+    weather.add_argument("place", nargs="?", help="somewhere else, e.g. 'Broome, WA'")
+
     mem = sub.add_parser("memory", help="see what Kit remembers and spends")
     msub = mem.add_subparsers(dest="action", required=True)
     msub.add_parser("facts", help="list what Kit knows (* = pinned)")
@@ -758,6 +790,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "weather":
+        return asyncio.run(_weather(paths, args.place))
     if args.command == "eval":
         if args.which == "routing":
             return asyncio.run(_eval_routing(paths))

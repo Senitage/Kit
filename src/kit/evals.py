@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from kit.local_model import LocalModel, LocalModelError
+from kit.memory import FACTS
 from kit.prompt import system_prompt
 from kit.recall import Recalled
 from kit.reply import ReplyError, SayExtractor, parse_reply, reply_schema
@@ -172,6 +173,20 @@ class MemoryReport:
     found: list[tuple[str, bool, list[str]]] = field(default_factory=list)
     unknown: list[tuple[str, list[str]]] = field(default_factory=list)
     tidy: list[tuple[str, bool]] = field(default_factory=list)
+    # Closeness in meaning, to set memory.min_similarity: each question's right
+    # fact, and the closest fact to each question Kit was never told about.
+    right: list[float] = field(default_factory=list)
+    unrelated: list[float] = field(default_factory=list)
+
+    def suggested_cutoff(self) -> float | None:
+        """A min_similarity halfway between the weakest right fact and the closest
+        unrelated one, if there's a gap between them."""
+        if not self.right or not self.unrelated:
+            return None
+        low, high = min(self.right), max(self.unrelated)
+        if low <= high:
+            return None
+        return round((low + high) / 2, 2)
 
     @property
     def recall_score(self) -> int:
@@ -194,6 +209,20 @@ class MemoryReport:
         )
 
 
+async def _fact_similarities(memory, recall, question: str) -> list[tuple[str, float]]:
+    """How close in meaning every current fact is to ``question``."""
+    vec = await recall.query_vector(question)
+    if vec is None or recall.embedder is None:
+        return []
+    sims = memory.index.similarities(vec, recall.embedder.model, [FACTS])
+    out = []
+    for item_id, sim in sims.items():
+        item = memory.index.get(item_id)
+        if item:
+            out.append((item.text, sim))
+    return out
+
+
 async def run_memory_eval(memory, learner, recall, owner: str = "Dan") -> MemoryReport:
     """Teach the lessons, then ask the questions, the same way a chat turn does."""
     report = MemoryReport()
@@ -211,6 +240,16 @@ async def run_memory_eval(memory, learner, recall, owner: str = "Dan") -> Memory
     for question in MEMORY_UNKNOWN:
         got = await recall.for_turn(question, set())
         report.unknown.append((question, [h.item.text for h in got.memories]))
+
+    for question, expected in MEMORY_QUESTIONS:
+        sims = await _fact_similarities(memory, recall, question)
+        right = [v for text, v in sims if expected.lower() in text.lower()]
+        if right:
+            report.right.append(max(right))
+    for question in MEMORY_UNKNOWN:
+        sims = await _fact_similarities(memory, recall, question)
+        if sims:
+            report.unrelated.append(max(v for _, v in sims))
 
     current = [f.text for f in memory.facts()]
     for text, needed in MEMORY_TIDY:

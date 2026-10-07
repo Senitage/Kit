@@ -13,6 +13,8 @@ from kit.cloud import (
     GoogleProvider,
     OpenAIProvider,
     Usage,
+    Where,
+    _web_steps,
     estimate_cost,
     split_messages,
 )
@@ -87,6 +89,54 @@ def test_progress_is_reported_while_a_search_runs(memory):
     profile = Settings().models["sonnet"]
     asyncio.run(cloud.answer(profile, MESSAGES, Settings(), on_step=steps.append))
     assert steps == ["searched the web for 'pump curves'"]
+
+
+PERTH = {"persona": {"location": "Perth, WA", "country": "AU", "timezone": "Australia/Perth"}}
+
+
+def test_searches_know_where_dan_is(memory):
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake), settings=Settings.model_validate(PERTH))
+    search, fetch = fake.calls[0]["tools"]
+    assert search["user_location"] == {
+        "type": "approximate",
+        "city": "Perth",
+        "region": "WA",
+        "country": "AU",
+        "timezone": "Australia/Perth",
+    }
+    assert fetch["name"] == "web_fetch" and fetch["max_content_tokens"] > 0
+
+
+def test_no_location_means_no_user_location(memory):
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake))
+    assert "user_location" not in fake.calls[0]["tools"][0]
+    assert Where.of(Settings().persona).approximate() is None
+    assert Where.of(Settings.model_validate({"persona": {"location": "Perth"}}).persona).city == (
+        "Perth"
+    )
+
+
+def test_bad_country_code_is_refused():
+    with pytest.raises(ValueError):
+        Settings.model_validate({"persona": {"country": "Australia"}})
+
+
+def test_opening_a_page_is_reported():
+    from types import SimpleNamespace as NS
+
+    content = [
+        NS(type="server_tool_use", input={"query": "perth forecast"}),
+        NS(
+            type="server_tool_use", input={"url": "https://www.bom.gov.au/wa/forecasts/perth.shtml"}
+        ),
+        NS(type="text", text="hi"),
+    ]
+    assert _web_steps(content) == [
+        "searched the web for 'perth forecast'",
+        "opened https://www.bom.gov.au/wa/forecasts/perth.shtml",
+    ]
 
 
 def test_cost_estimate():
@@ -332,3 +382,11 @@ def test_unknown_provider(memory):
 def test_profile_name_prefers_label():
     assert ModelProfile(provider="openai", model="gpt-x").name == "gpt-x"
     assert ModelProfile(provider="openai", model="gpt-x", label="GPT").name == "GPT"
+
+
+def test_openai_search_knows_where_dan_is(memory):
+    seen = []
+    cloud = openai_cloud(memory, lambda r: httpx.Response(200, json=OPENAI_OK), seen)
+    ask(cloud, "gpt-sol", settings=Settings.model_validate(PERTH))
+    tool = json.loads(seen[0].content)["tools"][0]
+    assert tool["user_location"]["city"] == "Perth" and tool["user_location"]["country"] == "AU"

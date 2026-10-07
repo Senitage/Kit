@@ -127,6 +127,21 @@ firewall rule is needed.
   work model hands over to it when a question deserves it.
 - The **local model** is `ollama.model` (qwen3:8b).
 
+Tell Kit where you are. Weather questions use it: Kit gets the forecast from
+Open-Meteo (free, no key; in Australia it includes the BOM's models) and
+answers from the numbers, usually with the local model, so it's quick and costs
+nothing. Web searches use it too, to find results near you (Gemini's search
+ignores it):
+
+```
+kit config set persona.location "Perth, WA"
+kit config set persona.country AU
+kit config set persona.timezone Australia/Perth
+```
+
+Claude can also open a page it found (for a forecast, the weather service's
+own page) instead of trusting an old search snippet.
+
 Built-in profiles are `sonnet`, `opus`, `gpt-sol` (OpenAI GPT-6.1 Sol) and
 `gemini-flash` (Google Gemini 3.8 Flash). Switch with one command; it applies
 from the next message:
@@ -188,6 +203,10 @@ Once you're happy with it, make Kit a systemd service, like Ollama. Stage 0's
 and restarts if it crashes. The same service file works unchanged on the Linux
 server later.
 
+Stop the `kit serve` you started by hand first (Ctrl+C), since the service
+uses the same port. Then run this from the repo folder (`cd ~/Kit`), so the
+service points at this checkout:
+
 ```
 sudo tee /etc/systemd/system/kit.service > /dev/null <<UNIT
 [Unit]
@@ -197,7 +216,7 @@ Wants=network-online.target
 
 [Service]
 User=$USER
-ExecStart=$HOME/kit/.venv/bin/kit serve
+ExecStart=$PWD/.venv/bin/kit serve
 Restart=always
 RestartSec=10
 
@@ -219,15 +238,19 @@ run `sudo systemctl restart kit`.
       Kit stays Kit: short replies, the persona's tone, sensible gestures.
 - [ ] **Valid structured output:** run `kit eval`. It sends 50 prompts to the
       local model and needs `valid replies: 50/50`.
-- [ ] **Balanced routing:** "morning" is answered locally; "what's the
-      weather this afternoon?" and "explain Kalman filters properly, with the
-      maths" go to the work model, the weather one with a web search. All
-      cloud answers show in `kit memory spend`.
+- [ ] **Balanced routing:** "morning" is answered locally; "what does a used
+      RTX 3090 cost in Australia right now?" and "explain Kalman filters
+      properly, with the maths" go to the work model, the first with a web
+      search. All cloud answers show in `kit memory spend`.
+- [ ] **Weather:** "what's the weather like tonight?" and then "and
+      tomorrow?" are answered locally, each under a "Checked the forecast"
+      line, and match `kit weather`.
 - [ ] **One message, your choice:** "ask Claude why the sky is blue" goes
       straight to the cloud; "think hard about ..." goes to the expert; "keep
       it local: ..." stays local.
-- [ ] **Swap a model:** `kit models work opus`, ask a question, and the chat
-      page shows Opus answered. Switch back with `kit models work sonnet`.
+- [ ] **Swap a model:** `kit models work opus`, then "ask Claude why the sky
+      is blue" (small talk stays local, so use a real question or "ask
+      Claude"), and the chat page shows Opus answered. Switch back with `kit models work sonnet`.
 - [ ] **Cloud-first and back:** `kit config set routing.mode cloud-first`,
       and small talk now comes from the cloud. Set it back to `balanced`.
 - [ ] **Offline:** with the internet unplugged (or the key file renamed),

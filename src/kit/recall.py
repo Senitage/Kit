@@ -44,16 +44,21 @@ class Recall:
         self.settings = settings
         self.embed_problem: str | None = None
         self.register = Register(memory)
+        self._last_query: tuple[str, str, list[float]] | None = None  # (model, text, vector)
 
-    async def _query_vector(self, query: str) -> list[float] | None:
+    async def query_vector(self, query: str) -> list[float] | None:
         if self.embedder is None:
             return None
+        model = self.embedder.model
+        if self._last_query and self._last_query[:2] == (model, query):
+            return self._last_query[2]  # one turn searches several sources with one query
         try:
             vec = (await self.embedder.embed([query], "query"))[0]
         except EmbedError as e:
             self.embed_problem = str(e)
             return None
         self.embed_problem = None
+        self._last_query = (model, query, vec)
         return vec
 
     async def search(
@@ -64,7 +69,7 @@ class Recall:
         exclude: set[int] | None = None,
     ) -> list[Hit]:
         s = self.settings().memory
-        vec = await self._query_vector(query)
+        vec = await self.query_vector(query)
         model = self.embedder.model if self.embedder else ""
         return self.memory.index.search(query, vec, model, sources, k, s.min_similarity, exclude)
 

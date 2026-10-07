@@ -162,6 +162,10 @@ async function send(text) {
         suggestThing(ev.thing);
       } else if (ev.type === "thing_updated" && ev.thing) {
         bubble("error", "Updated the register: " + ev.thing.line).style.color = "var(--muted)";
+      } else if (ev.type === "weather") {
+        bubble("error", "Checked the forecast for " + (ev.place || "home")).style.color = "var(--muted)";
+        stateEl.textContent = "checking the forecast";
+        current = null;
       } else if (ev.type === "recalled") {
         stateEl.textContent = "remembering";
         current = null;

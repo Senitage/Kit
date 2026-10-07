@@ -4,7 +4,16 @@ from datetime import timedelta
 
 import pytest
 
-from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import (
+    Clock,
+    FakeAnthropic,
+    FakeEmbedder,
+    FakeModel,
+    FakeWeather,
+    collect,
+    make_cloud,
+    reply,
+)
 from kit.brain import Brain, route
 from kit.memory import Memory
 from kit.recall import Recall
@@ -444,3 +453,126 @@ def test_job_line_lists_progress():
 
 async def _collect(agen):
     return [e async for e in agen]
+
+
+PERTH = {"memory": {"min_similarity": 0.3}, "persona": {"location": "Perth, WA", "country": "AU"}}
+
+
+def test_weather_question_is_answered_locally_from_the_forecast(memory):
+    brain, model, claude = make(
+        memory, reply("Mild tonight, about 14 and clear."), settings=Settings.model_validate(PERTH)
+    )
+    brain.weather = FakeWeather()
+    events = collect(brain.chat("What's the weather like tonight?"))
+    assert [e["type"] for e in events].count("reply") == 1
+    assert next(e for e in events if e["type"] == "weather")["place"] == "Perth, WA"
+    assert brain.weather.asked == [("Perth, WA", "AU")]
+    system = model.calls[0][0]["content"]
+    assert "Forecast for Perth, WA" in system
+    assert "ask_cloud" not in system  # no handing a weather question to the cloud
+    assert not claude.calls
+
+
+def test_engineering_temperatures_are_not_weather(memory):
+    brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(PERTH))
+    brain.weather = FakeWeather()
+    collect(brain.chat("What temperature does the leach tank run at?"))
+    assert brain.weather.asked == []
+
+
+def test_weather_action_for_somewhere_else(memory):
+    brain, model, _ = make(
+        memory,
+        reply("Checking.", action="weather", text="Broome"),
+        reply("Hot and dry up there."),
+    )
+    brain.weather = FakeWeather()
+    events = collect(brain.chat("Is it nice in Broome at the moment?"))
+    assert brain.weather.asked == [("Broome", "")]
+    assert [e["type"] for e in events].count("reply") == 2
+    assert "Forecast for Broome" in model.calls[1][-1]["content"]
+
+
+def test_weather_failure_is_told_to_the_model(memory):
+    brain, model, _ = make(memory, reply("I can't get the forecast right now."))
+    brain.weather = FakeWeather(fail=True)
+    collect(brain.chat("Will it rain tomorrow?"))
+    assert "forecast lookup for home failed" in model.calls[0][0]["content"]
+
+
+def test_no_weather_action_without_a_forecast_source(memory):
+    brain, model, _ = make(memory, reply("Hi."))
+    collect(brain.chat("Hi"))
+    assert "- weather:" not in model.calls[0][0]["content"]
+
+
+def test_weather_follow_up_gets_a_fresh_forecast(memory, clock):
+    brain, model, _ = make(
+        memory,
+        reply("Clear tonight."),
+        reply("Drizzle early."),
+        reply("Ok."),
+        settings=Settings.model_validate(PERTH),
+    )
+    brain.weather = FakeWeather()
+    collect(brain.chat("What's the weather like tonight?"))
+    clock.now += timedelta(minutes=2)
+    collect(brain.chat("whats it going to be like tomorrow?"))
+    assert len(brain.weather.asked) == 2
+    follow_up = model.calls[1][0]["content"]
+    assert "Forecast for Perth" in follow_up
+    assert "ask_cloud" in follow_up  # not plainly weather, so it can still be handed on
+    clock.now += timedelta(minutes=30)
+    collect(brain.chat("what's on tomorrow?"))
+    assert len(brain.weather.asked) == 2  # long after, "tomorrow" isn't about the weather
+
+
+def test_checking_in_while_busy_names_the_work(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Still on the thickener, give me a sec."))
+    brain.jobs[1] = Job(1, "size a thickener", "Opus")
+    collect(brain.chat("how are you going?"))
+    last = model.calls[0][-1]["content"]
+    assert last.startswith("how are you going?") and '"size a thickener"' in last
+    assert memory.recent(10)[0].text == "how are you going?"  # the note isn't saved
+
+
+def test_other_messages_while_busy_get_a_light_note(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("It's Tuesday."))
+    brain.jobs[1] = Job(1, "size a thickener", "Opus")
+    collect(brain.chat("what day is it today again?"))
+    last = model.calls[0][-1]["content"]
+    assert "Answer this message normally" in last and '"size a thickener"' in last
+
+
+def test_no_note_when_not_busy(memory):
+    brain, model, _ = make(memory, reply("Hi."))
+    collect(brain.chat("hey"))
+    assert model.calls[0][-1]["content"] == "hey"
+
+
+@pytest.mark.parametrize(
+    "text", ["hello?", "anything?", "?", "hey", "kit", "any update?", "you there"]
+)
+def test_nudges_while_busy_count_as_checking_in(memory, text):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Still on it."))
+    brain.jobs[1] = Job(1, "pump cavitation", "Opus")
+    collect(brain.chat(text))
+    assert '"pump cavitation"' in model.calls[0][-1]["content"]
+
+
+def test_kit_gets_shorter_with_repeated_check_ins(memory):
+    from kit.brain import Job
+
+    brain, model, _ = make(memory, reply("Sec."), reply("Patience."), reply("Sigh."))
+    brain.jobs[1] = Job(1, "cabbages", "Opus")
+    for text in ["hey", "kit", "anything?"]:
+        collect(brain.chat(text))
+    notes = [call[-1]["content"] for call in model.calls]
+    assert "first time" in notes[0] and "twice" in notes[1] and "Third time" in notes[2]
+    assert "don't invent progress" in notes[0]

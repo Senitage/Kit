@@ -9,7 +9,7 @@ budget, and logs what every call cost, so swapping models is a settings change.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Protocol
 
 import anthropic
@@ -17,7 +17,7 @@ import httpx
 
 from kit.memory import Memory
 from kit.prompt import TURN_PART
-from kit.settings import ModelProfile, Settings
+from kit.settings import ModelProfile, PersonaSettings, Settings
 
 CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
 
@@ -53,6 +53,31 @@ class CloudAnswer:
     truncated: bool
 
 
+@dataclass
+class Where:
+    """Roughly where the owner is, so web searches find local results."""
+
+    city: str = ""
+    region: str = ""
+    country: str = ""  # two-letter code, e.g. AU
+    timezone: str = ""  # e.g. Australia/Perth
+
+    @classmethod
+    def of(cls, persona: PersonaSettings) -> Where:
+        parts = [p.strip() for p in persona.location.split(",")]
+        return cls(
+            city=parts[0],
+            region=parts[1] if len(parts) > 1 else "",
+            country=persona.country,
+            timezone=persona.timezone,
+        )
+
+    def approximate(self) -> dict | None:
+        """The ``user_location`` the search tools take, or None if nothing is set."""
+        known = {k: v for k, v in asdict(self).items() if v}
+        return {"type": "approximate", **known} if known else None
+
+
 # Called with a short note of progress, e.g. "searched the web for 'x'", while a
 # model is still working, so Kit can say how it's going.
 Step = Callable[[str], None]
@@ -66,6 +91,7 @@ class Provider(Protocol):
         turns: list[dict],
         key: str,
         on_step: Step | None = None,
+        where: Where | None = None,
     ) -> Completion: ...
 
 
@@ -104,7 +130,10 @@ def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 ANTHROPIC_SEARCH_TOOL = "web_search_20260209"
+ANTHROPIC_FETCH_TOOL = "web_fetch_20260209"
 MAX_SEARCHES = 5
+MAX_FETCHES = 3
+MAX_FETCH_TOKENS = 20_000  # a page is cut to this much text
 MAX_RESUMES = 3
 AnthropicFactory = Callable[[str], anthropic.AsyncAnthropic]
 
@@ -124,13 +153,10 @@ class AnthropicProvider:
         turns: list[dict],
         key: str,
         on_step: Step | None = None,
+        where: Where | None = None,
     ) -> Completion:
         client = self.make_client(key)
-        tools = (
-            [{"type": ANTHROPIC_SEARCH_TOOL, "name": "web_search", "max_uses": MAX_SEARCHES}]
-            if profile.web_search
-            else []
-        )
+        tools = anthropic_web_tools(where) if profile.web_search else []
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
@@ -151,8 +177,8 @@ class AnthropicProvider:
                 if response.stop_reason != "pause_turn":
                     break
                 if on_step:
-                    for query in _searches(response.content):
-                        on_step(f"searched the web for '{query}'")
+                    for step in _web_steps(response.content):
+                        on_step(step)
                 # A long web search paused; send the turn back and it carries on.
                 messages = [*turns, {"role": "assistant", "content": response.content}]
         except anthropic.AuthenticationError as e:
@@ -176,15 +202,36 @@ class AnthropicProvider:
         )
 
 
-def _searches(content) -> list[str]:
-    """The web searches a (paused) Claude response has run so far."""
+def anthropic_web_tools(where: Where | None) -> list[dict]:
+    """Claude's web search, which finds pages, and web fetch, which opens one (say
+    the weather service's page for the owner's city) so the answer isn't from an
+    old search snippet."""
+    search = {"type": ANTHROPIC_SEARCH_TOOL, "name": "web_search", "max_uses": MAX_SEARCHES}
+    near = where.approximate() if where else None
+    if near:
+        search["user_location"] = near
+    fetch = {
+        "type": ANTHROPIC_FETCH_TOOL,
+        "name": "web_fetch",
+        "max_uses": MAX_FETCHES,
+        "max_content_tokens": MAX_FETCH_TOKENS,
+    }
+    return [search, fetch]
+
+
+def _web_steps(content) -> list[str]:
+    """What a (paused) Claude response has done on the web so far."""
     out = []
     for block in content:
-        if getattr(block, "type", "") == "server_tool_use":
-            given = getattr(block, "input", None) or {}
-            query = given.get("query") if isinstance(given, dict) else None
-            if query:
-                out.append(str(query))
+        if getattr(block, "type", "") != "server_tool_use":
+            continue
+        given = getattr(block, "input", None) or {}
+        if not isinstance(given, dict):
+            continue
+        if given.get("query"):
+            out.append(f"searched the web for '{given['query']}'")
+        elif given.get("url"):
+            out.append(f"opened {given['url']}")
     return out
 
 
@@ -226,6 +273,7 @@ class OpenAIProvider:
         turns: list[dict],
         key: str,
         on_step: Step | None = None,
+        where: Where | None = None,
     ) -> Completion:
         body: dict = {
             "model": profile.model,
@@ -236,7 +284,8 @@ class OpenAIProvider:
             "store": False,
         }
         if profile.web_search:
-            body["tools"] = [{"type": "web_search"}]
+            near = where.approximate() if where else None
+            body["tools"] = [{"type": "web_search", **({"user_location": near} if near else {})}]
         data = await _post_json(
             self.client, self.url, body, {"Authorization": f"Bearer {key}"}, profile
         )
@@ -285,6 +334,7 @@ class GoogleProvider:
         turns: list[dict],
         key: str,
         on_step: Step | None = None,
+        where: Where | None = None,
     ) -> Completion:
         body: dict = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -389,7 +439,8 @@ class Cloud:
                 "secrets folder."
             )
         system, turns = split_messages(messages)
-        done = await provider.complete(profile, system, turns, key, on_step)
+        where = Where.of(settings.persona)
+        done = await provider.complete(profile, system, turns, key, on_step, where)
         cost = estimate_cost(profile, done.usage)
         question = question or turns[-1]["content"]
         self.memory.record_spend(
