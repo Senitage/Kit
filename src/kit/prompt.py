@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
@@ -13,6 +14,9 @@ from kit.memory import DAYS, Message
 from kit.recall import Recalled
 from kit.reply import EMOTIONS, GESTURES, Action, Reply, Segment, reply_json
 from kit.settings import PersonaSettings
+
+if TYPE_CHECKING:
+    from kit.life import Voice
 
 
 def _memory_line(item: Item) -> str:
@@ -84,6 +88,7 @@ def system_prompt(
     weather: bool = False,
     forecast: str = "",
     pc_detail: str = "",
+    voice: Voice | None = None,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -197,7 +202,7 @@ def system_prompt(
         "Leave detail empty unless there's something new to show for this message. Never "
         "repeat detail from an earlier reply."
     )
-    if persona.examples:
+    if persona.examples and voice is None:
         lines += [
             "",
             "Examples of how you talk (they show the tone; never reuse their lines, and say "
@@ -213,10 +218,37 @@ def system_prompt(
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
+        *voice_block(voice, owner, name),
         *pc_block(pc_detail, owner),
         *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
+
+
+def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
+    """How Kit feels and sounds this turn: a mood, a few fresh examples, and his
+    own recent lines so he says something new."""
+    if voice is None:
+        return []
+    lines = [
+        "",
+        f"How you feel right now: {voice.feeling}. Let it colour how you talk, lightly; "
+        f"don't announce it. Be {voice.style}. Sound like yourself, a small character "
+        f"with opinions, not a help desk.",
+    ]
+    if voice.quirk:
+        lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
+    if voice.examples:
+        lines.append("The kind of thing you'd say (for tone only, never reuse these lines):")
+        for user, kit in voice.examples:
+            lines += [f"{owner}: {user}", f"{name}: {kit}"]
+    if voice.said:
+        lines.append(
+            "Your last few lines (say something new: don't repeat these, their phrases "
+            "or their jokes):"
+        )
+        lines += [f"- {s}" for s in voice.said]
+    return lines
 
 
 def pc_block(detail: str, owner: str) -> list[str]:

@@ -591,3 +591,27 @@ def test_only_the_latest_reply_keeps_its_detail_in_history(memory):
     history = " ".join(m["content"] for m in model.calls[2][1:])
     assert "running smoothly" not in history
     assert "Step 1: fill the tank" in history
+
+
+def test_local_replies_get_a_mood_fresh_examples_and_recent_lines(memory, clock):
+    brain, model, _ = make(memory, reply("Morning."), reply("Not much."), reply("Yep."))
+    clock.now += timedelta(hours=5)  # quiet all morning: Kit missed Dan
+    brain.life.drives.social = 0.9
+    collect(brain.chat("Morning Kit"))
+    first = model.calls[0][0]["content"]
+    assert "How you feel right now:" in first and "haven't talked for 5 hours" in first
+    assert "never reuse these lines" in first
+    collect(brain.chat("whats up?"))
+    collect(brain.chat("ok"))
+    third = model.calls[2][0]["content"]
+    assert "Your last few lines" in third
+    assert "- Morning." in third and "- Not much." in third
+    assert "lonely" not in third and "haven't talked" not in third  # chatting cured it
+
+
+def test_examples_change_from_turn_to_turn(memory):
+    brain, model, _ = make(memory, *[reply("Hi.")] * 6)
+    for _ in range(6):
+        collect(brain.chat("hi"))
+    shown = {c[0]["content"].split("never reuse these lines):")[1][:300] for c in model.calls}
+    assert len(shown) > 1

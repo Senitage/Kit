@@ -51,7 +51,7 @@ from datetime import datetime, timedelta
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
-from kit.life import SHUSH, UNSHUSH, Life, my_quirks, pipe_up_prompt
+from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.pc_context import PcContext
@@ -80,6 +80,10 @@ DEEP_RECALL = 10
 # Where the message being answered came from. Each turn is its own task, so each
 # sees its own channel without passing it through every call.
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# How Kit feels and sounds this turn (kit.life.Voice), for the local model's prompt.
+VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", default=None)
+SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
+SAID_CHARS = 160
 
 # A short answer to "shall I add it?" that confirms or rejects a suggested thing.
 # The whole message must be the answer, so "ok, open VS Code" isn't a yes.
@@ -246,6 +250,7 @@ class Brain:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
+        VOICE.set(self._voice(settings, history))  # before note_chat: how Kit felt till now
         self.life.note_chat()
         answered = self._answer_suggestion(text) or self._answer_shush(text)
         if answered is not None:
@@ -375,6 +380,7 @@ class Brain:
         owner = settings.persona.owner
         history = self.memory.recent(settings.brain.history_messages)
         token = CHANNEL.set("desk")
+        voice_token = VOICE.set(self._voice(settings, history))
         try:
             about = self.pc.now_line(owner) or "what Dan is up to"
             recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
@@ -393,7 +399,14 @@ class Brain:
                 yield event
         finally:
             CHANNEL.reset(token)
+            VOICE.reset(voice_token)
         self.life.piped_up()
+
+    def _voice(self, settings: Settings, history: list[Message]) -> Voice:
+        persona = settings.persona
+        said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
+        own = [(ex.user, ex.kit) for ex in persona.examples]
+        return self.life.voice(persona.owner, own, said, self.quirks)
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -483,6 +496,7 @@ class Brain:
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
             quirks=self.quirks,
+            voice=VOICE.get() if role == LOCAL else None,
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,

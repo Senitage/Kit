@@ -266,7 +266,10 @@ class LifeSettings(_Section):
         True, description="Kit fidgets, gets bored and sometimes pipes up on his own."
     )
     cheek: float = Field(
-        0.6, ge=0, le=1, description="How cheeky Kit is when he pipes up: 0 polite, 1 larrikin."
+        0.6,
+        ge=0,
+        le=1,
+        description="How cheeky Kit is, in chat and when he pipes up: 0 polite, 1 larrikin.",
     )
     chattiness: float = Field(
         0.5,

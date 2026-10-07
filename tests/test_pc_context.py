@@ -171,7 +171,7 @@ def test_look_at_pc_action_shows_the_detail_then_answers(paths):
     assert "looked_at_pc" in [e["type"] for e in events]
     system = model.calls[0][0]["content"]
     assert "- look_at_pc:" in system
-    assert system.rstrip().endswith('METTOOLS". Also open: Excel, Chrome.')
+    assert 'METTOOLS". Also open: Excel, Chrome.' in system
     assert "Open windows (3):" in model.calls[1][-1]["content"]
     assert [m.text for m in memory.recent(5)][-1] == "You've been in the pump code for a while."
     memory.close()

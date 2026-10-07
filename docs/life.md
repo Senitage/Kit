@@ -103,3 +103,14 @@ into each other, so no two look the same.
 - `GET /api/life/events?after=N&wait=25`: fidgets and pipe-ups after event N;
   waits up to `wait` seconds for one.
 - `POST /api/life/snooze {"minutes": 60}`: quiet for a while (0 lifts it).
+
+
+## In conversation
+
+The same state colours ordinary replies from the local model. Each turn
+(`Life.voice`) the prompt says how Kit feels (bored, curious, missed you,
+sleepy, sulky...), how cheeky to be (`life.cheek`), sometimes which of his
+quirks to let show, four example lines picked fresh each time from your
+`persona.examples` and a built-in pool, and his own last few lines so he
+doesn't repeat himself. The mood is read before your message resets it, so
+"I've been bored" is still true when he answers.

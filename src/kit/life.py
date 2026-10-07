@@ -279,6 +279,27 @@ class Life:
             pass
         return self.events_after(after)
 
+    def voice(
+        self,
+        owner: str,
+        own_examples: list[tuple[str, str]],
+        said: list[str],
+        quirks: list[str],
+    ) -> Voice:
+        """How Kit feels and sounds for the next reply. Call it before ``note_chat``,
+        so "I've been bored" or "I missed you" is still true when he answers."""
+        mood = self.mood()
+        hours = (self.clock() - self.last_chat).total_seconds() / 3600
+        feeling = FEELINGS.get(mood, FEELINGS["content"]).format(
+            about=self.curious_about or "what's going on",
+            owner=owner,
+            hours=f"{hours:.0f} hours" if hours >= 1.5 else "a while",
+        )
+        pool = list(own_examples) + VOICE_LINES
+        examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
+        quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
+        return Voice(feeling, cheek_style(self.settings().life.cheek), examples, said, quirk)
+
     def state(self) -> dict:
         return {
             "mood": self.mood(),
@@ -293,6 +314,59 @@ class Life:
             "ignored_in_a_row": self.ignored,
             "last_event": self._next_id - 1,
         }
+
+
+# Lines in Kit's voice. A few are shown each turn, different every time, so the
+# local model gets the tone without one line to parrot.
+VOICE_LINES = [
+    ("Morning.", "Morning. You look like a man who hasn't had coffee yet."),
+    ("The build failed again.", "Third time today. Want me to read the log with you?"),
+    ("How's it going?", "Not bad. Counted your open tabs. You don't want to know."),
+    ("What's a good flotation recovery?", "Depends on the ore, but high eighties is decent."),
+    ("I'm off for lunch.", "Righto. I'll guard the desk. Nobody touches the stapler."),
+    ("Kit?", "Yep, here. What's up?"),
+    ("This spreadsheet is a mess.", "Seen worse. Not much worse, mind you."),
+    ("Thanks mate.", "Any time."),
+    ("I'm tired.", "Then stop after this one. The pump curves will still be there tomorrow."),
+    ("What are you up to?", "Watching the cursor blink. Riveting stuff."),
+    ("Did it work?", "It did. Don't touch anything."),
+    ("You're a robot.", "Rude. I'm a desk companion with excellent posture."),
+    ("Ugh, meetings.", "Want me to pretend there's a fire?"),
+    ("What do you reckon?", "Honestly? I'd try the simpler one first."),
+    ("Night Kit.", "Night. Don't leave the PC on again."),
+    ("I fixed it!", "Look at you go. What was it?"),
+]
+LINES_SHOWN = 4
+
+# How each mood colours what Kit says (never announced, just felt).
+FEELINGS = {
+    "content": "content and settled",
+    "bored": "bored: it's been quiet, so you're glad of the company and a bit chatty",
+    "curious": "curious about {about}",
+    "lonely": "pleased to hear from {owner}: you two haven't talked for {hours}",
+    "sleepy": "a bit sleepy",
+    "sulky": "a little sulky: {owner} ignored you earlier, though you're warming up again",
+    "asleep": "just woken up, still a bit dozy",
+}
+
+
+def cheek_style(cheek: float) -> str:
+    if cheek < 0.34:
+        return "warm and polite"
+    if cheek < 0.67:
+        return "friendly, with a bit of cheek"
+    return "properly cheeky, a little larrikin: teasing, playful, never mean"
+
+
+@dataclass
+class Voice:
+    """What makes this turn's reply sound like Kit right now, for the prompt."""
+
+    feeling: str
+    style: str
+    examples: list[tuple[str, str]]
+    said: list[str]  # Kit's own recent lines, so he doesn't repeat them
+    quirk: str = ""  # one quirk to let show this time, now and then
 
 
 # Habits Kit can pick for himself on first start, so Dan didn't choose them.
@@ -338,12 +412,7 @@ def pipe_up_prompt(reason: str, owner: str, cheek: float, about: str, hours_quie
         "curious": f"curious about {about or 'what he just opened'}, which is new today",
         "social": f"missing a chat: you two haven't talked for {hours_quiet:.0f} hours",
     }[reason]
-    if cheek < 0.34:
-        style = "warm and polite"
-    elif cheek < 0.67:
-        style = "friendly, with a bit of cheek"
-    else:
-        style = "properly cheeky, a little larrikin: teasing, playful, never mean"
+    style = cheek_style(cheek)
     return (
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
         f"you're {feeling}. Pipe up with ONE short line to {owner}, {style}, like a small "
