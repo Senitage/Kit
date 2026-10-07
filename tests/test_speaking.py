@@ -39,7 +39,11 @@ def test_he_plans_in_json_then_speaks_in_plain_words_livelier(memory):
     assert "First answer only with JSON" in model.calls[0][0]["content"]
     speak = model.speak_calls[0]
     assert json.loads(speak[-2]["content"])["gesture"] == "wave"
-    assert speak[-1]["content"].startswith("[Not from Dan. Now say your reply to Dan.")
+    # His words answer what Dan just said, said again right there: small models
+    # otherwise answer an earlier message in the conversation.
+    assert speak[-1]["content"].startswith(
+        '[Not from Dan. Dan just said: "Morning Kit". Now say your reply to Dan.'
+    )
     assert model.speak_options[0] == {"temperature": 0.95, "min_p": 0.05, "repeat_penalty": 1.08}
     assert says(events) == "Morning. Coffee first?"
     final = events[-1]["reply"]
@@ -73,7 +77,21 @@ def test_a_plan_with_a_look_up_says_a_few_words_first(memory):
     note = model.speak_calls[0][-1]["content"]
     assert "look back through your memory for 'tax returns folder'" in note
     assert [e["type"] for e in events].count("reply") == 2
+    after = model.speak_calls[1][-1]["content"]  # with what he found, still Dan's question
+    assert 'Dan just said: "Where do I keep my tax stuff?"' in after
     assert events[-1]["reply"]["segments"][0]["say"] == "They're in Finance/Tax."
+
+
+def test_words_given_as_a_search_search_for_what_dan_asked(memory):
+    brain, model = make(
+        memory,
+        reply("Hmm.", action="recall", text="Let me think..."),
+        reply("No idea, sorry."),
+    )
+    events = collect(brain.chat("Where's the pump manual?"))
+    assert next(e for e in events if e["type"] == "recalled")["query"] == (
+        "Where's the pump manual?"
+    )
 
 
 def test_a_line_he_just_said_is_asked_for_again_once(memory):
@@ -159,12 +177,17 @@ def feed(stream, text, size=3):
     return "".join(out)
 
 
-def test_the_first_sentence_waits_until_its_whole():
+def test_the_opening_waits_until_its_whole_and_long_enough_to_judge():
     stream = SpokenStream("Kit")
     stream.feed("Kit: Morning")
     assert stream.first() is None
     stream.feed(", mate. How")
-    assert stream.first() == "Morning, mate."
+    assert stream.first() is None  # "Morning, mate." is too short to tell from an old line
+    stream.feed("'s the pump going today? I")
+    assert stream.first() == "Morning, mate. How's the pump going today?"
+    long = SpokenStream()
+    long.feed("You got a minute? I think the weather's trying to be a drama queen. And")
+    assert long.first() == "You got a minute? I think the weather's trying to be a drama queen."
 
 
 def test_names_quotes_stage_directions_and_thinking_are_dropped():
@@ -183,6 +206,45 @@ def test_detail_after_a_blank_line_and_json_by_mistake():
     only_detail = SpokenStream()
     only_detail.feed("*grins*\n\nSteps:\n1. Do it.")
     assert only_detail.result() == ("Steps:", "1. Do it.")
+
+
+def test_he_says_three_sentences_at_most_and_starts_none_past_thirty_words():
+    stream = SpokenStream()
+    said = feed(stream, "Ha! Nice one. Told you it'd pass. Now about that pump. And more.")
+    assert said == "Ha! Nice one. Told you it'd pass."  # what streamed is what's kept
+    assert stream.result() == ("Ha! Nice one. Told you it'd pass.", "")
+    first = " ".join(["word"] * 29) + " done."
+    wordy = SpokenStream()
+    assert feed(wordy, f"{first} Second line here. Third.") == first
+    in_json = SpokenStream()
+    assert feed(in_json, reply("One.", "Two.", "Three.", "Four.")) == "One. Two. Three."
+
+
+def test_more_chat_after_a_blank_line_is_dropped_but_things_to_read_are_kept():
+    # On screen a second line of chat, often an old one, looked like Kit answering himself.
+    chat = SpokenStream()
+    feed(chat, "You got a minute?\n\nStill not answered my last line, mate. Watch your back.")
+    assert chat.result() == ("You got a minute?", "")
+    for detail in [
+        "1. Check the pump.\n2. Check the valve.",
+        "- pumps.py\n- valves.py",
+        "Step 1: fill the tank",
+        "Run `kit check` first.",
+        "It's in Finance/Tax/2023.",
+        "Forecast from https://open-meteo.com",
+        "| Pump | kW |",
+        "A hydrocyclone " + "spins the slurry so the coarse stuff goes down " * 5,
+    ]:
+        stream = SpokenStream()
+        feed(stream, f"Here you go.\n\n{detail}")
+        assert stream.result() == ("Here you go.", detail.strip()), detail
+
+
+def test_a_second_line_of_chat_isnt_shown_or_kept_under_his_reply(memory):
+    brain, model = make(memory, plan(), "Fair enough.\n\nI think you're ignoring me on purpose.")
+    events = collect(brain.chat("yeah whats up?"))
+    assert says(events) == "Fair enough." and events[-1]["reply"]["detail"] == ""
+    assert memory.recent(1)[0].text == "Fair enough."
 
 
 def test_reading_a_plan():

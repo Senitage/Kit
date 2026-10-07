@@ -173,3 +173,9 @@ replaces a journal entry written early by `kit life reflect`.
   self-sheet until his next reflection folds them in.
 - **Too chatty or too quiet.** `life.chattiness`, `life.max_per_hour` and
   `life.thoughts_per_hour`; see [life.md](life.md).
+- **He repeats himself.** A pipe-up that would only repeat something he said
+  lately gets three goes, then he keeps quiet (`kit life` says "had nothing new
+  to say"). If that happens often, the model is the weak spot: compare others
+  with `kit eval voice`, where a dropped pipe-up shows as "kept quiet".
+- **A grey box under his words.** That's something to read that he didn't say
+  aloud: code, steps, a list, a link or a path. Nothing else goes there.

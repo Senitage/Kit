@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, plan, reply
 from kit.brain import Brain
 from kit.life import Life, energy_at, feeling_from, in_quiet_hours, my_quirks
 from kit.memory import Memory
@@ -160,6 +160,76 @@ def test_pipe_up_is_written_by_the_model_and_lands_in_the_conversation(paths):
 async def life_tick_with(brain, reason):
     brain.life.tick = lambda: reason
     await life_tick(brain)
+
+
+def test_a_pipe_up_that_only_repeats_him_gets_two_more_goes_then_he_keeps_quiet(paths):
+    old = "You got a minute? I think the weather's trying to be a drama queen."
+    brain, memory, model, _ = make_brain(paths, reply(old), reply(old), old, old)
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "bored"))
+    events = collect(brain.pipe_up("bored"))
+    assert [e["type"] for e in events] == ["kept_quiet"]
+    assert len(model.speak_calls) == 4  # one for the first pipe-up, three goes at the next
+    assert f'Not "{old}"' in model.speak_calls[-1][-1]["content"]
+    assert [m.text for m in memory.recent(5)] == [old]  # nothing new said or kept
+    assert [e["type"] for e in brain.life.events_after(0)].count("pipe_up") == 1
+    assert brain.life.held_until is not None
+    memory.close()
+
+
+def test_a_pipe_up_is_judged_whole_and_has_nothing_written_under_it(paths):
+    old = "Still on pumps.py? It's been an hour, mate."
+    new = "Bet the impeller's winning that argument today.\n\n1. Impeller\n2. Dan"
+    brain, memory, model, _ = make_brain(paths, reply(old), plan(), f"Hmm. {old}", new)
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "bored"))
+    asyncio.run(life_tick_with(brain, "nag"))
+    # "Hmm." alone isn't an old line, but the rest of it is: he has another go.
+    assert 'Not "Hmm. Still on pumps.py?' in model.speak_calls[-1][-1]["content"]
+    event = brain.life.events_after(0)[-1]
+    assert event["type"] == "pipe_up" and event["reason"] == "nag"
+    said = " ".join(s["say"] for s in event["reply"]["segments"])
+    assert said == "Bet the impeller's winning that argument today."
+    assert event["reply"]["detail"] == ""
+    memory.close()
+
+
+def test_answering_a_pipe_up_he_knows_why_he_piped_up(paths):
+    brain, memory, model, _ = make_brain(
+        paths,
+        reply("Oi! I've been counting your tabs."),
+        reply("Forty-one, mate. A personal best."),
+        reply("Ha."),
+    )
+    brain.notebook.write("want", "Tell Dan I counted forty-one open tabs.")
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "want"))
+    collect(brain.chat("yeah whats up?"))
+    asked = model.calls[-1][-1]["content"]
+    assert asked.startswith(
+        "yeah whats up?\n\n[Dan is answering what you piped up with: \"Oi! I've been counting"
+    )
+    assert 'You piped up because you wanted to tell Dan: "I counted forty-one' in asked
+    collect(brain.chat("ha, fair enough"))
+    assert "piped up" not in model.calls[-1][-1]["content"]  # that's answered now
+    memory.close()
+
+
+def test_with_nothing_new_to_say_he_waits_without_expecting_an_answer():
+    life, pc, clock = setup(chattiness=0.5, max_per_hour=4)
+    life.drives.boredom = 1.0
+    life.held_back("bored")
+    assert not life.awaiting_reply and life.drives.boredom == 0.2
+    pc.update(snap())
+    assert life.tick() is None and "nothing new to say" in life.quiet_because
+    clock.now += timedelta(minutes=16)  # four an hour: a quarter of an hour apart
+    life.drives.boredom = 1.0
+    pc.update(snap())
+    assert life.tick() == "bored"
+    life.held_back("nag")
+    assert life.nags == 1  # a nag he couldn't word still counts
+    life.note_chat()
+    assert life.held_until is None
 
 
 def test_shush_snoozes_without_asking_a_model(paths):

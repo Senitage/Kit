@@ -60,7 +60,7 @@ from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
-from kit.learning import Learner
+from kit.learning import Learner, said_so
 from kit.life import (
     REPLY_FEELINGS,
     SHUSH,
@@ -76,9 +76,18 @@ from kit.life import (
 )
 from kit.local_model import LocalModel, LocalModelError, lively
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, SELF, Memory, Message
-from kit.notebook import ASK_LATER, FOR_LATER, Notebook, basis, tomorrow_morning
+from kit.notebook import (
+    ASK_LATER,
+    FOR_LATER,
+    Notebook,
+    as_aim,
+    basis,
+    later_want,
+    tomorrow_morning,
+)
 from kit.pc_context import PcContext
 from kit.prompt import (
+    answering_pipe_up,
     history_messages,
     not_again,
     recall_results,
@@ -104,6 +113,7 @@ from kit.reply import (
     plan_schema,
     reply_json,
     reply_schema,
+    sentences,
     spoken_reply,
 )
 from kit.settings import Settings
@@ -116,6 +126,7 @@ log = logging.getLogger(__name__)
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
 PIPE_UP = "pipe_up"  # the source of a message Kit said of his own accord
+HELD_TRIES = 3  # a pipe-up that repeats a recent line gets two more goes, then he keeps quiet
 DEEP_RECALL = 10
 
 # Where the message being answered came from. Each turn is its own task, so each
@@ -196,6 +207,14 @@ THINKING_Q = re.compile(
     re.IGNORECASE,
 )
 SHARES = ("want", "bored", "social")  # pipe-ups that can bring up a thought or want
+# Words a small model sometimes gives as its search when it meant to say them
+# ("Let me think...", "I checked the log for you"): Dan's message is the better search.
+SPOKEN_NOT_SEARCH = re.compile(
+    r"^\W*(let me|lemme|let's see|hmm+|um+|uh+|one (sec|second|moment)|hang on|"
+    r"just a (sec|second|moment)|give me a (sec|second|moment)|thinking|checking|"
+    r"i('m| am|'ll| will|'ve| have)?\b|you('re| are)?\b)",
+    re.I,
+)
 
 
 def _patience(asked: int) -> str:
@@ -286,6 +305,8 @@ class Brain:
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
+        # His latest pipe-up and why he said it, for when Dan answers it ("what's up?").
+        self._pipe_up: tuple[int, str] | None = None
 
     @property
     def quirks(self) -> list[str]:
@@ -337,7 +358,8 @@ class Brain:
             self.life.feel(*felt)
         if ASK_LATER.search(text):  # "ask me tomorrow how the shutdown went"
             due = tomorrow_morning(self.memory.clock(), settings.life.quiet_until)
-            self.notebook.write("want", f'{owner} said: "{quoted(text, 200)}"', after=due)
+            self.notebook.write("want", later_want(text, owner), after=due)
+        answering = self._answering(history, owner)
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
             self.notebook.mark_said(shared.id)
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
@@ -383,7 +405,15 @@ class Brain:
                 chosen = chosen or plainly  # a weather question stays local
         emotion = ""
         async for event in self._converse(
-            text, history, recalled, settings, role, chosen, forecast=forecast, pc_detail=pc_detail
+            text,
+            history,
+            recalled,
+            settings,
+            role,
+            chosen,
+            forecast=forecast,
+            pc_detail=pc_detail,
+            answering=answering,
         ):
             if event["type"] == "reply":
                 emotion = event["reply"]["emotion"]
@@ -443,12 +473,25 @@ class Brain:
         except WeatherError as e:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
 
-    def _user_turn(self, text: str, role: str, settings: Settings, pc_detail: str) -> str:
+    def _user_turn(
+        self, text: str, role: str, settings: Settings, pc_detail: str, answering: str = ""
+    ) -> str:
         owner = settings.persona.owner
         if THINKING_Q.search(text) and not pc_detail:
-            text = with_mind(text, self.notebook.mind(), owner)
+            text = with_mind(text, self.notebook.mind(owner), owner)
         text = self._with_busy_note(text, role)
-        return with_pc_look(text, pc_detail, owner) if pc_detail else text
+        text = with_pc_look(text, pc_detail, owner) if pc_detail else text
+        return f"{text}\n\n{answering}" if answering else text
+
+    def _answering(self, history: list[Message], owner: str) -> str:
+        """The note beside a message that answers a pipe-up (Kit had the last word, of
+        his own accord), saying why he piped up, so "yeah what's up?" gets the actual
+        thing rather than the same line again."""
+        last = history[-1] if history else None
+        if last is None or last.role == "user" or last.source != PIPE_UP:
+            return ""
+        why = self._pipe_up[1] if self._pipe_up and self._pipe_up[0] == last.id else ""
+        return answering_pipe_up(last.text.split("\n\n", 1)[0], why, owner)
 
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
@@ -516,19 +559,25 @@ class Brain:
         """Kit says something of his own accord (see kit.life): one short line, written
         by the local model from what Dan's doing and what Kit remembers. A bored or
         lonely Kit, or one with something to say, brings up his most pressing want or
-        newest thought from his notebook."""
+        newest thought from his notebook. Nobody is waiting on it, so the line is
+        judged whole before it's shown, and if all he comes up with is something he's
+        said lately, he keeps quiet."""
         settings = self.settings()
         owner = settings.persona.owner
         history = self.memory.recent(settings.brain.history_messages)
         share = self.notebook.to_share() if reason in SHARES else None
         if reason == "want" and share is None:
             reason = "bored"  # it was dropped meanwhile; he's still restless
+        aim, about = "", share.text if share else ""
+        if share is not None and share.kind == "want":
+            aim, about = as_aim(share.text, owner)  # "tell Dan", not a note read out
         token = CHANNEL.set("desk")
         voice_token = VOICE.set(self._voice(settings, history))
         said: list[str] = []
+        message_id = None
         try:
-            about = self.pc.now_line(owner) or "what Dan is up to"
-            recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
+            doing = self.pc.now_line(owner) or f"what {owner} is up to"
+            recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             prompt = pipe_up_prompt(
                 reason,
@@ -537,27 +586,45 @@ class Brain:
                 self.life.curious_about,
                 quiet_h,
                 self.life.butting_in,
-                share=share.text if share else "",
-                share_is_want=share is not None and share.kind == "want",
+                share=about,
+                aim=aim,
             )
             messages = [
                 {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
                 *history_messages(history, "desk", plain=settings.ollama.speak_pass),
                 {"role": "user", "content": prompt},
             ]
-            async for event in self._local_reply(messages, PIPE_UP):
+            async for event in self._local_reply(messages, PIPE_UP, hold=True):
                 if event["type"] == "reply":
                     event = {**self._track(event, said), "piped_up": reason}
+                    message_id = event["message_id"]
                 yield event
         finally:
             CHANNEL.reset(token)
             VOICE.reset(voice_token)
-        if share is not None and said:
+        if not said:
+            self.life.held_back(reason)
+            return
+        if share is not None:
             self.notebook.mark_said(share.id)
-        if said:
-            self.notebook.said_in(" ".join(said), owner)
+        self.notebook.said_in(" ".join(said), owner)
+        why = self._why_piped(reason, aim, about, owner)
+        self._pipe_up = (message_id, why) if message_id is not None else None
         self.life.piped_up(reason)
         self.life.wanting = self.notebook.pressing()
+
+    def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
+        """Why he piped up, in a few words for his next prompt, or "" when the line
+        says it all."""
+        if aim:
+            return f'you wanted to {aim}: "{about}"'
+        if about:
+            return f'you\'d been thinking: "{about}"'
+        if reason == "nag" and self._pipe_up:
+            return self._pipe_up[1]  # still on about the same thing
+        if reason in ("curious", "watching") and self.life.curious_about:
+            return f"{owner} had just opened {self.life.curious_about}"
+        return ""
 
     async def think(self, trigger: tuple[str, str] | None = None) -> Thought | None:
         """One private thought (kit.thinking), kept in Kit's notebook. It may add
@@ -591,7 +658,7 @@ class Brain:
                 happened,
                 pc,
                 self.life.feeling_line(owner),
-                self.notebook.mind(5),
+                self.notebook.mind(owner, 5),
                 remembered,
                 said_today,
             )
@@ -644,7 +711,8 @@ class Brain:
         persona = settings.persona
         said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
-        return self.life.voice(persona.owner, own, said, self.quirks, text, self.notebook.mind())
+        mind = self.notebook.mind(persona.owner)
+        return self.life.voice(persona.owner, own, said, self.quirks, text, mind)
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -758,6 +826,7 @@ class Brain:
         question: str = "",
         forecast: str = "",
         pc_detail: str = "",
+        answering: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
         system = self._system(settings, recalled, role, hand_off, forecast, pc_detail)
@@ -765,7 +834,10 @@ class Brain:
         messages = [
             {"role": "system", "content": system},
             *history_messages(history, CHANNEL.get(), plain=plain),
-            {"role": "user", "content": self._user_turn(text, role, settings, pc_detail)},
+            {
+                "role": "user",
+                "content": self._user_turn(text, role, settings, pc_detail, answering),
+            },
         ]
         job = None
         if role != LOCAL:
@@ -784,7 +856,9 @@ class Brain:
             look_up = None
             owner = settings.persona.owner
             if reply.action.kind == "recall":
-                query = reply.action.text.strip() or text
+                query = reply.action.text.strip()
+                if not query or SPOKEN_NOT_SEARCH.search(query):
+                    query = text
                 hits = await self.recall.search(
                     query, [FACTS, DAYS, CONVERSATION, THINGS, SELF], DEEP_RECALL
                 )
@@ -833,10 +907,13 @@ class Brain:
             self._end_job(job)
 
         kind = reply.action.kind
-        if kind == "remember" and reply.action.text.strip():
-            learned = await self.learner.learn(
-                reply.action.text, reply.action.category, settings.persona.owner
-            )
+        said = [text, *[m.text for m in history if m.role == "user"][-2:]]
+        fact = reply.action.text.strip()
+        if kind == "remember" and fact and not said_so(fact, said, settings.persona.owner):
+            # Small models "remember" their own lines and guesses; only what Dan said counts.
+            log.info("not remembering %r: %s didn't say it", fact, settings.persona.owner)
+        elif kind == "remember" and fact:
+            learned = await self.learner.learn(fact, reply.action.category, settings.persona.owner)
             yield {
                 "type": "remembered",
                 "fact": learned.text,
@@ -856,7 +933,15 @@ class Brain:
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}
             async for event in self._converse(
-                text, history, recalled, settings, to, chosen, hops + 1, question
+                text,
+                history,
+                recalled,
+                settings,
+                to,
+                chosen,
+                hops + 1,
+                question,
+                answering=answering,
             ):
                 yield event
 
@@ -901,7 +986,7 @@ class Brain:
         job: Job | None = None,
     ) -> AsyncIterator[Event]:
         if role == LOCAL:
-            async for event in self._local_reply(messages, LOCAL):
+            async for event in self._local_reply(messages, LOCAL, heard=question):
                 yield event
             return
         profile = settings.profile(role)
@@ -930,12 +1015,18 @@ class Brain:
         }
 
     async def _local_reply(
-        self, messages: list[dict], source: str, model: str | None = None
+        self,
+        messages: list[dict],
+        source: str,
+        model: str | None = None,
+        heard: str = "",
+        hold: bool = False,
     ) -> AsyncIterator[Event]:
         """The local model's reply: in two passes with ``ollama.speak_pass`` (for Kit's
-        own local model), else in one JSON pass."""
+        own local model), else in one JSON pass. ``heard`` is what Dan said, if this
+        answers him; ``hold`` judges the whole line before showing it (a pipe-up)."""
         if model is None and self.settings().ollama.speak_pass:
-            replies = self._two_pass_reply(messages, source)
+            replies = self._two_pass_reply(messages, source, heard, hold)
         else:
             replies = self._one_pass_reply(messages, source, model)
         async for event in replies:
@@ -960,13 +1051,27 @@ class Brain:
     def _repeats(self, line: str, voice: Voice | None) -> bool:
         return voice is not None and repeats(line, voice.said, voice.examples)
 
-    async def _two_pass_reply(self, messages: list[dict], source: str) -> AsyncIterator[Event]:
+    def _repeated(self, line: str, voice: Voice | None) -> str:
+        """What in ``line`` he's said lately or copied from an example: all of it, or
+        a sentence of four words or more ("" if nothing)."""
+        if not line or self._repeats(line, voice):
+            return line
+        long_enough = (s for s in sentences(line) if len(s.split()) >= 4)
+        return next((s for s in long_enough if self._repeats(s, voice)), "")
+
+    async def _two_pass_reply(
+        self, messages: list[dict], source: str, heard: str = "", hold: bool = False
+    ) -> AsyncIterator[Event]:
         """A plan in JSON, then Kit's words in plain text at a livelier temperature,
-        shown as they arrive. If his first sentence repeats a recent line (or copies
-        an example), he's asked once more, before anything is shown."""
+        shown as they arrive. If his opening repeats a recent line (or copies an
+        example), he's asked once more, before anything is shown. With ``hold`` (a
+        pipe-up, which nobody is waiting on) nothing is shown till the line is whole;
+        if any of it repeats he has two more goes, then keeps quiet rather than say it
+        again, and a pipe-up has no written detail."""
         settings = self.settings()
         voice = VOICE.get()
         spoken = detail = ""
+        tries = HELD_TRIES if hold else 2
         try:
             plan = await self._plan(messages)
             note = speak_note(
@@ -975,6 +1080,7 @@ class Brain:
                 settings.profile(WORK).name,
                 settings.profile(EXPERT).name,
                 voice,
+                heard,
             )
             talk = [
                 *messages,
@@ -982,23 +1088,32 @@ class Brain:
                 {"role": "user", "content": note},
             ]
             options = lively(settings.ollama)
-            for attempt in range(2):
+            for attempt in range(tries):
+                last = attempt == tries - 1
                 stream, again = SpokenStream(settings.persona.name), ""
                 async with aclosing(self.model.stream(talk, None, None, options)) as pieces:
                     async for piece in pieces:
                         stream.feed(piece)
+                        if hold:
+                            continue
                         if not stream.released:
                             first = stream.first()
                             if first is None:
                                 continue
-                            if attempt == 0 and self._repeats(first, voice):
+                            if not last and self._repeats(first, voice):
                                 again = first
                                 break
                             stream.release()
                         if out := stream.take():
                             yield {"type": "say", "text": out}
-                if not again and not stream.released and attempt == 0:
-                    whole = stream.result()[0]  # it ended before a sentence was whole
+                if hold:
+                    again = self._repeated(stream.result()[0], voice)
+                    if again and last:
+                        log.info("kept quiet rather than say %r again", again)
+                        yield {"type": "kept_quiet", "repeated": again}
+                        return
+                elif not again and not stream.released and not last:
+                    whole = stream.result()[0]  # it ended before the opening was judged
                     again = whole if whole and self._repeats(whole, voice) else ""
                 if again:
                     talk = [*talk[:-1], {"role": "user", "content": note + not_again(again)}]
@@ -1019,7 +1134,7 @@ class Brain:
         if not spoken:
             yield {"type": "error", "message": "I lost my train of thought. Say again?"}
             return
-        reply = spoken_reply(plan, spoken, detail)
+        reply = spoken_reply(plan, spoken, "" if hold else detail)
         message_id = self._remember_reply(reply, source)
         yield {
             "type": "reply",

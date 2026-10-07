@@ -26,7 +26,7 @@ import re
 from datetime import date, datetime, time, timedelta
 
 from kit.knowledge import STOPWORDS, Item
-from kit.life import QUIRKS_KEY, ago, my_quirks, parse_time
+from kit.life import QUIRKS_KEY, ago, my_quirks, parse_time, quoted
 from kit.memory import SELF, SHEET, Memory
 
 KINDS = {
@@ -54,6 +54,10 @@ ASK_LATER = re.compile(
 GENERIC = frozenset(
     "ask asked tell told say said bring mention tomorrow morning today later".split()
 )
+_WHEN = re.compile(r"\b(tomorrow|in the morning|next morning|first thing)\b", re.I)
+_ASKING_NICELY = re.compile(r"\b(can|could|would|will) you\b|\b(please|hey|kit)\b", re.I)
+_FIRST_PERSON = re.compile(r"\b(i|me|my|mine|myself)\b|\bi['\u2019]", re.I)
+AIMS = "ask|tell|remind|show|let|check with|chase"
 RETIRED_KEY = "quirks_retired"
 VETOES_KEY = "vetoes"  # what Dan undid, so the next reflection doesn't do it again
 MAX_VETOES = 10
@@ -95,6 +99,38 @@ def _later(when: datetime, now: datetime) -> str:
     if days <= 0:
         return f"this {part}"
     return f"tomorrow {part}" if days == 1 else f"on {when:%A}"
+
+
+def later_want(text: str, owner: str) -> str:
+    """What the owner asked to be asked later, as a want of Kit's own: "Ask me
+    tomorrow how the shutdown went." is "Ask Dan how the shutdown went." When the ask
+    leans on what came before it ("..., ask me tomorrow how it went") or speaks for
+    the owner ("remind me that I need to call Bob"), their words are kept as said."""
+    ask = re.search(r"\b(ask|remind|check with|chase) me\b", text, re.I)
+    if ask is not None:
+        before = _ASKING_NICELY.sub(" ", _WHEN.sub(" ", text[: ask.start()]))
+        rest = " ".join(_WHEN.sub(" ", text[ask.end() :]).split())
+        rest = rest.strip(" ,;:-").rstrip(".!?").strip()
+        if not re.search(r"\w", before) and len(rest.split()) >= 2:
+            if not _FIRST_PERSON.search(rest):
+                return f"{ask.group(1).capitalize()} {owner} {rest}."
+    return f'{owner} asked you: "{quoted(text, 200)}"'
+
+
+def as_aim(text: str, owner: str) -> tuple[str, str]:
+    """A want as what he means to do and what about: "Tell Dan I counted 41 tabs."
+    is ("tell Dan", "I counted 41 tabs."). Put to a small model as a note, it read it
+    out ("Tell Dan I counted..."). A want put any other way is ("bring this up", the
+    want)."""
+    aim = re.match(
+        rf"\W*(?:(?:tomorrow|later|next time)\W+)?({AIMS}) {re.escape(owner)}\b"
+        rf"(?!['\u2019]s\b)\W*",
+        text,
+        re.I,
+    )
+    if aim is None or not text[aim.end() :].strip():
+        return "bring this up", text
+    return f"{aim.group(1).lower()} {owner}", text[aim.end() :]
 
 
 def basis(traits: list[str]) -> str:
@@ -242,17 +278,19 @@ class Notebook:
                 items.append(e)
         return items
 
-    def mind(self, limit: int = 3) -> list[str]:
-        """What's on his mind lately, as lines for his prompt, with how long ago."""
+    def mind(self, owner: str, limit: int = 3) -> list[str]:
+        """What's on his mind lately, as lines for his prompt: thoughts with how long
+        ago, wants as what he means to do (``as_aim``) and when."""
         now = self._now()
 
         def line(e: Item) -> str:
             if e.kind != "want":
                 return f"({ago(parse_time(e.created, now), now)}) {e.text}"
+            aim, about = as_aim(e.text, owner)
             after = self._after(e)
             if after is None or now >= after:
-                return f"(you want to bring this up) {e.text}"
-            return f"(to bring up {_later(after, now)}, not before) {e.text}"
+                return f"(you want to {aim}) {about}"
+            return f"(you want to {aim} {_later(after, now)}, not before) {about}"
 
         return [line(e) for e in self.on_mind(limit)]
 

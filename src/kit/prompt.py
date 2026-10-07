@@ -12,7 +12,16 @@ from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.memory import DAYS, Message
 from kit.recall import Recalled
-from kit.reply import EMOTIONS, GESTURES, Action, Reply, ReplyError, Segment, reply_json
+from kit.reply import (
+    EMOTIONS,
+    GESTURES,
+    Action,
+    Reply,
+    ReplyError,
+    Segment,
+    reply_json,
+    written,
+)
 from kit.settings import PersonaSettings
 
 if TYPE_CHECKING:
@@ -154,7 +163,15 @@ def system_prompt(
                 "the national weather service's page for the place) rather than relying on "
                 "an old search result."
             )
-    if two_pass and not cloud:
+    planning = two_pass and not cloud  # a plan first; his words come in a second step
+
+    def say(words: str) -> str:
+        """What to say while an action runs: in one pass it's in the reply; in a
+        plan there are no words yet, so it's left out (else small models put the
+        words where the search or question should go)."""
+        return "" if planning else f" {words}"
+
+    if planning:
         lines += [
             "",
             "First answer only with JSON: the emotion you feel, a gesture, and an action. "
@@ -171,25 +188,28 @@ def system_prompt(
     lines += [
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
-        "Actions:",
+        "Actions:" + (" most messages need none." if planning else ""),
         "- none: the usual.",
         f"- recall: when {owner} refers to something from before (a past conversation, a "
-        f"project, a person, where something is kept) and it isn't above. Put a search in "
-        f"text, say something short like 'Let me think...', and you'll see what you find "
-        f"before answering properly.",
+        f"project, a person, where something is kept) and it isn't above. Put the words to "
+        f"search for in text (names, topics, places), not something to say."
+        + say("Say something short like 'Let me think...'")
+        + " You'll see what you find before answering properly.",
     ]
     if pc and not pc_detail:  # already looked: answer, don't look again
         lines.append(
             f"- look_at_pc: when knowing more about what's on {owner}'s PC would help (every "
             f"open window, what they've had in focus this hour and today, whether the PC is "
-            f"struggling) and the line about their PC below isn't enough. Say something "
-            f"short like 'Let me have a look.' and you'll see it before answering properly."
+            f"struggling) and the line about their PC below isn't enough."
+            + say("Say something short like 'Let me have a look.'")
+            + " You'll see it before answering properly."
         )
     lines += [
-        f"- remember: when {owner} tells you something worth keeping: about themselves, "
-        f"their preferences, projects, where things are kept, people or plans. Put it in "
-        f"text as one sentence that makes sense on its own later, with real dates, and set "
-        f"category.",
+        f"- remember: only when {owner} has just told you something worth keeping: about "
+        f"themselves, their preferences, projects, where things are kept, people or plans. "
+        f"Put it in text as one sentence that makes sense on its own later, with real "
+        f"dates, and set category. Never your own lines or jokes, guesses, or small talk "
+        f"(greetings, thanks, how {owner} feels right now).",
     ]
     lines.append(
         f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
@@ -205,25 +225,28 @@ def system_prompt(
         lines.append(
             f"- weather: for any question about the weather, temperature, rain or wind, now "
             f"or in the next few days. Put the place in text, or leave it empty for where "
-            f"{owner} is, say something short like 'Checking the forecast.', and you'll see "
-            f"the forecast before answering. Use this rather than a web search. Never give "
-            f"temperatures, rain or wind from memory or from earlier in the conversation: "
-            f"forecasts change, so use the weather action unless a forecast is below."
+            f"{owner} is."
+            + say("Say something short like 'Checking the forecast.'")
+            + " You'll see the forecast before answering. Use this rather than a web search. "
+            "Never give temperatures, rain or wind from memory or from earlier in the "
+            "conversation: forecasts change, so use the weather action unless a forecast is "
+            "below."
         )
     if not cloud and helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "
-            f"in text and say something short like 'Let me check with {helper}.' {owner} "
-            f"sees {helper}'s answer next."
+            f"in text."
+            + say(f"Say something short like 'Let me check with {helper}.'")
+            + f" {owner} sees {helper}'s answer next."
         )
     if expert:
         lines.append(
-            f"- ask_expert: for the hardest problems, such as long derivations, tricky "
-            f"debugging or big designs, where a stronger model is worth the wait and cost. "
-            f"Put the full question in text and say something short like 'That one's for "
-            f"{expert}.'"
+            "- ask_expert: for the hardest problems, such as long derivations, tricky "
+            "debugging or big designs, where a stronger model is worth the wait and cost. "
+            "Put the full question in text."
+            + say(f"Say something short like 'That one's for {expert}.'")
         )
-    if not (two_pass and not cloud):
+    if not planning:
         lines.append(
             "Leave detail empty unless there's something new to show for this message. Never "
             "repeat detail from an earlier reply."
@@ -282,6 +305,7 @@ def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
     return lines
 
 
+HEARD_CHARS = 300  # Dan's message, said again in the speaking note
 SPEAK_FOR = {
     "none": "Now say your reply to {owner}.",
     "recall": "You're about to look back through your memory for '{text}'. Say a few words "
@@ -298,16 +322,26 @@ SPEAK_FOR = {
 
 
 def speak_note(
-    action: Action, owner: str, helper: str, expert: str, voice: Voice | None = None
+    action: Action,
+    owner: str,
+    helper: str,
+    expert: str,
+    voice: Voice | None = None,
+    heard: str = "",
 ) -> str:
     """The second step of a two-pass reply: say it, in plain words, as himself. It
-    follows the plan, where Dan's message would be."""
+    follows the plan, where Dan's message would be. ``heard`` is Dan's message, said
+    again here so a small model answers it rather than an earlier one."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
+    heard = " ".join(heard.split())
+    if len(heard) > HEARD_CHARS:
+        heard = heard[:HEARD_CHARS].rsplit(" ", 1)[0] + "..."
+    said = f'{owner} just said: "{heard}". ' if heard else ""
     feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
     return (
-        f"[Not from {owner}. {what}{feel} Say it as yourself, in plain spoken words: one to "
+        f"[Not from {owner}. {said}{what}{feel} Say it as yourself, in plain spoken words: one to "
         f"three short sentences. No JSON, no quotes around it, no stage directions or "
         f"emojis, and nothing you've said before. If {owner} asked for something to read "
         f"(a list, steps or code), say one short line, then a blank line, then the rest.]"
@@ -317,6 +351,29 @@ def speak_note(
 def not_again(line: str) -> str:
     """Added to the speaking note when the first try repeated an earlier line."""
     return f' (Not "{line}": you\'ve said that, or near enough. Say something new.)'
+
+
+PIPED_CHARS = 200  # Kit's pipe-up, quoted beside the answer to it
+
+
+def answering_pipe_up(line: str, why: str, owner: str) -> str:
+    """Beside a message that answers something Kit piped up with: what he said and why
+    (``why``, e.g. 'you wanted to tell Dan: "..."'), so "yeah what's up?" gets the
+    actual thing. Without it a small model said the same line again."""
+    line = " ".join(line.split())
+    if len(line) > PIPED_CHARS:
+        line = line[:PIPED_CHARS].rsplit(" ", 1)[0] + "..."
+    because = f" You piped up because {why}{_stop(why)}" if why else ""
+    return (
+        f'[{owner} is answering what you piped up with: "{line}"{_stop(line)}{because} If '
+        f"{owner} asks what's up or says go on, tell them the actual thing now, plainly and "
+        f"in new words.]"
+    )
+
+
+def _stop(text: str) -> str:
+    """The full stop after ``text``, unless it already ends a sentence ("Hi!")."""
+    return "" if text.rstrip('"\u201d').endswith((".", "!", "?", "\u2026")) else "."
 
 
 def with_mind(text: str, mind: list[str], owner: str) -> str:
@@ -440,7 +497,8 @@ def _plain(m: Message, keep_detail: bool) -> str:
         reply = Reply.model_validate_json(m.reply_json)
     except (ValueError, ReplyError):
         return m.text
-    detail = reply.detail.strip() if keep_detail else ""
+    # Only something to read: an old second line of chat there taught him to add one.
+    detail = reply.detail.strip() if keep_detail and written(reply.detail) else ""
     if len(detail) > HISTORY_DETAIL_CHARS:
         detail = detail[:HISTORY_DETAIL_CHARS] + " [...]"
     return f"{reply.text}\n\n{detail}" if detail else reply.text

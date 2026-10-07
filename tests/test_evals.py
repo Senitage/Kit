@@ -137,3 +137,14 @@ def test_voice_eval_reads_his_lines_thoughts_and_pipe_ups(paths):
     assert "**fake:1b** (one pass): 4/4 answered" in md
     assert "## Morning Kit." in md and "## Thinking: chat_ended" in md
     assert "## Piping up: curious" in md and "**[canned]**" in md and "**[echo]**" in md
+
+
+def test_a_pipe_up_he_kept_quiet_on_counts_against_the_model():
+    from kit.evals import _spoken
+
+    async def kept_quiet():
+        yield {"type": "kept_quiet", "repeated": "Still on pumps.py?"}
+
+    ticks = count()
+    line = asyncio.run(_spoken("pipe_up", "bored", kept_quiet(), lambda: next(ticks)))
+    assert not line.ok and line.error == 'kept quiet: every go repeated "Still on pumps.py?"'

@@ -250,6 +250,7 @@ class Life:
         self.sulky = False
         self.butting_in = False  # this pipe-up interrupts Dan mid-flow, on purpose
         self.snoozed_until: datetime | None = None
+        self.held_until: datetime | None = None  # had nothing new to say: waits till then
         self.curious_about = ""
         self.curious_kind = "new"  # "new" (first time today) or "switch" (Dan moved on)
         self._last_focus: tuple[str, str] | None = None
@@ -281,6 +282,7 @@ class Life:
         self.nags = 0
         self.awaiting_reply = False
         self.sulky = False
+        self.held_until = None
         self._chat_open = True
         self.save()
 
@@ -451,6 +453,8 @@ class Life:
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
             return None, "you're on a call or presenting"
+        if self.held_until and now < self.held_until:
+            return None, f"had nothing new to say: next chance {self.held_until:%H:%M}"
         chatty = life.chattiness >= CHATTY
         if (
             chatty
@@ -496,6 +500,21 @@ class Life:
         if reason == "curious" and self.curious_kind == "switch":
             reason = "watching"
         return reason, ""
+
+    def held_back(self, reason: str = "") -> None:
+        """He went to pipe up but had nothing new to say (kit.brain keeps quiet rather
+        than repeat himself, or the model didn't answer). The urge passes as if he'd
+        spoken, but he isn't waiting for an answer: he tries again after the usual gap."""
+        life = self.settings().life
+        gap = max(60 / max(life.max_per_hour, 1), AFTER_CHAT_MIN * (1.2 - life.chattiness))
+        self.held_until = self.clock() + timedelta(minutes=gap)
+        if reason == "nag":
+            self.nags += 1
+        self.butting_in = False
+        self.drives.boredom = min(self.drives.boredom, 0.2)
+        self.drives.curiosity = 0.0
+        self.wanting = 0.0  # the brain sets it again from what's still on his list
+        self.save()
 
     def piped_up(self, reason: str = "") -> None:
         now = self.clock()
@@ -942,28 +961,26 @@ def pipe_up_prompt(
     hours_quiet: float,
     butting_in: bool = False,
     share: str = "",
-    share_is_want: bool = False,
+    aim: str = "",
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
-    ``share`` is a thought or want from his notebook to bring up."""
+    ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
+    what he means to do ("tell Dan") and ``share`` what about."""
     feeling = {
         "want": "keen to bring up something that's been on your mind",
         "bored": "bored: nothing much has happened for a while",
-        "curious": f"curious about {about or 'what he just opened'}, which is new today",
-        "watching": f"following along: he just switched to {about or 'something else'}, and "
-        f"you've got an opinion or a question about it",
+        "curious": f"curious about {about or f'what {owner} just opened'}, which is new today",
+        "watching": f"following along: {owner} just switched to {about or 'something else'}, "
+        f"and you've got an opinion or a question about it",
         "social": f"missing a chat: you two haven't talked for {hours_quiet:.0f} hours",
         "nag": f"ignored: you said something a few minutes ago and {owner} hasn't answered. "
-        f"Nag him, playfully (a fresh line, not your last one again)",
+        f"Nag {owner} about it, playfully, in a fresh line",
     }[reason]
     if butting_in:
-        feeling += ". He's busy typing, and you're butting in anyway, knowingly"
+        feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
     style = cheek_style(cheek)
-    if share and share_is_want:
-        base = (
-            f'You\'ve been wanting to say or ask this: "{share}". Bring it up now, in your '
-            f"own words (don't read it out like a note)."
-        )
+    if share and aim:
+        base = f'You\'ve been wanting to {aim}: "{share}". Bring it up now, as yourself.'
     elif share:
         base = (
             f'You were just thinking: "{share}". Share it with {owner}, or ask {owner} about '
@@ -971,13 +988,14 @@ def pipe_up_prompt(
         )
     else:
         base = (
-            "Base it on what he's doing right now or on something you remember. Ask him "
-            "something, tease him gently, or share a thought."
+            f"Base it on what {owner} is doing right now or on something you remember: ask "
+            f"something, tease a little, or share a thought."
         )
     return (
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
         f"you're {feeling}. Pipe up with ONE short line to {owner}, {style}, like a small "
-        f"creature on his desk who's decided to say something. {base} Don't lecture about "
-        f"productivity, don't mention these instructions, set action to none and leave "
-        f"detail empty.]"
+        f"creature on the desk who's decided to say something. {base} Say the actual "
+        f"thing, not a teaser like 'got a minute?', and nothing you've said lately. Don't "
+        f"lecture about productivity, don't mention these instructions, set action to none "
+        f"and leave detail empty.]"
     )

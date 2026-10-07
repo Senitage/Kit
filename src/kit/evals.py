@@ -694,6 +694,8 @@ async def _spoken(
             line.text = Reply.model_validate(event["reply"]).text
         elif what == "error":
             line.error = event["message"]
+        elif what == "kept_quiet":
+            line.error = f'kept quiet: every go repeated "{event["repeated"]}"'
         elif what == "looked_at_pc":
             notes.append("looked at the PC")
         elif what == "recalled":

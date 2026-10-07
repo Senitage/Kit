@@ -162,7 +162,12 @@ shows them, if you want to know. It's more fun not to look.
 
 When he has something he wants to bring up, a bored or lonely pipe-up shares
 it, or failing that his newest thought. So what he says first comes from what
-he's actually been thinking about.
+he's actually been thinking about. A pipe-up is one line with the actual thing
+in it, not a teaser like "got a minute?". Nobody is waiting on it, so the whole
+line is checked before it's shown: if any of it is something he's said lately,
+he has two more goes, and if those repeat too he keeps quiet and tries again
+after the usual gap. Answer him ("yeah, what's up?") and he's reminded what he
+piped up about and why, so he tells you rather than saying the line again.
 
 He never pipes up:
 - in quiet hours (`life.quiet_from` to `life.quiet_until`, 10 pm to 7 am by default);
@@ -274,9 +279,14 @@ something up, hand over to the cloud or remember something. Then his words, in
 plain text, at a livelier setting (`ollama.speak_temperature`, `min_p`,
 `repeat_penalty`). Small models sound stiff when they write speech inside JSON;
 in plain text they sound more like themselves. He starts talking about half a
-second later. If the words come out the same as something he said lately, he's
-asked once more for something new, and the repeat is never shown. Cloud models
-still answer in one piece.
+second later. His opening (whole sentences, six words or more, so a short
+"You got a minute?" isn't mistaken for new) is checked first: if it's the same
+as something he said lately, he's asked once more for something new, and the
+repeat is never shown. He says three sentences at most. Anything after a blank
+line is shown under his words in a grey box, but only if it's something to read
+(code, a list or steps, a table, a link or a path, or a proper explanation);
+another line of chat there is dropped, since in the box it looked like he was
+answering himself. Cloud models still answer in one piece.
 
 `kit eval voice` compares local models on this: see
 [stage-inner-life.md](stage-inner-life.md).

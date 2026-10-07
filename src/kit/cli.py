@@ -352,7 +352,12 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
                 r.raise_for_status()
                 reply = r.json().get("reply")
                 said = " ".join(seg["say"] for seg in reply["segments"]) if reply else None
-                print(f"Kit: {said}" if said else "Kit didn't say anything (is the model up?)")
+                print(
+                    f"Kit: {said}"
+                    if said
+                    else "Kit didn't say anything: the local model isn't answering, or all he "
+                    "came up with was something he'd said lately (logs/kit.log says which)."
+                )
                 return 0
             if action == "think":
                 r = client.post("/api/life/think")

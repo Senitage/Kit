@@ -384,18 +384,58 @@ def reply_json(reply: Reply) -> str:
 _THINKING = re.compile(r"^\s*<think>.*?(</think>|$)", re.DOTALL)
 _STAGE = re.compile(r"\*[^*\n]{1,80}\*")  # *grins*
 _SENTENCE_END = re.compile(r"[.!?\u2026](?=\s)")
+_BETWEEN_SENTENCES = re.compile(r"(?<=[.!?\u2026])\s+(?=\S)")
 FIRST_LINE_MAX = 160  # a first "sentence" longer than this is let through as it is
+# The opening held back to be judged is at least this many words: "You got a minute?"
+# alone can't be told apart from a line he's said before.
+JUDGED_WORDS = 6
+MAX_SENTENCES = 3  # what's said: he talks in short bursts, and a small model rambles
+MAX_WORDS = 30  # no new sentence is started after this many words
+LONG_DETAIL = 40  # words: written detail this long is an explanation, worth showing
+# Written detail worth showing: code, a list or steps, a table, a link or a path.
+_WRITTEN = re.compile(
+    r"```|`[^`\n]+`|https?://|^\s*(?:[-*\u2022]\s|\d+[.)]\s|step \d)|\|.*\||\w[\\/]\w",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _cap(text: str) -> str:
+    """At most ``MAX_SENTENCES`` sentences, and none started after ``MAX_WORDS``
+    words. A sentence is kept or dropped on what came before it, so as more streams
+    in the cut only grows and the words handed out stay the start of the reply."""
+    kept: list[str] = []
+    words = 0
+    for n, part in enumerate(_BETWEEN_SENTENCES.split(text)):
+        if n >= MAX_SENTENCES or (n and words >= MAX_WORDS):
+            break
+        kept.append(part)
+        words += len(part.split())
+    return " ".join(kept)
+
+
+def written(text: str) -> bool:
+    """Is ``text`` something to read (code, a list or steps, a table, a link or path,
+    several lines, or a proper explanation) rather than more talk? After a blank line
+    a small model sometimes adds another line or two of chat, often an old one, which
+    on screen looked like Kit answering himself."""
+    text = text.strip()
+    lines = [line for line in text.splitlines() if line.strip()]
+    return bool(text) and (
+        len(lines) > 1 or len(text.split()) >= LONG_DETAIL or bool(_WRITTEN.search(text))
+    )
 
 
 class SpokenStream:
     """Kit's plain-text words as they stream in from the speaking pass.
 
-    The first sentence is held back until it's whole, so the brain can catch a
-    line he's said before and ask again, and so a "Kit:" in front can be dropped.
-    After that, words come out as they arrive, minus *stage directions*. A blank
-    line ends what's said: anything after it is written detail, shown but not
-    spoken. If the model answers in JSON anyway, nothing comes out until the end,
-    when the words are read from it.
+    The opening is held back until it's whole sentences of at least
+    ``JUDGED_WORDS`` words, so the brain can catch a line he's said before and ask
+    again, and so a "Kit:" in front can be dropped. After that, words come out as
+    they arrive, minus *stage directions*, up to three sentences. A blank line ends
+    what's said: anything after it is written detail, shown but not spoken, if it's
+    something to read (``written``); more chat after it is dropped. If the model
+    answers in JSON anyway, nothing comes out until the end, when the words are read
+    from it.
     """
 
     def __init__(self, name: str = "") -> None:
@@ -420,20 +460,22 @@ class SpokenStream:
         text = _STAGE.sub("", text)
         if "*" in text:  # a stage direction still being written, or a stray star
             text = text.replace("*", "") if final else text[: text.index("*")]
-        text = re.sub(r"\s+", " ", text)
+        text = _cap(re.sub(r"\s+", " ", text))
         if final:
             return text.strip().rstrip('"\u201d').strip()
         text = text.rstrip()  # a space or newline may yet turn out to end what's said
         return text[:-1] if text.endswith(('"', "\u201d")) else text
 
     def first(self) -> str | None:
-        """The first sentence once it's whole (None until then, and in JSON)."""
+        """The opening once it's long enough to judge: whole sentences, at least
+        ``JUDGED_WORDS`` words of them (None until then, and in JSON)."""
         if self._json():
             return None
         text = self._spoken(final=False)
-        end = _SENTENCE_END.search(text)
-        if end is not None:
-            return text[: end.end()].strip()
+        for end in _SENTENCE_END.finditer(text):
+            opening = text[: end.end()].strip()
+            if len(opening.split()) >= JUDGED_WORDS:
+                return opening
         if len(text) > FIRST_LINE_MAX or "\n\n" in self.raw:
             return text.strip()
         return None
@@ -462,17 +504,16 @@ class SpokenStream:
         """(what was said, written detail)."""
         if self._json():
             reply = parse_cloud_reply(_THINKING.sub("", self.raw))
-            return reply.text, reply.detail
+            return _cap(reply.text), reply.detail if written(reply.detail) else ""
         spoken = self._spoken(final=True)
         rest = _THINKING.sub("", self.raw).lstrip().split("\n\n", 1)
         detail = rest[1].strip() if len(rest) > 1 else ""
         if not spoken and detail:
             first, _, more = detail.partition("\n")
             spoken, detail = first.strip(), more.strip()
-        return spoken, detail
+        return spoken, detail if written(detail) else ""
 
 
-_BETWEEN_SENTENCES = re.compile(r"(?<=[.!?\u2026])\s+(?=\S)")
 MAX_SEGMENTS = 6
 
 

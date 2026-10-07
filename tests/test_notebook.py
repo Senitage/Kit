@@ -6,7 +6,15 @@ import pytest
 
 from fakes import Clock
 from kit.memory import SELF, SHEET, Memory
-from kit.notebook import ASK_LATER, FOR_LATER, Notebook, same_entry, tomorrow_morning
+from kit.notebook import (
+    ASK_LATER,
+    FOR_LATER,
+    Notebook,
+    as_aim,
+    later_want,
+    same_entry,
+    tomorrow_morning,
+)
 
 
 @pytest.fixture
@@ -82,9 +90,9 @@ def test_whats_on_his_mind_lists_wants_then_recent_thoughts(book, clock):
     book.write("opinion", "Hydrocyclones are elegant.")
     clock.now += timedelta(minutes=20)
     book.write("want", "Ask Dan about lunch.")
-    mind = book.mind()
+    mind = book.mind("Dan")
     assert mind == [
-        "(you want to bring this up) Ask Dan about lunch.",
+        "(you want to ask Dan) about lunch.",
         "(20 minutes ago) Hydrocyclones are elegant.",
     ]
     assert book.latest_thought().text == "Hydrocyclones are elegant."
@@ -98,9 +106,9 @@ def test_a_want_for_tomorrow_waits_till_the_morning(book, clock):
     assert [w.id for w in book.open_wants()] == [lunch]
     assert [w.id for w in book.unsaid_wants()] == [lunch, later]
     assert book.pressure(book.index.get(later)) == 0.0
-    assert book.mind() == [
-        "(you want to bring this up) Ask Dan about lunch.",
-        "(to bring up tomorrow morning, not before) Tomorrow, ask Dan how the shutdown went.",
+    assert book.mind("Dan") == [
+        "(you want to ask Dan) about lunch.",
+        "(you want to ask Dan tomorrow morning, not before) how the shutdown went.",
     ]
     book.mark_said(lunch)
     assert book.pressing() == pytest.approx(0.0) and book.to_share() is None
@@ -116,6 +124,42 @@ def test_tomorrow_is_after_he_has_slept():
     assert ASK_LATER.search("Tomorrow morning, remind me to ring Steve.")
     assert not ASK_LATER.search("Ask me anything. I'll know tomorrow.")
     assert FOR_LATER.search("Tomorrow: ask Dan how the shutdown went.")
+
+
+def test_being_asked_to_ask_later_becomes_a_want_of_his_own():
+    assert later_want("Ask me tomorrow how the shutdown went.", "Dan") == (
+        "Ask Dan how the shutdown went."
+    )
+    assert later_want("Could you remind me in the morning to ring Steve?", "Dan") == (
+        "Remind Dan to ring Steve."
+    )
+    assert later_want("Tomorrow, ask me how the shutdown went", "Dan") == (
+        "Ask Dan how the shutdown went."
+    )
+    # Leaning on what came before, or speaking for Dan: Dan's words, as said.
+    assert later_want("Big day. Ask me tomorrow how it went.", "Dan") == (
+        'Dan asked you: "Big day. Ask me tomorrow how it went."'
+    )
+    assert later_want("Remind me tomorrow that I owe Steve a call.", "Dan").startswith(
+        'Dan asked you: "Remind me'
+    )
+
+
+def test_a_want_is_what_he_means_to_do_and_what_about():
+    # Put to a small model as a note, "Tell Dan I counted..." was read out word for word.
+    assert as_aim("Tell Dan I counted 41 tabs.", "Dan") == ("tell Dan", "I counted 41 tabs.")
+    assert as_aim("Tomorrow, ask Dan how the shutdown went.", "Dan") == (
+        "ask Dan",
+        "how the shutdown went.",
+    )
+    assert as_aim("Ask Dan's opinion on the pump.", "Dan") == (
+        "bring this up",
+        "Ask Dan's opinion on the pump.",
+    )
+    assert as_aim("The pump curve looks off.", "Dan") == (
+        "bring this up",
+        "The pump curve looks off.",
+    )
 
 
 def test_a_want_he_brings_up_himself_is_said(book):

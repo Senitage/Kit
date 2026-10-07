@@ -148,7 +148,8 @@ def test_a_restless_kit_brings_up_what_he_wanted_to_say(kit):
     brain.life.wanting = brain.notebook.pressing()
     asyncio.run(tick_with(brain, "want"))
     prompt = model.calls[0][-1]["content"]
-    assert "You've been wanting to say or ask this" in prompt and "cyclone pump" in prompt
+    # As what he means to do, not a note he'd read out ("Ask Dan whether...").
+    assert "You've been wanting to ask Dan: \"whether the cyclone pump passed" in prompt
     assert brain.notebook.index.get(want).meta["said"]
     assert brain.life.wanting == 0.0
     assert brain.life.events_after(0)[-1]["reason"] == "want"
@@ -163,17 +164,17 @@ def test_asked_to_ask_tomorrow_he_asks_next_morning_and_only_once(kit):
     collect(brain.chat("Ask me tomorrow how the shutdown went."))
     book = brain.notebook
     want = book.unsaid_wants()[0]
-    assert want.text == 'Dan said: "Ask me tomorrow how the shutdown went."'
+    assert want.text == "Ask Dan how the shutdown went."
     assert want.meta["after"] == "2026-10-08T07:00:00"
     assert book.open_wants() == []  # not today
     brain.memory.clock.now += timedelta(hours=22)  # 08:00 the next morning
     brain.pc.update(snap())
     asyncio.run(tick_with(brain, "want"))
     prompt = model.calls[1][-1]["content"]
-    assert "You've been wanting to say or ask this" in prompt and "shutdown went" in prompt
+    assert 'You\'ve been wanting to ask Dan: "how the shutdown went."' in prompt
     assert book.index.get(want.id).meta["said"] and book.open_wants() == []
     collect(brain.chat("It went fine, mostly."))
-    assert "(you want to bring this up)" not in model.calls[2][0]["content"]
+    assert "(you want to ask Dan)" not in model.calls[2][0]["content"]
 
 
 def test_a_thought_for_tomorrow_waits_till_the_morning(kit):
@@ -188,7 +189,7 @@ def test_a_want_he_brings_up_in_a_chat_isnt_asked_again(kit):
     want = brain.notebook.write("want", "Ask Dan how the shutdown went.")
     collect(brain.chat("Morning Kit"))
     system = model.calls[0][0]["content"]
-    assert "(you want to bring this up) Ask Dan how the shutdown went." in system
+    assert "(you want to ask Dan) how the shutdown went." in system
     assert brain.notebook.index.get(want).meta["said"]
 
 
@@ -208,7 +209,7 @@ def test_a_want_dropped_meanwhile_leaves_him_just_bored(kit):
     brain.pc.update(snap())
     asyncio.run(tick_with(brain, "want"))
     prompt = model.calls[0][-1]["content"]
-    assert "bored" in prompt and "wanting to say" not in prompt
+    assert "bored" in prompt and "been wanting to" not in prompt
 
 
 def test_the_heartbeat_thinks_when_he_wont_pipe_up_but_never_mid_chat(kit):
