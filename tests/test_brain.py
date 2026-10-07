@@ -626,3 +626,15 @@ def test_an_earlier_answer_to_the_same_words_is_not_recalled(memory):
     collect(brain.chat("filler message about pumps"))
     collect(brain.chat("hey"))
     assert "Coffee first?" not in model.calls[2][0]["content"]
+
+
+def test_a_long_quiet_starts_a_new_chat(memory, clock):
+    brain, model, _ = make(memory, reply("API key stuff."), reply("Hi."), reply("Yo."))
+    collect(brain.chat("let's test the API key"))
+    clock.now += timedelta(minutes=30)
+    collect(brain.chat("still there?"))
+    assert len(model.calls[1]) > 2  # half an hour: same conversation
+    clock.now += timedelta(hours=3)
+    collect(brain.chat("hey"))
+    assert len(model.calls[2]) == 2  # just the system prompt and "hey"
+    assert len(memory.messages_on(memory.today())) == 6  # nothing lost from the log

@@ -264,6 +264,7 @@ class Brain:
 
     async def _run_turn(self, text: str, emit: Callable[[Event], None]) -> None:
         settings = self.settings()
+        self._new_chat_if_quiet(settings)
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
@@ -316,6 +317,16 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    def _new_chat_if_quiet(self, settings: Settings) -> None:
+        """Back after a long quiet: start fresh, so this morning's topic doesn't
+        follow Dan into the afternoon. Recall still finds the old conversation."""
+        after = settings.brain.new_chat_after_minutes
+        last = self.memory.recent(1)
+        if not after or not last:
+            return
+        if self.memory.clock() - datetime.fromisoformat(last[-1].at) >= timedelta(minutes=after):
+            self.memory.new_chat()
 
     def _pc_recently(self) -> bool:
         return self._pc_at is not None and self.memory.clock() - self._pc_at < PC_FOLLOW_UP
