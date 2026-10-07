@@ -834,6 +834,31 @@ def _parse_link(text: str) -> dict:
     return {"system": system.strip(), "target": target.strip()}
 
 
+def cmd_notes(paths: KitPaths) -> int:
+    """Read the notes vault now and show what Kit sees."""
+    from kit.memory import Memory
+    from kit.notes import Notes
+
+    paths.ensure()
+    nas = SettingsStore(paths).current().nas
+    if not nas.vault:
+        print("no notes vault set; see docs/notes.md (kit config set nas.vault ...)")
+        return 1
+    memory = Memory(paths.state_dir / "memory.db")
+    try:
+        notes = Notes(memory.index, memory.clock)
+        indexed, removed = notes.sync(nas)
+        names = notes.names(limit=1_000_000)
+        print(f"{len(names)} notes in {nas.vault} ({indexed} read now, {removed} gone)")
+        for name in names[:15]:
+            print(f"  {name}")
+        if len(names) > 15:
+            print(f"  ... and {len(names) - 15} more")
+    finally:
+        memory.close()
+    return 0
+
+
 def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
     from kit.things import Register
@@ -957,6 +982,7 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
 
+    sub.add_parser("notes", help="read the notes vault now and list what Kit sees")
     things = sub.add_parser("things", help="the register of things and where they live")
     tsub = things.add_subparsers(dest="action", required=True)
     tsub.add_parser("list", help="list the register")
@@ -1026,6 +1052,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_memory(paths, args)
     if args.command == "models":
         return cmd_models(paths, args)
+    if args.command == "notes":
+        return cmd_notes(paths)
     if args.command == "things":
         return cmd_things(paths, args)
     if args.command == "weather":

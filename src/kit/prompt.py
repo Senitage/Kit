@@ -110,6 +110,7 @@ def system_prompt(
     quirks: list[str] | None = None,
     weather: bool = False,
     notes: bool = False,
+    note_names: list[str] | None = None,
     forecast: str = "",
     pc_detail: str = "",
     voice: Voice | None = None,
@@ -126,7 +127,8 @@ def system_prompt(
     own words (kit.notebook), which replaces the list of traits unless ``traits``
     (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
     local model gives a plan first and its words after (kit.reply.Plan). ``notes``
-    says Kit has a notes folder to write to (kit.notes)."""
+    says Kit has a notes vault to read and write (kit.notes); ``note_names`` are
+    its notes, newest first."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [f"You are {name}, {owner}'s personal assistant. {persona.backstory}"]
@@ -224,11 +226,21 @@ def system_prompt(
     if notes:
         lines.append(
             f"- note: when {owner} asks you to take, make or write down a note, jot "
-            f"something down, or add to a note or list. Use this, not remember. Put the "
-            f"note in text as markdown, tidied up but in {owner}'s words, and a short title "
-            f"in title. The same title adds to that note ('Shopping list'). It's saved in "
-            f"{owner}'s notes in Obsidian."
+            f"something down, or add to a note or list. Use this, not remember. Put "
+            f"what to write in text as markdown, tidied up but in {owner}'s words (never "
+            f"empty), and a short title in title. To add to a note that exists, use its "
+            f"name as the title ('Shopping list'). It's saved in {owner}'s notes in "
+            f"Obsidian."
         )
+        lines.append(
+            f"- read_note: when {owner} asks what's in one of their notes, or to check, "
+            f"summarise or use one. Put the note's name in text (from the list below if "
+            f"it's there), say something short like 'Let me open it.', and you'll see "
+            f"the note before answering. To find notes about something without knowing "
+            f"which, use recall: it searches {owner}'s notes too."
+        )
+        if note_names:
+            lines.append(f"{owner}'s notes (newest first): " + "; ".join(note_names) + ".")
     lines.append(
         f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
@@ -335,6 +347,7 @@ SPEAK_FOR = {
     "remember": 'You\'re keeping this in your memory: "{text}". Answer {owner} naturally; '
     "you can say you'll remember it.",
     "note": "You're writing that down in {owner}'s notes. Say so in a few words.",
+    "read_note": "You're about to open {owner}'s note '{text}'. Say so in a few words.",
     "thing": "You're noting \"{text}\". If it's new to you, ask {owner} whether to add it to "
     "the register.",
 }

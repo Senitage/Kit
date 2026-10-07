@@ -35,6 +35,7 @@ from kit.things import THINGS, Register
 log = logging.getLogger(__name__)
 
 SUMMARY_INTERVAL_S = 3600
+NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
 
 
 class ChatIn(BaseModel):
@@ -120,6 +121,7 @@ def create_app(
     summarise_every_s: float | None = SUMMARY_INTERVAL_S,
     paths: KitPaths | None = None,
     life_every_s: float | None = TICK_S,
+    notes_every_s: float | None = NOTES_SYNC_S,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -128,6 +130,8 @@ def create_app(
             tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
         if life_every_s:
             tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
+        if notes_every_s:
+            tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
         yield
         for task in tasks:
             task.cancel()
@@ -487,6 +491,19 @@ def create_app(
         }
 
     return app
+
+
+async def _notes_loop(brain: Brain, store: SettingsStore, every_s: float) -> None:
+    """Keep the index in step with Dan's notes vault, from start-up on."""
+    while True:
+        try:
+            indexed, removed = await asyncio.to_thread(brain.notes.sync, store.current().nas)
+            if indexed or removed:
+                log.info("notes: %d indexed, %d removed", indexed, removed)
+                await brain.recall.index_pending(limit=5000)
+        except Exception:
+            log.exception("reading the notes vault failed")
+        await asyncio.sleep(every_s)
 
 
 async def _life_loop(brain: Brain, every_s: float) -> None:

@@ -102,3 +102,88 @@ def test_without_a_vault_kit_says_the_note_was_not_saved(memory):
     assert "- note:" not in model.calls[0][0]["content"]
     notice = next(e for e in events if e["type"] == "notice")
     assert notice["message"].startswith("The note wasn't saved: no notes folder")
+
+
+def write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_the_whole_vault_is_read_and_kept_in_step(memory, vault):
+    write(vault / "Holiday Planner.md", "---\ntags: [trip]\n---\nBroome in July.\n## Budget\n$4000")
+    write(vault / "Projects" / "Kit.md", "Desk robot arm.")
+    write(vault / ".obsidian" / "workspace.md", "settings")
+    write(vault / ".SynologyWorkingDirectory" / "x.md", "sync junk")
+    notes = Notes(memory.index, memory.clock)
+    nas = NasSettings(vault=str(vault))
+    assert notes.sync(nas) == (2, 0)
+    items = memory.index.items(NOTES)
+    assert {i.title for i in items} == {"Holiday Planner", "Holiday Planner > Budget", "Kit"}
+    assert "tags" not in " ".join(i.text for i in items)  # frontmatter left out
+    assert notes.sync(nas) == (0, 0)  # nothing changed, nothing re-read
+    (vault / "Projects" / "Kit.md").unlink()
+    assert notes.sync(nas) == (0, 1)
+    assert notes.names() == ["Holiday Planner"]
+    assert notes.sync(NasSettings(vault=str(vault / "gone"))) == (0, 0)  # NAS down: keep all
+    assert notes.names() == ["Holiday Planner"]
+
+
+def test_a_note_is_read_by_name_or_path(memory, vault):
+    write(vault / "Projects" / "Kit.md", "---\ncreated: x\n---\nDesk robot arm.")
+    notes = Notes(memory.index, memory.clock)
+    nas = NasSettings(vault=str(vault))
+    notes.sync(nas)
+    assert notes.read(nas, "kit") == ("Projects/Kit.md", "Desk robot arm.")
+    assert notes.read(nas, "Projects/Kit.md")[0] == "Projects/Kit.md"
+    with pytest.raises(NoteError, match="no note called Fishing"):
+        notes.read(nas, "Fishing")
+
+
+def test_adding_to_a_note_elsewhere_in_the_vault(memory, vault):
+    write(vault / "Holiday Planner.md", "Broome in July.")
+    notes = Notes(memory.index, memory.clock)
+    nas = NasSettings(vault=str(vault), notes_folder="Inbox")
+    notes.sync(nas)
+    saved = notes.take(nas, "holiday planner", "Book the car.")
+    assert saved.added and saved.shown == "Holiday Planner.md"
+    assert notes.take(nas, "Projects/Kit ideas", "A light head.").shown == "Projects/Kit ideas.md"
+    assert notes.take(nas, "../../outside", "x").shown == "Inbox/outside.md"
+    hits = memory.index.word_search("car", [NOTES], 5)
+    assert hits and memory.index.get(hits[0]).ref == "Holiday Planner.md"  # re-read
+
+
+def test_an_empty_note_takes_dans_words(memory, vault):
+    s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
+    brain, _ = make(memory, s, note_reply("", ""))
+    collect(brain.chat("take a note for me stating that you are testing notes"))
+    (saved,) = vault.glob("*.md")
+    assert saved.read_text(encoding="utf-8").endswith("You are testing notes\n")
+
+
+def test_kit_opens_a_note_before_answering(memory, vault):
+    write(vault / "Holiday Planner.md", "Broome in July. Budget $4000.")
+    s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
+    brain, model = make(
+        memory,
+        s,
+        json.dumps(
+            {
+                "emotion": "curious",
+                "segments": [{"say": "Let me open it.", "gesture": "nod"}],
+                "action": {"kind": "read_note", "text": "Holiday Planner"},
+            }
+        ),
+        json.dumps(
+            {
+                "emotion": "happy",
+                "segments": [{"say": "Broome in July.", "gesture": "nod"}],
+                "action": {"kind": "none", "text": ""},
+            }
+        ),
+    )
+    brain.notes.sync(s.nas)
+    events = collect(brain.chat("What's in my holiday planner?"))
+    system = model.calls[0][0]["content"]
+    assert "- read_note:" in system and "Dan's notes (newest first): Holiday Planner." in system
+    assert next(e for e in events if e["type"] == "reading_note")["note"] == "Holiday Planner"
+    assert "Budget $4000" in model.calls[1][-1]["content"]

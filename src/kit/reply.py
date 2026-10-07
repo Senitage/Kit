@@ -85,6 +85,7 @@ class Action(BaseModel):
         "look_at_pc",
         "remember",
         "note",
+        "read_note",
         "thing",
         "weather",
         "ask_cloud",
@@ -92,7 +93,8 @@ class Action(BaseModel):
     ] = Field(
         description="recall searches memory before answering; look_at_pc checks what's "
         "open and in focus on Dan's PC and how it's running; remember saves a fact; "
-        "note writes a note into Dan's notes; "
+        "note writes a note into Dan's notes; read_note opens one of his notes and reads "
+        "it before answering; "
         "thing notes a named thing and where it lives; weather gets the forecast before "
         "answering; ask_cloud hands the question to the "
         "cloud model; ask_expert hands it to the strongest model; none does nothing."
@@ -101,11 +103,14 @@ class Action(BaseModel):
         "",
         description="For recall: what to search for. For remember: the fact, as one "
         "sentence that makes sense on its own later. For note: the note itself, in "
-        "markdown. For ask_cloud and ask_expert: the "
+        "markdown. For read_note: the note's name or path. For ask_cloud and ask_expert: the "
         "full question with the context it needs. For weather: the place, or empty for "
         "home.",
     )
-    title: str = Field("", description="For note: a short title, used as the file name.")
+    title: str = Field(
+        "",
+        description="For note: a short title for a new note, or the name of the note to add to.",
+    )
     category: FactKind = Field("other", description="For remember: what kind of fact it is.")
     thing_kind: ThingKind = Field("other", description="For thing: what kind of thing it is.")
     link_system: LinkSystem = Field(

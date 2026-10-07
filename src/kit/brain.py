@@ -87,7 +87,7 @@ from kit.notebook import (
     later_want,
     tomorrow_morning,
 )
-from kit.notes import NOTES, NoteError, Notes
+from kit.notes import NOTES, NoteError, Notes, asked_text
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
@@ -768,14 +768,31 @@ class Brain:
         self.pending_thing = thing.id
         return {"type": "thing_suggested", "thing": thing.as_dict()}
 
-    def _take_note(self, reply: Reply, settings: Settings) -> Event:
+    def _take_note(self, reply: Reply, settings: Settings, heard: str) -> Event:
+        """Save the note. If the model left it empty (a small model planning in a
+        hurry), what Dan asked to note is taken from his message."""
+        text = reply.action.text.strip() or asked_text(heard)
         try:
-            saved = self.notes.take(settings.nas, reply.action.title, reply.action.text)
+            saved = self.notes.take(settings.nas, reply.action.title, text)
         except NoteError as e:
             log.warning("note not saved: %s", e)
             return {"type": "notice", "message": f"The note wasn't saved: {e}."}
         verb = "Added to" if saved.added else "Saved"
         return {"type": "notice", "message": f"{verb} {saved.shown} in your notes."}
+
+    def _read_note(self, name: str, settings: Settings) -> str:
+        owner = settings.persona.owner
+        try:
+            where, body = self.notes.read(settings.nas, name)
+        except NoteError as e:
+            return (
+                f"[Not from {owner}. You tried to open the note '{name}', but {e}. Tell "
+                f"{owner}, or try the recall action to search the notes instead.]"
+            )
+        return (
+            f"[Not from {owner}. {owner}'s note {where}, as it is now:]\n{body}\n"
+            f"[Answer {owner}'s last message from it. Action none.]"
+        )
 
     def _implied_correction(self, text: str, recalled: Recalled) -> Event | None:
         """A correction the model didn't act on: "my tax stuff is actually in Tax/2023"
@@ -837,6 +854,7 @@ class Brain:
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
+            note_names=self.notes.names() if settings.nas.vault else None,
             forecast=forecast,
             pc_detail=pc_detail,
             sheet=sheet.text if sheet else "",
@@ -912,6 +930,12 @@ class Brain:
                 if job:
                     job.steps.append(f"checked the forecast for {place}")
                 look_up = weather_results(place, forecast, owner)
+            elif reply.action.kind == "read_note":
+                name = reply.action.text.strip() or reply.action.title.strip()
+                yield {"type": "reading_note", "note": name}
+                look_up = self._read_note(name, settings)
+                if job:
+                    job.steps.append(f"read your note '{name}'")
             if look_up is not None:
                 said = reply.full_text if plain else reply_json(reply)
                 messages += [
@@ -955,7 +979,7 @@ class Brain:
             if event:
                 yield event
         elif kind == "note":
-            yield self._take_note(reply, settings)
+            yield self._take_note(reply, settings, text)
         if kind in ("none", "remember") and hops == 0:
             event = self._implied_correction(text, recalled)
             if event:
