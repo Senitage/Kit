@@ -43,3 +43,21 @@ Dan: the desk app's chat window works but needs aesthetic work. Worth a
 design pass before the desk app is used daily: spacing, fonts, message
 bubbles, and matching the Glow face's look. Ask Dan what bothers him most
 before starting.
+
+## Kit's personality in chat (from stage 2 testing, 2026-10-07)
+
+Dan: "Kit doesn't have a personality yet." The local model copies the persona
+examples word for word ("Coffee first, or straight into it?") and picked up a
+catchphrase from its own recalled replies ("You're the one with the API key").
+The prompt now says examples show tone only and old wording isn't to be
+reused, and `kit new-chat` / `kit memory forget` clear a stuck line, but the
+replies are still flat.
+
+Ideas:
+
+- Feed kit.life's mood, drives and quirks into every chat reply, not just
+  pipe-ups, so the tone changes with real state.
+- More, more varied examples, rotated each turn so no single line dominates.
+- Detect a reply that repeats one of Kit's last few lines and regenerate it.
+- Try a bigger model for the chat role (Sonnet, or a larger local model on
+  a 3090) and compare with `kit eval replies`.
