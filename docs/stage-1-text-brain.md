@@ -248,8 +248,9 @@ run `sudo systemctl restart kit`.
 - [ ] **One message, your choice:** "ask Claude why the sky is blue" goes
       straight to the cloud; "think hard about ..." goes to the expert; "keep
       it local: ..." stays local.
-- [ ] **Swap a model:** `kit models work opus`, ask a question, and the chat
-      page shows Opus answered. Switch back with `kit models work sonnet`.
+- [ ] **Swap a model:** `kit models work opus`, then "ask Claude why the sky
+      is blue" (small talk stays local, so use a real question or "ask
+      Claude"), and the chat page shows Opus answered. Switch back with `kit models work sonnet`.
 - [ ] **Cloud-first and back:** `kit config set routing.mode cloud-first`,
       and small talk now comes from the cloud. Set it back to `balanced`.
 - [ ] **Offline:** with the internet unplugged (or the key file renamed),
