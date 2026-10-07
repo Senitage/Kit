@@ -20,8 +20,18 @@ $here = $PSScriptRoot
 $root = (Resolve-Path "$here\..\..").Path
 $build = Join-Path $here "build"
 
+# The build number makes every published build newer than the last, which is how
+# the app's update check knows there's something new. GitHub's run number on
+# GitHub Actions, 0 for a build made by hand (which never offers itself as an update).
+$build_no = if ($env:GITHUB_RUN_NUMBER) { $env:GITHUB_RUN_NUMBER } else { "0" }
+Set-Content -Path "$root\src\kit\desk\_build.py" -Encoding utf8 -Value @(
+    '"""Written by packaging/windows/build.ps1: which build of the desk app this is."""',
+    "",
+    "BUILD = $build_no"
+)
 Run $Python @("-m", "pip", "install", "--upgrade", "$root[desk]", "pyinstaller>=6.6")
-$version = (& $Python -c "import kit; print(kit.__version__)").Trim()
+$version = (& $Python -c "from kit.desk.update import VERSION; print(VERSION)").Trim()
+if (-not $version.EndsWith(".$build_no")) { throw "Kit reports version $version, not build ${build_no}: _build.py wasn't packed" }
 Run $Python @("$here\make_icon.py", "$build\kit.ico")
 
 # One folder rather than one file: Kit starts faster and antivirus is happier.
@@ -43,3 +53,4 @@ if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
 if (-not (Test-Path $iscc)) { throw "Inno Setup 6 isn't installed: winget install JRSoftware.InnoSetup" }
 Run $iscc @("/DAppVersion=$version", "$here\kit-desk.iss")
 Write-Host "Built $build\installer\Kit-Desk-Setup-$version.exe"
+if ($env:GITHUB_OUTPUT) { "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8 }

@@ -2,13 +2,18 @@ name: Desk app
 
 # Tests the desk app on real Windows and builds Kit-Desk-Setup.exe. The installer
 # is attached to each run as an artifact (Actions tab > Desk app > the run >
-# Artifacts), so it can be downloaded without building anything locally.
+# Artifacts). Builds of main are also published as a GitHub Release tagged
+# desk-v<version>, which is where the desk app's update check looks.
+# See docs/desk-app/README.md.
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write  # to publish releases from main
 
 jobs:
   windows:
@@ -22,7 +27,7 @@ jobs:
       - name: Desk app tests (real Windows API, Qt without a screen)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q tests/test_desk_app.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_pc_context.py
+        run: pytest -q tests/test_desk_app.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_desk_update.py tests/test_pc_context.py
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -30,6 +35,7 @@ jobs:
             choco install innosetup -y --no-progress
           }
       - name: Build the installer
+        id: build
         shell: pwsh
         run: packaging/windows/build.ps1
       - uses: actions/upload-artifact@v4
@@ -37,3 +43,16 @@ jobs:
           name: Kit-Desk-Setup
           path: packaging/windows/build/installer/*.exe
           if-no-files-found: error
+      - name: Publish the release (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          $notes = "Kit desk app $env:VERSION, built from $env:GITHUB_SHA.`n`n" +
+                   "Install: download Kit-Desk-Setup-$env:VERSION.exe below and run it. " +
+                   "Kit already installed? It offers this update by itself."
+          $installer = (Get-ChildItem packaging/windows/build/installer/*.exe).FullName
+          gh release create "desk-v$env:VERSION" $installer `
+            --title "Kit desk app $env:VERSION" --notes $notes --target $env:GITHUB_SHA --latest

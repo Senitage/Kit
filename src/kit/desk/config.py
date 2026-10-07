@@ -20,6 +20,8 @@ import tomli_w
 DESK_DIR_ENV = "KIT_DESK_DIR"
 CONFIG_FILE = "desk.toml"
 TOKEN_FILE = "api_token"
+# A read-only GitHub token, only needed while Kit's repo is private (see kit.desk.update).
+UPDATE_TOKEN_FILE = "github_token"
 
 # Titles from these apps are never sent to Kit (matched against the app or exe name).
 HIDDEN_APPS = ["KeePass", "KeePassXC", "1Password", "Bitwarden", "LastPass", "Dashlane"]
@@ -63,6 +65,17 @@ class DeskConfig:
     face_size: int = 150
     face_x: int | None = None  # where Dan last left the face; None puts it bottom right
     face_y: int | None = None
+    # How Kit looks (the Look page).
+    theme: str = "system"  # system, dark or light
+    accent: str = "#3b78d8"
+    eye_colour: str = "#7ef3e6"
+    font_pt: float = 10.5
+    speech_bubble: bool = True  # say replies beside the face while the chat is closed
+    chat_width: int = 460
+    chat_height: int = 640
+    # Updates (kit.desk.update).
+    check_updates: bool = True
+    update_repo: str = "Senitage/Kit"
 
     @classmethod
     def load(cls, folder: Path | None = None) -> DeskConfig:
@@ -85,18 +98,18 @@ class DeskConfig:
         (folder / CONFIG_FILE).write_text(tomli_w.dumps(data), encoding="utf-8")
 
 
-def load_token(folder: Path | None = None) -> str:
-    path = (folder or desk_dir()) / TOKEN_FILE
+def load_token(folder: Path | None = None, name: str = TOKEN_FILE) -> str:
+    path = (folder or desk_dir()) / name
     try:
         return path.read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
 
-def save_token(token: str, folder: Path | None = None) -> None:
+def save_token(token: str, folder: Path | None = None, name: str = TOKEN_FILE) -> None:
     folder = folder or desk_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / TOKEN_FILE
+    path = folder / name
     # Owner-only on Linux; on Windows %APPDATA% is already private to Dan's account.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:

@@ -26,6 +26,8 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
+RestartApplications=no
+VersionInfoVersion={#AppVersion}
 
 [Tasks]
 Name: "startup"; Description: "Start Kit when I log on"; GroupDescription: "Starting Kit:"
@@ -46,11 +48,18 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\Kit.exe"; Description: "Start Kit now"; Flags: nowait postinstall skipifsilent
+; An update from inside Kit runs this installer quietly with /update=1: start Kit again after.
+Filename: "{app}\Kit.exe"; Parameters: "--background"; Flags: nowait; Check: IsUpdate
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Kit.exe /F"; Flags: runhidden; RunOnceId: "StopKit"
 
 [Code]
+function IsUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:update|0}') = '1';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   { Remove start-at-logon whether the installer or the app's settings turned it on.

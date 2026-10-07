@@ -47,6 +47,8 @@ and floating on the desktop, a chat window, and a feed of which windows are
 open and what has focus (titles only, no screenshots), plus PC health. A Chrome
 extension adds the open tabs and the site you're on. Install
 and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
+How the installer is built and published, and how the app updates itself:
+[docs/desk-app/README.md](docs/desk-app/README.md).
 
 ## Now: Kit's inner life (side stage)
 

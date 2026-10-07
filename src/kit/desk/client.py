@@ -68,6 +68,38 @@ class BrainClient:
     def new_chat(self) -> None:
         self._call("POST", "/api/chat/new")
 
+    # Kit's settings, as on the settings page.
+
+    def settings(self) -> dict:
+        return self._call("GET", "/api/settings").json()
+
+    def settings_schema(self) -> dict:
+        return self._call("GET", "/api/settings/schema").json()
+
+    def save_settings(self, patch: dict) -> dict:
+        return self._call("PATCH", "/api/settings", json=patch).json()
+
+    def undo_settings(self) -> dict:
+        return self._call("POST", "/api/settings/undo").json()
+
+    # Kit's memory, as on the memory page.
+
+    def facts(self) -> list[dict]:
+        return self._call("GET", "/api/memory/facts").json()
+
+    def search(self, query: str, k: int = 15) -> dict:
+        return self._call("GET", "/api/memory/search", params={"q": query, "k": k}).json()
+
+    def remember(self, text: str, pinned: bool = False) -> dict:
+        body = {"text": text, "pinned": pinned}
+        return self._call("POST", "/api/memory/facts", json=body, timeout=CHAT_TIMEOUT).json()
+
+    def edit_fact(self, fact_id: int, **changes) -> dict:
+        return self._call("PATCH", f"/api/memory/facts/{fact_id}", json=changes).json()
+
+    def forget(self, fact_id: int) -> None:
+        self._call("DELETE", f"/api/memory/facts/{fact_id}")
+
     def report(self, snapshot: dict) -> None:
         self._call("POST", "/api/pc/context", json=snapshot)
 

@@ -28,43 +28,53 @@ import webbrowser
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QObject,
+    QPoint,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QAction, QColor, QIcon, QMouseEvent, QPainter, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
-import kit
-from kit.desk import startup
+from kit.desk import startup, theme
 from kit.desk.alive import Alive
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError
-from kit.desk.config import DeskConfig, desk_dir, load_token, save_token
+from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
+from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
+from kit.desk.window import ConnectionForm, KitWindow, in_background
 from kit.face import Face
 
 log = logging.getLogger("kit.desk")
 
 INSTANCE_NAME = "kit-desk-app"
 HEALTH_EVERY_MS = 15_000
+OPEN_MS = 160  # the chat fades in this quickly
+# Which DeskConfig fields each page of Kit's window owns, so a save on one page
+# never puts back another page's old values.
+PC_FIELDS = ("brain_url", "watch", "show_face", "hidden_apps", "hidden_words")
+LOOK_FIELDS = ("theme", "accent", "eye_colour", "face_size", "font_pt", "speech_bubble")
+UPDATE_FIELDS = ("check_updates", "update_repo")
 # What Kit's state reads as on the face while he works.
 FACE_STATES = {
     "thinking": "thinking",
@@ -81,7 +91,7 @@ def extension_folder() -> Path:
     return Path(__file__).parent / "browser_extension"
 
 
-def face_icon(offline: bool = False, size: int = 64) -> QIcon:
+def face_icon(offline: bool = False, size: int = 64, eye: str | None = None) -> QIcon:
     """Kit's face as an icon: the tray icon and the window icon."""
     face = Face()
     if offline:
@@ -91,7 +101,7 @@ def face_icon(offline: bool = False, size: int = 64) -> QIcon:
     pix = QPixmap(size, size)
     pix.fill(QColor(0, 0, 0, 0))
     p = QPainter(pix)
-    paint_glow(p, QRectF(0, 0, size, size), frame)
+    paint_glow(p, QRectF(0, 0, size, size), frame, eye=QColor(eye) if eye else None)
     p.end()
     return QIcon(pix)
 
@@ -156,9 +166,13 @@ class SpeechBubble(QLabel):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWordWrap(True)
+        self.restyle("#7ef3e6")
+
+    def restyle(self, eye: str, font_pt: float = 10.0) -> None:
+        """Glow's speech is in the colour of his eyes, on his own dark screen."""
         self.setStyleSheet(
-            "QLabel { background: #0f141b; color: #7ef3e6; border: 1px solid #2b333f;"
-            " border-radius: 10px; padding: 8px 10px; font-size: 10pt; }"
+            f"QLabel {{ background: #0f141b; color: {eye}; border: 1px solid #2b333f;"
+            f" border-radius: 14px; padding: 8px 12px; font-size: {font_pt}pt; }}"
         )
 
     def setText(self, text: str) -> None:  # noqa: N802 (called by Performer)
@@ -182,45 +196,17 @@ class SpeechBubble(QLabel):
 
 
 class SettingsDialog(QDialog):
-    """Where the brain is, the token, and what Kit may see. Also the first-run setup."""
+    """The first-run setup: where the brain is, the token, and what Kit may see.
+    Afterwards the same form is the This PC page of Kit's window."""
 
     def __init__(self, config: DeskConfig, token: str, first_run: bool = False) -> None:
         super().__init__()
         self.setWindowTitle("Kit setup" if first_run else "Kit settings")
         self.setWindowIcon(face_icon())
-        self.config = config
-        self.url = QLineEdit(config.brain_url)
-        self.url.setPlaceholderText("http://kit-server:8600")
-        self.token = QLineEdit(token)
-        self.token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.token.setPlaceholderText("run `kit token` on the server")
-        self.result = QLabel("")
-        self.result.setWordWrap(True)
-        test = QPushButton("Test connection")
-        test.clicked.connect(self.test)
-        self.watch = QCheckBox("Let Kit see which windows are open and what I'm working on")
-        self.watch.setChecked(config.watch)
-        self.show_face = QCheckBox("Show Kit's face on the desktop")
-        self.show_face.setChecked(config.show_face)
-        self.at_logon = QCheckBox("Start Kit when I log on")
-        self.at_logon.setChecked(startup.enabled() or first_run)
-        self.at_logon.setEnabled(sys.platform == "win32")
-        self.hidden_apps = QLineEdit(", ".join(config.hidden_apps))
-        self.hidden_words = QPlainTextEdit(", ".join(config.hidden_words))
-        self.hidden_words.setFixedHeight(60)
-
-        form = QFormLayout()
-        form.addRow("Kit's address", self.url)
-        form.addRow("Token", self.token)
-        row = QHBoxLayout()
-        row.addWidget(test)
-        row.addWidget(self.result, 1)
-        form.addRow("", row)
-        form.addRow(self.watch)
-        form.addRow("Never share titles from", self.hidden_apps)
-        form.addRow("or titles with the words", self.hidden_words)
-        form.addRow(self.show_face)
-        form.addRow(self.at_logon)
+        self.form = ConnectionForm(config, token, first_run)
+        # The form's boxes, by name, for callers and tests.
+        for name in ("url", "token", "watch", "hidden_apps", "hidden_words", "show_face"):
+            setattr(self, name, getattr(self.form, name))
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -234,40 +220,12 @@ class SettingsDialog(QDialog):
             )
             intro.setWordWrap(True)
             layout.addWidget(intro)
-        layout.addLayout(form)
+        layout.addWidget(self.form)
         layout.addWidget(buttons)
-        self.resize(520, 0)
-
-    def test(self) -> None:
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        client = BrainClient(self.url.text().strip(), self.token.text().strip())
-        try:
-            status = client.check()
-            self.result.setText(
-                f"Connected to {status.get('name', 'Kit')} {status.get('version')}."
-            )
-            self.result.setStyleSheet("color: #3fb950;")
-        except BrainError as e:
-            self.result.setText(str(e))
-            self.result.setStyleSheet("color: #f85149;")
-        finally:
-            client.close()
-            QApplication.restoreOverrideCursor()
-
-    @staticmethod
-    def _list(text: str) -> list[str]:
-        return [x.strip() for x in text.replace("\n", ",").split(",") if x.strip()]
+        self.resize(560, 0)
 
     def values(self) -> tuple[DeskConfig, str, bool]:
-        config = replace(
-            self.config,
-            brain_url=self.url.text().strip().rstrip("/") or self.config.brain_url,
-            watch=self.watch.isChecked(),
-            show_face=self.show_face.isChecked(),
-            hidden_apps=self._list(self.hidden_apps.text()),
-            hidden_words=self._list(self.hidden_words.toPlainText()),
-        )
-        return config, self.token.text().strip(), self.at_logon.isChecked()
+        return self.form.values()
 
 
 class _NoDesktop:
@@ -300,6 +258,7 @@ class DeskApp(QObject):
         self.app = app
         self.config = DeskConfig.load()
         self.token = load_token()
+        self.update_token = load_token(name=UPDATE_TOKEN_FILE)
         self.client: BrainClient | None = None
         self.online: bool | None = None
         self._stop = threading.Event()
@@ -313,8 +272,16 @@ class DeskApp(QObject):
         self.performer = Performer(self.face, self.bubble)
         self.chat = ChatWindow()
         self.chat.setWindowIcon(face_icon())
+        self.chat.resize(self.config.chat_width, self.config.chat_height)
         self.chat.replied.connect(self._act_out)
         self.chat.state.connect(self._chat_state)
+        self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
+        self.chat.resized.connect(self._chat_resized)
+        self._save_soon = QTimer(self)
+        self._save_soon.setSingleShot(True)
+        self._save_soon.timeout.connect(lambda: self.config.save())
+        self.window: KitWindow | None = None
+        self.apply_look()
 
         self.menu = self._menu()
         self.face.menu = self.menu
@@ -349,6 +316,10 @@ class DeskApp(QObject):
         self.check_health()
         threading.Thread(target=self._watch_loop, name="kit-watch", daemon=True).start()
         threading.Thread(target=self._life_loop, name="kit-life", daemon=True).start()
+        self.update_timer = QTimer(self)
+        self.update_timer.setSingleShot(True)
+        self.update_timer.timeout.connect(self.check_for_update)
+        self.update_timer.start(FIRST_CHECK_S * 1000)
 
         if not self.token:
             QTimer.singleShot(0, lambda: self.open_settings(first_run=True))
@@ -369,13 +340,14 @@ class DeskApp(QObject):
         self.watch_action.toggled.connect(self.set_watching)
         menu.addAction(self.watch_action)
         menu.addSeparator()
-        menu.addAction("Kit in the browser", lambda: webbrowser.open(self.config.brain_url))
-        menu.addAction(
-            "What Kit remembers", lambda: webbrowser.open(self.config.brain_url + "/memory")
-        )
+        menu.addAction("What Kit remembers...", lambda: self.open_window("Memory"))
+        menu.addAction("Settings...", lambda: self.open_window("Kit's settings"))
+        menu.addAction("Look...", lambda: self.open_window("Look"))
         menu.addAction("Quiet for an hour", lambda: self.quiet(60))
+        menu.addSeparator()
+        menu.addAction("Kit in the browser", lambda: webbrowser.open(self.config.brain_url))
         menu.addAction("Set up the Chrome extension...", self.extension_help)
-        menu.addAction("Settings...", self.open_settings)
+        menu.addAction("Check for updates...", lambda: self.open_window("Updates", check=True))
         menu.addSeparator()
         menu.addAction("Quit Kit", self.quit)
         return menu
@@ -395,10 +367,26 @@ class DeskApp(QObject):
             self._place_chat()
         self.bubble.hide()
         self.chat.load_history()
+        if not self.chat.isVisible():
+            self._fade_in(self.chat)
         self.chat.show()
         self.chat.raise_()
         self.chat.activateWindow()
         self.chat.input.setFocus()
+
+    def _fade_in(self, window: QWidget) -> None:
+        window.setWindowOpacity(0.0)
+        fade = QPropertyAnimation(window, b"windowOpacity", window)
+        fade.setDuration(OPEN_MS)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _chat_resized(self, size) -> None:
+        if (size.width(), size.height()) != (self.config.chat_width, self.config.chat_height):
+            self.config.chat_width, self.config.chat_height = size.width(), size.height()
+            self._save_soon.start(800)
 
     def _place_chat(self) -> None:
         """Open the chat beside Kit's face, on whichever side has room."""
@@ -449,15 +437,22 @@ class DeskApp(QObject):
         )
 
     def open_settings(self, first_run: bool = False) -> None:
+        if not first_run:
+            self.open_window("This PC")
+            return
         dialog = SettingsDialog(self.config, self.token, first_run)
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            if first_run and not self.token:
+            if not self.token:
                 QMessageBox.information(
                     None, "Kit", "Kit needs its address and token. Open Settings from the tray."
                 )
             return
-        self.config, self.token, at_logon = dialog.values()
-        self.config.save()
+        self.save_pc(*dialog.values())
+
+    def save_pc(self, config: DeskConfig, token: str, at_logon: bool) -> None:
+        """This PC's settings, from the first-run setup or the This PC page."""
+        self._take(config, PC_FIELDS)
+        self.token = token
         save_token(self.token)
         try:
             startup.set_enabled(at_logon)
@@ -467,6 +462,100 @@ class DeskApp(QObject):
         self.watch_action.setChecked(self.config.watch)
         self._connect()
         self.check_health()
+
+    def _take(self, config: DeskConfig, names: tuple[str, ...]) -> None:
+        """Keep a page's fields from ``config`` and save."""
+        self.config = replace(self.config, **{n: getattr(config, n) for n in names})
+        self.config.save()
+
+    # Kit's window: memory, settings, look, updates
+
+    def open_window(self, page: str = "Memory", check: bool = False) -> None:
+        if self.window is None:
+            self.window = KitWindow(
+                self.config,
+                self.token,
+                self.update_token,
+                lambda: self.client,
+                lambda: self.config.brain_url,
+                desk_dir() / "updates",
+            )
+            self.window.setWindowIcon(face_icon(eye=self.config.eye_colour))
+            self.window.apply_look(self._palette(), self.config.font_pt)
+            self.window.pc.saved.connect(self.save_pc)
+            self.window.look.changed.connect(self.set_look)
+            self.window.updates.settings_changed.connect(self._update_settings)
+            self.window.updates.install.connect(self.install_update)
+        if not self.window.isVisible():
+            self._fade_in(self.window)
+        self.window.show_page(page)
+        if check:
+            self.window.updates.check()
+
+    def _palette(self) -> theme.Palette:
+        return theme.palette(self.config.theme, self.config.accent)
+
+    def set_look(self, config: DeskConfig) -> None:
+        self._take(config, LOOK_FIELDS)
+        self.apply_look()
+
+    def apply_look(self) -> None:
+        """Show the Look page's choices everywhere: chat, window, face and bubble."""
+        palette = self._palette()
+        self.chat.apply_look(palette, self.config.font_pt)
+        if self.window is not None:
+            self.window.apply_look(palette, self.config.font_pt)
+        self.face.eye = QColor(self.config.eye_colour)
+        if self.face.width() != self.config.face_size:
+            centre = self.face.frameGeometry().center()
+            self.face.resize(self.config.face_size, self.config.face_size)
+            if self.face.isVisible():
+                self.face.move(centre - self.face.rect().center())
+        self.bubble.restyle(self.config.eye_colour, max(8.0, self.config.font_pt - 0.5))
+        icon = face_icon(eye=self.config.eye_colour)
+        self.chat.setWindowIcon(icon)
+        if self.online and hasattr(self, "tray"):
+            self.tray.setIcon(icon)
+
+    # Updates
+
+    def _update_settings(self, config: DeskConfig, token: str) -> None:
+        self._take(config, UPDATE_FIELDS)
+        if token != self.update_token:
+            self.update_token = token
+            save_token(token, name=UPDATE_TOKEN_FILE)
+
+    def check_for_update(self) -> None:
+        """The daily check. A newer version is offered, never installed unasked."""
+        self.update_timer.start(CHECK_EVERY_S * 1000)
+        if not self.config.check_updates:
+            return
+        updater = Updater(self.config.update_repo, self.update_token)
+
+        def done(found) -> None:
+            updater.close()
+            if isinstance(found, Exception):
+                log.info("update check: %s", found)
+                return
+            if found is None:
+                return
+            log.info("update %s is available (this is %s)", found.version, VERSION)
+            self.open_window("Updates")
+            self.window.updates.show_release(found)
+            self.tray.showMessage(
+                "Kit", f"A new version of me is ready ({found.version}).", face_icon(), 8000
+            )
+
+        in_background(updater.newer, done)
+
+    def install_update(self, installer) -> None:
+        try:
+            run_installer(installer)
+        except Exception as e:  # noqa: BLE001 (shown to Dan)
+            QMessageBox.warning(None, "Kit", f"The update didn't start: {e}")
+            return
+        log.info("installing %s", installer)
+        self.quit()
 
     def extension_help(self) -> None:
         folder = extension_folder()
@@ -520,7 +609,7 @@ class DeskApp(QObject):
 
     def _show_online(self, online: bool, detail: str) -> None:
         if online != self.online:
-            self.tray.setIcon(face_icon(offline=not online))
+            self.tray.setIcon(face_icon(offline=not online, eye=self.config.eye_colour))
             self.face.face.set_state("idle" if online else "offline")
             if self.online is not None:
                 log.info("brain %s: %s", "online" if online else "offline", detail)
@@ -620,7 +709,7 @@ class DeskApp(QObject):
             self.face.face.set_state("idle")
 
     def _act_out(self, reply: dict) -> None:
-        self.bubble.enabled = not self.chat.isVisible()
+        self.bubble.enabled = self.config.speech_bubble and not self.chat.isVisible()
         if reply.get("segments"):
             self.performer.perform(reply)
 
@@ -665,8 +754,9 @@ def _selftest(argv: list[str]) -> int:
     if face_icon().isNull():
         return 2
     chat = ChatWindow()
-    chat.on_event(1, {"type": "say", "text": "Self-test."})
-    ok = "Self-test." in chat.text() and QLocalServer is not None
+    chat.on_event(1, {"type": "say", "text": "**Self-test.**"})
+    window = KitWindow(DeskConfig(), "", "", lambda: None, lambda: "", desk_dir() / "updates")
+    ok = "Self-test." in chat.text() and QLocalServer is not None and window is not None
     app.quit()
     return 0 if ok else 3
 
@@ -674,7 +764,7 @@ def _selftest(argv: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
     if "--version" in argv:
-        print(f"Kit desk app {kit.__version__}")
+        print(f"Kit desk app {VERSION}")
         return 0
     if "--selftest" in argv:
         return _selftest(argv)
@@ -687,7 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     desk = DeskApp(app, background="--background" in argv)
     server.newConnection.connect(lambda: (server.nextPendingConnection(), desk.show_chat()))
-    log.info("Kit desk app %s started", kit.__version__)
+    log.info("Kit desk app %s started", VERSION)
     return app.exec()
 
 
