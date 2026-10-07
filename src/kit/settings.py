@@ -256,6 +256,13 @@ class BrainSettings(_Section):
         "0.0.0.0 lets the home network and Tailscale in.",
     )
     port: int = Field(8600, ge=1, le=65535, description="Port for the chat page and API.")
+    new_chat_after_minutes: int = Field(
+        120,
+        ge=0,
+        le=10080,
+        description="Start a fresh conversation when you come back after this long quiet "
+        "(the old one stays in memory). 0 never does.",
+    )
     history_messages: int = Field(
         20, ge=2, le=200, description="Recent messages Kit sees each turn."
     )
