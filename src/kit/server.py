@@ -27,6 +27,7 @@ from kit.memory import CONVERSATION, DAYS, FACTS, Memory
 from kit.paths import KitPaths
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
+from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,27 @@ class FactEdit(BaseModel):
     text: str | None = None
     kind: str | None = None
     pinned: bool | None = None
+
+
+class LinkIn(BaseModel):
+    system: str
+    target: str
+
+
+class ThingIn(BaseModel):
+    name: str = Field(min_length=1)
+    kind: str = "other"
+    aliases: list[str] = []
+    links: list[LinkIn] = []
+    about: str = ""
+
+
+class ThingEdit(BaseModel):
+    name: str | None = None
+    kind: str | None = None
+    aliases: list[str] | None = None
+    links: list[LinkIn] | None = None
+    about: str | None = None
 
 
 def _item(item: Item | None) -> dict:
@@ -120,10 +142,13 @@ def create_app(
             "name": s.persona.name,
             "version": kit.__version__,
             "settings_problem": store.problem,
+            "routing": s.routing.mode,
             "local_model": s.ollama.model,
-            "claude_model": s.claude.model,
-            "claude_month_usd": round(memory.month_spend(), 4),
-            "claude_cap_usd": s.claude.monthly_cap_usd,
+            "work_model": s.profile("work").model,
+            "expert_model": s.profile("expert").model,
+            "cloud_month_usd": round(memory.month_spend(), 4),
+            "cloud_cap_usd": s.cloud.monthly_cap_usd,
+            "working_on": brain.busy(),
             "memory_facts": len(memory.facts()),
             "memory_items": memory.index.count(),
             "memory_search": "words only: " + brain.recall.embed_problem
@@ -227,7 +252,7 @@ def create_app(
 
     @app.get("/api/memory/search", dependencies=auth)
     async def search(q: str, k: Annotated[int, Query(ge=1, le=100)] = 10) -> dict:
-        hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION], min(k, 50))
+        hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION, THINGS], min(k, 50))
         return {
             "words_only": brain.recall.embed_problem is not None,
             "hits": [
@@ -235,6 +260,65 @@ def create_app(
                 for h in hits
             ],
         }
+
+    register = Register(memory)
+
+    def _thing(thing_id: int) -> dict:
+        thing = register.get(thing_id)
+        if thing is None:
+            raise HTTPException(404, "no such thing")
+        return thing.as_dict()
+
+    @app.get("/api/things", dependencies=auth)
+    def things() -> list[dict]:
+        return [t.as_dict() for t in sorted(register.all(), key=lambda t: t.name.lower())]
+
+    @app.get("/api/things/suggestions", dependencies=auth)
+    def thing_suggestions() -> list[dict]:
+        return [t.as_dict() for t in register.suggestions()]
+
+    @app.post("/api/things", dependencies=auth)
+    async def add_thing(body: ThingIn) -> dict:
+        links = [x.model_dump() for x in body.links]
+        new_id = register.add(body.name, body.kind, body.aliases, links, body.about)
+        await brain.recall.index_pending()
+        return _thing(new_id)
+
+    @app.patch("/api/things/{thing_id}", dependencies=auth)
+    async def edit_thing(thing_id: int, body: ThingEdit) -> dict:
+        links = None if body.links is None else [x.model_dump() for x in body.links]
+        try:
+            new_id = register.change(
+                thing_id, body.name, body.kind, body.aliases, links, body.about
+            )
+        except KeyError:
+            raise HTTPException(404, "no such thing") from None
+        await brain.recall.index_pending()
+        return _thing(new_id)
+
+    @app.post("/api/things/{thing_id}/confirm", dependencies=auth)
+    async def confirm_thing(thing_id: int) -> dict:
+        new_id = register.confirm(thing_id)
+        if new_id is None:
+            raise HTTPException(404, "no such suggestion")
+        await brain.recall.index_pending()
+        return _thing(new_id)
+
+    @app.post("/api/things/{thing_id}/reject", dependencies=auth)
+    def reject_thing(thing_id: int) -> dict:
+        if not register.reject(thing_id):
+            raise HTTPException(404, "no such suggestion")
+        return {"ok": True}
+
+    @app.get("/api/things/{thing_id}/history", dependencies=auth)
+    def thing_history(thing_id: int) -> list[dict]:
+        return [t.as_dict() for t in register.history(thing_id)]
+
+    @app.delete("/api/things/{thing_id}", dependencies=auth)
+    def forget_thing(thing_id: int) -> dict:
+        if not register.forget(thing_id):
+            raise HTTPException(404, "no such thing")
+        return {"ok": True}
 
     @app.get("/api/memory/days", dependencies=auth)
     def days() -> list[dict]:
@@ -244,7 +328,7 @@ def create_app(
     def spend() -> dict:
         return {
             "month_usd": round(memory.month_spend(), 4),
-            "cap_usd": store.current().claude.monthly_cap_usd,
+            "cap_usd": store.current().cloud.monthly_cap_usd,
             "log": [s.__dict__ for s in memory.spend_log()],
         }
 

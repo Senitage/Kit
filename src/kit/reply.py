@@ -8,11 +8,13 @@ on-screen helper now, the arm later) turns those names into movement.
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from kit.memory import FACT_KINDS
+from kit.things import SYSTEMS, THING_KINDS
 
 EMOTIONS: dict[str, str] = {
     "neutral": "calm, nothing special",
@@ -60,6 +62,8 @@ GESTURES: dict[str, str] = {
 FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
 Emotion = Literal[tuple(EMOTIONS)]  # type: ignore[valid-type]
 Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
+ThingKind = Literal[tuple(THING_KINDS)]  # type: ignore[valid-type]
+LinkSystem = Literal[("none", *SYSTEMS)]  # type: ignore[valid-type]
 
 
 class Segment(BaseModel):
@@ -70,17 +74,29 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "recall", "remember", "ask_claude"] = Field(
-        description="recall searches memory before answering; remember saves a fact; "
-        "ask_claude hands a question to Claude; none does nothing."
+    kind: Literal["none", "recall", "remember", "thing", "weather", "ask_cloud", "ask_expert"] = (
+        Field(
+            description="recall searches memory before answering; remember saves a fact; "
+            "thing notes a named thing and where it lives; weather gets the forecast before "
+            "answering; ask_cloud hands the question to the "
+            "cloud model; ask_expert hands it to the strongest model; none does nothing."
+        )
     )
     text: str = Field(
         "",
         description="For recall: what to search for. For remember: the fact, as one "
-        "sentence that makes sense on its own later. For ask_claude: the full question "
-        "with the context Claude needs.",
+        "sentence that makes sense on its own later. For ask_cloud and ask_expert: the "
+        "full question with the context it needs. For weather: the place, or empty for "
+        "home.",
     )
     category: FactKind = Field("other", description="For remember: what kind of fact it is.")
+    thing_kind: ThingKind = Field("other", description="For thing: what kind of thing it is.")
+    link_system: LinkSystem = Field(
+        "none", description="For thing: the system where it lives, if known."
+    )
+    link_target: str = Field(
+        "", description="For thing: where in that system, e.g. a folder path or note name."
+    )
 
 
 class Reply(BaseModel):
@@ -88,10 +104,20 @@ class Reply(BaseModel):
     emotion: Emotion
     segments: list[Segment] = Field(min_length=1, max_length=6)
     action: Action
+    detail: str = Field(
+        "",
+        description="Longer written detail shown on screen but not spoken: code, steps, "
+        "lists, numbers, sources. Usually empty.",
+    )
 
     @property
     def text(self) -> str:
         return " ".join(s.say.strip() for s in self.segments if s.say.strip())
+
+    @property
+    def full_text(self) -> str:
+        """What was said, then any written detail."""
+        return f"{self.text}\n\n{self.detail.strip()}" if self.detail.strip() else self.text
 
     @classmethod
     def plain(cls, text: str, emotion: str = "neutral", gesture: str = "none") -> Reply:
@@ -135,6 +161,81 @@ def parse_reply(text: str) -> Reply:
         return Reply.model_validate_json(text)
     except ValidationError as e:
         raise ReplyError(f"not a valid reply: {e.errors()[0]['msg']}: {text[:200]!r}") from e
+
+
+SPOKEN_LIMIT = 300
+
+
+def parse_cloud_reply(text: str) -> Reply:
+    """A cloud model's reply. Cloud models are asked for the same JSON as the local
+    one but not forced into it, so this is forgiving: JSON wrapped in prose or a
+    code fence, a half-written attempt before the real one (a web search can split
+    the answer), or a made-up emotion or gesture still give a proper reply. Plain
+    text becomes a reply too: a short answer is said, a long one is shown."""
+    text = text.strip()
+    for data in reversed(_json_objects(text)):
+        reply = _lenient_reply(data)
+        if reply is not None:
+            return reply
+    if len(text) <= SPOKEN_LIMIT:
+        return Reply.plain(text)
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0][:SPOKEN_LIMIT]
+    reply = Reply.plain(first)
+    reply.detail = text
+    return reply
+
+
+_DECODER = json.JSONDecoder(strict=False)  # allow raw newlines inside strings
+
+
+def _json_objects(text: str) -> list[dict]:
+    """Every complete JSON object in ``text`` that looks like a reply, in order."""
+    found, i = [], text.find("{")
+    while i != -1:
+        try:
+            data, end = _DECODER.raw_decode(text, i)
+        except ValueError:
+            i = text.find("{", i + 1)
+            continue
+        if isinstance(data, dict) and "segments" in data:
+            found.append(data)
+            i = text.find("{", end)
+        else:
+            i = text.find("{", i + 1)
+    return found
+
+
+def _lenient_reply(data: dict) -> Reply | None:
+    """A reply from JSON that's nearly right, with unknown values set to defaults."""
+    segments = []
+    for seg in data.get("segments") or []:
+        if isinstance(seg, dict) and str(seg.get("say", "")).strip():
+            gesture = seg.get("gesture")
+            segments.append(
+                {"say": str(seg["say"]), "gesture": gesture if gesture in GESTURES else "none"}
+            )
+    if not segments:
+        return None
+    raw = data.get("action") if isinstance(data.get("action"), dict) else {}
+    action = Action(kind="none").model_dump()
+    for name in Action.model_fields:
+        if name in raw:
+            try:
+                Action(**{**action, name: raw[name]})
+            except ValidationError:
+                continue
+            action[name] = raw[name]
+    emotion = data.get("emotion")
+    detail = data.get("detail")
+    try:
+        return Reply(
+            emotion=emotion if emotion in EMOTIONS else "neutral",
+            segments=[Segment(**seg) for seg in segments[:6]],
+            action=Action(**action),
+            detail=detail if isinstance(detail, str) else "",
+        )
+    except ValidationError:
+        return None
 
 
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}

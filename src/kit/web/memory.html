@@ -26,7 +26,7 @@
            background: var(--panel); color: var(--text); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; border: 0; }
   .note { color: var(--muted); font-size: 13px; min-height: 1.4em; white-space: pre-wrap; }
-  h2 { font-size: 16px; margin: 20px 0 8px; text-transform: capitalize; }
+  h2 { font-size: 16px; margin: 20px 0 8px; }
   .item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
           padding: 9px 12px; margin-bottom: 6px; }
   .item .text { overflow-wrap: anywhere; }
@@ -52,6 +52,16 @@
     <button class="primary" id="add">Remember</button>
   </div>
   <div class="note" id="note"></div>
+  <h2>Things and where they live</h2>
+  <div id="suggestions"></div>
+  <div class="row">
+    <input type="text" id="thing" placeholder="Name, e.g. Hilux">
+    <select id="thingKind"></select>
+    <select id="system"></select>
+    <input type="text" id="target" placeholder="Where, e.g. Documents/Cars/Hilux">
+    <button class="primary" id="addThing">Add</button>
+  </div>
+  <div id="things"></div>
   <div id="facts"></div>
   <h2>Days</h2>
   <div id="days"></div>
@@ -67,6 +77,8 @@ function token() {
 }
 const headers = { "Authorization": "Bearer " + token(), "Content-Type": "application/json" };
 const KINDS = ["about", "preference", "project", "place", "person", "plan", "other"];
+const THING_KINDS = ["person", "pet", "vehicle", "place", "project", "equipment", "other"];
+const SYSTEMS = { home_assistant: "Home Assistant", home_app: "home_app", nas: "NAS", mettools: "MetTools", obsidian: "Obsidian", code: "code", other: "other" };
 const note = document.getElementById("note");
 async function api(path, opts) {
   const r = await fetch(path, { headers, ...opts });
@@ -102,7 +114,64 @@ function factCard(f) {
   card.appendChild(meta);
   return card;
 }
+function linksText(t) {
+  return t.links.length ? t.links.map(l => (SYSTEMS[l.system] || l.system) + ": " + l.target).join(" · ") : "nowhere recorded yet";
+}
+function thingCard(t) {
+  const card = el("div", "item");
+  const also = t.aliases.length ? " (also " + t.aliases.join(", ") + ")" : "";
+  card.appendChild(el("div", "text", t.name + also + (t.about ? ". " + t.about : "")));
+  card.appendChild(el("div", "meta", linksText(t)));
+  const meta = el("div", "meta");
+  meta.append(el("span", "", t.kind));
+  if (t.suggested) {
+    meta.append(
+      button("Add", async () => { await api(`/api/things/${t.id}/confirm`, { method: "POST" }); load(); }),
+      button("No", async () => { await api(`/api/things/${t.id}/reject`, { method: "POST" }); load(); }),
+    );
+  } else {
+    meta.append(
+      button("Set link", async () => {
+        const system = prompt("Which system? " + Object.keys(SYSTEMS).join(", "), "nas");
+        if (!system || !(system in SYSTEMS)) return;
+        const current = t.links.find(l => l.system === system);
+        const target = prompt("Where in " + SYSTEMS[system] + "? (leave empty to remove)", current ? current.target : "");
+        if (target === null) return;
+        const links = t.links.filter(l => l.system !== system).concat(target.trim() ? [{ system, target: target.trim() }] : []);
+        await api(`/api/things/${t.id}`, { method: "PATCH", body: JSON.stringify({ links }) }); load();
+      }),
+      button("Other names", async () => {
+        const text = prompt("Other names, separated by commas:", t.aliases.join(", "));
+        if (text === null) return;
+        const aliases = text.split(",").map(a => a.trim()).filter(Boolean);
+        await api(`/api/things/${t.id}`, { method: "PATCH", body: JSON.stringify({ aliases }) }); load();
+      }),
+      button("History", async () => {
+        const versions = await api(`/api/things/${t.id}/history`);
+        const box = el("div", "");
+        for (const v of versions.slice(1)) box.appendChild(el("div", "old", linksText(v)));
+        if (versions.length < 2) box.appendChild(el("div", "note", "No earlier versions."));
+        card.appendChild(box);
+      }),
+      button("Forget", async () => { if (confirm("Take " + t.name + " out of the register?")) { await api(`/api/things/${t.id}`, { method: "DELETE" }); load(); } }),
+    );
+  }
+  card.appendChild(meta);
+  return card;
+}
+async function loadThings() {
+  const [things, suggested] = await Promise.all([api("/api/things"), api("/api/things/suggestions")]);
+  const sbox = document.getElementById("suggestions");
+  sbox.innerHTML = "";
+  if (suggested.length) sbox.appendChild(el("p", "note", "Kit heard these names and suggests adding them:"));
+  for (const t of suggested) sbox.appendChild(thingCard(t));
+  const box = document.getElementById("things");
+  box.innerHTML = "";
+  if (!things.length) box.appendChild(el("p", "note", "Nothing in the register yet. Add people, vehicles, rooms, projects and equipment with where each one lives."));
+  for (const t of things) box.appendChild(thingCard(t));
+}
 async function load() {
+  await loadThings();
   const facts = await api("/api/memory/facts");
   const box = document.getElementById("facts");
   box.innerHTML = "";
@@ -110,7 +179,7 @@ async function load() {
   for (const kind of KINDS) {
     const group = facts.filter(f => f.kind === kind).sort((a, b) => b.pinned - a.pinned);
     if (!group.length) continue;
-    box.appendChild(el("h2", "", kind === "about" ? "About you" : kind === "place" ? "Where things are" : kind + "s"));
+    box.appendChild(el("h2", "", ({ about: "About you", place: "Where things are", person: "People", preference: "Preferences", project: "Projects", plan: "Plans", other: "Other" })[kind] || kind));
     for (const f of group) box.appendChild(factCard(f));
   }
   const days = document.getElementById("days");
@@ -119,6 +188,19 @@ async function load() {
   if (!list.length) days.appendChild(el("p", "note", "Each finished day gets a summary here."));
   for (const d of list) { const c = el("div", "item"); c.append(el("div", "text", d.text), el("div", "meta", d.title)); days.appendChild(c); }
 }
+document.getElementById("thingKind").append(...THING_KINDS.map(k => { const o = el("option", "", k); o.value = k; return o; }));
+document.getElementById("system").append(...Object.entries(SYSTEMS).map(([k, v]) => { const o = el("option", "", v); o.value = k; return o; }));
+document.getElementById("addThing").addEventListener("click", async () => {
+  const name = document.getElementById("thing").value.trim();
+  const target = document.getElementById("target").value.trim();
+  if (!name) return;
+  const links = target ? [{ system: document.getElementById("system").value, target }] : [];
+  try {
+    await api("/api/things", { method: "POST", body: JSON.stringify({ name, kind: document.getElementById("thingKind").value, links }) });
+    document.getElementById("thing").value = ""; document.getElementById("target").value = "";
+    note.textContent = "Added " + name + "."; load();
+  } catch (e) { note.textContent = "Not saved: " + e.message; }
+});
 document.getElementById("kind").append(...KINDS.map(k => { const o = el("option", "", k); o.value = k; return o; }));
 document.getElementById("add").addEventListener("click", async () => {
   const input = document.getElementById("fact");

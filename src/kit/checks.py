@@ -190,21 +190,40 @@ def make_anthropic_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def check_claude(
-    settings: Settings, api_key: str | None, make_client: ClientFactory = make_anthropic_client
-) -> CheckResult:
-    """Checks the key and model with a free model lookup; no tokens are spent."""
-    if not api_key:
-        return CheckResult("claude", Status.FAIL, "no API key; see docs/stage-0-setup.md")
-    model = settings.claude.model
+def check_cloud(
+    settings: Settings,
+    api_key: Callable[[str], str | None],
+    make_client: ClientFactory = make_anthropic_client,
+) -> list[CheckResult]:
+    """One result per model the work and expert roles use. Claude keys are tried
+    with a free model lookup; no tokens are spent. Other keys are only looked for."""
+    results = []
+    for name in dict.fromkeys([settings.routing.work, settings.routing.expert]):
+        profile, label = settings.models[name], f"cloud: {name}"
+        if profile.provider == "ollama":
+            results.append(CheckResult(label, Status.PASS, f"{profile.model} runs locally"))
+            continue
+        key = api_key(profile.provider)
+        if not key:
+            detail = f"no {profile.provider} API key; see docs/stage-0-setup.md"
+            results.append(CheckResult(label, Status.FAIL, detail))
+        elif profile.provider == "anthropic":
+            results.append(_check_claude(label, profile.model, key, make_client))
+        else:
+            detail = f"{profile.provider} key found; it's tried on the first question"
+            results.append(CheckResult(label, Status.PASS, detail))
+    return results
+
+
+def _check_claude(label: str, model: str, key: str, make_client: ClientFactory) -> CheckResult:
     try:
-        info = make_client(api_key).models.retrieve(model)
+        info = make_client(key).models.retrieve(model)
     except anthropic.AuthenticationError:
-        return CheckResult("claude", Status.FAIL, "the API key was rejected")
+        return CheckResult(label, Status.FAIL, "the API key was rejected")
     except anthropic.NotFoundError:
-        return CheckResult("claude", Status.FAIL, f"model {model} not found for this key")
+        return CheckResult(label, Status.FAIL, f"model {model} not found for this key")
     except anthropic.APIConnectionError as e:
-        return CheckResult("claude", Status.FAIL, f"can't reach the Claude API: {e}")
+        return CheckResult(label, Status.FAIL, f"can't reach the Claude API: {e}")
     except anthropic.APIStatusError as e:
-        return CheckResult("claude", Status.FAIL, f"Claude API error {e.status_code}: {e.message}")
-    return CheckResult("claude", Status.PASS, f"key works; {info.display_name} is available")
+        return CheckResult(label, Status.FAIL, f"Claude API error {e.status_code}: {e.message}")
+    return CheckResult(label, Status.PASS, f"key works; {info.display_name} is available")

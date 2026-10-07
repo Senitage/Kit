@@ -50,8 +50,14 @@ closes, which would stop Kit. A Windows scheduled task keeps it up:
 1. Open **Task Scheduler**, **Create Task**. Name: `Kit WSL`.
 2. General: **Run only when user is logged on**, and tick **Hidden**.
 3. Triggers: **At log on** of your user.
-4. Actions: Program `wsl.exe`, arguments `-d Ubuntu --exec sleep infinity`.
-5. Settings: untick **Stop the task if it runs longer than**.
+4. Actions: Program `conhost.exe`, arguments
+   `--headless wsl.exe -d Ubuntu --exec sleep infinity`. (`conhost --headless`
+   runs it with no window; started directly, `wsl.exe` opens a console window
+   that stops Ubuntu when closed, even with Hidden ticked.)
+5. Settings: untick **Stop the task if it runs longer than**, and tick **If the
+   task fails, restart every 1 minute** (up to 999 times), so it comes back
+   after a `wsl --shutdown`.
+6. Right-click the task and **Run** it now.
 
 Set Windows to sign you in automatically after a restart (or just stay signed
 in), so Kit comes back on its own after updates. Use the name from
@@ -66,12 +72,16 @@ nvidia-smi
 ```
 
 It should list the RTX 2070 SUPER with 8192 MiB. If the command isn't found, the
-Windows driver is too old: update it and run `wsl --shutdown`.
+Windows driver is too old: update it and run `wsl --shutdown`. If it crashes
+with `Segmentation fault`, WSL is still using the libraries from before a driver
+update: run `wsl --shutdown` in PowerShell, open Ubuntu again and retry.
+`wsl --shutdown` also stops the Kit WSL task; run it again from Task Scheduler
+afterwards (or wait a minute if it's set to restart).
 
 ## 3. Python and the basics
 
 ```
-sudo apt update && sudo apt install -y git curl cifs-utils
+sudo apt update && sudo apt install -y git curl cifs-utils zstd
 python3 --version
 ```
 
@@ -193,6 +203,10 @@ chmod 700 /var/lib/kit/secrets
 chmod 600 /var/lib/kit/secrets/anthropic_api_key
 ```
 
+Kit uses Claude by default. If you later switch its work or expert model to
+GPT or Gemini (stage 1), their keys go in the same folder as `openai_api_key`
+and `gemini_api_key`.
+
 ## 8. Install Kit and run the checks
 
 Keep the code in Ubuntu's own home folder, not under `/mnt/c`, which is much
@@ -230,8 +244,8 @@ kit check
 
 Every line should say PASS. The NAS check writes a tiny `.kit-write-test` file
 and deletes it straight away, to prove the read-only shares really refuse writes
-and the vault accepts them. The Claude check only looks up the model, so it
-costs nothing.
+and the vault accepts them. The cloud checks only look up the model, so they
+cost nothing.
 
 ## When the PC becomes a Linux server
 
@@ -246,6 +260,6 @@ then repeat steps 2 to 8. Copy `/var/lib/kit` across before running `kit init`
 - [ ] Ollama answers, on the GPU, with tokens/s shown (`kit check`: ollama)
 - [ ] The desk PC and phone reach `kit-server` over Tailscale, including from mobile data
 - [ ] Each read-only share is readable and refuses writes; the vault accepts them (`kit check`: nas)
-- [ ] The Claude API key works (`kit check`: claude)
-- [ ] After closing every Ubuntu window and waiting five minutes, `ollama ps` in a new window still answers (Ubuntu stayed up)
+- [ ] The Claude API key works (`kit check`: cloud: sonnet and cloud: opus)
+- [ ] After closing every Ubuntu window and waiting five minutes, `uptime -s` in a new window shows an earlier start time (Ubuntu stayed up)
 - [ ] CI is green on Windows and Linux for this pull request

@@ -58,3 +58,13 @@ def test_index_pending_batches(memory):
     assert asyncio.run(recall.index_pending()) == 70
     assert e.calls == 3  # batches of 32
     assert asyncio.run(recall.index_pending()) == 0
+
+
+def test_one_turn_embeds_the_message_once(memory):
+    memory.add_fact("Rex is Dan's dog.", "person")
+    embedder = FakeEmbedder()
+    recall = make(memory, embedder)
+    asyncio.run(recall.index_pending())
+    before = embedder.calls
+    asyncio.run(recall.for_turn("How is Rex?", set()))
+    assert embedder.calls == before + 1

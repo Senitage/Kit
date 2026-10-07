@@ -20,8 +20,11 @@ class LocalModelError(Exception):
 
 
 class LocalModel(Protocol):
-    def stream(self, messages: list[dict], schema: dict) -> AsyncIterator[str]:
-        """Yield the model's output in pieces as it is generated."""
+    def stream(
+        self, messages: list[dict], schema: dict, model: str | None = None
+    ) -> AsyncIterator[str]:
+        """Yield the model's output in pieces as it is generated. ``model`` picks
+        another local model than the usual one."""
         ...
 
     async def complete(self, messages: list[dict], schema: dict) -> str:
@@ -36,9 +39,11 @@ class OllamaModel:
         self.settings = settings
         self.client = client
 
-    def _body(self, s: OllamaSettings, messages: list[dict], schema: dict) -> dict:
+    def _body(
+        self, s: OllamaSettings, messages: list[dict], schema: dict, model: str | None
+    ) -> dict:
         return {
-            "model": s.model,
+            "model": model or s.model,
             "messages": messages,
             "format": schema,
             "stream": True,
@@ -47,12 +52,14 @@ class OllamaModel:
             "options": {"temperature": s.temperature, "num_ctx": s.num_ctx},
         }
 
-    async def stream(self, messages: list[dict], schema: dict) -> AsyncIterator[str]:
+    async def stream(
+        self, messages: list[dict], schema: dict, model: str | None = None
+    ) -> AsyncIterator[str]:
         s = self.settings()
         url = f"{s.url}/api/chat"
         try:
             async with self.client.stream(
-                "POST", url, json=self._body(s, messages, schema), timeout=120
+                "POST", url, json=self._body(s, messages, schema, model), timeout=120
             ) as response:
                 if response.status_code != 200:
                     await response.aread()

@@ -1,4 +1,4 @@
-"""Stand-ins for the local model and Claude, so tests need no GPU, network or key."""
+"""Stand-ins for the local model and cloud models, so tests need no GPU, network or key."""
 
 from __future__ import annotations
 
@@ -27,17 +27,19 @@ class FakeModel:
         self.outputs = list(outputs)
         self.error = error
         self.calls: list[list[dict]] = []
+        self.models: list[str | None] = []
 
-    async def stream(self, messages, schema):
+    async def stream(self, messages, schema, model=None):
         self.calls.append(messages)
+        self.models.append(model)
         if self.error:
             raise LocalModelError(self.error)
         out = self.outputs.pop(0) if self.outputs else reply("Okay.")
         for i in range(0, len(out), 4):
             yield out[i : i + 4]
 
-    async def complete(self, messages, schema):
-        return "".join([p async for p in self.stream(messages, schema)])
+    async def complete(self, messages, schema, model=None):
+        return "".join([p async for p in self.stream(messages, schema, model)])
 
 
 class FakeMessages:
@@ -45,37 +47,55 @@ class FakeMessages:
         self.owner = owner
 
     async def create(self, **kwargs):
-        self.owner.calls.append(kwargs)
-        if self.owner.error:
-            raise self.owner.error
+        owner = self.owner
+        owner.calls.append(kwargs)
+        if owner.gate is not None:  # a slow answer: waits until the test opens the gate
+            await owner.gate.wait()
+        if owner.error:
+            raise owner.error
+        n = len(owner.calls) - 1
+        stop = owner.stop_reason[min(n, len(owner.stop_reason) - 1)]
+        answer = owner.answers[min(n, len(owner.answers) - 1)]
         return SimpleNamespace(
             model=kwargs["model"],
-            stop_reason=self.owner.stop_reason,
+            stop_reason=stop,
             content=[
                 SimpleNamespace(type="thinking", thinking="hmm"),
-                SimpleNamespace(type="text", text=self.owner.answer),
+                *(
+                    SimpleNamespace(type="server_tool_use", name="web_search", input={"query": q})
+                    for q in owner.queries
+                ),
+                SimpleNamespace(type="text", text=answer),
             ],
             usage=SimpleNamespace(
                 input_tokens=1000,
                 output_tokens=2000,
                 cache_creation_input_tokens=None,
-                cache_read_input_tokens=self.owner.cache_read_input_tokens,
+                cache_read_input_tokens=owner.cache_read_input_tokens,
+                server_tool_use=SimpleNamespace(web_search_requests=owner.searches),
             ),
         )
 
 
 class FakeAnthropic:
+    """Claude. ``answer`` may be one answer or a list, one per call; so may ``stop_reason``."""
+
     def __init__(
         self,
         answer="The answer is 42.",
         error=None,
         stop_reason="end_turn",
         cache_read_input_tokens=0,
+        searches=0,
+        queries=(),
     ):
-        self.answer = answer
+        self.queries = list(queries)
+        self.gate = None  # set to an asyncio.Event to hold answers back
+        self.answers = answer if isinstance(answer, list) else [answer]
         self.error = error
-        self.stop_reason = stop_reason
+        self.stop_reason = stop_reason if isinstance(stop_reason, list) else [stop_reason]
         self.cache_read_input_tokens = cache_read_input_tokens
+        self.searches = searches
         self.calls: list[dict] = []
         self.beta = SimpleNamespace(messages=FakeMessages(self))
         self.keys: list[str] = []
@@ -86,6 +106,15 @@ class FakeAnthropic:
 
     async def close(self):
         pass
+
+
+def make_cloud(memory, claude=None, key="sk-test", **providers):
+    """A Cloud with a fake Claude (and any other providers given)."""
+    from kit.cloud import AnthropicProvider, Cloud
+
+    claude = claude or FakeAnthropic()
+    all_providers = {"anthropic": AnthropicProvider(claude.factory), **providers}
+    return Cloud(memory, lambda provider: key, all_providers)
 
 
 class Clock:
@@ -138,3 +167,19 @@ class FakeEmbedder:
                 vec[zlib.crc32(word.encode()) % 256] += 1.0
             out.append(vec)
         return out
+
+
+class FakeWeather:
+    """A forecast service that remembers what it was asked."""
+
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.asked = []
+
+    async def forecast(self, place, country=""):
+        from kit.weather import WeatherError
+
+        self.asked.append((place, country))
+        if self.fail:
+            raise WeatherError("The forecast service returned an error (500).")
+        return f"Forecast for {place} from Open-Meteo: clear, 14°C tonight."
