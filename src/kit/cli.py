@@ -278,7 +278,7 @@ async def _chat_loop(paths: KitPaths) -> int:
 
         async def turn(text: str) -> None:
             print(f"{me}> ", end="", flush=True)
-            async for event in brain.chat(text):
+            async for event in brain.chat(text, "terminal"):
                 _print_event(event, me)
 
         while True:
@@ -338,6 +338,47 @@ def _show_item(item) -> str:
     return f"{item.id:>5}{pin} {item.day}  {item.kind:<10}  {item.text}"
 
 
+def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None = None) -> int:
+    """Kit's inner life lives in the running brain, so ask it over the API."""
+    s = SettingsStore(paths).current().brain
+    host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
+    headers = {"Authorization": f"Bearer {api_token(paths)}"}
+    with httpx.Client(
+        base_url=f"http://{host}:{s.port}", headers=headers, timeout=120, transport=transport
+    ) as client:
+        try:
+            if action == "poke":
+                r = client.post("/api/life/poke")
+                r.raise_for_status()
+                reply = r.json().get("reply")
+                said = " ".join(seg["say"] for seg in reply["segments"]) if reply else None
+                print(f"Kit: {said}" if said else "Kit didn't say anything (is the model up?)")
+                return 0
+            r = client.get("/api/life")
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            print(f"can't reach Kit's brain at {client.base_url} ({e}). Is it running?")
+            return 1
+    state = r.json()
+    print(f"mood:     {state['mood']}")
+    print("drives:   " + ", ".join(f"{k} {v}" for k, v in state["drives"].items()))
+    print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
+    print(f"last pipe-up: {state['last_piped_up'] or 'not yet'}")
+    print("quirks:   " + "; ".join(state.get("quirks", [])))
+    return 0
+
+
+def cmd_new_chat(paths: KitPaths) -> int:
+    from kit.memory import Memory
+
+    paths.ensure()
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.new_chat()
+    memory.close()
+    print("new chat started; the old one is still in Kit's memory")
+    return 0
+
+
 def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
 
@@ -365,10 +406,10 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
             print(f"no fact {args.id}")
             code = 1
     elif args.action == "forget":
-        if memory.forget(args.id):
+        if memory.forget(args.id, conversation=True):
             print("forgotten")
         else:
-            print(f"no fact {args.id}")
+            print(f"no fact or conversation {args.id}")
             code = 1
     elif args.action == "days":
         for item in memory.index.items("days"):
@@ -690,7 +731,10 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", help="override brain.host")
     serve.add_argument("--port", type=int, help="override brain.port")
     sub.add_parser("chat", help="talk to Kit in this terminal")
+    sub.add_parser("new-chat", help="start a fresh conversation (the old one stays in memory)")
     sub.add_parser("token", help="show the API token for the pages and home_app")
+    life = sub.add_parser("life", help="Kit's mood and why he is or isn't piping up")
+    life.add_argument("action", nargs="?", choices=["show", "poke"], default="show")
 
     config = sub.add_parser("config", help="see or change Kit's settings")
     csub = config.add_subparsers(dest="action", required=True)
@@ -724,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in [
         ("pin", "keep a fact always in mind"),
         ("unpin", "stop keeping a fact always in mind"),
-        ("forget", "delete a fact"),
+        ("forget", "delete a fact or a recalled conversation"),
         ("history", "show a fact's earlier versions"),
     ]:
         msub.add_parser(name, help=text).add_argument("id", type=int)
@@ -784,6 +828,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_serve(paths, args)
     if args.command == "chat":
         return asyncio.run(_chat_loop(paths))
+    if args.command == "life":
+        return cmd_life(paths, args.action)
+    if args.command == "new-chat":
+        return cmd_new_chat(paths)
     if args.command == "memory":
         return cmd_memory(paths, args)
     if args.command == "models":

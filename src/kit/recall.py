@@ -89,6 +89,19 @@ class Recall:
             ]
         return Recalled(pinned, memories, conversation, await self.things_for(text))
 
+    async def closeness(self, text: str, others: list[str]) -> float | None:
+        """How close ``text`` is in meaning to the closest of ``others`` (cosine,
+        -1 to 1), or None without an embedder."""
+        if self.embedder is None or not others:
+            return None
+        try:
+            vecs = await self.embedder.embed([text, *others], "query")
+        except EmbedError as e:
+            self.embed_problem = str(e)
+            return None
+        unit = [_unit(v) for v in vecs]
+        return max(sum(a * b for a, b in zip(unit[0], u, strict=True)) for u in unit[1:])
+
     async def things_for(self, text: str) -> list[Thing]:
         """Register entries that matter for this message: the ones it names, then
         the closest by words and meaning."""
@@ -121,3 +134,8 @@ class Recall:
             )
             done += len(batch)
         return done
+
+
+def _unit(vec: list[float]) -> list[float]:
+    norm = sum(x * x for x in vec) ** 0.5 or 1.0
+    return [x / norm for x in vec]

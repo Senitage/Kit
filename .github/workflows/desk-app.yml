@@ -1,0 +1,39 @@
+name: Desk app
+
+# Tests the desk app on real Windows and builds Kit-Desk-Setup.exe. The installer
+# is attached to each run as an artifact (Actions tab > Desk app > the run >
+# Artifacts), so it can be downloaded without building anything locally.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev,desk]"
+      - name: Desk app tests (real Windows API, Qt without a screen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q tests/test_desk_app.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_pc_context.py
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build the installer
+        shell: pwsh
+        run: packaging/windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kit-Desk-Setup
+          path: packaging/windows/build/installer/*.exe
+          if-no-files-found: error

@@ -37,6 +37,14 @@ kit token          # the API token for the pages and home_app
 Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
 `kit init`, `kit paths` and `kit check` are still there.
 
+## Next stage: 2, the desk app
+
+`Kit-Desk-Setup.exe` puts Kit on the Windows desk PC: his Glow face in the tray
+and floating on the desktop, a chat window, and a feed of which windows are
+open and what has focus (titles only, no screenshots), plus PC health. A Chrome
+extension adds the open tabs and the site you're on. Install
+and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
+
 ## How Kit is laid out
 
 - **Code** lives in this repo (`src/kit`). The server runs on Linux: Ubuntu under

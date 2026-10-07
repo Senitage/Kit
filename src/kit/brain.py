@@ -11,6 +11,8 @@ Each turn:
    answers in one piece. Both answer in the same JSON, as the same Kit.
 4. Act on the reply's action:
    - recall: Kit searches memory for something specific, then answers again;
+   - look_at_pc: Kit reads the full picture from the desk app (open windows,
+     what's had focus this hour and today, PC health), then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
@@ -27,25 +29,39 @@ told what Kit is working on, for how long, and what it has done so far ("still
 searching, I've looked up x"), so "how's it going?" gets an answer in character.
 The slow answer arrives when it's ready, even if the page that asked has gone.
 
+Each message says where Dan is talking from (kit.channels: the desk app, voice,
+his phone, the chat page or the terminal). Kit is told in the prompt and answers
+to suit, and the message is stored with it.
+
 Settings are read on every turn, so model, routing and persona changes apply at once.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import itertools
 import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
+from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
+from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt, same_words
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
-from kit.prompt import history_messages, recall_results, system_prompt, weather_results
+from kit.pc_context import PcContext
+from kit.prompt import (
+    history_messages,
+    recall_results,
+    system_prompt,
+    weather_results,
+    with_pc_look,
+)
 from kit.recall import Recall, Recalled
 from kit.reply import (
     Reply,
@@ -64,7 +80,16 @@ log = logging.getLogger(__name__)
 
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
+PIPE_UP = "pipe_up"  # the source of a message Kit said of his own accord
 DEEP_RECALL = 10
+
+# Where the message being answered came from. Each turn is its own task, so each
+# sees its own channel without passing it through every call.
+CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# How Kit feels and sounds this turn (kit.life.Voice), for the local model's prompt.
+VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", default=None)
+SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
+SAID_CHARS = 160
 
 # A short answer to "shall I add it?" that confirms or rejects a suggested thing.
 # The whole message must be the answer, so "ok, open VS Code" isn't a yes.
@@ -93,6 +118,26 @@ WHEN = re.compile(
     re.IGNORECASE,
 )
 WEATHER_FOLLOW_UP = timedelta(minutes=15)
+# "Check again" soon after a look at the PC means look again, not repeat the answer.
+AGAIN = re.compile(r"\b((check|look|have a look) again\W*$|again\?*$|and now\??$|refresh)", re.I)
+PC_FOLLOW_UP = timedelta(minutes=10)
+# Messages that lean on what came before are never a new topic.
+FOLLOW_ON = re.compile(
+    r"\b(it|that|this|those|these|them|they|he|she|again|also|too|another|other|more|"
+    r"instead|same|what about|how about|and|but|so|then|why|yes|no|yeah|nah|ok|okay)\b",
+    re.IGNORECASE,
+)
+TOPIC_MIN_WORDS = 4
+TOPIC_LOOKBACK = 3
+# Plainly about Dan's PC: Kit looks first and the local model answers, since the
+# cloud can't see the PC and window titles stay at home.
+PC_QUESTION = re.compile(
+    r"\b(my (pc|computer|laptop|desktop|screen)|on (my|the) (pc|computer|screen)|"
+    r"what('?s| is| have i got| do i have| have i) open|have (i )?(got )?open|"
+    r"(have|had) i been (doing|working on|up to)\s*(\?|$|today|this|for|in the|over|all|"
+    r"since|lately)|cpu|ram usage|disk space|memory usage|tabs? (open|i have))",
+    re.IGNORECASE,
+)
 # "How are you going?" while a slow answer is still coming means "how's that going?".
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
@@ -154,6 +199,12 @@ class Job:
         }
 
 
+def _asked(exchange: str) -> str:
+    """What Dan said in an indexed exchange ("Dan: ...\nKit: ...")."""
+    first = exchange.split("\n", 1)[0]
+    return first.split(": ", 1)[-1]
+
+
 def route(text: str, settings: Settings) -> tuple[str, bool]:
     """Who answers first: (role, whether Dan chose it for this message)."""
     if KEEP_LOCAL.search(text):
@@ -180,8 +231,12 @@ class Brain:
         self.model = model
         self.cloud = cloud
         self.recall = recall
+        self.pc = PcContext(memory.clock)
+        self.life = Life(settings, self.pc, memory.clock)
+        self.quirks = my_quirks(memory)
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
+        self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -189,7 +244,7 @@ class Brain:
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
 
-    async def chat(self, text: str) -> AsyncIterator[Event]:
+    async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
         even if whoever asked stops listening."""
@@ -197,7 +252,9 @@ class Brain:
         if not text:
             return
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
-        task = asyncio.create_task(self._turn(text, queue.put_nowait))
+        context = contextvars.copy_context()
+        context.run(CHANNEL.set, known(channel))
+        task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
         task.add_done_callback(self._turns.discard)
         while (event := await queue.get()) is not None:
@@ -215,9 +272,16 @@ class Brain:
 
     async def _run_turn(self, text: str, emit: Callable[[Event], None]) -> None:
         settings = self.settings()
+        self._new_chat_if_quiet(settings)
         history = self.memory.recent(settings.brain.history_messages)
-        user_id = self.memory.add_message("user", text)
-        answered = self._answer_suggestion(text)
+        if await self._new_topic(text, history, settings):
+            self.memory.new_chat()
+            history = []
+            emit({"type": "new_topic"})
+        user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
+        VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
+        self.life.note_chat()
+        answered = self._answer_suggestion(text) or self._answer_shush(text)
         if answered is not None:
             for event in self._say_locally(answered):
                 emit(event)
@@ -227,6 +291,9 @@ class Brain:
             return
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         recalled = await self.recall.for_turn(text, recent_refs)
+        # "hey" finds every earlier "hey", and the model copies what it said then.
+        fresh = [h for h in recalled.conversation if not same_words(_asked(h.item.text), text)]
+        recalled = replace(recalled, conversation=fresh)
         role, chosen = route(text, settings)
         if self.jobs and not chosen:
             role = LOCAL  # busy: chat locally while the cloud works
@@ -236,6 +303,13 @@ class Brain:
             name = settings.profile(role).name
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
+        pc_detail = ""
+        about_pc = PC_QUESTION.search(text) or (AGAIN.search(text) and self._pc_recently())
+        if self.pc.latest is not None and about_pc and not (chosen and role != LOCAL):
+            self._pc_at = self.memory.clock()
+            role, chosen = LOCAL, True
+            pc_detail = self.pc.detail(settings.persona.owner)
+            emit({"type": "looked_at_pc", "online": self.pc.online()})
         forecast = ""
         if role == LOCAL and self.weather is not None:
             plainly = bool(WEATHER.search(text))
@@ -244,7 +318,7 @@ class Brain:
                 emit({"type": "weather", "place": settings.persona.location})
                 chosen = chosen or plainly  # a weather question stays local
         async for event in self._converse(
-            text, history, recalled, settings, role, chosen, forecast=forecast
+            text, history, recalled, settings, role, chosen, forecast=forecast, pc_detail=pc_detail
         ):
             if event["type"] == "reply" and self.jobs:
                 event = {**event, "question": text}
@@ -255,6 +329,34 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    async def _new_topic(self, text: str, history: list[Message], settings: Settings) -> bool:
+        """A clearly new subject: the chat so far would only lead the model astray (it
+        kept bringing up the API key testing). Judged by meaning, against Dan's last
+        few messages, with the embedder recall already uses."""
+        below = settings.brain.new_topic_below
+        asked = [m.text for m in history if m.role == "user"][-TOPIC_LOOKBACK:]
+        if not below or len(asked) < 2 or len(text.split()) < TOPIC_MIN_WORDS:
+            return False
+        if FOLLOW_ON.search(text) or self.jobs:
+            return False
+        close = await self.recall.closeness(text, asked)
+        if close is not None:
+            log.info("topic closeness %.2f (new topic below %.2f)", close, below)
+        return close is not None and close < below
+
+    def _new_chat_if_quiet(self, settings: Settings) -> None:
+        """Back after a long quiet: start fresh, so this morning's topic doesn't
+        follow Dan into the afternoon. Recall still finds the old conversation."""
+        after = settings.brain.new_chat_after_minutes
+        last = self.memory.recent(1)
+        if not after or not last:
+            return
+        if self.memory.clock() - datetime.fromisoformat(last[-1].at) >= timedelta(minutes=after):
+            self.memory.new_chat()
+
+    def _pc_recently(self) -> bool:
+        return self._pc_at is not None and self.memory.clock() - self._pc_at < PC_FOLLOW_UP
 
     def _weather_recently(self) -> bool:
         return (
@@ -269,6 +371,10 @@ class Brain:
             return await self.weather.forecast(place, settings.persona.country)
         except WeatherError as e:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
+
+    def _user_turn(self, text: str, role: str, settings: Settings, pc_detail: str) -> str:
+        text = self._with_busy_note(text, role)
+        return with_pc_look(text, pc_detail, settings.persona.owner) if pc_detail else text
 
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
@@ -317,6 +423,57 @@ class Brain:
             self.register.reject(pending)
             return Reply.plain(f"Okay, I'll leave {thing.name} out.", "neutral", "nod")
         return None
+
+    def _answer_shush(self, text: str) -> Reply | None:
+        """ "Shush" or "not now" keeps Kit from piping up for an hour; "you can talk
+        again" lets him. Answered on the spot, so it works even when models are down."""
+        if UNSHUSH.search(text):
+            self.life.wake()
+            return Reply.plain("Oh good. I had things to say.", "excited", "perk_up")
+        if SHUSH.search(text) and len(text) < 60:
+            self.life.snooze(60)
+            return Reply.plain("Righto, zipping it for an hour.", "shy", "nod")
+        return None
+
+    async def pipe_up(self, reason: str) -> AsyncIterator[Event]:
+        """Kit says something of his own accord (see kit.life): one short line, written
+        by the local model from what Dan's doing and what Kit remembers."""
+        settings = self.settings()
+        owner = settings.persona.owner
+        history = self.memory.recent(settings.brain.history_messages)
+        token = CHANNEL.set("desk")
+        voice_token = VOICE.set(self._voice(settings, history))
+        try:
+            about = self.pc.now_line(owner) or "what Dan is up to"
+            recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
+            quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
+            prompt = pipe_up_prompt(
+                reason,
+                owner,
+                settings.life.cheek,
+                self.life.curious_about,
+                quiet_h,
+                self.life.butting_in,
+            )
+            messages = [
+                {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
+                *history_messages(history, "desk"),
+                {"role": "user", "content": prompt},
+            ]
+            async for event in self._local_reply(messages, PIPE_UP):
+                if event["type"] == "reply":
+                    event = {**event, "piped_up": reason}
+                yield event
+        finally:
+            CHANNEL.reset(token)
+            VOICE.reset(voice_token)
+        self.life.piped_up(reason)
+
+    def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
+        persona = settings.persona
+        said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
+        own = [(ex.user, ex.kit) for ex in persona.examples]
+        return self.life.voice(persona.owner, own, said, self.quirks, text)
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -384,6 +541,7 @@ class Brain:
         role: str,
         hand_off: bool,
         forecast: str = "",
+        pc_detail: str = "",
     ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
@@ -404,8 +562,13 @@ class Brain:
             expert=further,
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
+            quirks=self.quirks,
+            voice=VOICE.get() if role == LOCAL else None,
+            pc=self.pc.now_line(settings.persona.owner),
+            channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
             forecast=forecast,
+            pc_detail=pc_detail,
         )
 
     async def _converse(
@@ -419,13 +582,14 @@ class Brain:
         hops: int = 0,
         question: str = "",
         forecast: str = "",
+        pc_detail: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
-        system = self._system(settings, recalled, role, hand_off, forecast)
+        system = self._system(settings, recalled, role, hand_off, forecast, pc_detail)
         messages = [
             {"role": "system", "content": system},
-            *history_messages(history),
-            {"role": "user", "content": self._with_busy_note(text, role)},
+            *history_messages(history, CHANNEL.get()),
+            {"role": "user", "content": self._user_turn(text, role, settings, pc_detail)},
         ]
         job = None
         if role != LOCAL:
@@ -442,6 +606,7 @@ class Brain:
                 return
 
             look_up = None
+            owner = settings.persona.owner
             if reply.action.kind == "recall":
                 query = reply.action.text.strip() or text
                 hits = await self.recall.search(
@@ -450,7 +615,12 @@ class Brain:
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
                     job.steps.append(f"looked through your memory for '{query}'")
-                look_up = recall_results(query, hits, settings.persona.owner)
+                look_up = recall_results(query, hits, owner)
+            elif reply.action.kind == "look_at_pc":
+                yield {"type": "looked_at_pc", "online": self.pc.online()}
+                if job:
+                    job.steps.append("looked at what's open on your PC")
+                look_up = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
             elif reply.action.kind == "weather" and self.weather is not None:
                 place = reply.action.text.strip() or settings.persona.location
                 try:
@@ -461,7 +631,7 @@ class Brain:
                 yield {"type": "weather", "place": place}
                 if job:
                     job.steps.append(f"checked the forecast for {place}")
-                look_up = weather_results(place, forecast, settings.persona.owner)
+                look_up = weather_results(place, forecast, owner)
             if look_up is not None:
                 messages += [
                     {"role": "assistant", "content": reply_json(reply)},

@@ -128,3 +128,23 @@ def test_forget_removes_earlier_versions_too(memory):
     new = memory.replace_fact(old, "Dan drives a Ranger.")
     assert memory.forget(new)
     assert memory.facts() == [] and memory.index.get(old) is None
+
+
+def test_a_recalled_conversation_can_be_forgotten(memory):
+    memory.add_message("user", "Hey")
+    memory.index_exchange(1, "Dan", "Hey", "Kit", "You're the one with the API key.")
+    item = memory.index.items("conversation")[0]
+    assert not memory.forget(item.id)  # not by the facts API
+    assert memory.forget(item.id, conversation=True)
+    assert memory.index.items("conversation") == []
+    assert [m.text for m in memory.recent(5)] == ["Hey"]  # the chat log stays
+
+
+def test_new_chat_hides_earlier_turns_but_keeps_the_log(memory):
+    memory.add_message("user", "Hey")
+    memory.add_message("kit", "You're the one with the API key.")
+    memory.new_chat()
+    assert memory.recent(10) == []
+    memory.add_message("user", "Morning")
+    assert [m.text for m in memory.recent(10)] == ["Morning"]
+    assert len(memory.messages_on(memory.today())) == 3

@@ -576,3 +576,87 @@ def test_kit_gets_shorter_with_repeated_check_ins(memory):
     notes = [call[-1]["content"] for call in model.calls]
     assert "first time" in notes[0] and "twice" in notes[1] and "Third time" in notes[2]
     assert "don't invent progress" in notes[0]
+
+
+def test_only_the_latest_reply_keeps_its_detail_in_history(memory):
+    brain, model, _ = make(
+        memory,
+        reply("CPU is fine.", detail="Your PC is running smoothly with 15% CPU"),
+        reply("Sure.", detail="Step 1: fill the tank"),
+        reply("Ok."),
+    )
+    collect(brain.chat("is my pc ok?"))
+    collect(brain.chat("how do I start the pump?"))
+    collect(brain.chat("thanks"))
+    history = " ".join(m["content"] for m in model.calls[2][1:])
+    assert "running smoothly" not in history
+    assert "Step 1: fill the tank" in history
+
+
+def test_local_replies_get_a_mood_fresh_examples_and_recent_lines(memory, clock):
+    brain, model, _ = make(memory, reply("Morning."), reply("Not much."), reply("Yep."))
+    clock.now += timedelta(hours=5)  # quiet all morning: Kit missed Dan
+    brain.life.drives.social = 0.9
+    collect(brain.chat("Morning Kit"))
+    first = model.calls[0][0]["content"]
+    assert "How you feel right now:" in first and "haven't talked for 5 hours" in first
+    assert "never reuse these lines" in first
+    collect(brain.chat("whats up?"))
+    collect(brain.chat("ok"))
+    third = model.calls[2][0]["content"]
+    assert "Your last few lines" in third
+    assert "- Morning." in third and "- Not much." in third
+    assert "lonely" not in third and "haven't talked" not in third  # chatting cured it
+
+
+def test_examples_change_from_turn_to_turn(memory):
+    brain, model, _ = make(memory, *[reply("Hi.")] * 6)
+    for _ in range(6):
+        collect(brain.chat("hi"))
+    shown = {c[0]["content"].split("never reuse these lines):")[1][:300] for c in model.calls}
+    assert len(shown) > 1
+
+
+def test_an_earlier_answer_to_the_same_words_is_not_recalled(memory):
+    s = Settings.model_validate(
+        {"brain": {"history_messages": 2}, "memory": {"min_similarity": 0.0}}
+    )
+    brain, model, _ = make(memory, reply("Coffee first?"), reply("Hi."), reply("Yo."), settings=s)
+    collect(brain.chat("Hey!"))
+    collect(brain.chat("filler message about pumps"))
+    collect(brain.chat("hey"))
+    assert "Coffee first?" not in model.calls[2][0]["content"]
+
+
+def test_a_long_quiet_starts_a_new_chat(memory, clock):
+    brain, model, _ = make(memory, reply("API key stuff."), reply("Hi."), reply("Yo."))
+    collect(brain.chat("let's test the API key"))
+    clock.now += timedelta(minutes=30)
+    collect(brain.chat("still there?"))
+    assert len(model.calls[1]) > 2  # half an hour: same conversation
+    clock.now += timedelta(hours=3)
+    collect(brain.chat("hey"))
+    assert len(model.calls[2]) == 2  # just the system prompt and "hey"
+    assert len(memory.messages_on(memory.today())) == 6  # nothing lost from the log
+
+
+def test_a_clearly_new_subject_starts_fresh(memory):
+    brain, model, _ = make(memory, *[reply("Ok.")] * 6)
+    collect(brain.chat("let's test the API key removal"))
+    collect(brain.chat("the API key is gone from secrets now"))
+    collect(brain.chat("is the API key removal test from secrets done"))  # same subject
+    assert len(model.calls[2]) > 2
+    events = collect(brain.chat("what's a good flotation recovery for copper"))
+    assert "new_topic" in [e["type"] for e in events]
+    assert len(model.calls[3]) == 2  # only the system prompt and the new question
+    collect(brain.chat("why is that higher than gold"))  # leans on the last answer
+    assert len(model.calls[4]) > 2
+
+
+def test_new_topic_check_can_be_turned_off(memory):
+    s = settings_with(brain={"new_topic_below": 0})
+    brain, model, _ = make(memory, *[reply("Ok.")] * 3, settings=s)
+    collect(brain.chat("let's test the API key removal"))
+    collect(brain.chat("the API key is gone from secrets now"))
+    collect(brain.chat("what's a good flotation recovery for copper"))
+    assert len(model.calls[2]) > 2

@@ -74,13 +74,14 @@ class Segment(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "recall", "remember", "thing", "weather", "ask_cloud", "ask_expert"] = (
-        Field(
-            description="recall searches memory before answering; remember saves a fact; "
-            "thing notes a named thing and where it lives; weather gets the forecast before "
-            "answering; ask_cloud hands the question to the "
-            "cloud model; ask_expert hands it to the strongest model; none does nothing."
-        )
+    kind: Literal[
+        "none", "recall", "look_at_pc", "remember", "thing", "weather", "ask_cloud", "ask_expert"
+    ] = Field(
+        description="recall searches memory before answering; look_at_pc checks what's "
+        "open and in focus on Dan's PC and how it's running; remember saves a fact; "
+        "thing notes a named thing and where it lives; weather gets the forecast before "
+        "answering; ask_cloud hands the question to the "
+        "cloud model; ask_expert hands it to the strongest model; none does nothing."
     )
     text: str = Field(
         "",

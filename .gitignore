@@ -11,3 +11,6 @@ build/
 data/
 secrets/
 *.secret
+
+# Desk app installer builds
+packaging/windows/build/

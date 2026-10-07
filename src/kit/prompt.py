@@ -6,12 +6,17 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import TYPE_CHECKING
 
+from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.memory import DAYS, Message
 from kit.recall import Recalled
 from kit.reply import EMOTIONS, GESTURES, Action, Reply, Segment, reply_json
 from kit.settings import PersonaSettings
+
+if TYPE_CHECKING:
+    from kit.life import Voice
 
 
 def _memory_line(item: Item) -> str:
@@ -37,7 +42,11 @@ def memory_block(recalled: Recalled, owner: str) -> list[str]:
         lines += ["", "Things you know and where they live (look there first):"]
         lines += [f"- {t.line()}" for t in recalled.things]
     if recalled.conversation:
-        lines += ["", "Earlier conversations that may be relevant:"]
+        lines += [
+            "",
+            "Earlier conversations that may be relevant (for what was said, not how: "
+            "don't reuse your old wording or lines):",
+        ]
         lines += [_snippet(h) for h in recalled.conversation]
     return lines
 
@@ -73,13 +82,20 @@ def system_prompt(
     expert: str | None = None,
     web_search: bool = False,
     busy: list[str] | None = None,
+    pc: str = "",
+    channel: str = "",
+    quirks: list[str] | None = None,
     weather: bool = False,
     forecast: str = "",
+    pc_detail: str = "",
+    voice: Voice | None = None,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
     to; either is None when there's nowhere to hand it. ``busy`` describes work a
-    cloud model is still doing in the background."""
+    cloud model is still doing in the background. ``pc`` is the desk app's one-line
+    "right now" from Dan's PC, empty when it has never reported. ``channel`` says
+    where Dan is talking from (kit.channels)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -90,6 +106,12 @@ def system_prompt(
     ]
     if persona.location:
         lines.append(f"{owner} is in {persona.location}.")
+    if quirks:
+        lines.append(
+            "Quirks you picked for yourself (let them show now and then, not every time): "
+            + "; ".join(quirks)
+            + "."
+        )
     lines += [
         "",
         "Rules:",
@@ -130,6 +152,15 @@ def system_prompt(
         f"project, a person, where something is kept) and it isn't above. Put a search in "
         f"text, say something short like 'Let me think...', and you'll see what you find "
         f"before answering properly.",
+    ]
+    if pc and not pc_detail:  # already looked: answer, don't look again
+        lines.append(
+            f"- look_at_pc: when knowing more about what's on {owner}'s PC would help (every "
+            f"open window, what they've had in focus this hour and today, whether the PC is "
+            f"struggling) and the line about their PC below isn't enough. Say something "
+            f"short like 'Let me have a look.' and you'll see it before answering properly."
+        )
+    lines += [
         f"- remember: when {owner} tells you something worth keeping: about themselves, "
         f"their preferences, projects, where things are kept, people or plans. Put it in "
         f"text as one sentence that makes sense on its own later, with real dates, and set "
@@ -167,9 +198,16 @@ def system_prompt(
             f"Put the full question in text and say something short like 'That one's for "
             f"{expert}.'"
         )
-    lines.append("Leave detail empty unless there's something to show.")
-    if persona.examples:
-        lines += ["", "Examples of how you talk:"]
+    lines.append(
+        "Leave detail empty unless there's something new to show for this message. Never "
+        "repeat detail from an earlier reply."
+    )
+    if persona.examples and voice is None:
+        lines += [
+            "",
+            "Examples of how you talk (they show the tone; never reuse their lines, and say "
+            "something new each time rather than repeating yourself):",
+        ]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
     # What changes every turn goes last, so the cached prefix above can be reused.
@@ -178,9 +216,50 @@ def system_prompt(
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *memory_block(recalled, owner),
         *busy_block(busy or [], owner),
+        *([channel] if channel else []),
+        *([pc] if pc else []),
+        *voice_block(voice, owner, name),
         *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
+
+
+def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
+    """How Kit feels and sounds this turn: a mood, a few fresh examples, and his
+    own recent lines so he says something new."""
+    if voice is None:
+        return []
+    lines = [
+        "",
+        f"How you feel right now: {voice.feeling}. Let it colour how you talk, lightly; "
+        f"don't announce it. Be {voice.style}. Sound like yourself, a small character "
+        f"with opinions, not a help desk.",
+    ]
+    if voice.quirk:
+        lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
+    if voice.examples:
+        lines.append("The kind of thing you'd say (for tone only, never reuse these lines):")
+        for user, kit in voice.examples:
+            lines += [f"{owner}: {user}", f"{name}: {kit}"]
+    if voice.said:
+        lines.append(
+            "Your last few lines (say something new: don't repeat these, their phrases "
+            "or their jokes):"
+        )
+        lines += [f"- {s}" for s in voice.said]
+    return lines
+
+
+def with_pc_look(text: str, detail: str, owner: str) -> str:
+    """Dan's message with a fresh look at his PC right beside it. A small model reads
+    what's next to the question; in the system prompt it copied its last PC answer
+    from the chat instead."""
+    return (
+        f"{text}\n\n[You just looked at {owner}'s PC for this. Answer exactly what he asked "
+        f"(windows, tabs, the last hour, today or how the PC is coping) from this fresh "
+        f"look, not from earlier answers, in a sentence or two with the names or numbers "
+        f"that matter. Action none.\n{detail}]"
+    )
 
 
 def forecast_block(forecast: str, owner: str) -> list[str]:
@@ -244,20 +323,27 @@ def recall_results(query: str, hits: list[Hit], owner: str) -> str:
 HISTORY_DETAIL_CHARS = 600
 
 
-def history_messages(history: list[Message]) -> list[dict]:
+def history_messages(history: list[Message], channel: str | None = None) -> list[dict]:
     """Past turns in chat form. Kit's turns are shown as the JSON it gave, which
-    keeps the model answering in that format. Long written detail (code, lists) is
-    cut short so it doesn't crowd the local model's context."""
+    keeps the model answering in that format. Only Kit's latest reply keeps its
+    written detail (cut short so it doesn't crowd the local model's context), for
+    "explain step 3"; older detail is dropped, or a small model copies it under every
+    answer. Messages that came in another way than ``channel`` say where from, e.g.
+    "(from their phone)"."""
     out = []
-    for m in history:
+    last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
+    for i, m in enumerate(history):
         if m.role == "user":
-            out.append({"role": "user", "content": m.text})
+            where = SHORT.get(m.channel or "")
+            note = f"(from {where}) " if where and m.channel != channel else ""
+            out.append({"role": "user", "content": note + m.text})
         else:
-            out.append({"role": "assistant", "content": _short(m.reply_json) or _as_json(m.text)})
+            short = _short(m.reply_json, keep_detail=i == last_kit)
+            out.append({"role": "assistant", "content": short or _as_json(m.text)})
     return out
 
 
-def _short(reply_json: str | None) -> str | None:
+def _short(reply_json: str | None, keep_detail: bool = True) -> str | None:
     if not reply_json:
         return None
     try:
@@ -265,6 +351,9 @@ def _short(reply_json: str | None) -> str | None:
     except ValueError:
         return reply_json
     detail = data.get("detail") or ""
+    if detail and not keep_detail:
+        data["detail"] = ""
+        return json.dumps(data)
     if len(detail) > HISTORY_DETAIL_CHARS:
         data["detail"] = detail[:HISTORY_DETAIL_CHARS] + " [...]"
         return json.dumps(data)

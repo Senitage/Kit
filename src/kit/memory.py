@@ -30,6 +30,7 @@ from kit.knowledge import Index, Item
 Clock = Callable[[], datetime]
 
 RECALL_STEP = "recall-step"  # a message source for Kit's "Let me think..." turns
+CHAT_FROM = "chat_from"  # kit_self key: the last message before the current chat
 
 FACTS = "memory"
 DAYS = "days"
@@ -71,6 +72,10 @@ MIGRATIONS = [
     """,
     # 2: the knowledge index (facts, day summaries, conversation and later sources).
     knowledge.SCHEMA,
+    # 3: which way each message came in (kit.channels): desk, voice, phone, web, terminal.
+    "ALTER TABLE messages ADD COLUMN channel TEXT;",
+    # 4: things about Kit himself, such as the quirks he picked (kit.life).
+    "CREATE TABLE IF NOT EXISTS kit_self (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
 ]
 
 
@@ -82,6 +87,7 @@ class Message:
     text: str
     reply_json: str | None = None
     source: str | None = None
+    channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,17 +140,38 @@ class Memory:
     def today(self) -> str:
         return self.clock().date().isoformat()
 
+    # Kit himself
+
+    @_locked
+    def self_value(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM kit_self WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    @_locked
+    def set_self_value(self, key: str, value: str) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO kit_self (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
     # Conversation
 
     @_locked
     def add_message(
-        self, role: str, text: str, reply_json: str | None = None, source: str | None = None
+        self,
+        role: str,
+        text: str,
+        reply_json: str | None = None,
+        source: str | None = None,
+        channel: str | None = None,
     ) -> int:
         now = self.clock()
         with self.db:
             cur = self.db.execute(
-                "INSERT INTO messages (at, day, role, text, reply_json, source)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO messages (at, day, role, text, reply_json, source, channel)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.date().isoformat(),
@@ -152,6 +179,7 @@ class Memory:
                     text,
                     reply_json,
                     source,
+                    channel,
                 ),
             )
         return int(cur.lastrowid)
@@ -159,13 +187,21 @@ class Memory:
     @_locked
     def recent(self, limit: int) -> list[Message]:
         """The latest turns as the model should see them: a recall step ("Let me
-        think...") is a working note, not a turn, so it's left out."""
+        think...") is a working note, not a turn, so it's left out, and nothing
+        from before the last new chat is."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source FROM messages"
-            " WHERE source IS NULL OR source != ? ORDER BY id DESC LIMIT ?",
-            (RECALL_STEP, limit),
+            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            " WHERE id > ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
+            (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
         return [Message(*row) for row in reversed(rows)]
+
+    @_locked
+    def new_chat(self) -> None:
+        """Start a fresh conversation: earlier turns leave the chat history (and stop
+        being copied by the model) but stay in the log, day summaries and recall."""
+        row = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()
+        self.set_self_value(CHAT_FROM, str(row[0]))
 
     @_locked
     def set_message_source(self, message_id: int, source: str) -> None:
@@ -175,7 +211,8 @@ class Memory:
     @_locked
     def messages_on(self, day: str) -> list[Message]:
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source FROM messages WHERE day = ? ORDER BY id",
+            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            " WHERE day = ? ORDER BY id",
             (day,),
         ).fetchall()
         return [Message(*row) for row in rows]
@@ -215,9 +252,12 @@ class Memory:
     def pinned_facts(self) -> list[Item]:
         return self.index.items(FACTS, pinned_only=True)
 
-    def forget(self, fact_id: int) -> bool:
+    def forget(self, fact_id: int, conversation: bool = False) -> bool:
+        """Delete a fact. With ``conversation``, a past exchange Kit shouldn't recall
+        (e.g. a reply it keeps parroting) can go too; the chat log itself is kept."""
         item = self.index.get(fact_id)
-        if item is None or item.source != FACTS:
+        allowed = (FACTS, CONVERSATION) if conversation else (FACTS,)
+        if item is None or item.source not in allowed:
             return False
         return self.index.delete(fact_id)
 

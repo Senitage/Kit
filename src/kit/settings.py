@@ -256,9 +256,60 @@ class BrainSettings(_Section):
         "0.0.0.0 lets the home network and Tailscale in.",
     )
     port: int = Field(8600, ge=1, le=65535, description="Port for the chat page and API.")
+    new_chat_after_minutes: int = Field(
+        120,
+        ge=0,
+        le=10080,
+        description="Start a fresh conversation when you come back after this long quiet "
+        "(the old one stays in memory). 0 never does.",
+    )
+    new_topic_below: float = Field(
+        0.45,
+        ge=0,
+        le=1,
+        description="Start fresh when a message's meaning is this far from your last few "
+        "(similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never "
+        "count as a new topic.",
+    )
     history_messages: int = Field(
         20, ge=2, le=200, description="Recent messages Kit sees each turn."
     )
+
+
+class LifeSettings(_Section):
+    enabled: bool = Field(
+        True, description="Kit fidgets, gets bored and sometimes pipes up on his own."
+    )
+    cheek: float = Field(
+        0.6,
+        ge=0,
+        le=1,
+        description="How cheeky Kit is, in chat and when he pipes up: 0 polite, 1 larrikin.",
+    )
+    chattiness: float = Field(
+        0.5,
+        ge=0,
+        le=1,
+        description="How readily Kit speaks first. 0 never (he still fidgets), 1 whenever he "
+        "feels like it, within the hourly limit. From 0.8 he follows along with what you're "
+        "doing, nags when ignored and now and then butts in while you type.",
+    )
+    max_per_hour: int = Field(
+        3, ge=0, le=30, description="Most times an hour Kit pipes up unprompted."
+    )
+    quiet_from: str = Field("22:00", description="Kit doesn't pipe up from this time...")
+    quiet_until: str = Field("07:00", description="...until this time.")
+    sleep_after_minutes: int = Field(
+        10, ge=1, le=240, description="Kit dozes off after you've been away this long."
+    )
+
+    @field_validator("quiet_from", "quiet_until")
+    @classmethod
+    def _clock_time(cls, value: str) -> str:
+        h, _, m = value.partition(":")
+        if not (h.isdigit() and m.isdigit() and int(h) < 24 and int(m) < 60 and len(m) == 2):
+            raise ValueError("must be a time like 22:00")
+        return f"{int(h):02d}:{m}"
 
 
 class MemorySettings(_Section):
@@ -310,6 +361,7 @@ class Settings(_Section):
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    life: LifeSettings = Field(default_factory=LifeSettings)
 
     @field_validator("models", mode="before")
     @classmethod
