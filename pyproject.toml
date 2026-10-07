@@ -30,6 +30,8 @@ kit-desk = "kit.desk.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kit"]
+# build.ps1 writes the build number here; it is gitignored, so it must be named to be packed.
+artifacts = ["src/kit/desk/_build.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

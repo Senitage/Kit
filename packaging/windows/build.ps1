@@ -31,6 +31,7 @@ Set-Content -Path "$root\src\kit\desk\_build.py" -Encoding utf8 -Value @(
 )
 Run $Python @("-m", "pip", "install", "--upgrade", "$root[desk]", "pyinstaller>=6.6")
 $version = (& $Python -c "from kit.desk.update import VERSION; print(VERSION)").Trim()
+if (-not $version.EndsWith(".$build_no")) { throw "Kit reports version $version, not build $build_no: _build.py wasn't packed" }
 Run $Python @("$here\make_icon.py", "$build\kit.ico")
 
 # One folder rather than one file: Kit starts faster and antivirus is happier.
