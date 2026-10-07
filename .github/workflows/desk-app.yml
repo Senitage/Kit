@@ -37,6 +37,11 @@ jobs:
       - name: Build the installer
         id: build
         shell: pwsh
+        env:
+          # A pull request's build is a test build: it's only offered a release with its
+          # commit in it (kit.desk.update).
+          KIT_BUILD_PULL: ${{ github.event.pull_request.number }}
+          KIT_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: packaging/windows/build.ps1
       - uses: actions/upload-artifact@v4
         with:

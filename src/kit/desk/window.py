@@ -51,7 +51,7 @@ from kit.desk import startup, theme
 from kit.desk.client import BrainClient
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
-from kit.desk.update import VERSION, Release, Updater
+from kit.desk.update import PULL, VERSION, Release, Updater
 
 # Tests flip this so background calls finish before the next line runs.
 SYNC = False
@@ -789,7 +789,8 @@ class UpdatesPage(QWidget):
             "New versions of the desk app are published on GitHub. Kit checks once a day "
             "and asks before installing anything.",
         )
-        self.current = _label(f"This is Kit desk app {VERSION}.")
+        test = f", a test build from pull request #{PULL}" if PULL else ""
+        self.current = _label(f"This is Kit desk app {VERSION}{test}.")
         layout.addWidget(self.current)
         self.auto = QCheckBox("Check for updates once a day")
         self.auto.setChecked(config.check_updates)
@@ -868,7 +869,16 @@ class UpdatesPage(QWidget):
             self.install_button.hide()
             self.notes.setText("")
             return
-        self.status.setText(f"Version {result.version} is ready ({result.size // 1_000_000} MB).")
+        if result.has_this_build:
+            size = result.size // 1_000_000
+            self.status.setText(f"Version {result.version} is ready ({size} MB).")
+            self.install_button.setText("Download and install")
+        else:  # main's newer release, still without what this test build is trying out
+            self.status.setText(
+                f"Version {result.version} is out, but it was built without this test "
+                "build's changes. Kit will offer it once they're merged."
+            )
+            self.install_button.setText("Install it anyway")
         self.notes.setText(result.notes[:3000] or f"[See it on GitHub]({result.page})")
         self.install_button.show()
 

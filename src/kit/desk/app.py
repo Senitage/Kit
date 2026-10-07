@@ -556,6 +556,9 @@ class DeskApp(QObject):
                 return
             if found is None:
                 return
+            if not found.has_this_build:
+                log.info("update %s doesn't have this test build's changes yet", found.version)
+                return
             log.info("update %s is available (this is %s)", found.version, VERSION)
             self.open_window("Updates")
             self.window.updates.show_release(found)

@@ -67,7 +67,9 @@ word, speech to text) is the next part of stage 3.
 
 1. Update Kit (`git pull`, then `pip install -e .`) and restart it
    (`sudo systemctl restart kit`). Install the desk app build from the same
-   change: it brings the `sounddevice` package with it.
+   change: it brings the `sounddevice` package with it. Until the voice is merged,
+   that's a test build, and the desk app won't offer to swap it for a release
+   without the voice (see [the desk app guide](desk-app/README.md#updates)).
 2. **Kokoro** in Kit's own Python: `pip install kokoro-onnx`. Its model files
    download into `<data>/state/speech/models` the first time.
 3. **Chatterbox** in its own Python 3.11 environment. `~/kit-voice/.venv` from the
