@@ -36,3 +36,10 @@ Ideas:
   they happen, for every provider), so there's something true to say.
 - Add a `kit eval` case: five check-ins in a row must give five different
   lines and escalate.
+
+## Desk app chat window looks (from stage 2 testing, 2026-10-07)
+
+Dan: the desk app's chat window works but needs aesthetic work. Worth a
+design pass before the desk app is used daily: spacing, fonts, message
+bubbles, and matching the Glow face's look. Ask Dan what bothers him most
+before starting.
