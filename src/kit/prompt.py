@@ -38,7 +38,11 @@ def memory_block(recalled: Recalled, owner: str) -> list[str]:
         lines += ["", "Things you know and where they live (look there first):"]
         lines += [f"- {t.line()}" for t in recalled.things]
     if recalled.conversation:
-        lines += ["", "Earlier conversations that may be relevant:"]
+        lines += [
+            "",
+            "Earlier conversations that may be relevant (for what was said, not how: "
+            "don't reuse your old wording or lines):",
+        ]
         lines += [_snippet(h) for h in recalled.conversation]
     return lines
 

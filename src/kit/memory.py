@@ -243,9 +243,12 @@ class Memory:
     def pinned_facts(self) -> list[Item]:
         return self.index.items(FACTS, pinned_only=True)
 
-    def forget(self, fact_id: int) -> bool:
+    def forget(self, fact_id: int, conversation: bool = False) -> bool:
+        """Delete a fact. With ``conversation``, a past exchange Kit shouldn't recall
+        (e.g. a reply it keeps parroting) can go too; the chat log itself is kept."""
         item = self.index.get(fact_id)
-        if item is None or item.source != FACTS:
+        allowed = (FACTS, CONVERSATION) if conversation else (FACTS,)
+        if item is None or item.source not in allowed:
             return False
         return self.index.delete(fact_id)
 

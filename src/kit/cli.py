@@ -365,10 +365,10 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
             print(f"no fact {args.id}")
             code = 1
     elif args.action == "forget":
-        if memory.forget(args.id):
+        if memory.forget(args.id, conversation=True):
             print("forgotten")
         else:
-            print(f"no fact {args.id}")
+            print(f"no fact or conversation {args.id}")
             code = 1
     elif args.action == "days":
         for item in memory.index.items("days"):
@@ -724,7 +724,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in [
         ("pin", "keep a fact always in mind"),
         ("unpin", "stop keeping a fact always in mind"),
-        ("forget", "delete a fact"),
+        ("forget", "delete a fact or a recalled conversation"),
         ("history", "show a fact's earlier versions"),
     ]:
         msub.add_parser(name, help=text).add_argument("id", type=int)
