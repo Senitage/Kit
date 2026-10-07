@@ -266,8 +266,19 @@ def make_handler(worker: Worker):
 def watch_parent(parent: int, server: ThreadingHTTPServer) -> None:
     """Stop when Kit does, so a crashed Kit never leaves a model holding the
     graphics card."""
-    while os.getppid() == parent:
-        time.sleep(2)
+    if sys.platform == "win32":
+        # Windows doesn't hand orphans to a new parent, so wait on Kit's process itself.
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        handle = kernel32.OpenProcess(0x00100000, False, parent)  # SYNCHRONIZE
+        if handle:
+            kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)  # INFINITE
+    else:
+        while os.getppid() == parent:
+            time.sleep(2)
     log("Kit has gone, stopping")
     server.shutdown()
 
