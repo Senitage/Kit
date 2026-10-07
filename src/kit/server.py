@@ -25,6 +25,7 @@ from kit.brain import Brain
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
+from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
 from kit.settings import Settings, SettingsError
@@ -276,7 +277,9 @@ def create_app(
 
     @app.get("/api/memory/search", dependencies=auth)
     async def search(q: str, k: Annotated[int, Query(ge=1, le=100)] = 10) -> dict:
-        hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION, THINGS, SELF], min(k, 50))
+        hits = await brain.recall.search(
+            q, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], min(k, 50)
+        )
         return {
             "words_only": brain.recall.embed_problem is not None,
             "hits": [

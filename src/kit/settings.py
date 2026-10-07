@@ -207,6 +207,11 @@ class NasSettings(_Section):
     vault: str | None = Field(
         None, description="The Obsidian vault folder, the only place on the NAS Kit may write."
     )
+    notes_folder: str = Field(
+        "",
+        description="Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. "
+        "Empty for the vault's top level.",
+    )
 
 
 class Example(_Section):

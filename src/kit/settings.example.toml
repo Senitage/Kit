@@ -71,6 +71,9 @@ own_memories = 3             # from his own notebook: thoughts, opinions, moment
 # The Obsidian vault: the only NAS folder Kit may write to.
 # Single quotes keep backslashes literal in TOML.
 # vault = '\\NAS\home\Obsidian'
+# Where in the vault Kit saves notes you ask it to take. Leave it out for the
+# vault's top level.
+# notes_folder = 'Inbox'
 
 # Shares Kit may read but never change. Use UNC paths on Windows,
 # mount points on Linux. The 'kit' NAS user should have read-only access.

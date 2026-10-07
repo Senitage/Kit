@@ -14,6 +14,8 @@ Each turn:
    - look_at_pc: Kit reads the full picture from the desk app (open windows,
      what's had focus this hour and today, PC health), then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
+   - note: a note Dan asked for is saved as markdown in his Obsidian vault
+     (kit.notes), and indexed so it can be found later;
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
      for a known thing ("no, it's in Tax/2023") corrects the entry;
@@ -85,6 +87,7 @@ from kit.notebook import (
     later_want,
     tomorrow_morning,
 )
+from kit.notes import NOTES, NoteError, Notes
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
@@ -309,6 +312,7 @@ class Brain:
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
+        self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
@@ -764,6 +768,15 @@ class Brain:
         self.pending_thing = thing.id
         return {"type": "thing_suggested", "thing": thing.as_dict()}
 
+    def _take_note(self, reply: Reply, settings: Settings) -> Event:
+        try:
+            saved = self.notes.take(settings.nas, reply.action.title, reply.action.text)
+        except NoteError as e:
+            log.warning("note not saved: %s", e)
+            return {"type": "notice", "message": f"The note wasn't saved: {e}."}
+        verb = "Added to" if saved.added else "Saved"
+        return {"type": "notice", "message": f"{verb} {saved.shown} in your notes."}
+
     def _implied_correction(self, text: str, recalled: Recalled) -> Event | None:
         """A correction the model didn't act on: "my tax stuff is actually in Tax/2023"
         names a place, and the thing it's about is the closest one recalled with a
@@ -823,6 +836,7 @@ class Brain:
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
+            notes=bool(settings.nas.vault),
             forecast=forecast,
             pc_detail=pc_detail,
             sheet=sheet.text if sheet else "",
@@ -876,7 +890,7 @@ class Brain:
                 if not query or SPOKEN_NOT_SEARCH.search(query):
                     query = text
                 hits = await self.recall.search(
-                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF], DEEP_RECALL
+                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], DEEP_RECALL
                 )
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
@@ -940,6 +954,8 @@ class Brain:
             event = self._note_thing(reply)
             if event:
                 yield event
+        elif kind == "note":
+            yield self._take_note(reply, settings)
         if kind in ("none", "remember") and hops == 0:
             event = self._implied_correction(text, recalled)
             if event:

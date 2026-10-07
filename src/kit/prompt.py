@@ -90,8 +90,8 @@ NOT_HANDED_OFF = (
 
 REPLY_SHAPE = (
     '{"emotion": "neutral", "segments": [{"gesture": "nod", "say": "One short sentence."}], '
-    '"action": {"kind": "none", "text": "", "category": "other", "thing_kind": "other", '
-    '"link_system": "none", "link_target": ""}, "detail": ""}'
+    '"action": {"kind": "none", "text": "", "title": "", "category": "other", '
+    '"thing_kind": "other", "link_system": "none", "link_target": ""}, "detail": ""}'
 )
 
 
@@ -109,6 +109,7 @@ def system_prompt(
     channel: str = "",
     quirks: list[str] | None = None,
     weather: bool = False,
+    notes: bool = False,
     forecast: str = "",
     pc_detail: str = "",
     voice: Voice | None = None,
@@ -124,7 +125,8 @@ def system_prompt(
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
     own words (kit.notebook), which replaces the list of traits unless ``traits``
     (the persona's traits changed since he wrote it). ``two_pass``: the local model
-    gives a plan first and its words after (kit.reply.Plan)."""
+    gives a plan first and its words after (kit.reply.Plan). ``notes`` says Kit has
+    a notes folder to write to (kit.notes)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [f"You are {name}, {owner}'s personal assistant. {persona.backstory}"]
@@ -219,6 +221,14 @@ def system_prompt(
         f"dates, and set category. Never your own lines or jokes, guesses, or small talk "
         f"(greetings, thanks, how {owner} feels right now).",
     ]
+    if notes:
+        lines.append(
+            f"- note: when {owner} asks you to take, make or write down a note, jot "
+            f"something down, or add to a note or list. Use this, not remember. Put the "
+            f"note in text as markdown, tidied up but in {owner}'s words, and a short title "
+            f"in title. The same title adds to that note ('Shopping list'). It's saved in "
+            f"{owner}'s notes in Obsidian."
+        )
     lines.append(
         f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
