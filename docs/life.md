@@ -194,6 +194,16 @@ they always agree. The brain decides he's asleep after
 `life.sleep_after_minutes` away (10 by default) or when the PC is locked, and
 awake the moment the desk app reports you're back.
 
+With his eyes on ([stage-vision.md](stage-vision.md)), presence comes from the
+camera as well as the keyboard: someone in view counts as "about" even while
+they're reading, he doesn't doze off while someone's there, he wakes the moment
+someone sits down, and the brain sends `look` events saying where the person
+is so Glow (and the arm later) can look at them. Someone sitting down after the
+desk has been empty for `life.greet_after_minutes` (20 by default) gets a
+hello: a pipe-up that skips the usual waiting, though never in quiet hours or
+while he's snoozed. He can't tell faces apart yet, so the hello is to "someone,
+most likely Dan".
+
 The desk app adds only reflexes, the way your body blinks without asking your
 brain. They're instant and need nothing from the server:
 - every 20 to 70 seconds (random) Glow glances at the window you're working in,
@@ -246,6 +256,9 @@ into each other, so no two look the same.
 - `GET /api/life/events?after=N&wait=25`: fidgets and pipe-ups after event N;
   waits up to `wait` seconds for one.
 - `POST /api/life/snooze {"minutes": 60}`: quiet for a while (0 lifts it).
+- `look` events (`{"type": "look", "x": -0.2, "y": 0.1}`, each way -1 to 1
+  from the centre) say where the person his eyes see is, every couple of
+  seconds while someone's in view, so a body can look at them.
 - `GET /api/life/notebook`: his self-sheet and its earlier versions, weekly
   reviews, quirks (and retired ones), wants, thoughts, opinions, moments,
   journal, and what you undid.

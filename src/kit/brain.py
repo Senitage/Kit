@@ -13,6 +13,8 @@ Each turn:
    - recall: Kit searches memory for something specific, then answers again;
    - look_at_pc: Kit reads the full picture from the desk app (open windows,
      what's had focus this hour and today, PC health), then answers again;
+   - look_around: Kit reads everything his eyes see (kit.scene_context: who's
+     at the desk, what they're doing, what's about), then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
    - note: a note Dan asked for is saved as markdown in his Obsidian vault
      (kit.notes), and indexed so it can be found later;
@@ -100,6 +102,7 @@ from kit.prompt import (
     weather_results,
     with_mind,
     with_pc_look,
+    with_scene_look,
 )
 from kit.recall import Recall, Recalled
 from kit.reflection import Reflector
@@ -122,6 +125,7 @@ from kit.reply import (
     spoken_reply,
     without_plans,
 )
+from kit.scene_context import SEEN, Happening, SceneContext, SceneReport
 from kit.settings import Settings
 from kit.things import THINGS, Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, Thought, parse_thought, thinking_messages
@@ -197,6 +201,20 @@ PC_QUESTION = re.compile(
     r"since|lately)|cpu|ram usage|disk space|memory usage|tabs? (open|i have))",
     re.IGNORECASE,
 )
+# Plainly about what Kit can see: he looks through the camera first and the local
+# model answers, since what the camera sees stays at home.
+SCENE_QUESTION = re.compile(
+    r"\b(can you see( me| us| anything| the cat| the dog| what)?|what (can|do) you see|"
+    r"what('?s| is| are) (in front of|around|near|behind) (you|me)|look around|"
+    r"who('?s| is) (here|there|at the desk|with me|in the room|around)|"
+    r"through (the|your) camera|(with|through) your eyes|"
+    r"is (anyone|anybody|someone|the cat|the dog) (here|there|around|about|in view)|"
+    r"what am i (wearing|holding|doing)|am i (wearing|holding)|(see|look at) (me|my face|"
+    r"my shirt)|how do i look(?! (up|for|into|at|after|through))|what('?s| is) on (my|the) desk)\b",
+    re.IGNORECASE,
+)
+SCENE_FOLLOW_UP = timedelta(minutes=10)
+EYES_PAUSED = "eyes_paused"  # kit_self key: the "Let Kit see me" switch, kept over restarts
 # "How are you going?" while a slow answer is still coming means "how's that going?".
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
@@ -306,13 +324,15 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.pc = PcContext(memory.clock)
-        self.life = Life(settings, self.pc, memory.clock, store=memory)
+        self.scene = SceneContext(memory.clock)
+        self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
         self.notebook = Notebook(memory)
         self.notebook.swap_work_quirks(settings().persona.owner)
         self.reflector = Reflector(memory, self.notebook, model, cloud, settings)
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
+        self._scene_at: datetime | None = None  # when Kit last looked around for Dan
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
@@ -413,6 +433,18 @@ class Brain:
             role, chosen = LOCAL, True
             pc_detail = self.pc.detail(settings.persona.owner)
             emit({"type": "looked_at_pc", "online": self.pc.online()})
+        scene_detail = ""
+        about_scene = SCENE_QUESTION.search(text) or (AGAIN.search(text) and self._scene_recently())
+        if (
+            self.scene.latest is not None
+            and about_scene
+            and not pc_detail
+            and not (chosen and role != LOCAL)
+        ):
+            self._scene_at = self.memory.clock()
+            role, chosen = LOCAL, True
+            scene_detail = self.scene.detail(settings.persona.owner)
+            emit({"type": "looked_around", "in_view": self.scene.in_view()})
         forecast = ""
         if role == LOCAL and self.weather is not None:
             plainly = bool(WEATHER.search(text))
@@ -438,6 +470,7 @@ class Brain:
             forecast=forecast,
             pc_detail=pc_detail,
             answering=answering,
+            scene_detail=scene_detail,
         ):
             if event["type"] == "reply":
                 emotion = event["reply"]["emotion"]
@@ -483,6 +516,9 @@ class Brain:
     def _pc_recently(self) -> bool:
         return self._pc_at is not None and self.memory.clock() - self._pc_at < PC_FOLLOW_UP
 
+    def _scene_recently(self) -> bool:
+        return self._scene_at is not None and self.memory.clock() - self._scene_at < SCENE_FOLLOW_UP
+
     def _weather_recently(self) -> bool:
         return (
             self._weather_at is not None
@@ -498,13 +534,20 @@ class Brain:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
 
     def _user_turn(
-        self, text: str, role: str, settings: Settings, pc_detail: str, answering: str = ""
+        self,
+        text: str,
+        role: str,
+        settings: Settings,
+        pc_detail: str,
+        answering: str = "",
+        scene_detail: str = "",
     ) -> str:
         owner = settings.persona.owner
-        if THINKING_Q.search(text) and not pc_detail:
+        if THINKING_Q.search(text) and not pc_detail and not scene_detail:
             text = with_mind(text, self.notebook.mind(owner), owner)
         text = self._with_busy_note(text, role)
         text = with_pc_look(text, pc_detail, owner) if pc_detail else text
+        text = with_scene_look(text, scene_detail, owner) if scene_detail else text
         return f"{text}\n\n{answering}" if answering else text
 
     def _answering(self, history: list[Message], owner: str) -> str:
@@ -543,6 +586,27 @@ class Brain:
             f"long it's been, in one short line, in character. {_patience(asked)} Never "
             f"reuse a line you've already said. Don't answer the question itself.)"
         )
+
+    def saw(self, report: SceneReport) -> list[Happening]:
+        """A report from Kit's eyes (kit.eyes): the scene is updated, his life hears
+        what happened (someone arrived or left, the cat wandered in), and the
+        happenings worth remembering go in the index under ``seen``."""
+        happenings = self.scene.update(report)
+        self.life.on_scene(happenings)
+        when = self.memory.clock()
+        for h in happenings:
+            if h.remember:
+                text = f"{when:%A %d %B %Y, %I:%M %p}: {h.text}"
+                self.memory.index.add(SEEN, h.kind, text, meta={"camera": report.camera})
+        return happenings
+
+    @property
+    def eyes_paused(self) -> bool:
+        """The "Let Kit see me" switch: off means the eyes release the camera."""
+        return self.memory.self_value(EYES_PAUSED) == "1"
+
+    def pause_eyes(self, paused: bool) -> None:
+        self.memory.set_self_value(EYES_PAUSED, "1" if paused else "0")
 
     def busy(self) -> list[dict]:
         """What cloud models are working on right now."""
@@ -603,14 +667,16 @@ class Brain:
         said: list[str] = []
         message_id = None
         try:
-            doing = self.pc.now_line(owner) or f"what {owner} is up to"
+            doing = (
+                self.pc.now_line(owner) or self.scene.now_line(owner) or f"what {owner} is up to"
+            )
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             prompt = pipe_up_prompt(
                 reason,
                 owner,
                 settings.life.cheek,
-                self.life.curious_about,
+                self.life.greet_about if reason == "greet" else self.life.curious_about,
                 quiet_h,
                 self.life.butting_in,
                 share=about,
@@ -650,7 +716,11 @@ class Brain:
         if reason == "nag" and self._pipe_up:
             return self._pipe_up[1]  # still on about the same thing
         if reason in ("curious", "watching") and self.life.curious_about:
+            if self.life.curious_kind == "seen":
+                return f"you'd just seen {self.life.curious_about}"
             return f"{owner} had just opened {self.life.curious_about}"
+        if reason == "greet":
+            return "someone had just sat down at the desk"
         return ""
 
     async def think(self, trigger: tuple[str, str] | None = None) -> Thought | None:
@@ -662,8 +732,9 @@ class Brain:
         persona = settings.persona
         owner = persona.owner
         pc = self.pc.now_line(owner)
+        scene = self.scene.now_line(owner)
         try:
-            recalled = await self.recall.for_turn(pc or happened, set())
+            recalled = await self.recall.for_turn(pc or scene or happened, set())
             remembered = (
                 [i.text for i in recalled.pinned][:3]
                 + [h.item.text for h in recalled.memories][:4]
@@ -690,6 +761,7 @@ class Brain:
                 self.notebook.mind(owner, 5),
                 remembered,
                 said_today,
+                scene=scene,
             )
             options = lively(settings.ollama, plain=False)
             raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
@@ -865,6 +937,7 @@ class Brain:
         hand_off: bool,
         forecast: str = "",
         pc_detail: str = "",
+        scene_detail: str = "",
     ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
@@ -896,6 +969,8 @@ class Brain:
             note_done=NOTE_DONE.get(),
             forecast=forecast,
             pc_detail=pc_detail,
+            scene=self.scene.now_line(settings.persona.owner),
+            scene_detail=scene_detail,
             sheet=sheet.text if sheet else "",
             traits=sheet is None or sheet.meta.get("basis") != basis(settings.persona),
             two_pass=role == LOCAL and settings.ollama.speak_pass,
@@ -914,16 +989,19 @@ class Brain:
         forecast: str = "",
         pc_detail: str = "",
         answering: str = "",
+        scene_detail: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
-        system = self._system(settings, recalled, role, hand_off, forecast, pc_detail)
+        system = self._system(settings, recalled, role, hand_off, forecast, pc_detail, scene_detail)
         plain = role == LOCAL and settings.ollama.speak_pass  # the words come as plain text
         messages = [
             {"role": "system", "content": system},
             *history_messages(history, CHANNEL.get(), plain=plain),
             {
                 "role": "user",
-                "content": self._user_turn(text, role, settings, pc_detail, answering),
+                "content": self._user_turn(
+                    text, role, settings, pc_detail, answering, scene_detail
+                ),
             },
         ]
         job = None
@@ -947,7 +1025,7 @@ class Brain:
                 if not query or SPOKEN_NOT_SEARCH.search(query):
                     query = text
                 hits = await self.recall.search(
-                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], DEEP_RECALL
+                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES, SEEN], DEEP_RECALL
                 )
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
@@ -958,6 +1036,11 @@ class Brain:
                 if job:
                     job.steps.append("looked at what's open on your PC")
                 look_up = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
+            elif reply.action.kind == "look_around":
+                yield {"type": "looked_around", "in_view": self.scene.in_view()}
+                if job:
+                    job.steps.append("had a look through the camera")
+                look_up = f"What you can see through the camera:\n{self.scene.detail(owner)}"
             elif reply.action.kind == "weather" and self.weather is not None:
                 place = reply.action.text.strip() or settings.persona.location
                 try:

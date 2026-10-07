@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import shutil
 import tomllib
 from importlib import resources
@@ -20,7 +21,7 @@ from kit.settings import Settings, SettingsError, load_settings, settings_to_tom
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud", "eyes"]
 
 
 def cmd_paths(paths: KitPaths) -> int:
@@ -64,6 +65,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.extend(checks.check_nas(settings))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
+    if "eyes" not in skip:
+        results.append(checks.check_eyes(settings))
     return results
 
 
@@ -458,6 +461,111 @@ def _print_notebook(book: dict) -> None:
                 said = "  (said)" if e.get("meta", {}).get("said") else ""
                 print(f"{e['id']:>6}  {e['day']}  {e['text']}{said}")
     print("\nForget an entry on the memory page (Kit's notebook tab).")
+
+
+def cmd_eyes(
+    paths: KitPaths,
+    args: argparse.Namespace,
+    transport: httpx.BaseTransport | None = None,
+    cameras=None,
+    build=None,
+) -> int:
+    """Kit's eyes (kit.eyes): run them beside the camera, list cameras, save where
+    the brain is, show what Kit sees, or switch them off and on."""
+    from kit.desk.client import BrainClient, BrainError
+    from kit.eyes import link
+    from kit.eyes.camera import camera_line
+    from kit.settings import EyesSettings
+
+    action = args.eyes_action or "run"
+    if action == "cameras":
+        try:
+            found = (cameras or checks.cameras_here)()
+        except ImportError:
+            print('the camera libraries aren\'t installed here: pip install "kit[eyes]"')
+            return 1
+        if not found:
+            print("No cameras found.")
+            return 1
+        for cam in found:
+            print("  " + camera_line(cam))
+        return 0
+    if action == "connect":
+        folder = link.save_connection(args.url, args.token)
+        print(f"saved the brain's address and token in {folder}")
+        return 0
+    conn = link.find_connection(args.brain, args.token, paths=paths)
+    if conn is None:
+        print(
+            "Kit's eyes don't know where the brain is. Run `kit eyes connect URL TOKEN` with "
+            "the brain's address (as in the desk app's settings) and the token from `kit token` "
+            "on the server."
+        )
+        return 1
+    client = BrainClient(conn.url, conn.token, transport=transport)
+    try:
+        if action == "show":
+            seen = client.eyes()
+            print(seen["detail"])
+            if seen.get("paused"):
+                print("(the eyes are switched off: `kit eyes resume` turns them on)")
+            return 0
+        if action in ("pause", "resume"):
+            state = client.set_eyes(action == "resume")
+            print(
+                "Kit's eyes are off: the camera is released until `kit eyes resume`."
+                if state["paused"]
+                else "Kit's eyes are on."
+            )
+            return 0
+        client.check()  # proves the token before loading any model
+        settings = EyesSettings.model_validate(client.settings().get("eyes", {}))
+    except BrainError as e:
+        print(f"can't reach Kit's brain at {conn.url} ({e})")
+        return 1
+    except (KeyError, ValueError) as e:
+        print(f"Kit's brain gave an answer the eyes don't understand ({e}); update both sides")
+        return 1
+    if not settings.enabled:
+        print("eyes.enabled is false in Kit's settings; turn it on first (`kit config set`)")
+        return 1
+    if build is None:
+        from kit.eyes.run import build_eyes
+
+        build = build_eyes
+    on_frame = None
+    if args.show:
+        from kit.eyes.preview import previewer
+
+        holder: dict = {}
+        on_frame = previewer(lambda: holder["eyes"].fps if "eyes" in holder else 0.0)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    try:
+        eyes = build(
+            settings,
+            client.report_scene,
+            camera=args.camera,
+            camera_name=args.name,
+            on_frame=on_frame,
+        )
+    except ImportError as e:
+        print(f'the eyes need the camera and model libraries: pip install "kit[eyes]" ({e})')
+        return 1
+    if args.show:
+        holder["eyes"] = eyes
+    camera = settings.camera if args.camera is None else args.camera
+    print(
+        f"Kit's eyes are open: camera {camera}, reporting to {conn.url} (found via "
+        f"{conn.source}). Ctrl+C closes them."
+    )
+    try:
+        eyes.run(max_steps=args.frames)
+    except KeyboardInterrupt:
+        print("eyes closed")
+    finally:
+        client.close()
+    return 0
 
 
 def cmd_new_chat(paths: KitPaths) -> int:
@@ -983,6 +1091,25 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("spend", help="show this month's cloud spend")
 
     sub.add_parser("notes", help="read the notes vault now and list what Kit sees")
+    eyes = sub.add_parser(
+        "eyes", help="Kit's eyes: run them beside the camera (docs/stage-vision.md)"
+    )
+    eyes.add_argument("--camera", type=int, help="camera index (default: eyes.camera in settings)")
+    eyes.add_argument("--brain", help="the brain's address, e.g. http://kit-server:8600")
+    eyes.add_argument("--token", help="Kit's API token (`kit token` on the server)")
+    eyes.add_argument("--name", default="desk", help="what to call this camera (default: desk)")
+    eyes.add_argument("--show", action="store_true", help="show what the eyes see in a window")
+    eyes.add_argument("--frames", type=int, help="stop after this many frames (for testing)")
+    esub = eyes.add_subparsers(dest="eyes_action")
+    esub.add_parser("cameras", help="list the cameras on this machine")
+    econnect = esub.add_parser(
+        "connect", help="save where the brain is, e.g. http://kit-server:8600 TOKEN"
+    )
+    econnect.add_argument("url")
+    econnect.add_argument("token")
+    esub.add_parser("show", help="what Kit can see right now, as he's told it")
+    esub.add_parser("pause", help="switch the eyes off (the camera is released)")
+    esub.add_parser("resume", help="switch the eyes on again")
     things = sub.add_parser("things", help="the register of things and where they live")
     tsub = things.add_subparsers(dest="action", required=True)
     tsub.add_parser("list", help="list the register")
@@ -1054,6 +1181,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(paths, args)
     if args.command == "notes":
         return cmd_notes(paths)
+    if args.command == "eyes":
+        return cmd_eyes(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
     if args.command == "weather":

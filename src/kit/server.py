@@ -28,6 +28,7 @@ from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
+from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
 from kit.things import THINGS, Register
@@ -75,6 +76,10 @@ class QuirkIn(BaseModel):
 
 class VersionIn(BaseModel):
     id: int
+
+
+class EyesSwitch(BaseModel):
+    paused: bool
 
 
 class ThingEdit(BaseModel):
@@ -177,6 +182,8 @@ def create_app(
             if brain.recall.embed_problem
             else "words and meaning",
             "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
+            "eyes": brain.scene.now_line(s.persona.owner) or "the eyes haven't reported yet",
+            "eyes_paused": brain.eyes_paused,
         }
 
     @app.get("/api/settings", dependencies=auth)
@@ -366,6 +373,28 @@ def create_app(
     def pc_context() -> dict:
         """What Kit can see of Dan's PC, as Kit sees it."""
         return brain.pc.as_dict(store.current().persona.owner)
+
+    def _eyes_paused() -> bool:
+        return brain.eyes_paused or not store.current().eyes.enabled
+
+    @app.post("/api/eyes/scene", dependencies=auth)
+    def eyes_report(report: SceneReport) -> dict:
+        """The eyes' report (kit.eyes): who and what is in view, what just happened.
+        The answer carries the switch and the eyes' settings, so a running pair
+        of eyes follows changes to either."""
+        brain.saw(report)
+        return {"ok": True, "paused": _eyes_paused(), "settings": store.current().eyes.model_dump()}
+
+    @app.get("/api/eyes/scene", dependencies=auth)
+    def eyes_scene() -> dict:
+        """What Kit can see through his eyes, as Kit sees it."""
+        return {**brain.scene.as_dict(store.current().persona.owner), "paused": _eyes_paused()}
+
+    @app.post("/api/eyes/pause", dependencies=auth)
+    def eyes_switch(body: EyesSwitch) -> dict:
+        """The "Let Kit see me" switch: paused eyes release the camera until it's on again."""
+        brain.pause_eyes(body.paused)
+        return {"paused": _eyes_paused()}
 
     @app.get("/api/life", dependencies=auth)
     def life() -> dict:

@@ -200,6 +200,39 @@ def test_a_pipe_up_shows_in_the_chat_and_on_the_face(qapp, desk_dir, monkeypatch
         desk.face.close()
 
 
+def test_glow_looks_where_kits_eyes_say_and_the_eyes_switch_reaches_the_brain(
+    qapp, desk_dir, monkeypatch
+):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    try:
+        desk._on_life({"type": "look", "x": -0.4, "y": 0.2})
+        assert desk.face.face._look[:2] == (-0.4, 0.2)
+        desk._on_life({"type": "state", "state": "asleep"})
+        desk.face.face._look = None
+        desk._on_life({"type": "look", "x": 0.3, "y": 0.0})
+        assert desk.face.face._look is None  # asleep: no peeking
+        assert desk.eyes_action.isChecked()
+        desk._show_eyes(False)  # what the brain says, without switching anything
+        assert not desk.eyes_action.isChecked()
+        switched = []
+        desk.client.set_eyes = lambda on: switched.append(on)
+        desk.eyes_action.setChecked(True)
+        import time as _t
+
+        end = _t.time() + 2
+        while not switched and _t.time() < end:
+            qapp.processEvents()
+            _t.sleep(0.02)
+        assert switched == [True]
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
 def test_new_chat_clears_the_window(qapp):
     class Client:
         started = 0

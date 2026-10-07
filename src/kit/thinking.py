@@ -63,9 +63,11 @@ def thinking_messages(
     mind: list[str],
     remembered: list[str],
     said_today: list[str],
+    scene: str = "",
 ) -> list[dict]:
     """The prompt for one private thought. ``who`` is his self-sheet (or the persona
-    he was given), ``happened`` what set this thought off."""
+    he was given), ``happened`` what set this thought off, ``scene`` what his eyes
+    see (kit.scene_context), if they're on."""
     feelings = ", ".join(FEELING_KINDS)
     system = [
         f"You are {name}'s inner voice. {name} is a small companion who lives on {owner}'s "
@@ -95,6 +97,7 @@ def thinking_messages(
         f"It's {now:%A %d %B, %I:%M %p}.",
         happened,
         pc or f"You can't see {owner}'s PC right now.",
+        *([scene] if scene else []),
         f"You feel {feeling}.",
         *_section("On your mind lately (don't just repeat these):", mind),
         *_section("What you remember that may matter:", remembered),

@@ -118,12 +118,15 @@ def system_prompt(
     sheet: str = "",
     traits: bool = True,
     two_pass: bool = False,
+    scene: str = "",
+    scene_detail: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
     to; either is None when there's nowhere to hand it. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
-    "right now" from Dan's PC, empty when it has never reported. ``channel`` says
+    "right now" from Dan's PC, empty when it has never reported; ``scene`` the same
+    from Kit's eyes (kit.scene_context). ``channel`` says
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
     own words (kit.notebook), which replaces the list of traits unless ``traits``
     (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
@@ -217,6 +220,15 @@ def system_prompt(
             + say("Say something short like 'Let me have a look.'")
             + " You'll see it before answering properly."
         )
+    if scene and not scene_detail:  # already looked: answer, don't look again
+        lines.append(
+            "- look_around: when knowing more about what you can see through the camera "
+            "would help (who's at the desk and what they're doing or holding, what else is "
+            "in view, what's happened lately, who's been in today) and the line about it "
+            "below isn't enough."
+            + say("Say something short like 'Let me have a look.'")
+            + " You'll see it before answering properly."
+        )
     lines += [
         f"- remember: only when {owner} has just told you something worth keeping: about "
         f"themselves, their preferences, projects, where things are kept, people or plans. "
@@ -299,6 +311,7 @@ def system_prompt(
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
+        *([scene] if scene else []),
         *voice_block(voice, owner, name),
         *forecast_block(forecast, owner),
         *note_block(note_done, owner),
@@ -344,6 +357,7 @@ SPEAK_FOR = {
     "recall": "You're about to look back through your memory for '{text}'. Say a few words "
     "while you do, your own way (like 'Let me think...').",
     "look_at_pc": "You're about to have a look at {owner}'s PC. Say so in a few words.",
+    "look_around": "You're about to have a proper look through the camera. Say so in a few words.",
     "weather": "You're about to check the forecast. Say so in a few words.",
     "ask_cloud": "You're handing this one to {helper}. Say so in a few words.",
     "ask_expert": "You're handing this one to {expert}. Say so in a few words.",
@@ -440,6 +454,17 @@ def with_pc_look(text: str, detail: str, owner: str) -> str:
         f"(windows, tabs, the last hour, today or how the PC is coping) from this fresh "
         f"look, not from earlier answers, in a sentence or two with the names or numbers "
         f"that matter. Action none.\n{detail}]"
+    )
+
+
+def with_scene_look(text: str, detail: str, owner: str) -> str:
+    """Dan's message with a fresh look through the camera right beside it, for the
+    same reason as ``with_pc_look``."""
+    return (
+        f"{text}\n\n[You just had a proper look through the camera for this. Answer exactly "
+        f"what {owner} asked (who's there, what they're doing or holding, what's in view, "
+        f"what's happened) from this fresh look, not from earlier answers, in a sentence or "
+        f"two. Action none.\n{detail}]"
     )
 
 

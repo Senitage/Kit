@@ -105,8 +105,26 @@ own_memories = 3             # from his own notebook: thoughts, opinions, moment
 # quiet_from = "22:00"
 # quiet_until = "07:00"  # also when things he means to bring up "tomorrow" are due
 # sleep_after_minutes = 10
+# greet_after_minutes = 20  # with his eyes on, he says hello to whoever sits down
+#                           # after the desk has been empty this long; 0 never
 # think_every_minutes = 8   # a private thought in a quiet moment while you're around
 # thoughts_per_hour = 6     # each is a quick local model call; 0 stops them
 # reflect_with = "cloud"    # who writes his journal and self-sheet each night:
 #                           # cloud (the work model, a few cents), local, or off
 # weekly_review = true      # the expert model reviews how he's changed, weekly
+
+# Kit's eyes: the camera process (`kit eyes`, on the PC with the webcam) reads
+# these from the brain, so there's one place to change them (docs/stage-vision.md).
+# [eyes]
+# enabled = true
+# camera = 0               # `kit eyes cameras` lists them
+# width = 1280
+# height = 720
+# mirror = true            # like a mirror, for a webcam facing you; false on the arm
+# detector = "yolo11n"     # yolo11s is more accurate and slower; downloaded on first run
+# confidence = 0.4
+# forget_after_s = 3.0     # seconds out of view before someone has left
+# report_every_s = 1.0
+# faces = true             # where each person is looking, and their expression
+# hands = true             # hand gestures
+# poses = 1                # people to read body pose for; 0 turns it off

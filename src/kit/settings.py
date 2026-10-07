@@ -380,6 +380,14 @@ class LifeSettings(_Section):
     sleep_after_minutes: int = Field(
         10, ge=1, le=240, description="Kit dozes off after you've been away this long."
     )
+    greet_after_minutes: int = Field(
+        20,
+        ge=0,
+        le=720,
+        description="With his eyes on, Kit says hello to whoever sits down after the desk has "
+        "been empty this long (whatever his other manners say, bar quiet hours and snooze). "
+        "0 never greets.",
+    )
     think_every_minutes: int = Field(
         8,
         ge=2,
@@ -414,6 +422,56 @@ class LifeSettings(_Section):
         if not (h.isdigit() and m.isdigit() and int(h) < 24 and int(m) < 60 and len(m) == 2):
             raise ValueError("must be a time like 22:00")
         return f"{int(h):02d}:{m}"
+
+
+class EyesSettings(_Section):
+    """Kit's eyes: the camera process (`kit eyes`) on the PC with the webcam. It
+    fetches these from the brain, so there's one place to change them."""
+
+    enabled: bool = Field(
+        True,
+        description="Kit uses a camera to see who's at the desk, when `kit eyes` is running "
+        "on the PC with the webcam.",
+    )
+    camera: int = Field(
+        0, ge=0, le=15, description="Which camera the eyes use (`kit eyes cameras` lists them)."
+    )
+    width: int = Field(1280, ge=160, le=4096, description="Frame width to ask the camera for.")
+    height: int = Field(720, ge=120, le=2160, description="Frame height to ask the camera for.")
+    mirror: bool = Field(
+        True,
+        description="Flip the picture like a mirror. On for a webcam facing you at the desk, "
+        "so left is your left; off for a camera on the arm.",
+    )
+    detector: str = Field(
+        "yolo11n",
+        min_length=1,
+        description="The model that finds people and objects: yolo11n is fast, yolo11s more "
+        "accurate. Downloaded the first time the eyes run.",
+    )
+    confidence: float = Field(
+        0.4, ge=0.05, le=0.95, description="How sure the detector must be before something counts."
+    )
+    forget_after_s: float = Field(
+        3.0,
+        ge=0.5,
+        le=60,
+        description="Seconds out of view before someone or something has left.",
+    )
+    report_every_s: float = Field(
+        1.0, ge=0.2, le=10, description="How often the eyes tell the brain what they see."
+    )
+    faces: bool = Field(
+        True, description="Read faces: where each person is looking and their expression."
+    )
+    hands: bool = Field(True, description="Read hand gestures: thumbs up, open palm, a wave.")
+    poses: int = Field(
+        1,
+        ge=0,
+        le=4,
+        description="How many people to read body pose for (each adds about 13 ms a frame). "
+        "0 turns it off.",
+    )
 
 
 class MemorySettings(_Section):
@@ -473,6 +531,7 @@ class Settings(_Section):
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
+    eyes: EyesSettings = Field(default_factory=EyesSettings)
 
     @field_validator("models", mode="before")
     @classmethod

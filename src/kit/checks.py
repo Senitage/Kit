@@ -183,6 +183,45 @@ def check_nas(settings: Settings, write: Writer = try_write) -> list[CheckResult
     return results
 
 
+CameraLister = Callable[[], list[dict]]
+
+
+def cameras_here() -> list[dict]:
+    """The cameras OpenCV can open on this machine (needs the eyes extra)."""
+    from kit.eyes.camera import list_cameras
+
+    return list_cameras()
+
+
+def check_eyes(settings: Settings, cameras: CameraLister = cameras_here) -> CheckResult:
+    """Can this machine see? The eyes usually run on the desk PC rather than the
+    server, so no camera here is a warning, not a failure."""
+    from kit.eyes.camera import camera_line
+
+    if not settings.eyes.enabled:
+        return CheckResult("eyes", Status.SKIP, "eyes.enabled is false in settings.toml")
+    try:
+        found = cameras()
+    except ImportError:
+        detail = (
+            "no camera libraries here; on the PC with the webcam run "
+            'pip install "kit[eyes]" then `kit eyes` (docs/stage-vision.md)'
+        )
+        return CheckResult("eyes", Status.WARN, detail)
+    except Exception as e:  # a broken driver mustn't stop the report
+        return CheckResult("eyes", Status.WARN, f"couldn't look for cameras: {e}")
+    if not found:
+        detail = "no camera on this machine; run `kit eyes` on the PC with the webcam"
+        return CheckResult("eyes", Status.WARN, detail)
+    wanted = settings.eyes.camera
+    chosen = next((c for c in found if c["index"] == wanted), None)
+    if chosen is None:
+        others = "; ".join(camera_line(c) for c in found)
+        detail = f"camera {wanted} (eyes.camera) not found here; found {others}"
+        return CheckResult("eyes", Status.WARN, detail)
+    return CheckResult("eyes", Status.PASS, camera_line(chosen))
+
+
 ClientFactory = Callable[[str], anthropic.Anthropic]
 
 
