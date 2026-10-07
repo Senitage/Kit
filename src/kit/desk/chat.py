@@ -94,6 +94,9 @@ class ChatWindow(QWidget):
 
         self.status = QLabel("idle")
         self.status.setStyleSheet("color: #8b949e;")
+        fresh = QPushButton("New chat")
+        fresh.setObjectName("new")
+        fresh.clicked.connect(self.new_chat)
         self.log = QTextBrowser()
         self.log.setOpenExternalLinks(True)
         self.log.document().setDefaultStyleSheet(STYLE)
@@ -103,6 +106,7 @@ class ChatWindow(QWidget):
             " border-radius: 6px; padding: 4px; }"
             "QPushButton { background: #238636; color: white; border: none; border-radius: 6px;"
             " padding: 8px 14px; }"
+            "QPushButton#new { background: transparent; color: #8b949e; padding: 2px 6px; }"
         )
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.input = QPlainTextEdit()
@@ -115,8 +119,11 @@ class ChatWindow(QWidget):
         row = QHBoxLayout()
         row.addWidget(self.input, 1)
         row.addWidget(send)
+        top = QHBoxLayout()
+        top.addWidget(self.status, 1)
+        top.addWidget(fresh)
         layout = QVBoxLayout(self)
-        layout.addWidget(self.status)
+        layout.addLayout(top)
         layout.addWidget(self.log, 1)
         layout.addLayout(row)
 
@@ -163,6 +170,19 @@ class ChatWindow(QWidget):
 
         threading.Thread(target=work, name=f"kit-chat-{turn}", daemon=True).start()
         return turn
+
+    def new_chat(self) -> None:
+        """Start a fresh conversation; the old one stays in Kit's memory."""
+        client = self.client
+        if client is None:
+            return
+        try:
+            client.new_chat()
+        except BrainError as e:
+            self._add(Line("error", str(e)))
+            return
+        self.lines = []
+        self._render()
 
     def load_history(self) -> None:
         """Show the recent conversation, once, the first time the window opens."""

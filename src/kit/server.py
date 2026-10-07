@@ -205,6 +205,11 @@ def create_app(
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
+    @app.post("/api/chat/new", dependencies=auth)
+    def new_chat() -> dict:
+        memory.new_chat()
+        return {"ok": True}
+
     @app.get("/api/messages", dependencies=auth)
     def messages(limit: int = 50) -> list[dict]:
         return [

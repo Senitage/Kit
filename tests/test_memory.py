@@ -138,3 +138,13 @@ def test_a_recalled_conversation_can_be_forgotten(memory):
     assert memory.forget(item.id, conversation=True)
     assert memory.index.items("conversation") == []
     assert [m.text for m in memory.recent(5)] == ["Hey"]  # the chat log stays
+
+
+def test_new_chat_hides_earlier_turns_but_keeps_the_log(memory):
+    memory.add_message("user", "Hey")
+    memory.add_message("kit", "You're the one with the API key.")
+    memory.new_chat()
+    assert memory.recent(10) == []
+    memory.add_message("user", "Morning")
+    assert [m.text for m in memory.recent(10)] == ["Morning"]
+    assert len(memory.messages_on(memory.today())) == 3

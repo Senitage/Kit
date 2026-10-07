@@ -198,3 +198,17 @@ def test_a_pipe_up_shows_in_the_chat_and_on_the_face(qapp, desk_dir, monkeypatch
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def test_new_chat_clears_the_window(qapp):
+    class Client:
+        started = 0
+
+        def new_chat(self):
+            self.started += 1
+
+    client = Client()
+    chat = ChatWindow(client)
+    chat.on_event(1, reply_event("Old one."))
+    chat.new_chat()
+    assert client.started == 1 and "Old one." not in chat.text()

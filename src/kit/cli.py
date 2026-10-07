@@ -338,6 +338,17 @@ def _show_item(item) -> str:
     return f"{item.id:>5}{pin} {item.day}  {item.kind:<10}  {item.text}"
 
 
+def cmd_new_chat(paths: KitPaths) -> int:
+    from kit.memory import Memory
+
+    paths.ensure()
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.new_chat()
+    memory.close()
+    print("new chat started; the old one is still in Kit's memory")
+    return 0
+
+
 def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
 
@@ -690,6 +701,7 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", help="override brain.host")
     serve.add_argument("--port", type=int, help="override brain.port")
     sub.add_parser("chat", help="talk to Kit in this terminal")
+    sub.add_parser("new-chat", help="start a fresh conversation (the old one stays in memory)")
     sub.add_parser("token", help="show the API token for the pages and home_app")
 
     config = sub.add_parser("config", help="see or change Kit's settings")
@@ -784,6 +796,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_serve(paths, args)
     if args.command == "chat":
         return asyncio.run(_chat_loop(paths))
+    if args.command == "new-chat":
+        return cmd_new_chat(paths)
     if args.command == "memory":
         return cmd_memory(paths, args)
     if args.command == "models":

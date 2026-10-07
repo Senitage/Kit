@@ -30,6 +30,7 @@ from kit.knowledge import Index, Item
 Clock = Callable[[], datetime]
 
 RECALL_STEP = "recall-step"  # a message source for Kit's "Let me think..." turns
+CHAT_FROM = "chat_from"  # kit_self key: the last message before the current chat
 
 FACTS = "memory"
 DAYS = "days"
@@ -186,13 +187,21 @@ class Memory:
     @_locked
     def recent(self, limit: int) -> list[Message]:
         """The latest turns as the model should see them: a recall step ("Let me
-        think...") is a working note, not a turn, so it's left out."""
+        think...") is a working note, not a turn, so it's left out, and nothing
+        from before the last new chat is."""
         rows = self.db.execute(
             "SELECT id, at, role, text, reply_json, source, channel FROM messages"
-            " WHERE source IS NULL OR source != ? ORDER BY id DESC LIMIT ?",
-            (RECALL_STEP, limit),
+            " WHERE id > ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
+            (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
         return [Message(*row) for row in reversed(rows)]
+
+    @_locked
+    def new_chat(self) -> None:
+        """Start a fresh conversation: earlier turns leave the chat history (and stop
+        being copied by the model) but stay in the log, day summaries and recall."""
+        row = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()
+        self.set_self_value(CHAT_FROM, str(row[0]))
 
     @_locked
     def set_message_source(self, message_id: int, source: str) -> None:

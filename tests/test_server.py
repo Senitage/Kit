@@ -147,3 +147,12 @@ def test_upkeep_backs_up_and_indexes(paths):
     assert list(paths.backups_dir.glob("memory-*.db"))
     assert memory.index.missing_vectors("fake-embed") == []
     memory.close()
+
+
+def test_new_chat_clears_the_shown_conversation(setup):
+    client, _, _ = setup
+    client.post("/api/chat", json={"text": "hi"}, headers=AUTH)
+    assert client.get("/api/messages", headers=AUTH).json()
+    assert client.post("/api/chat/new").status_code == 401
+    assert client.post("/api/chat/new", headers=AUTH).json() == {"ok": True}
+    assert client.get("/api/messages", headers=AUTH).json() == []

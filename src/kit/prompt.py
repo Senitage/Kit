@@ -198,7 +198,11 @@ def system_prompt(
         "repeat detail from an earlier reply."
     )
     if persona.examples:
-        lines += ["", "Examples of how you talk:"]
+        lines += [
+            "",
+            "Examples of how you talk (they show the tone; never reuse their lines, and say "
+            "something new each time rather than repeating yourself):",
+        ]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
     # What changes every turn goes last, so the cached prefix above can be reused.

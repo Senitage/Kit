@@ -39,7 +39,7 @@
 </style>
 </head>
 <body>
-<header><h1 id="name">Kit</h1><span id="state">idle</span><a href="/memory">Memory</a><a href="/settings">Settings</a></header>
+<header><h1 id="name">Kit</h1><span id="state">idle</span><a href="#" id="new">New chat</a><a href="/memory">Memory</a><a href="/settings">Settings</a></header>
 <div id="log"></div>
 <form id="form">
   <textarea id="text" rows="1" placeholder="Talk to Kit. Say &quot;ask Claude&quot; for hard ones." autofocus></textarea>
@@ -84,6 +84,12 @@ function meta(div, reply, extra) {
   span.textContent = [reply.emotion, ...gestures, ...(extra || [])].join(" · ");
   div.appendChild(span);
 }
+document.getElementById("new").addEventListener("click", async e => {
+  e.preventDefault();
+  const r = await fetch("/api/chat/new", { method: "POST", headers });
+  if (r.ok) document.getElementById("log").replaceChildren();
+  else bubble("error", "Couldn't start a new chat.");
+});
 async function loadHistory() {
   const r = await fetch("/api/messages?limit=40", { headers });
   if (r.status === 401) { try { localStorage.removeItem("kitToken"); } catch (e) {} bubble("error", "Wrong token. Reload to enter it again."); return; }

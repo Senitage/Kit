@@ -65,6 +65,9 @@ class BrainClient:
     def snooze(self, minutes: float) -> dict:
         return self._call("POST", "/api/life/snooze", json={"minutes": minutes}).json()
 
+    def new_chat(self) -> None:
+        self._call("POST", "/api/chat/new")
+
     def report(self, snapshot: dict) -> None:
         self._call("POST", "/api/pc/context", json=snapshot)
 
