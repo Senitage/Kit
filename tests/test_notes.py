@@ -89,6 +89,7 @@ def test_kit_takes_a_note_when_asked(memory, vault):
     brain, model = make(memory, s, note_reply("Dentist", "Book Rex's dentist for November."))
     events = collect(brain.chat("Take a note: book the dentist for November"))
     assert "- note: when Dan asks you to take" in model.calls[0][0]["content"]
+    assert "writing that down in Dan's notes" in model.speak_calls[0][-1]["content"]
     notice = next(e for e in events if e["type"] == "notice")
     assert notice["message"] == "Saved Dentist.md in your notes."
     assert "November" in (vault / "Dentist.md").read_text(encoding="utf-8")

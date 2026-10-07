@@ -124,9 +124,9 @@ def system_prompt(
     "right now" from Dan's PC, empty when it has never reported. ``channel`` says
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
     own words (kit.notebook), which replaces the list of traits unless ``traits``
-    (the persona's traits changed since he wrote it). ``two_pass``: the local model
-    gives a plan first and its words after (kit.reply.Plan). ``notes`` says Kit has
-    a notes folder to write to (kit.notes)."""
+    (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
+    local model gives a plan first and its words after (kit.reply.Plan). ``notes``
+    says Kit has a notes folder to write to (kit.notes)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [f"You are {name}, {owner}'s personal assistant. {persona.backstory}"]
@@ -334,6 +334,7 @@ SPEAK_FOR = {
     "ask_expert": "You're handing this one to {expert}. Say so in a few words.",
     "remember": 'You\'re keeping this in your memory: "{text}". Answer {owner} naturally; '
     "you can say you'll remember it.",
+    "note": "You're writing that down in {owner}'s notes. Say so in a few words.",
     "thing": "You're noting \"{text}\". If it's new to you, ask {owner} whether to add it to "
     "the register.",
 }
