@@ -263,6 +263,14 @@ class BrainSettings(_Section):
         description="Start a fresh conversation when you come back after this long quiet "
         "(the old one stays in memory). 0 never does.",
     )
+    new_topic_below: float = Field(
+        0.45,
+        ge=0,
+        le=1,
+        description="Start fresh when a message's meaning is this far from your last few "
+        "(similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never "
+        "count as a new topic.",
+    )
     history_messages: int = Field(
         20, ge=2, le=200, description="Recent messages Kit sees each turn."
     )

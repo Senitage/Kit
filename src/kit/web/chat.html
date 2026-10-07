@@ -175,6 +175,8 @@ async function send(text) {
       } else if (ev.type === "recalled") {
         stateEl.textContent = "remembering";
         current = null;
+      } else if (ev.type === "new_topic") {
+        bubble("error", "New topic, so Kit starts a fresh chat.").style.color = "var(--muted)";
       } else if (ev.type === "looked_at_pc") {
         stateEl.textContent = "looking at your PC";
         current = null;

@@ -121,6 +121,14 @@ WEATHER_FOLLOW_UP = timedelta(minutes=15)
 # "Check again" soon after a look at the PC means look again, not repeat the answer.
 AGAIN = re.compile(r"\b((check|look|have a look) again\W*$|again\?*$|and now\??$|refresh)", re.I)
 PC_FOLLOW_UP = timedelta(minutes=10)
+# Messages that lean on what came before are never a new topic.
+FOLLOW_ON = re.compile(
+    r"\b(it|that|this|those|these|them|they|he|she|again|also|too|another|other|more|"
+    r"instead|same|what about|how about|and|but|so|then|why|yes|no|yeah|nah|ok|okay)\b",
+    re.IGNORECASE,
+)
+TOPIC_MIN_WORDS = 4
+TOPIC_LOOKBACK = 3
 # Plainly about Dan's PC: Kit looks first and the local model answers, since the
 # cloud can't see the PC and window titles stay at home.
 PC_QUESTION = re.compile(
@@ -266,6 +274,10 @@ class Brain:
         settings = self.settings()
         self._new_chat_if_quiet(settings)
         history = self.memory.recent(settings.brain.history_messages)
+        if await self._new_topic(text, history, settings):
+            self.memory.new_chat()
+            history = []
+            emit({"type": "new_topic"})
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
         self.life.note_chat()
@@ -317,6 +329,21 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    async def _new_topic(self, text: str, history: list[Message], settings: Settings) -> bool:
+        """A clearly new subject: the chat so far would only lead the model astray (it
+        kept bringing up the API key testing). Judged by meaning, against Dan's last
+        few messages, with the embedder recall already uses."""
+        below = settings.brain.new_topic_below
+        asked = [m.text for m in history if m.role == "user"][-TOPIC_LOOKBACK:]
+        if not below or len(asked) < 2 or len(text.split()) < TOPIC_MIN_WORDS:
+            return False
+        if FOLLOW_ON.search(text) or self.jobs:
+            return False
+        close = await self.recall.closeness(text, asked)
+        if close is not None:
+            log.info("topic closeness %.2f (new topic below %.2f)", close, below)
+        return close is not None and close < below
 
     def _new_chat_if_quiet(self, settings: Settings) -> None:
         """Back after a long quiet: start fresh, so this morning's topic doesn't

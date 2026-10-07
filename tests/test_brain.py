@@ -638,3 +638,25 @@ def test_a_long_quiet_starts_a_new_chat(memory, clock):
     collect(brain.chat("hey"))
     assert len(model.calls[2]) == 2  # just the system prompt and "hey"
     assert len(memory.messages_on(memory.today())) == 6  # nothing lost from the log
+
+
+def test_a_clearly_new_subject_starts_fresh(memory):
+    brain, model, _ = make(memory, *[reply("Ok.")] * 6)
+    collect(brain.chat("let's test the API key removal"))
+    collect(brain.chat("the API key is gone from secrets now"))
+    collect(brain.chat("is the API key removal test from secrets done"))  # same subject
+    assert len(model.calls[2]) > 2
+    events = collect(brain.chat("what's a good flotation recovery for copper"))
+    assert "new_topic" in [e["type"] for e in events]
+    assert len(model.calls[3]) == 2  # only the system prompt and the new question
+    collect(brain.chat("why is that higher than gold"))  # leans on the last answer
+    assert len(model.calls[4]) > 2
+
+
+def test_new_topic_check_can_be_turned_off(memory):
+    s = settings_with(brain={"new_topic_below": 0})
+    brain, model, _ = make(memory, *[reply("Ok.")] * 3, settings=s)
+    collect(brain.chat("let's test the API key removal"))
+    collect(brain.chat("the API key is gone from secrets now"))
+    collect(brain.chat("what's a good flotation recovery for copper"))
+    assert len(model.calls[2]) > 2
