@@ -140,6 +140,7 @@ def test_pc_questions_are_answered_locally_from_a_fresh_look(paths, question):
     system = brain.model.calls[0][0]["content"]
     assert "Open windows (3):" in system and "PC health: CPU 12%" in system
     assert "ask_cloud" not in system  # the cloud can't see the PC, so no hand-off
+    assert "- look_at_pc:" not in system  # already looked, so one answer, not two
     assert not claude.calls
     memory.close()
 

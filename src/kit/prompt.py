@@ -144,7 +144,7 @@ def system_prompt(
         f"text, say something short like 'Let me think...', and you'll see what you find "
         f"before answering properly.",
     ]
-    if pc:
+    if pc and not pc_detail:  # already looked: answer, don't look again
         lines.append(
             f"- look_at_pc: when knowing more about what's on {owner}'s PC would help (every "
             f"open window, what they've had in focus this hour and today, whether the PC is "
@@ -219,8 +219,8 @@ def pc_block(detail: str, owner: str) -> list[str]:
         "",
         f"What you can see on {owner}'s PC (looked just now, because they asked about it):",
         detail,
-        "Answer from this in a sentence or two, with the numbers or names that matter. "
-        "Don't list everything unless asked.",
+        "You've already looked, so answer now from this with action none, in a sentence "
+        "or two with the numbers or names that matter. Don't list everything unless asked.",
     ]
 
 
