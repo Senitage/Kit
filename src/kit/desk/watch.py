@@ -173,7 +173,10 @@ def build_snapshot(
     if focus and focus.pid != own:
         snap["focus"] = privacy.window(focus)
     snap["windows"] = [privacy.window(w) for w in desktop.windows() if w.pid != own][:MAX_WINDOWS]
-    if browser:
+    # Chrome can be closed while its last report is still fresh (or keep running in
+    # the background): tabs only count while one of its windows is open.
+    open_apps = {w["app"] for w in snap["windows"]}
+    if browser and browser["name"] in open_apps:
         snap["browser"] = {
             "name": browser["name"],
             "tabs": [privacy.tab(t) for t in browser["tabs"]],

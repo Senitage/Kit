@@ -118,6 +118,9 @@ WHEN = re.compile(
     re.IGNORECASE,
 )
 WEATHER_FOLLOW_UP = timedelta(minutes=15)
+# "Check again" soon after a look at the PC means look again, not repeat the answer.
+AGAIN = re.compile(r"\b((check|look|have a look) again\W*$|again\?*$|and now\??$|refresh)", re.I)
+PC_FOLLOW_UP = timedelta(minutes=10)
 # Plainly about Dan's PC: Kit looks first and the local model answers, since the
 # cloud can't see the PC and window titles stay at home.
 PC_QUESTION = re.compile(
@@ -225,6 +228,7 @@ class Brain:
         self.quirks = my_quirks(memory)
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
+        self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
         self.pending_thing: int | None = None
@@ -287,11 +291,9 @@ class Brain:
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
         pc_detail = ""
-        if (
-            self.pc.latest is not None
-            and PC_QUESTION.search(text)
-            and not (chosen and role != LOCAL)
-        ):
+        about_pc = PC_QUESTION.search(text) or (AGAIN.search(text) and self._pc_recently())
+        if self.pc.latest is not None and about_pc and not (chosen and role != LOCAL):
+            self._pc_at = self.memory.clock()
             role, chosen = LOCAL, True
             pc_detail = self.pc.detail(settings.persona.owner)
             emit({"type": "looked_at_pc", "online": self.pc.online()})
@@ -314,6 +316,9 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
             await self.recall.index_pending()
+
+    def _pc_recently(self) -> bool:
+        return self._pc_at is not None and self.memory.clock() - self._pc_at < PC_FOLLOW_UP
 
     def _weather_recently(self) -> bool:
         return (

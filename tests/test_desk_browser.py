@@ -162,3 +162,15 @@ def test_kit_sees_tabs_and_sites():
     assert "- (title hidden)" in detail
     assert "Websites today:\n- mettools.lan: 10 min" in detail
     assert "commbank" not in detail
+
+
+def test_tabs_are_dropped_once_chrome_has_no_window():
+    feed = BrowserFeed()
+    feed.update(TABS)
+    desk = FakeDesktop()
+    with_chrome = build_snapshot(desk, DeskConfig(), "D", None, feed.current())
+    assert with_chrome["browser"]["tabs"]
+    desk.open = [w for w in desk.open if "Chrome" not in w.title]
+    desk.focus = 0
+    closed = build_snapshot(desk, DeskConfig(), "D", None, feed.current())
+    assert "browser" not in closed or closed["browser"] is None

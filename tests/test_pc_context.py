@@ -208,3 +208,16 @@ def test_desk_app_reports_through_the_api(paths):
         bad = {"focus": {"title": "no app"}}
         assert client.post("/api/pc/context", json=bad, headers=AUTH).status_code == 422
     memory.close()
+
+
+def test_check_again_after_a_pc_question_looks_again(paths):
+    brain, memory, _ = make_brain(paths, reply("Eleven tabs."), reply("None now."), reply("Ok."))
+    brain.pc.update(snap())
+    collect(brain.chat("what tabs have i got open?"))
+    brain.pc.update(snap(app="Excel", title="Flotation.xlsx"))
+    collect(brain.chat("check again"))
+    asked = brain.model.calls[1][-1]["content"]
+    assert "fresh look" in asked and 'In focus: Excel: "Flotation.xlsx"' in asked
+    collect(brain.chat("how's the thickener?"))
+    assert "fresh look" not in brain.model.calls[2][-1]["content"]
+    memory.close()

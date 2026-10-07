@@ -64,6 +64,7 @@ chrome.tabs.onUpdated.addListener((id, change) => {
   if (change.title || change.url || change.status === "complete" || "audible" in change) soon();
 });
 chrome.windows.onFocusChanged.addListener(soon);
+chrome.windows.onRemoved.addListener(soon); // the last window closing reports no tabs
 chrome.runtime.onStartup.addListener(soon);
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("heartbeat", { periodInMinutes: 0.5 });
