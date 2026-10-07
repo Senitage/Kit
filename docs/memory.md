@@ -20,7 +20,7 @@ a reference back to where it came from.
 | `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
 | `files` | NAS documents and folders (names, paths, text) | Stage 5 |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
-| `notes` | The Obsidian vault, by note and heading | Stage 6 |
+| `notes` | Notes Kit takes when you ask ([taking notes](notes.md)); later the whole Obsidian vault, by note and heading | Notes Kit takes: now. The vault: stage 6 |
 
 A later stage adds a source by putting items into the same index. Recall,
 search, the memory page and the accuracy test then work for it with no other

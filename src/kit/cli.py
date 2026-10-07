@@ -431,6 +431,7 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
 
 async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import CONVERSATION, DAYS, FACTS
+    from kit.notes import NOTES
 
     async with httpx.AsyncClient() as client:
         store, memory, brain = _runtime(paths, client)
@@ -449,7 +450,7 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                 else:
                     print(f"remembered: {learned.text}")
             elif args.action == "search":
-                hits = await brain.recall.search(args.query, [FACTS, DAYS, CONVERSATION], 10)
+                hits = await brain.recall.search(args.query, [FACTS, DAYS, CONVERSATION, NOTES], 10)
                 if brain.recall.embed_problem:
                     print(f"(words only: {brain.recall.embed_problem})")
                 if not hits:
