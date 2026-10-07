@@ -215,7 +215,7 @@ def test_kit_says_why_hes_keeping_quiet():
     assert "typing" in life.state()["quiet_because"]
     life.note_chat()
     run(life, pc, clock, 1, snap(idle=40))
-    assert "waits 10 minutes after a chat" in life.quiet_because
+    assert "min after a chat" in life.quiet_because
     run(life, pc, clock, 10, snap(idle=40))
     assert "not bored enough yet" in life.quiet_because
 
@@ -239,3 +239,60 @@ def test_examples_like_the_message_or_already_said_are_left_out():
         users = [u for u, _ in voice.examples]
         assert "The build failed again." not in users
         assert "What are you up to?" not in users
+
+
+def test_a_chatty_kit_speaks_up_soon_and_often():
+    life, pc, clock = setup(chattiness=1, max_per_hour=20)
+    said = 0
+    for _ in range(120):  # an hour, Dan at the PC but not chatting
+        clock.now += timedelta(seconds=30)
+        pc.update(snap())
+        if life.tick():
+            life.piped_up()
+            life.awaiting_reply = False
+            said += 1
+    assert said >= 5
+    calm, pc, clock = setup(chattiness=0.5)
+    assert sum(1 for _ in range(1) if run(calm, pc, clock, 15, snap())) == 0
+
+
+def test_a_chatty_kit_follows_along_with_switches():
+    life, pc, clock = setup(chattiness=1)
+    run(life, pc, clock, 3, snap(title="pumps.py"))
+    reasons = run(life, pc, clock, 1, snap(title="cyclones.py"))
+    reasons += run(life, pc, clock, 3, snap(title="cyclones.py"))
+    assert life.curious_about == "cyclones.py"
+    assert "watching" in reasons
+
+
+def test_a_chatty_kit_nags_twice_then_sulks():
+    life, pc, clock = setup(chattiness=1, max_per_hour=30)
+    life.piped_up("bored")
+    reasons = []
+    for _ in range(60):
+        clock.now += timedelta(seconds=30)
+        pc.update(snap())
+        reason = life.tick()
+        if reason:
+            reasons.append(reason)
+            life.piped_up(reason)
+        if life.sulky:
+            break
+    assert reasons[:2] == ["nag", "nag"] and life.sulky
+
+
+def test_a_chatty_kit_sometimes_butts_in_while_dan_types():
+    life, pc, clock = setup(chattiness=1, max_per_hour=30)
+    life.drives.boredom = 1
+    clock.now += timedelta(minutes=30)
+    life.last_chat = clock.now - timedelta(hours=1)
+    butted = 0
+    for _ in range(400):
+        clock.now += timedelta(seconds=30)
+        pc.update(snap(idle=2))
+        if life.tick():
+            butted += life.butting_in
+            life.piped_up()
+            life.awaiting_reply = False
+            life.drives.boredom = 1
+    assert 0 < butted

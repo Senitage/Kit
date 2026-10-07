@@ -276,10 +276,11 @@ class LifeSettings(_Section):
         ge=0,
         le=1,
         description="How readily Kit speaks first. 0 never (he still fidgets), 1 whenever he "
-        "feels like it, within the hourly limit.",
+        "feels like it, within the hourly limit. From 0.8 he follows along with what you're "
+        "doing, nags when ignored and now and then butts in while you type.",
     )
     max_per_hour: int = Field(
-        3, ge=0, le=12, description="Most times an hour Kit pipes up unprompted."
+        3, ge=0, le=30, description="Most times an hour Kit pipes up unprompted."
     )
     quiet_from: str = Field("22:00", description="Kit doesn't pipe up from this time...")
     quiet_until: str = Field("07:00", description="...until this time.")

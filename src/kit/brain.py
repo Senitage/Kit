@@ -395,7 +395,12 @@ class Brain:
             recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             prompt = pipe_up_prompt(
-                reason, owner, settings.life.cheek, self.life.curious_about, quiet_h
+                reason,
+                owner,
+                settings.life.cheek,
+                self.life.curious_about,
+                quiet_h,
+                self.life.butting_in,
             )
             messages = [
                 {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
@@ -409,7 +414,7 @@ class Brain:
         finally:
             CHANNEL.reset(token)
             VOICE.reset(voice_token)
-        self.life.piped_up()
+        self.life.piped_up(reason)
 
     def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
         persona = settings.persona

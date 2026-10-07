@@ -125,3 +125,22 @@ doesn't repeat himself. The mood is read before your message resets it, so
 On his own, with default settings, boredom needs about 25 quiet minutes with
 you at the PC (not chatting, not mid-typing) before he speaks first. A restart
 of the brain starts his drives again from scratch.
+
+## Turning him up
+
+`life.chattiness` scales everything: how fast he gets bored, how long he
+waits after a chat (about 7 minutes at 0.5, 2 at 1.0) and between pipe-ups.
+From 0.8 he's properly chatty:
+
+- he follows along: switching file, tab or window is worth a comment;
+- he nags if you ignore him (twice, a few minutes apart), then sulks;
+- now and then he butts in while you're typing, knowing full well;
+- being ignored doesn't make him back off, it makes him nag.
+
+He still never talks in quiet hours, on calls, while presenting, when you're
+away, or while snoozed ("shush" or "not now" works for an hour). For the full
+experience:
+
+    kit config set life.chattiness 1
+    kit config set life.max_per_hour 20
+    kit config set life.cheek 0.9

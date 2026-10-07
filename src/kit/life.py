@@ -42,7 +42,10 @@ CALL_SITES = {"meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.
 PRESENTING = re.compile(r"slide ?show|presenting|full ?screen", re.IGNORECASE)
 TYPING_S = 15  # idle less than this: Dan is mid-flow, don't interrupt
 IGNORED_AFTER = timedelta(minutes=10)
-AFTER_CHAT = timedelta(minutes=10)
+AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
+CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
+NAG_AFTER = timedelta(minutes=3)
+MAX_NAGS = 2
 MAX_EVENTS = 200
 
 SHUSH = re.compile(
@@ -112,9 +115,13 @@ class Life:
         self.pipes: deque[datetime] = deque(maxlen=20)
         self.awaiting_reply = False
         self.ignored = 0
+        self.nags = 0
         self.sulky = False
+        self.butting_in = False  # this pipe-up interrupts Dan mid-flow, on purpose
         self.snoozed_until: datetime | None = None
         self.curious_about = ""
+        self.curious_kind = "new"  # "new" (first time today) or "switch" (Dan moved on)
+        self._last_focus: tuple[str, str] | None = None
         self.quiet_because = "just started"  # why Kit isn't piping up, for kit life
         self.asleep = False
         self._seen: set[str] = set()
@@ -132,6 +139,7 @@ class Life:
         self.drives.boredom = 0.1
         self.drives.social = 0.0
         self.ignored = 0  # talking to him makes up for any ignoring
+        self.nags = 0
         self.awaiting_reply = False
         self.sulky = False
 
@@ -184,20 +192,31 @@ class Life:
         if now.date() != self._day:
             self._day, self._seen = now.date(), set()
         d = self.drives
+        chatty = self.settings().life.chattiness
         snap = self.pc.latest if self.pc.online() else None
         present = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
         d.energy = energy_at(now)
-        d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01))
+        d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01) * (0.5 + chatty))
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
         if present and snap and snap.focus and snap.watching:
             thing = snap.focus.site or snap.focus.app
+            fresh = False
             if thing and thing not in self._seen:
                 self._seen.add(thing)
                 if len(self._seen) > 1:  # the first thing of the day isn't news
                     d.curiosity = _clamp(d.curiosity + 0.6)
-                    self.curious_about = thing
+                    self.curious_about, self.curious_kind = thing, "new"
+                    fresh = True
+            focus = (snap.focus.app, snap.focus.title)
+            if chatty >= CHATTY and self._last_focus and focus != self._last_focus:
+                # A chatty Kit follows along: a new file or tab is worth a comment.
+                d.curiosity = _clamp(d.curiosity + 0.7 * chatty)
+                if not fresh:  # something new today is the better story
+                    self.curious_about = snap.focus.title or snap.focus.app
+                    self.curious_kind = "switch"
+            self._last_focus = focus
 
         if self.awaiting_reply and self.last_pipe and now - self.last_pipe > IGNORED_AFTER:
             self.awaiting_reply = False
@@ -226,16 +245,34 @@ class Life:
             return None, f"quiet hours ({life.quiet_from} to {life.quiet_until})"
         if not present or snap is None:
             return None, "you're away, or the desk app isn't reporting"
-        if snap.idle_seconds < TYPING_S:
-            return None, "you're typing or clicking: waiting for a pause"
         focus = snap.focus
         if focus and (
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
             return None, "you're on a call or presenting"
-        if now - self.last_chat < AFTER_CHAT:
-            return None, f"you chatted at {self.last_chat:%H:%M}: waits 10 minutes after a chat"
-        gap = timedelta(minutes=max(60 / life.max_per_hour, 10) * 2**self.ignored)
+        chatty = life.chattiness >= CHATTY
+        if (
+            chatty
+            and self.awaiting_reply
+            and self.nags < MAX_NAGS
+            and self.last_pipe
+            and now - self.last_pipe >= NAG_AFTER
+        ):
+            return "nag", ""  # a chatty Kit doesn't wait quietly to be answered
+        if self.awaiting_reply:
+            return None, "waiting for you to answer his last pipe-up"
+        self.butting_in = False
+        if snap.idle_seconds < TYPING_S:
+            if not (chatty and self.rng.random() < 0.04 * life.chattiness):
+                return None, "you're typing or clicking: waiting for a pause"
+            self.butting_in = True  # now and then he just can't help himself
+        after_chat = timedelta(minutes=AFTER_CHAT_MIN * (1.2 - life.chattiness))
+        if now - self.last_chat < after_chat:
+            wait = after_chat.total_seconds() / 60
+            return None, f"you chatted at {self.last_chat:%H:%M}: waits {wait:.0f} min after a chat"
+        backoff = 1 if chatty else 2**self.ignored  # a chatty Kit nags instead of backing off
+        quiet_min = AFTER_CHAT_MIN * (1.2 - life.chattiness)
+        gap = timedelta(minutes=max(60 / life.max_per_hour, quiet_min) * backoff)
         if self.last_pipe and now - self.last_pipe < gap:
             return (
                 None,
@@ -251,11 +288,16 @@ class Life:
         reason, urge = max(drives.items(), key=lambda kv: kv[1])
         if urge * (0.5 + life.chattiness) < 0.9:
             need = 0.9 / (0.5 + life.chattiness)
+            self.butting_in = False
             return None, f"not {reason} enough yet ({urge:.2f} of {min(need, 1):.2f})"
+        if reason == "curious" and self.curious_kind == "switch":
+            reason = "watching"
         return reason, ""
 
-    def piped_up(self) -> None:
+    def piped_up(self, reason: str = "") -> None:
         now = self.clock()
+        self.nags = self.nags + 1 if reason == "nag" else 0
+        self.butting_in = False
         self.last_pipe = now
         self.pipes.append(now)
         self.awaiting_reply = True
@@ -396,7 +438,10 @@ def cheek_style(cheek: float) -> str:
         return "warm and polite"
     if cheek < 0.67:
         return "friendly, with a bit of cheek"
-    return "properly cheeky, a little larrikin: teasing, playful, never mean"
+    return (
+        "properly cheeky, a little larrikin and sometimes annoying on purpose, like a kid "
+        "brother: teasing, interrupting, playful, never mean"
+    )
 
 
 @dataclass
@@ -446,13 +491,26 @@ def my_quirks(memory, rng: random.Random | None = None, count: int = 3) -> list[
     return quirks
 
 
-def pipe_up_prompt(reason: str, owner: str, cheek: float, about: str, hours_quiet: float) -> str:
+def pipe_up_prompt(
+    reason: str,
+    owner: str,
+    cheek: float,
+    about: str,
+    hours_quiet: float,
+    butting_in: bool = False,
+) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would."""
     feeling = {
         "bored": "bored: nothing much has happened for a while",
         "curious": f"curious about {about or 'what he just opened'}, which is new today",
+        "watching": f"following along: he just switched to {about or 'something else'}, and "
+        f"you've got an opinion or a question about it",
         "social": f"missing a chat: you two haven't talked for {hours_quiet:.0f} hours",
+        "nag": f"ignored: you said something a few minutes ago and {owner} hasn't answered. "
+        f"Nag him, playfully (a fresh line, not your last one again)",
     }[reason]
+    if butting_in:
+        feeling += ". He's busy typing, and you're butting in anyway, knowingly"
     style = cheek_style(cheek)
     return (
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
