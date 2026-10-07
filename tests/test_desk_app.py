@@ -212,3 +212,11 @@ def test_new_chat_clears_the_window(qapp):
     chat.on_event(1, reply_event("Old one."))
     chat.new_chat()
     assert client.started == 1 and "Old one." not in chat.text()
+
+
+def test_reopening_the_chat_shows_the_brains_current_conversation(qapp):
+    chat = ChatWindow()
+    chat._show_history([{"role": "user", "text": "Old question"}])
+    chat._replace = True  # a later open: the brain's conversation is the truth
+    chat._show_history([])
+    assert "Old question" not in chat.text()

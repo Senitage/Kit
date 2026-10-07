@@ -87,6 +87,7 @@ class ChatWindow(QWidget):
         self._turns = itertools.count(1)
         self._in_flight = 0
         self._loaded = False
+        self._replace = False
         self._signals = _Signals()
         self._signals.event.connect(self.on_event)
         self._signals.done.connect(self._turn_done)
@@ -185,9 +186,12 @@ class ChatWindow(QWidget):
         self._render()
 
     def load_history(self) -> None:
-        """Show the recent conversation, once, the first time the window opens."""
-        if self._loaded or self.client is None:
+        """Show the recent conversation each time the window opens, so a new chat
+        started elsewhere (the chat page, ``kit new-chat``) shows here too. Not while
+        Kit is still answering, so a streaming reply isn't swept away."""
+        if self.client is None or self._in_flight:
             return
+        self._replace = self._loaded  # first time: keep anything already shown
         self._loaded = True
         client = self.client
 
@@ -216,7 +220,7 @@ class ChatWindow(QWidget):
                 reply = m.get("reply") or {}
                 role = "claude" if m.get("source") == "cloud" else "kit"
                 old.append(Line(role, m.get("text", ""), reply.get("detail", "")))
-        self.lines = old + self.lines
+        self.lines = old if self._replace and not self._in_flight else old + self.lines
         self._render()
 
     def on_event(self, turn: int, ev: dict) -> None:
