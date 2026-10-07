@@ -21,9 +21,10 @@ The vault is the only place on the NAS Kit may write.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from kit.knowledge import Index
@@ -38,12 +39,35 @@ SKIP_DIRS = {"@eaDir", "#recycle", "#snapshot"}
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n?", re.S)
 _ASKED = re.compile(
-    r"^\W*(?:(?:can|could|would) you\s+|please\s+)*(?:take|make|write|jot)\s+(?:down\s+)?"
-    r"(?:a\s+)?(?:quick\s+)?(?:note|memo)?\s*(?:down\s+)?(?:for me\s*)?"
+    r"^\W*(?:(?:can|could|would) you\s+|please\s+)*(?:(?:take|make|write|jot)\s+(?:down\s+)?"
+    r"(?:a\s+)?(?:quick\s+)?(?:note|memo)?|note\b)\s*(?:down\s+)?(?:for me\s*)?"
     r"(?:(?:stating|saying|says|that|about|of|on)\b\s*)*[:,-]?\s*",
     re.IGNORECASE,
 )
 TITLE_MAX = 80
+TITLE_WORDS = 6  # a note Kit names himself is called after its first few words
+CLOSE_ENOUGH = 0.82  # how alike a note's name and Dan's words must be ("holday planner")
+# Plainly asking for a note to be written: "take a note", "jot this down", "note that".
+_WRITE = re.compile(
+    r"\b(?:take|make|jot|write)\b(?:\W+\w+){0,3}?\W+(?:note|memo|down)\b|"
+    r"^\W*note(?:\s+(?:that|this|down)\b|\s*:)",
+    re.IGNORECASE,
+)
+# "add book the car to my holiday planner", "put milk on the shopping list".
+_ADD_TO = re.compile(
+    r"^\W*(?:(?:can|could|would) you\s+|please\s+)*(?:add|put|append|stick|pop)\s+"
+    r"(?P<what>.+?)\s+(?:to|in|into|on|onto)\s+(?:my|the|our)\s+(?P<note>[^.?!,]+?)"
+    r"(?:\s+(?:note|notes|file|page))?\s*(?:please)?\W*$",
+    re.IGNORECASE,
+)
+# Asking about a note: "what's in my holiday planner?", "read me my shopping list".
+_READ = re.compile(
+    r"\b(?:what'?s|whats|what is|what have i got|what do i have|read|open|show|check|"
+    r"look at|go through|go over|summari[sz]e|tell me)\b",
+    re.IGNORECASE,
+)
+_WORD = re.compile(r"[\w']+")
+_NOTEISH = {"note", "notes", "list", "file", "page", "planner", "plan", "log", "journal"}
 # Characters Windows, Obsidian links or the NAS won't take in a file name.
 _UNSAFE = re.compile(r'[\\/:*?"<>|#^\[\]\x00-\x1f]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10))}
@@ -88,6 +112,69 @@ def asked_text(message: str) -> str:
     empty: "take a note for me stating that the tap leaks" gives "the tap leaks"."""
     text = _ASKED.sub("", message.strip(), count=1).strip()
     return text[:1].upper() + text[1:] if text else ""
+
+
+@dataclass
+class Request:
+    """A plain request about Dan's notes, spotted in his own words so Kit doesn't
+    depend on a small model choosing the right action."""
+
+    kind: str  # "take" (a new note), "add" (to an existing note) or "read"
+    note: str  # the note's name ("" for a new note Kit names)
+    text: str = ""  # what to write
+
+
+def mentioned(message: str, names: Iterable[str]) -> str | None:
+    """The note ``message`` talks about, by name, forgiving a typo ("holday
+    planner"). A one-word name only counts as "my <name>" or "<name> note", so
+    "what's up, Kit?" doesn't open the note called Kit."""
+    words = [w.lower() for w in _WORD.findall(message)]
+    best, best_score = None, 0.0
+    for name in names:
+        stem = name.rsplit("/", 1)[-1].lower()
+        size = len(_WORD.findall(stem))
+        if not size:
+            continue
+        for i in range(len(words) - size + 1):
+            window = " ".join(words[i : i + size])
+            score = SequenceMatcher(None, window, stem).ratio()
+            if score < CLOSE_ENOUGH or score <= best_score:
+                continue
+            before = words[i - 1] if i else ""
+            after = words[i + size] if i + size < len(words) else ""
+            if size == 1 and before not in {"my", "the", "our"} and after not in _NOTEISH:
+                continue
+            best, best_score = name, score
+    return best
+
+
+def request(message: str, names: Iterable[str]) -> Request | None:
+    """What Dan is plainly asking of his notes, or None to leave it to the model."""
+    names = list(names)
+    added = _ADD_TO.match(message.strip())
+    if added:
+        note = mentioned(added.group("note"), names) or (
+            added.group("note").strip()
+            if added.group("note").split()[-1].lower() in _NOTEISH
+            else None
+        )
+        if note:
+            return Request("add", note, added.group("what").strip(" '\""))
+    if _WRITE.search(message):
+        text = asked_text(message)
+        return Request("take", "", text) if text else None
+    if _READ.search(message):
+        note = mentioned(message, names)
+        if note:
+            return Request("read", note)
+    return None
+
+
+def title_for(text: str) -> str:
+    """A name for a new note from what it says: its first few words."""
+    words = _WORD.findall(text.split("\n", 1)[0])[:TITLE_WORDS]
+    title = " ".join(words)
+    return title[:1].upper() + title[1:]
 
 
 def skipped(rel: Path) -> bool:

@@ -111,6 +111,7 @@ def system_prompt(
     weather: bool = False,
     notes: bool = False,
     note_names: list[str] | None = None,
+    note_done: str = "",
     forecast: str = "",
     pc_detail: str = "",
     voice: Voice | None = None,
@@ -230,7 +231,8 @@ def system_prompt(
             f"what to write in text as markdown, tidied up but in {owner}'s words (never "
             f"empty), and a short title in title. To add to a note that exists, use its "
             f"name as the title ('Shopping list'). It's saved in {owner}'s notes in "
-            f"Obsidian."
+            f"Obsidian. Never ask whether to write it down: just do it. A question "
+            f"about a note is read_note, not note."
         )
         lines.append(
             f"- read_note: when {owner} asks what's in one of their notes, or to check, "
@@ -299,6 +301,7 @@ def system_prompt(
         *([pc] if pc else []),
         *voice_block(voice, owner, name),
         *forecast_block(forecast, owner),
+        *note_block(note_done, owner),
     ]
     return "\n".join(lines)
 
@@ -451,6 +454,18 @@ def forecast_block(forecast: str, owner: str) -> list[str]:
         "If the message is about the weather, answer from this in a sentence or two (for "
         "'tonight', the evening temperatures and any rain; for 'tomorrow', tomorrow's "
         "line). For somewhere else, use the weather action.",
+    ]
+
+
+def note_block(done: str, owner: str) -> list[str]:
+    """A note request Kit has already carried out this turn (kit.notes.request)."""
+    if not done:
+        return []
+    return [
+        "",
+        done,
+        f"Answer {owner}'s message from this, briefly. Your action is none: the note "
+        f"part is already done.",
     ]
 
 

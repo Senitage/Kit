@@ -87,7 +87,7 @@ from kit.notebook import (
     later_want,
     tomorrow_morning,
 )
-from kit.notes import NOTES, NoteError, Notes, asked_text
+from kit.notes import ALL, NOTES, NoteError, Notes, Request, asked_text, request, title_for
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
@@ -140,6 +140,9 @@ DEEP_RECALL = 10
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
 # How Kit feels and sounds this turn (kit.life.Voice), for the local model's prompt.
 VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", default=None)
+# A plain note request Kit has already carried out this turn (kit.notes.request), as
+# told to the model; while set, the model's own note and read_note actions are skipped.
+NOTE_DONE: contextvars.ContextVar[str] = contextvars.ContextVar("note_done", default="")
 SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
 SAID_CHARS = 160
 
@@ -417,6 +420,13 @@ class Brain:
                 forecast = await self._home_forecast(settings)
                 emit({"type": "weather", "place": settings.persona.location})
                 chosen = chosen or plainly  # a weather question stays local
+        if settings.nas.vault:
+            asked = request(text, self.notes.names(limit=ALL))
+            if asked is not None:
+                done, events = await asyncio.to_thread(self._do_note, asked, settings)
+                NOTE_DONE.set(done)
+                for event in events:
+                    emit(event)
         emotion = ""
         async for event in self._converse(
             text,
@@ -780,6 +790,34 @@ class Brain:
         verb = "Added to" if saved.added else "Saved"
         return {"type": "notice", "message": f"{verb} {saved.shown} in your notes."}
 
+    def _do_note(self, asked: Request, settings: Settings) -> tuple[str, list[Event]]:
+        """Carry out a plain note request before the model answers, so a small model
+        can't mistake "what's in my planner?" for "write that down", or ask first.
+        Returns what to tell the model and the events to show."""
+        owner, nas = settings.persona.owner, settings.nas
+        if asked.kind == "read":
+            event = {"type": "reading_note", "note": asked.note}
+            try:
+                where, body = self.notes.read(nas, asked.note)
+            except NoteError as e:
+                return f"You tried to open {owner}'s note '{asked.note}', but {e}.", [event]
+            return f"{owner}'s note {where}, opened just now:\n{body}", [event]
+        try:
+            saved = self.notes.take(nas, asked.note or title_for(asked.text), asked.text)
+        except NoteError as e:
+            log.warning("note not saved: %s", e)
+            message = f"The note wasn't saved: {e}."
+            return f"You couldn't save {owner}'s note: {e}.", [
+                {"type": "notice", "message": message}
+            ]
+        verb = "Added to" if saved.added else "Saved"
+        did = "added to" if saved.added else "saved a new note,"
+        return (
+            f"You've just {did} {saved.shown} in {owner}'s notes: \"{asked.text}\". It's "
+            f"done, so don't ask whether to write it down.",
+            [{"type": "notice", "message": f"{verb} {saved.shown} in your notes."}],
+        )
+
     def _read_note(self, name: str, settings: Settings) -> str:
         owner = settings.persona.owner
         try:
@@ -855,6 +893,7 @@ class Brain:
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
             note_names=self.notes.names() if settings.nas.vault else None,
+            note_done=NOTE_DONE.get(),
             forecast=forecast,
             pc_detail=pc_detail,
             sheet=sheet.text if sheet else "",
@@ -930,7 +969,7 @@ class Brain:
                 if job:
                     job.steps.append(f"checked the forecast for {place}")
                 look_up = weather_results(place, forecast, owner)
-            elif reply.action.kind == "read_note":
+            elif reply.action.kind == "read_note" and not NOTE_DONE.get():
                 name = reply.action.text.strip() or reply.action.title.strip()
                 yield {"type": "reading_note", "note": name}
                 look_up = self._read_note(name, settings)
@@ -978,7 +1017,7 @@ class Brain:
             event = self._note_thing(reply)
             if event:
                 yield event
-        elif kind == "note":
+        elif kind == "note" and not NOTE_DONE.get():
             yield self._take_note(reply, settings, text)
         if kind in ("none", "remember") and hops == 0:
             event = self._implied_correction(text, recalled)

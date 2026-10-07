@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud
+from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
 from kit.brain import Brain
 from kit.memory import Memory
-from kit.notes import NOTES, NoteError, Notes, file_name
+from kit.notes import NOTES, NoteError, Notes, Request, file_name, request
 from kit.recall import Recall
 from kit.settings import NasSettings, Settings
 
@@ -87,12 +87,38 @@ def make(memory, settings, *outputs):
 def test_kit_takes_a_note_when_asked(memory, vault):
     s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
     brain, model = make(memory, s, note_reply("Dentist", "Book Rex's dentist for November."))
-    events = collect(brain.chat("Take a note: book the dentist for November"))
+    events = collect(brain.chat("Remind me in my notes: Rex's dentist is in November"))
     assert "- note: when Dan asks you to take" in model.calls[0][0]["content"]
     assert "writing that down in Dan's notes" in model.speak_calls[0][-1]["content"]
     notice = next(e for e in events if e["type"] == "notice")
     assert notice["message"] == "Saved Dentist.md in your notes."
     assert "November" in (vault / "Dentist.md").read_text(encoding="utf-8")
+
+
+def test_a_plain_note_request_is_done_before_the_model_answers(memory, vault):
+    write(vault / "Holiday Planner.md", "Broome in July.")
+    s = Settings.model_validate({"nas": {"vault": str(vault)}, "routing": {"mode": "local-heavy"}})
+    # A small model that gets it wrong: plans a note for a question, and asks first.
+    brain, model = make(
+        memory,
+        s,
+        note_reply("Holiday Planner query", "Holiday Planner query"),
+        reply("You sure you want me to write that down?"),
+    )
+    brain.notes.sync(s.nas)
+    events = collect(brain.chat("Whats in my holday planner?"))
+    assert "Broome in July." in model.calls[0][0]["content"]  # opened before answering
+    assert next(e for e in events if e["type"] == "reading_note")["note"] == "Holiday Planner"
+    assert not (vault / "Inbox").exists() and len(list(vault.glob("*.md"))) == 1  # no note
+
+    events = collect(brain.chat("add book the car to my holiday planner"))
+    notice = next(e for e in events if e["type"] == "notice")
+    assert notice["message"] == "Added to Holiday Planner.md in your notes."
+    assert "book the car" in (vault / "Holiday Planner.md").read_text(encoding="utf-8")
+    assert "don't ask whether to write it down" in model.calls[1][0]["content"]
+
+    collect(brain.chat("can you make a note: take the bins out on thursday"))
+    assert (vault / "Take the bins out on thursday.md").exists()
 
 
 def test_without_a_vault_kit_says_the_note_was_not_saved(memory):
@@ -173,17 +199,25 @@ def test_kit_opens_a_note_before_answering(memory, vault):
                 "action": {"kind": "read_note", "text": "Holiday Planner"},
             }
         ),
-        json.dumps(
-            {
-                "emotion": "happy",
-                "segments": [{"say": "Broome in July.", "gesture": "nod"}],
-                "action": {"kind": "none", "text": ""},
-            }
-        ),
+        reply("Broome in July."),
     )
     brain.notes.sync(s.nas)
-    events = collect(brain.chat("What's in my holiday planner?"))
+    events = collect(brain.chat("Are we sorted for the trip, going by my notes?"))
     system = model.calls[0][0]["content"]
     assert "- read_note:" in system and "Dan's notes (newest first): Holiday Planner." in system
     assert next(e for e in events if e["type"] == "reading_note")["note"] == "Holiday Planner"
     assert "Budget $4000" in model.calls[1][-1]["content"]
+
+
+def test_note_requests_are_spotted_in_dans_words():
+    names = ["Holiday Planner", "Projects/Kit", "Inbox/Shopping list"]
+    assert request("Whats in my holday planner?", names) == Request("read", "Holiday Planner")
+    assert request("put milk on the shopping list", names) == Request(
+        "add", "Inbox/Shopping list", "milk"
+    )
+    assert request("add eggs to my grocery list", names) == Request("add", "grocery list", "eggs")
+    assert request("note that the dog needs worming", names) == Request(
+        "take", "", "The dog needs worming"
+    )
+    for chat in ["whats up kit", "what do you think about holidays", "yes", "tell me a joke"]:
+        assert request(chat, names) is None
