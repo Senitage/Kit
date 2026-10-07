@@ -1,13 +1,16 @@
 """Kit's notebook: his thoughts, wants, journal, self-sheet and quirks."""
 
+import random
 from datetime import datetime, timedelta
 
 import pytest
 
 from fakes import Clock
+from kit.life import QUIRK_POOL, WORK_QUIRKS
 from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
     ASK_LATER,
+    EVERYDAY_KEY,
     FOR_LATER,
     Notebook,
     as_aim,
@@ -245,3 +248,22 @@ def test_vetoes_keep_only_the_latest(book):
     for n in range(15):
         book.add_veto(f"veto {n}")
     assert book.vetoes()[0] == "veto 5" and len(book.vetoes()) == 10
+
+
+def test_work_quirks_are_swapped_for_everyday_ones_once(memory):
+    # Dan asked for less talk about pumps, code and calculations.
+    assert not set(QUIRK_POOL) & set(WORK_QUIRKS)
+    book = Notebook(memory)
+    assert book.swap_work_quirks("Dan") == []  # none picked yet: nothing to swap
+    assert memory.self_value(EVERYDAY_KEY) is None
+    righto = "you say 'righto' a bit too much"
+    pumps, sheets = WORK_QUIRKS[0], "you compliment tidy spreadsheets"
+    book.set_quirks([righto, pumps, sheets])
+    assert book.swap_work_quirks("Dan", random.Random(1)) == [pumps, sheets]
+    quirks = book.quirks()
+    assert len(quirks) == 3 and quirks[0] == righto and set(quirks) <= set(QUIRK_POOL)
+    assert {pumps, sheets} <= book.banned_quirks()  # his reflection won't bring them back
+    assert "less talk about work" in book.vetoes()[-1]
+    # Only once: one Dan gives back stays.
+    assert book.restore_quirk(pumps, "Dan")
+    assert book.swap_work_quirks("Dan") == [] and pumps in book.quirks()

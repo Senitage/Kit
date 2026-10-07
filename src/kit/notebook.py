@@ -22,12 +22,14 @@ one. His quirks live in ``kit_self``, with the ones he or Dan retired.
 from __future__ import annotations
 
 import json
+import random
 import re
 from datetime import date, datetime, time, timedelta
 
 from kit.knowledge import STOPWORDS, Item
-from kit.life import QUIRKS_KEY, ago, my_quirks, parse_time, quoted
+from kit.life import QUIRK_POOL, QUIRKS_KEY, WORK_QUIRKS, ago, my_quirks, parse_time, quoted
 from kit.memory import SELF, SHEET, Memory
+from kit.settings import PersonaSettings
 
 KINDS = {
     "thought": "something he thought in a quiet moment",
@@ -59,6 +61,7 @@ _ASKING_NICELY = re.compile(r"\b(can|could|would|will) you\b|\b(please|hey|kit)\
 _FIRST_PERSON = re.compile(r"\b(i|me|my|mine|myself)\b|\bi['\u2019]", re.I)
 AIMS = "ask|tell|remind|show|let|check with|chase"
 RETIRED_KEY = "quirks_retired"
+EVERYDAY_KEY = "quirks_everyday"  # the day his work quirks were swapped (once)
 VETOES_KEY = "vetoes"  # what Dan undid, so the next reflection doesn't do it again
 MAX_VETOES = 10
 
@@ -133,10 +136,11 @@ def as_aim(text: str, owner: str) -> tuple[str, str]:
     return f"{aim.group(1).lower()} {owner}", text[aim.end() :]
 
 
-def basis(traits: list[str]) -> str:
-    """What a self-sheet was written from. When the persona's traits change, his
-    prompt shows them again beside the sheet until he next reflects."""
-    return "; ".join(traits)
+def basis(persona: PersonaSettings) -> str:
+    """What a self-sheet was written from: the persona's backstory and traits. When
+    they change, his prompt shows the traits again beside the sheet, and his next
+    reflection brings the sheet in line with them."""
+    return f"{persona.backstory} | {'; '.join(persona.traits)}"
 
 
 class Notebook:
@@ -405,6 +409,33 @@ class Notebook:
     def banned_quirks(self) -> set[str]:
         """Quirks the owner took away."""
         return {r["quirk"] for r in self.retired_quirks() if r.get("by") == "owner"}
+
+    def swap_work_quirks(self, owner: str, rng: random.Random | None = None) -> list[str]:
+        """Once: quirks he picked from the old pool that were all about work (pumps,
+        flowsheets, spreadsheets) each go for an everyday one, as the owner's choice,
+        so his reflection won't pick them up again. Returns the ones that went."""
+        if self.memory.self_value(EVERYDAY_KEY) is not None:
+            return []
+        try:
+            current = json.loads(self.memory.self_value(QUIRKS_KEY) or "[]")
+        except ValueError:
+            return []
+        if not current:
+            return []  # none picked yet: he'll pick from today's pool
+        gone = [q for q in current if q in WORK_QUIRKS]
+        if gone:
+            held = set(current) | self.banned_quirks()
+            choices = [q for q in QUIRK_POOL if q not in held]
+            fresh = iter((rng or random.Random()).sample(choices, min(len(gone), len(choices))))
+            kept = [q if q not in WORK_QUIRKS else next(fresh, "") for q in current]
+            self.set_quirks([q for q in kept if q], retired_by="owner")
+            self.add_veto(
+                f"{owner} asked for less talk about work, code and calculations, so your "
+                f"quirks about work were swapped for everyday ones. Don't pick up work "
+                f"quirks again."
+            )
+        self.memory.set_self_value(EVERYDAY_KEY, self._now().date().isoformat())
+        return gone
 
     # What the owner undid
 

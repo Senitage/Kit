@@ -116,6 +116,7 @@ def test_the_thinking_prompt_keeps_to_what_he_knows():
     )  # fmt: skip
     system, user = messages[0]["content"], messages[1]["content"]
     assert "never invent facts about Dan" in system and "His quirks: you love puns." in system
+    assert "Dan's work is a job, not Dan's whole life" in system
     assert "You can't see Dan's PC right now." in user
     assert "- Dan likes metric units." in user and "Said today" not in user
 
@@ -240,8 +241,9 @@ def test_a_strong_feeling_in_his_reply_lingers_a_little(kit):
 
 def test_his_self_sheet_replaces_the_traits_until_dan_changes_them(kit):
     brain, model, store = kit(reply("Hi."), reply("Hi again."))
-    traits = store.current().persona.traits
-    brain.notebook.set_sheet("I'm Kit and I love a good pump curve.", basis(traits))
+    brain.notebook.set_sheet(
+        "I'm Kit and I love a good pump curve.", basis(store.current().persona)
+    )
     collect(brain.chat("hi"))
     system = model.calls[0][0]["content"]
     assert "Who you are, in your own words" in system and "good pump curve" in system

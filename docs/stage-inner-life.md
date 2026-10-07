@@ -61,10 +61,11 @@ him reflecting and changing.
 ## 3. Pick his voice: the local model bake-off
 
 The local model gives Kit his voice. `kit eval voice` puts the same 16 things to
-each model you name (greetings, "how are you feeling?", "the build failed
-again", "you're just a robot"...), plus four pipe-ups and two private thoughts,
-with a made-up afternoon on the PC and a few notebook entries so there's
-something to be alive about. It runs on a scratch memory (Kit's real memory and
+each model you name (greetings, "how are you feeling?", "what should I have for
+dinner?", "you're just a robot"...), plus four pipe-ups and two private
+thoughts, with a made-up everyday afternoon on the PC (dinner ideas, music, a
+little work) and a few notebook entries so there's something to be alive
+about. It runs on a scratch memory (Kit's real memory and
 notebook aren't touched), uses only local models, and costs nothing.
 
 Pull the candidates (a few GB each):

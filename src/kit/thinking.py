@@ -17,7 +17,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-from kit.life import FEELING_KINDS
+from kit.life import FEELING_KINDS, everyday
 
 THOUGHT_SCHEMA = {
     "type": "object",
@@ -81,7 +81,7 @@ def thinking_messages(
         f"joke you're saving for {owner}. Base it on what's below and never invent facts "
         f"about {owner} or what's going on. Make it new (not one of your recent thoughts) "
         f"and more than a description of the screen. One or two short sentences, in your "
-        f"own voice: {style}.",
+        f"own voice: {style}. {everyday(owner)}",
         "- kind: opinion if it's a view you've formed, else thought.",
         f"- want: if it's something you'd like to say or ask {owner} when you get the "
         f"chance, write that as one short line in your own words. If it's for tomorrow (or "

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
+from kit.life import everyday
 from kit.memory import DAYS, Message
 from kit.recall import Recalled
 from kit.reply import (
@@ -81,6 +82,11 @@ HAND_OFF = {
     "or news",
     "cloud-first": "for anything more than small talk",
 }
+# Small models handed "The build failed again." to the cloud, as a question about code.
+NOT_HANDED_OFF = (
+    "Never for chat: news, a moan, how someone feels or a joke gets your own answer, even "
+    "when it's about work or code"
+)
 
 REPLY_SHAPE = (
     '{"emotion": "neutral", "segments": [{"gesture": "nod", "say": "One short sentence."}], '
@@ -146,6 +152,7 @@ def system_prompt(
         *(f"- {rule}" for rule in persona.rules if not (cloud and "to the cloud" in rule)),
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
+        f"- {everyday(owner)}",
     ]
     if cloud:
         lines += [
@@ -235,8 +242,8 @@ def system_prompt(
         )
     if not cloud and helper:
         lines.append(
-            f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. Put the full question "
-            f"in text."
+            f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. {NOT_HANDED_OFF}. Put "
+            f"the full question in text."
             + say(f"Say something short like 'Let me check with {helper}.'")
             + f" {owner} sees {helper}'s answer next."
         )

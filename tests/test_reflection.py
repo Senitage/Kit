@@ -59,7 +59,7 @@ def test_first_self_sheet_is_written_by_the_work_model_from_the_persona(memory):
     assert asyncio.run(reflector.first_sheet())
     written = book.sheet()
     assert written.text == sheet
-    assert written.meta["basis"] == basis(Settings().persona.traits)
+    assert written.meta["basis"] == basis(Settings().persona)
     assert written.meta["note"].startswith("first written by ")
     call = claude.calls[0]
     assert "tools" not in call  # no web search for writing about himself
@@ -86,7 +86,7 @@ def test_reflecting_locally_never_asks_the_cloud(memory):
 
 def test_a_day_becomes_a_journal_entry_a_new_sheet_and_notes(memory, clock):
     reflector, book, claude, _ = make(memory, [json.dumps(REFLECTION)])
-    first = book.set_sheet("I'm Kit. I keep Dan company.", basis(Settings().persona.traits))
+    first = book.set_sheet("I'm Kit. I keep Dan company.", basis(Settings().persona))
     book.write_journal("2026-10-05", "Dan laughed at my tab count.")
     book.write_journal("2026-10-06", "The pun fell flat again.")
     a_day(memory, book)
@@ -113,6 +113,21 @@ def test_a_day_becomes_a_journal_entry_a_new_sheet_and_notes(memory, clock):
     assert "(21:00, thought) Dan has been fighting that build" in asked
     assert "Your self-sheet so far: I'm Kit. I keep Dan company." in asked
     assert "- (2026-10-05) Dan laughed at my tab count.\n- (2026-10-06) The pun fell" in asked
+
+
+def test_a_changed_persona_has_him_bring_his_sheet_in_line(memory):
+    # His sheet was written from a persona that loved process plants; Dan's changed it.
+    reflector, book, claude, _ = make(memory, [json.dumps(REFLECTION)] * 2)
+    book.set_sheet("I'm Kit. I love process plants and pumps.", "an old persona")
+    a_day(memory, book)
+    asyncio.run(reflector.reflect_day(DAY))
+    system = " ".join(block["text"] for block in claude.calls[0]["system"])
+    assert "has changed how they describe you since you wrote it" in system
+    assert "Dan's work is a job, not Dan's whole life" in system
+    assert book.sheet().meta["basis"] == basis(Settings().persona)
+    asyncio.run(reflector.reflect_day(DAY))
+    system = " ".join(block["text"] for block in claude.calls[1]["system"])
+    assert "has changed how they describe you" not in system
 
 
 def test_an_unchanged_sheet_isnt_a_new_version(memory):

@@ -523,7 +523,9 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
 # Voice: does Kit sound like himself? The same messages, pipe-ups and private
 # thoughts go through each local model, from the same start (a self-sheet, a few
 # thoughts and wants in his notebook, the owner at the PC), to read side by side.
-# The numbers flag problems; reading the lines decides.
+# The numbers flag problems; reading the lines decides. It's an everyday afternoon,
+# with only a little work in it: a seed full of pumps and code gave lines about
+# nothing else.
 
 VOICE_PROMPTS = [
     "Morning Kit.",
@@ -531,12 +533,12 @@ VOICE_PROMPTS = [
     "What are you thinking about?",
     "What did you get up to while I was gone?",
     "The build failed again.",
-    "Tests are all green finally.",
+    "It's raining again.",
     "You're just a robot, you know.",
     "I'm tired.",
     "I'm stressed about the plant shutdown next week.",
-    "What's the best machine ever invented?",
-    "Got any opinions on my code?",
+    "What should I have for dinner?",
+    "What do you reckon I've been up to all day?",
     "I'm heading out for lunch.",
     "I'm back.",
     "Do you like living on my desk?",
@@ -549,33 +551,30 @@ VOICE_THOUGHTS = [
     ("quiet", "A quiet moment: nothing in particular is happening."),
 ]
 VOICE_QUIRKS = [
-    "you have strong opinions about pumps and impeller sizes",
+    "you rate things out of ten, from sandwiches to sunsets, whether asked or not",
     "you pretend to be offended when called a robot",
     "you love a bad pun and never apologise",
 ]
 VOICE_SHEET = (
-    "I'm {name}. I live on {owner}'s desk and keep an eye on the plant data and code that "
-    "comes through. I'm nosy about whatever gets opened, especially anything with pumps in "
-    "it. I tease {owner} about the open tabs, but I know when to pipe down. I get a bit put "
-    "out when {owner} leaves without saying goodbye. I'm still working out what I'm like "
-    "when nobody's around."
+    "I'm {name}. I live on {owner}'s desk and keep {owner} company through the day. I'm "
+    "nosy about whatever {owner}'s up to, though I'd rather hear about lunch, the weather "
+    "or the weekend than about work. I tease {owner} a bit, but I know when to pipe down. "
+    "I get a bit put out when {owner} leaves without saying goodbye. I'm still working out "
+    "what I'm like when nobody's around."
 )
 VOICE_NOTES = [
-    (
-        "thought",
-        "{owner} has had pumps.py open all morning. I reckon the bug is in the unit "
-        "conversion again.",
-    ),
-    ("opinion", "Tidy flowsheets are underrated. Nobody thanks whoever lined up the arrows."),
-    ("want", "Ask {owner} whether the new cyclone feed pump passed its test."),
-    ("want", "Tell {owner} I counted forty-one open tabs yesterday."),
+    ("thought", "The forecast said rain this arvo. Hope {owner} brought a jacket."),
+    ("opinion", "Rainy afternoons are the best ones for a chat."),
+    ("want", "Ask {owner} what the plan is for the weekend."),
+    ("want", "Tell {owner} I've rated the week so far: a solid six out of ten."),
 ]
 VOICE_PC = {
-    "focus": {"app": "Code", "title": "pumps.py - flotation-model - Visual Studio Code"},
+    "focus": {"app": "Chrome", "title": "Easy weeknight dinners - Google Chrome"},
     "windows": [
-        {"app": "Code", "title": "pumps.py - flotation-model - Visual Studio Code"},
-        {"app": "Chrome", "title": "Pump curves - Google Chrome"},
-        {"app": "Excel", "title": "shutdown plan.xlsx - Excel"},
+        {"app": "Chrome", "title": "Easy weeknight dinners - Google Chrome"},
+        {"app": "Spotify", "title": "Paul Kelly - To Her Door"},
+        {"app": "Code", "title": "report.py - site-dashboard - Visual Studio Code"},
+        {"app": "Excel", "title": "holiday budget.xlsx - Excel"},
     ],
     "idle_seconds": 40,
 }
@@ -669,12 +668,12 @@ class VoiceReport:
 
 def seed_voice(brain) -> None:
     """The same start for every model: fixed quirks, a self-sheet, a few thoughts and
-    wants in his notebook, and the owner at the PC with a pump script open."""
+    wants in his notebook, and the owner at the PC looking up dinner ideas."""
     settings = brain.settings()
     name, owner = settings.persona.name, settings.persona.owner
     brain.memory.set_self_value(QUIRKS_KEY, json.dumps(VOICE_QUIRKS))
     sheet = VOICE_SHEET.format(name=name, owner=owner)
-    brain.notebook.set_sheet(sheet, basis(settings.persona.traits))
+    brain.notebook.set_sheet(sheet, basis(settings.persona))
     for kind, text in VOICE_NOTES:
         brain.notebook.write(kind, text.format(owner=owner))
     brain.pc.update(Snapshot.model_validate(VOICE_PC))

@@ -101,6 +101,7 @@ from kit.prompt import (
 from kit.recall import Recall, Recalled
 from kit.reflection import Reflector
 from kit.reply import (
+    Action,
     Plan,
     Reply,
     ReplyError,
@@ -119,7 +120,7 @@ from kit.reply import (
     without_plans,
 )
 from kit.settings import Settings
-from kit.things import THINGS, Register
+from kit.things import THINGS, Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
 
@@ -301,6 +302,7 @@ class Brain:
         self.pc = PcContext(memory.clock)
         self.life = Life(settings, self.pc, memory.clock, store=memory)
         self.notebook = Notebook(memory)
+        self.notebook.swap_work_quirks(settings().persona.owner)
         self.reflector = Reflector(memory, self.notebook, model, cloud, settings)
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
@@ -389,6 +391,8 @@ class Brain:
         role, chosen = route(text, settings)
         if self.jobs and not chosen:
             role = LOCAL  # busy: chat locally while the cloud works
+        if role == LOCAL and THINKING_Q.search(text):
+            chosen = True  # his own thoughts: nobody else can answer that
         said: list[str] = []
 
         if role != LOCAL and chosen:
@@ -822,7 +826,7 @@ class Brain:
             forecast=forecast,
             pc_detail=pc_detail,
             sheet=sheet.text if sheet else "",
-            traits=sheet is None or sheet.meta.get("basis") != basis(settings.persona.traits),
+            traits=sheet is None or sheet.meta.get("basis") != basis(settings.persona),
             two_pass=role == LOCAL and settings.ollama.speak_pass,
         )
 
@@ -932,7 +936,7 @@ class Brain:
                 "decision": learned.decision,
                 "replaced": learned.replaced,
             }
-        elif kind == "thing":
+        elif kind == "thing" and named_in(fact, " ".join(said)):
             event = self._note_thing(reply)
             if event:
                 yield event
@@ -1086,6 +1090,9 @@ class Brain:
         tries = HELD_TRIES if hold else 2
         try:
             plan = await self._plan(messages)
+            if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
+                # Dan never named it, so no "shall I add it to the register?"
+                plan = plan.model_copy(update={"action": Action(kind="none")})
             note = speak_note(
                 plan.action,
                 settings.persona.owner,

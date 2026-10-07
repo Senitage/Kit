@@ -171,6 +171,24 @@ def test_a_longer_message_is_not_an_answer(memory, text):
     assert len(model.calls) == 2 and len(Register(memory).suggestions()) == 1
 
 
+def test_a_thing_dan_never_named_isnt_put_to_him(memory):
+    # "Good night." "Should I add pumps.py - flotation-model to my register?"
+    brain, model = make_brain(memory, thing_reply("pumps.py - flotation-model", "project"))
+    events = collect(brain.chat("Good night."))
+    assert "register" not in model.speak_calls[0][-1]["content"]
+    assert not [e for e in events if e["type"] == "thing_suggested"]
+    assert Register(memory).suggestions() == []
+
+
+def test_named_in():
+    from kit.things import named_in
+
+    assert named_in("Biscuit", "We got a puppy called biscuit")
+    assert named_in("Tax returns", "no, my tax stuff is in Tax/2023")
+    assert named_in("Al", "Al from work called") and not named_in("Al", "all good")
+    assert not named_in("pumps.py - flotation-model", "Good night.")
+
+
 def test_a_question_back_keeps_the_suggestion_open(memory):
     # "Want me to jot it down?" "where" "The register. Should I add Bob?" "yes"
     brain, model = make_brain(memory, thing_reply("Bob", "person"), reply("The register."))

@@ -155,10 +155,12 @@ are written by the local model on the spot, from what you're doing (the PC and
 Chrome feed) and what he remembers, so you've never seen them before. How cheeky
 he is depends on `life.cheek`: polite, friendly with a bit of cheek, or a
 proper larrikin. He also picks three **quirks** for himself the first time he
-starts (pump opinions, coffee counting, sports commentary when bored...). They
-colour what he says, and they're his: his nightly reflection may drop one that
-wore thin or pick up a new habit, one change a night at most. `GET /api/life`
-shows them, if you want to know. It's more fun not to look.
+starts (rating things out of ten, coffee counting, sports commentary when
+bored...). They colour what he says, and they're his: his nightly reflection
+may drop one that wore thin or pick up a new habit, one change a night at most.
+`GET /api/life` shows them, if you want to know. It's more fun not to look.
+The pool used to have a few about work (pumps, flowsheets, spreadsheets); a Kit
+that picked one swaps it for an everyday one once, as if you'd taken it away.
 
 When he has something he wants to bring up, a bored or lonely pipe-up shares
 it, or failing that his newest thought. So what he says first comes from what
@@ -270,6 +272,21 @@ few lines so he doesn't repeat himself. His self-sheet stands in for the
 persona's list of traits, and up to `memory.own_memories` (3) entries from his
 notebook are recalled if they're relevant. The mood is read before your message
 resets it, so "I've been bored" is still true when he answers.
+
+Your work is a job, not your whole life. Every prompt (chat, pipe-ups, his
+thoughts and his nightly reflection) says so: everyday things (your day, food,
+the weather, the weekend, music) come first, and work, code or engineering only
+when you bring them up or they're plainly what you're busy with. The built-in
+persona is written the same way; if your settings still had the old one, word
+for word, it's read as the new one, and anything you wrote yourself is kept.
+Edit it on the settings page (persona: backstory, traits, what he knows about
+you, example lines). When the backstory or traits change, his next nightly
+reflection brings his self-sheet in line with them.
+
+He only hands chat to the cloud when it's a real question or job. News, a
+moan, how you feel or a joke get his own answer, even about work, and so does
+"what are you thinking about?". He only asks to add something to the register
+when you named it.
 
 ## Two passes: deciding, then talking
 

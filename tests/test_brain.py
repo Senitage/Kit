@@ -218,6 +218,19 @@ def test_local_model_hands_off_with_memories(memory):
     assert memory.recent(1)[0].source == "cloud"
 
 
+def test_work_is_a_job_not_his_whole_life(memory):
+    brain, model, _ = make(memory, reply("Cheese toasties."))
+    collect(brain.chat("What should I have for dinner?"))
+    assert "Dan's work is a job, not Dan's whole life" in model.calls[0][0]["content"]
+
+
+def test_what_hes_thinking_is_his_to_answer(memory):
+    # gemma4 handed "What are you thinking about?" to Sonnet.
+    brain, model, _ = make(memory, reply("Mostly about dinner."))
+    collect(brain.chat("What are you thinking about?"))
+    assert "ask_cloud" not in model.calls[0][0]["content"]
+
+
 def test_local_prompt_offers_hand_off_by_mode(memory):
     brain, model, _ = make(memory, settings=settings_with(routing={"mode": "local-heavy"}))
     collect(brain.chat("hi"))
@@ -227,6 +240,7 @@ def test_local_prompt_offers_hand_off_by_mode(memory):
     balanced = model.calls[0][0]["content"]
     assert "ask_cloud: for anything you can't answer well" in heavy
     assert "ask_cloud: for anything more than small talk or a quick command" in balanced
+    assert "Never for chat: news, a moan" in balanced  # "The build failed again." went to Sonnet
     assert "Sonnet's answer next" in balanced
     # His words come in the second pass, so the plan has none to put in the wrong place.
     assert "Let me check with Sonnet" not in balanced

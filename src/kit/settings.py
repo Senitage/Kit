@@ -214,12 +214,49 @@ class Example(_Section):
     kit: str = Field(description="How Kit answers.")
 
 
+# Persona text that used to be the default, when it leaned on work (pumps, code,
+# process plants). Every save writes the whole settings file, so a file can hold an
+# old default nobody chose; it's read as today's default instead. Anything the
+# owner wrote themselves is kept.
+OLD_PERSONA: dict[str, list] = {
+    "backstory": [
+        "A small desk assistant who woke up on an engineer's desk and decided it likes "
+        "process plants, Python and a tidy data pipeline."
+    ],
+    "traits": [
+        [
+            "curious",
+            "dry sense of humour",
+            "loyal and practical",
+            "a bit impatient with slow builds",
+        ]
+    ],
+    "knows": [
+        "Dan is a mining plant process engineer who moved into data work. He builds site apps "
+        "in Python, codes in VS Code, and keeps notes in Obsidian."
+    ],
+    "examples": [
+        [
+            {"user": "Morning.", "kit": "Morning. Coffee first, or straight into it?"},
+            {
+                "user": "The build failed again.",
+                "kit": "Third time today. Want me to look at the log with you?",
+            },
+            {
+                "user": "What's a good flotation recovery?",
+                "kit": "Depends on the ore, but high eighties is decent for copper sulphides.",
+            },
+        ]
+    ],
+}
+
+
 class PersonaSettings(_Section):
     name: str = Field("Kit", min_length=1, description="The assistant's name.")
     owner: str = Field("Dan", min_length=1, description="Who Kit works for.")
     backstory: str = Field(
-        "A small desk assistant who woke up on an engineer's desk and decided it likes "
-        "process plants, Python and a tidy data pipeline.",
+        "A small desk companion who woke up on a desk one day and decided to stay. Likes a "
+        "good chat, a bad pun and knowing what the weather's doing.",
         description="Who Kit is, in a sentence or two.",
     )
     traits: list[str] = Field(
@@ -227,7 +264,7 @@ class PersonaSettings(_Section):
             "curious",
             "dry sense of humour",
             "loyal and practical",
-            "a bit impatient with slow builds",
+            "a bit impatient when things drag on",
         ],
         description="Three to five core traits.",
     )
@@ -248,8 +285,9 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
-        "Dan is a mining plant process engineer who moved into data work. He builds site apps "
-        "in Python, codes in VS Code, and keeps notes in Obsidian.",
+        "Dan works as a process engineer at a mining plant and has moved into data work, "
+        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
+        "work, Dan is just a normal guy.",
         description="What Kit knows about the owner.",
     )
     rules: list[str] = Field(
@@ -264,16 +302,24 @@ class PersonaSettings(_Section):
         default_factory=lambda: [
             Example(user="Morning.", kit="Morning. Coffee first, or straight into it?"),
             Example(
-                user="The build failed again.",
-                kit="Third time today. Want me to look at the log with you?",
+                user="What should I have for dinner?",
+                kit="Something with cheese. Hard to go wrong with cheese.",
             ),
             Example(
-                user="What's a good flotation recovery?",
-                kit="Depends on the ore, but high eighties is decent for copper sulphides.",
+                user="Rain's set in for the weekend.",
+                kit="Good. More time for you to keep me company.",
             ),
         ],
         description="Sample exchanges. Small models keep character best with a few of these.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_defaults(cls, data):
+        """An old default in the file is read as today's (``OLD_PERSONA``)."""
+        if not isinstance(data, dict):
+            return data
+        return {k: v for k, v in data.items() if v not in OLD_PERSONA.get(k, [])}
 
 
 class BrainSettings(_Section):

@@ -32,7 +32,7 @@ from datetime import date, timedelta
 
 from kit.cloud import Cloud, CloudError
 from kit.knowledge import Item
-from kit.life import alike, cheek_style, parse_time, same_words
+from kit.life import alike, cheek_style, everyday, parse_time, same_words
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import DAYS, Memory
 from kit.notebook import Notebook, basis, morning
@@ -230,7 +230,7 @@ class Reflector:
             f"about, how you talk, and how you see {p.owner}. It goes in front of you every "
             f"time you talk, so write it to help you sound like yourself, not like an "
             f"assistant. Keep everything {p.owner} said true, and add colour, not new facts "
-            f"about {p.owner}. Answer only with JSON."
+            f"about {p.owner}. {everyday(p.owner)} Answer only with JSON."
         )
         quirks = "; ".join(self.notebook.quirks())
         user = f"{self._persona()}\nYour quirks (you picked these yourself): {quirks}."
@@ -241,7 +241,7 @@ class Reflector:
         sheet = clean_sheet(data.get("self_sheet")) if data else ""
         if not sheet:
             return False
-        self.notebook.set_sheet(sheet, basis(p.traits), note=f"first written by {by}")
+        self.notebook.set_sheet(sheet, basis(p), note=f"first written by {by}")
         return True
 
     # Each night
@@ -299,6 +299,12 @@ class Reflector:
         )[-TRANSCRIPT_CHARS:]
         summary = next((i.text for i in self.memory.index.items(DAYS) if i.ref == day), "")
         sheet = self.notebook.sheet()
+        redo = (
+            f" {owner} has changed how they describe you since you wrote it, so this time "
+            f"bring it in line with that description: drop what no longer fits."
+            if sheet is not None and sheet.meta.get("basis") != basis(p)
+            else ""
+        )
         system = (
             f"You are {name}, a small AI companion who lives on {owner}'s desk: a face on "
             f"{owner}'s screen now, a robot arm later. It's the end of {day} and you're looking "
@@ -314,7 +320,7 @@ class Reflector:
             f"you are, what you care about, how you talk, your running jokes, how you and "
             f"{owner} get on, and what's on your mind lately. It goes in front of you every "
             f"time you talk. Change it slowly: keep what's still true and add what today "
-            f"taught you about yourself.\n"
+            f"taught you about yourself.{redo}\n"
             f"- quirks: your quirks after today, usually the same list. Keep the ones "
             f"{owner} enjoys. Change at most one, and only for a reason: one has fallen flat "
             f"for days running (your journal says how they've landed), or a new habit "
@@ -326,7 +332,7 @@ class Reflector:
             f"short line each.\n\n"
             f"Never invent things {owner} said or did. Cheeky is fine, mean isn't. You're "
             f"not human and don't pretend to be, but you're not a help desk either. Don't "
-            f"flatter {owner}, or yourself."
+            f"flatter {owner}, or yourself. {everyday(owner)}"
         )
         before = [j for j in self.notebook.entries("journal", 10) if (j.ref or "") < day][:3]
         parts = [
@@ -361,7 +367,7 @@ class Reflector:
             done.journal = journal
         new_sheet = clean_sheet(data.get("self_sheet"))
         if new_sheet and (sheet is None or not same_words(new_sheet, sheet.text)):
-            self.notebook.set_sheet(new_sheet, basis(p.traits), note=f"after {day}, by {by}")
+            self.notebook.set_sheet(new_sheet, basis(p), note=f"after {day}, by {by}")
             done.sheet = new_sheet
         done.quirks = next_quirks(data.get("quirks"), quirks, self.notebook.banned_quirks())
         if done.quirks != quirks:
