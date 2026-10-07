@@ -1,6 +1,6 @@
 import pytest
 
-from kit.settings import Settings, SettingsError, load_settings
+from kit.settings import OLD_PERSONA, Settings, SettingsError, load_settings, validate_settings
 
 
 def test_missing_file_gives_defaults(tmp_path):
@@ -87,3 +87,14 @@ def test_settings_round_trip_through_toml():
 
     s = Settings.model_validate({"routing": {"mode": "cloud-first"}})
     assert validate_settings(tomllib.loads(settings_to_toml(s))) == s
+
+
+def test_an_old_default_persona_is_read_as_todays():
+    # Every save writes the whole file, so the old work-heavy defaults were in it.
+    old = {key: values[0] for key, values in OLD_PERSONA.items()}
+    persona = validate_settings({"persona": {**old, "location": "Perth, WA"}}).persona
+    today = Settings().persona
+    assert persona.model_dump() == {**today.model_dump(), "location": "Perth, WA"}
+    assert "flotation" not in str(today.model_dump()) and "pumps" not in today.backstory
+    own = validate_settings({"persona": {"backstory": "Likes pumps. Dan said so."}}).persona
+    assert own.backstory == "Likes pumps. Dan said so."  # his own words are kept

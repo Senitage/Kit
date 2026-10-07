@@ -2,13 +2,14 @@
 
 import asyncio
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
-from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, plan, reply
 from kit.brain import Brain
-from kit.life import Life, energy_at, in_quiet_hours, my_quirks
+from kit.life import Life, energy_at, feeling_from, in_quiet_hours, my_quirks
 from kit.memory import Memory
 from kit.pc_context import PcContext, Snapshot
 from kit.recall import Recall
@@ -86,6 +87,7 @@ def test_being_ignored_makes_him_wait_longer_and_sulk():
     run(life, pc, clock, 11, snap())
     assert life.ignored == 1 and life.mood() == "sulky"
     assert any(e.get("mood") == "sulky" for e in life.events_after(0))
+    assert life.feeling_now().why.startswith("Dan didn't answer when you piped up at ")
     life.note_chat()  # Dan finally answers
     assert life.ignored == 0 and life.mood() != "sulky"
 
@@ -160,6 +162,76 @@ async def life_tick_with(brain, reason):
     await life_tick(brain)
 
 
+def test_a_pipe_up_that_only_repeats_him_gets_two_more_goes_then_he_keeps_quiet(paths):
+    old = "You got a minute? I think the weather's trying to be a drama queen."
+    brain, memory, model, _ = make_brain(paths, reply(old), reply(old), old, old)
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "bored"))
+    events = collect(brain.pipe_up("bored"))
+    assert [e["type"] for e in events] == ["kept_quiet"]
+    assert len(model.speak_calls) == 4  # one for the first pipe-up, three goes at the next
+    assert f'Not "{old}"' in model.speak_calls[-1][-1]["content"]
+    assert [m.text for m in memory.recent(5)] == [old]  # nothing new said or kept
+    assert [e["type"] for e in brain.life.events_after(0)].count("pipe_up") == 1
+    assert brain.life.held_until is not None
+    memory.close()
+
+
+def test_a_pipe_up_is_judged_whole_and_has_nothing_written_under_it(paths):
+    old = "Still on pumps.py? It's been an hour, mate."
+    new = "Bet the impeller's winning that argument today.\n\n1. Impeller\n2. Dan"
+    brain, memory, model, _ = make_brain(paths, reply(old), plan(), f"Hmm. {old}", new)
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "bored"))
+    asyncio.run(life_tick_with(brain, "nag"))
+    # "Hmm." alone isn't an old line, but the rest of it is: he has another go.
+    assert 'Not "Hmm. Still on pumps.py?' in model.speak_calls[-1][-1]["content"]
+    event = brain.life.events_after(0)[-1]
+    assert event["type"] == "pipe_up" and event["reason"] == "nag"
+    said = " ".join(s["say"] for s in event["reply"]["segments"])
+    assert said == "Bet the impeller's winning that argument today."
+    assert event["reply"]["detail"] == ""
+    memory.close()
+
+
+def test_answering_a_pipe_up_he_knows_why_he_piped_up(paths):
+    brain, memory, model, _ = make_brain(
+        paths,
+        reply("Oi! I've been counting your tabs."),
+        reply("Forty-one, mate. A personal best."),
+        reply("Ha."),
+    )
+    brain.notebook.write("want", "Tell Dan I counted forty-one open tabs.")
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "want"))
+    collect(brain.chat("yeah whats up?"))
+    asked = model.calls[-1][-1]["content"]
+    assert asked.startswith(
+        "yeah whats up?\n\n[Dan is answering what you piped up with: \"Oi! I've been counting"
+    )
+    assert 'You piped up because you wanted to tell Dan: "I counted forty-one' in asked
+    collect(brain.chat("ha, fair enough"))
+    assert "piped up" not in model.calls[-1][-1]["content"]  # that's answered now
+    memory.close()
+
+
+def test_with_nothing_new_to_say_he_waits_without_expecting_an_answer():
+    life, pc, clock = setup(chattiness=0.5, max_per_hour=4)
+    life.drives.boredom = 1.0
+    life.held_back("bored")
+    assert not life.awaiting_reply and life.drives.boredom == 0.2
+    pc.update(snap())
+    assert life.tick() is None and "nothing new to say" in life.quiet_because
+    clock.now += timedelta(minutes=16)  # four an hour: a quarter of an hour apart
+    life.drives.boredom = 1.0
+    pc.update(snap())
+    assert life.tick() == "bored"
+    life.held_back("nag")
+    assert life.nags == 1  # a nag he couldn't word still counts
+    life.note_chat()
+    assert life.held_until is None
+
+
 def test_shush_snoozes_without_asking_a_model(paths):
     brain, memory, model, _ = make_brain(paths)
     events = collect(brain.chat("shush"))
@@ -225,7 +297,8 @@ def test_poke_makes_kit_pipe_up_now(paths):
     app = create_app(store, memory, brain, "t", summarise_every_s=None, life_every_s=None)
     with TestClient(app) as client:
         got = client.post("/api/life/poke", headers={"Authorization": "Bearer t"}).json()
-    assert got["ok"] and got["reply"]["segments"][0]["say"] == "Oi. Still on pumps?"
+    said = " ".join(seg["say"] for seg in got["reply"]["segments"])
+    assert got["ok"] and said == "Oi. Still on pumps?"
     assert brain.life.events_after(0)[-1]["type"] == "pipe_up"
     memory.close()
 
@@ -296,3 +369,168 @@ def test_a_chatty_kit_sometimes_butts_in_while_dan_types():
             life.awaiting_reply = False
             life.drives.boredom = 1
     assert 0 < butted
+
+
+# Feelings with a cause, thoughts on a schedule, and remembering it all
+
+
+class Saved:
+    """Where Life keeps itself between restarts (memory's kit_self in Kit)."""
+
+    def __init__(self):
+        self.values = {}
+
+    def self_value(self, key):
+        return self.values.get(key)
+
+    def set_self_value(self, key, value):
+        self.values[key] = value
+
+
+def test_what_dan_says_makes_kit_feel_something_and_he_knows_why():
+    assert feeling_from("You're a legend, Kit", "Dan")[0] == "chuffed"
+    assert feeling_from("The build failed again", "Dan") == (
+        "sympathetic",
+        'Dan said "The build failed again"',
+        0.6,
+    )
+    assert feeling_from("I'm stressed about the shutdown", "Dan")[0] == "worried"
+    assert feeling_from("you're useless", "Dan")[0] == "hurt"
+    assert feeling_from("tests are all green finally", "Dan")[0] == "proud"
+    assert feeling_from("thanks mate", "Dan")[0] == "warm"
+    assert feeling_from("what's the time?", "Dan") is None
+
+
+def test_a_feeling_shows_fades_and_isnt_pushed_out_by_a_weaker_one():
+    life, _, clock = setup()
+    assert life.feel("chuffed", "Dan called you a legend")
+    fidget = life.events_after(0)[-1]
+    assert fidget["type"] == "fidget" and fidget["mood"] == "chuffed"
+    assert not life.feel("pleased", "something small", 0.3)
+    assert life.feeling_now().name == "chuffed"
+    assert life.feeling_line("Dan") == "chuffed, because Dan called you a legend (just now)"
+    assert life.state()["feeling"]["why"] == "Dan called you a legend"
+    clock.now += timedelta(minutes=85)  # chuffed lasts an hour and a half
+    assert life.feeling_now() is None and life.state()["feeling"] is None
+    assert not life.feel("nonsense", "why") and not life.feel("sad", "  ")
+
+
+def test_how_kit_feels_survives_a_restart():
+    clock = Clock("2026-10-06T10:00:00")
+    pc, saved, s = PcContext(clock), Saved(), Settings()
+    life = Life(lambda: s, pc, clock, random.Random(1), store=saved)
+    life.note_chat()
+    life.feel("worried", 'Dan said "stressed about the shutdown"')
+    life.drives.boredom = 0.5
+    life.save()
+    clock.now += timedelta(minutes=30)
+    again = Life(lambda: s, pc, clock, random.Random(1), store=saved)
+    assert again.feeling_now().why == 'Dan said "stressed about the shutdown"'
+    assert again.last_chat == datetime(2026, 10, 6, 10, 0)
+    assert again.drives.boredom == 0.5 and again.drives.social == pytest.approx(0.125)
+    clock.now += timedelta(hours=3)
+    later = Life(lambda: s, pc, clock, random.Random(1), store=saved)
+    assert later.feeling_now() is None  # it faded while he was off
+    assert later.drives.boredom == 0.2  # a long break is a fresh start
+    sulky = Life(lambda: s, pc, clock, random.Random(1), store=saved)
+    sulky.sulky, sulky.ignored = True, 1
+    sulky.feel("put_out", "Dan didn't answer when you piped up at 13:00", 0.6, show=False)
+    clock.now += timedelta(minutes=5)  # restarted straight away
+    restarted = Life(lambda: s, pc, clock, random.Random(1), store=saved)
+    assert restarted.mood() == "sulky" and restarted.ignored == 1
+    assert "because Dan didn't answer when you piped up at 13:00" in restarted.feeling_line("Dan")
+    saved.values["life"] = "{damaged"
+    assert Life(lambda: s, pc, clock, store=saved).feeling is None
+
+
+def test_kit_thinks_in_quiet_moments_while_dan_is_around():
+    life, pc, clock = setup(think_every_minutes=8, thoughts_per_hour=2)
+    pc.update(snap())
+    assert life.think_now() is None  # just started: not yet
+    clock.now += timedelta(minutes=9)
+    pc.update(snap())
+    assert life.think_now() == ("quiet", "A quiet moment: nothing in particular is happening.")
+    life.thought_had()
+    assert life.think_now() is None  # not straight after one
+    clock.now += timedelta(minutes=12)
+    pc.update(snap())
+    assert life.think_now()[0] == "quiet"
+    life.thought_had()
+    clock.now += timedelta(minutes=12)
+    pc.update(snap())
+    assert life.think_now() is None  # two an hour is the limit here
+    assert life.state()["thoughts_this_hour"] == 2
+    clock.now += timedelta(hours=2)
+    pc.update(snap(idle=900))
+    assert life.think_now() is None  # nobody around: he dozes rather than muses
+
+
+def test_no_thoughts_mid_conversation_asleep_or_when_turned_off():
+    life, pc, clock = setup()
+    clock.now += timedelta(minutes=30)
+    pc.update(snap())
+    life.note_chat()
+    assert life.think_now() is None  # listening, not musing
+    life.asleep = True
+    clock.now += timedelta(minutes=5)
+    assert life.think_now() is None
+    off, pc, clock = setup(thoughts_per_hour=0)
+    clock.now += timedelta(minutes=30)
+    pc.update(snap())
+    assert off.think_now() is None
+
+
+def test_something_new_on_screen_prompts_a_thought_sooner():
+    life, pc, clock = setup()
+    run(life, pc, clock, 3, snap(app="VS Code", title="pumps.py"))
+    run(life, pc, clock, 0.5, snap(app="Chrome", title="Pump curves", site="pumpcurves.com"))
+    assert life.think_now() == ("new", "Dan just opened pumpcurves.com, first time today.")
+
+
+def test_a_failed_or_passing_build_on_screen_is_felt_and_thought_about():
+    life, pc, clock = setup()
+    run(life, pc, clock, 3, snap(app="Chrome", title="CI · Senitage/Kit", site="github.com"))
+    run(life, pc, clock, 0.5, snap(app="Chrome", title="Build failed · Kit", site="github.com"))
+    assert life.feeling_now().name == "sympathetic"
+    assert life.think_now() == (
+        "build_failed",
+        'Something on Dan\'s screen failed: "Build failed · Kit".',
+    )
+    life.thought_had()
+    clock.now += timedelta(minutes=3)
+    run(life, pc, clock, 0.5, snap(app="Chrome", title="All checks have passed", site="github.com"))
+    assert life.feeling_now().name == "proud"
+    assert life.think_now()[0] == "build_passed"
+
+
+def test_a_chat_that_has_wound_down_and_coming_back_are_worth_a_thought():
+    life, pc, clock = setup()
+    life.note_chat()
+    run(life, pc, clock, 11, snap())
+    kind, line = life.think_now()
+    assert kind == "chat_ended" and line.startswith("You and Dan were chatting until")
+    life, pc, clock = setup(sleep_after_minutes=10)
+    pc.update(snap(idle=601))
+    life.on_report()
+    clock.now += timedelta(minutes=40)
+    pc.update(snap(idle=2))
+    life.on_report()
+    assert life.think_now() == ("back", "Dan just came back to the PC after 40 minutes away.")
+
+
+def test_a_pressing_want_makes_him_pipe_up():
+    life, pc, clock = setup(chattiness=0.5)
+    run(life, pc, clock, 10, snap())
+    life.drives.boredom = 0.0
+    life.wanting = 0.5
+    clock.now += timedelta(seconds=30)
+    pc.update(snap())
+    assert life.tick() is None
+    assert life.quiet_because.startswith("not keen to share something enough yet")
+    life.drives.boredom = 0.0
+    life.wanting = 1.0
+    clock.now += timedelta(seconds=30)
+    pc.update(snap())
+    assert life.tick() == "want"
+    life.piped_up("want")
+    assert life.wanting == 0.0

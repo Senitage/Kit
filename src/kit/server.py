@@ -24,7 +24,7 @@ import kit
 from kit.brain import Brain
 from kit.knowledge import Item
 from kit.life import TICK_S
-from kit.memory import CONVERSATION, DAYS, FACTS, Memory
+from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
@@ -35,6 +35,7 @@ from kit.things import THINGS, Register
 log = logging.getLogger(__name__)
 
 SUMMARY_INTERVAL_S = 3600
+NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
 
 
 class ChatIn(BaseModel):
@@ -68,6 +69,14 @@ class ThingIn(BaseModel):
     about: str = ""
 
 
+class QuirkIn(BaseModel):
+    quirk: str = Field(min_length=1)
+
+
+class VersionIn(BaseModel):
+    id: int
+
+
 class ThingEdit(BaseModel):
     name: str | None = None
     kind: str | None = None
@@ -90,6 +99,8 @@ def _item(item: Item | None) -> dict:
         "updated": item.updated,
         "pinned": item.pinned,
         "superseded_by": item.superseded_by,
+        "ref": item.ref,
+        "meta": item.meta,
     }
 
 
@@ -110,6 +121,7 @@ def create_app(
     summarise_every_s: float | None = SUMMARY_INTERVAL_S,
     paths: KitPaths | None = None,
     life_every_s: float | None = TICK_S,
+    notes_every_s: float | None = NOTES_SYNC_S,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -118,6 +130,8 @@ def create_app(
             tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
         if life_every_s:
             tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
+        if notes_every_s:
+            tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
         yield
         for task in tasks:
             task.cancel()
@@ -267,7 +281,9 @@ def create_app(
 
     @app.get("/api/memory/search", dependencies=auth)
     async def search(q: str, k: Annotated[int, Query(ge=1, le=100)] = 10) -> dict:
-        hits = await brain.recall.search(q, [FACTS, DAYS, CONVERSATION, THINGS, NOTES], min(k, 50))
+        hits = await brain.recall.search(
+            q, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], min(k, 50)
+        )
         return {
             "words_only": brain.recall.embed_problem is not None,
             "hits": [
@@ -353,9 +369,96 @@ def create_app(
 
     @app.get("/api/life", dependencies=auth)
     def life() -> dict:
-        """Kit's mood and drives, and whether he's been told to keep quiet."""
+        """Kit's mood, feeling and drives, what he's thinking and wants to bring up, and
+        whether he's been told to keep quiet."""
         s = store.current().life
-        return {**brain.life.state(), "quirks": brain.quirks, "settings": s.model_dump()}
+        thought = brain.notebook.latest_thought()
+        return {
+            **brain.life.state(),
+            "thinking": thought.text if thought else None,
+            "wants": [w.text for w in brain.notebook.open_wants()],
+            "later": [
+                {"text": w.text, "after": w.meta.get("after")}
+                for w in brain.notebook.unsaid_wants()
+                if not brain.notebook.due(w)
+            ],
+            "quirks": brain.quirks,
+            "settings": s.model_dump(),
+        }
+
+    @app.get("/api/life/notebook", dependencies=auth)
+    def notebook() -> dict:
+        """Kit's own notebook: his self-sheet and its earlier versions, the weekly
+        reviews, his quirks, wants, thoughts, opinions, moments and journal."""
+        nb = brain.notebook
+        sheet = nb.sheet()
+        return {
+            "sheet": _item(sheet) if sheet else None,
+            "sheet_history": [_item(i) for i in nb.sheet_history()[1:]],
+            "reviews": [_item(i) for i in nb.reviews(3)],
+            "quirks": brain.quirks,
+            "retired_quirks": nb.retired_quirks(),
+            "wants": [
+                {**_item(w), "pressure": round(nb.pressure(w), 2), "due": nb.due(w)}
+                for w in nb.unsaid_wants()
+            ],
+            "thoughts": [_item(i) for i in nb.entries("thought", 40)],
+            "opinions": [_item(i) for i in nb.entries("opinion", 100)],
+            "moments": [_item(i) for i in nb.entries("moment", 100)],
+            "journal": [_item(i) for i in nb.entries("journal", 30)],
+            "vetoes": nb.vetoes(),
+        }
+
+    @app.delete("/api/life/notebook/{item_id}", dependencies=auth)
+    def forget_note(item_id: int) -> dict:
+        if not brain.notebook.forget(item_id):
+            raise HTTPException(404, "no such entry in Kit's notebook")
+        brain.life.wanting = brain.notebook.pressing()
+        return {"ok": True}
+
+    @app.post("/api/life/sheet/restore", dependencies=auth)
+    def restore_sheet(body: VersionIn) -> dict:
+        """Go back to an earlier version of Kit's self-sheet. He's told it was undone."""
+        new_id = brain.notebook.restore_sheet(body.id, store.current().persona.owner)
+        if new_id is None:
+            raise HTTPException(404, "no such version of Kit's self-sheet")
+        return _item(memory.index.get(new_id))
+
+    def _quirks() -> dict:
+        return {"quirks": brain.quirks, "retired_quirks": brain.notebook.retired_quirks()}
+
+    @app.post("/api/life/quirks/retire", dependencies=auth)
+    def retire_quirk(body: QuirkIn) -> dict:
+        """Take a quirk away; Kit won't pick it up again."""
+        if not brain.notebook.retire_quirk(body.quirk, store.current().persona.owner):
+            raise HTTPException(404, "Kit doesn't have that quirk")
+        return _quirks()
+
+    @app.post("/api/life/quirks/restore", dependencies=auth)
+    def restore_quirk(body: QuirkIn) -> dict:
+        """Give a retired quirk back."""
+        if not brain.notebook.restore_quirk(body.quirk, store.current().persona.owner):
+            raise HTTPException(404, "that isn't one of Kit's retired quirks")
+        return _quirks()
+
+    @app.post("/api/life/think", dependencies=auth)
+    async def think() -> dict:
+        """Make Kit have a thought now, whatever his schedule says (for testing)."""
+        thought = await brain.think(("asked", "A moment to yourself."))
+        return {"thought": thought.as_dict() if thought else None}
+
+    @app.post("/api/life/reflect", dependencies=auth)
+    async def reflect() -> dict:
+        """Make Kit reflect on today so far, now (for testing). Tonight's reflection
+        replaces today's journal entry; earlier versions stay in its history."""
+        if store.current().life.reflect_with == "off":
+            raise HTTPException(409, "Kit's reflection is off (life.reflect_with)")
+        first = brain.notebook.sheet() is None and await brain.reflector.first_sheet()
+        done = await brain.reflector.reflect_day(memory.today())
+        if done is None:
+            raise HTTPException(503, "no model could reflect just now; see logs/kit.log")
+        await brain.recall.index_pending()
+        return {**done.as_dict(), "first_sheet": first}
 
     @app.get("/api/life/events", dependencies=auth)
     async def life_events(after: int = 0, wait: Annotated[float, Query(ge=0, le=60)] = 25) -> dict:
@@ -390,6 +493,19 @@ def create_app(
     return app
 
 
+async def _notes_loop(brain: Brain, store: SettingsStore, every_s: float) -> None:
+    """Keep the index in step with Dan's notes vault, from start-up on."""
+    while True:
+        try:
+            indexed, removed = await asyncio.to_thread(brain.notes.sync, store.current().nas)
+            if indexed or removed:
+                log.info("notes: %d indexed, %d removed", indexed, removed)
+                await brain.recall.index_pending(limit=5000)
+        except Exception:
+            log.exception("reading the notes vault failed")
+        await asyncio.sleep(every_s)
+
+
 async def _life_loop(brain: Brain, every_s: float) -> None:
     """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up."""
     while True:
@@ -401,10 +517,18 @@ async def _life_loop(brain: Brain, every_s: float) -> None:
 
 
 async def life_tick(brain: Brain) -> None:
+    """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
+    thought of his own. Neither happens while he's answering something."""
+    brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()
-    if reason is None or brain.jobs:
+    if brain.jobs or brain.talking():
         return
-    await pipe_up_now(brain, reason)
+    if reason is not None:
+        await pipe_up_now(brain, reason)
+        return
+    trigger = brain.life.think_now()
+    if trigger is not None:
+        await brain.think(trigger)
 
 
 async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
@@ -429,12 +553,17 @@ async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
 async def _upkeep_loop(
     brain: Brain, paths: KitPaths | None, store: SettingsStore, every_s: float
 ) -> None:
-    """Summarise finished days, embed anything not yet indexed, and back up memory daily."""
+    """Summarise finished days, let Kit reflect on them, embed anything not yet
+    indexed, and back up memory daily."""
     while True:
         try:
             await brain.summarise_past_days()
         except Exception:
             log.exception("summarising past days failed")
+        try:
+            await brain.reflect()
+        except Exception:
+            log.exception("Kit's nightly reflection failed")
         try:
             await brain.recall.index_pending(limit=5000)
         except Exception:

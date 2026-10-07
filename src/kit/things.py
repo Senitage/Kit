@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from kit.knowledge import Item
+from kit.knowledge import STOPWORDS, Item
 from kit.memory import Memory
 
 THINGS = "things"
@@ -136,6 +136,17 @@ def _from_item(item: Item) -> Thing:
 
 def _mentions(text: str, name: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(name.lower())}(?!\w)", text.lower()) is not None
+
+
+def named_in(name: str, said: str) -> bool:
+    """Did the owner name ``name`` in ``said`` (any word of it will do)? A small model
+    asked to put a window title it had seen in the register when Dan only said good
+    night."""
+    words = [w for w in re.findall(r"[a-z0-9]+", name.lower()) if len(w) > 2]
+    words = [w for w in words if w not in STOPWORDS]
+    if not words:  # "Al", "Jo"
+        return bool(name.strip()) and _mentions(said, name.strip())
+    return any(w in said.lower() for w in words)
 
 
 class Register:

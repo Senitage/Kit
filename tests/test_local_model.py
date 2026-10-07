@@ -54,3 +54,31 @@ def test_unreachable():
 
     with pytest.raises(LocalModelError, match="can't reach Ollama"):
         run(model_with(handler))
+
+
+def test_plain_text_and_livelier_sampling_when_asked():
+    from kit.local_model import lively
+
+    seen = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, text=json.dumps({"message": {"content": "Hi."}, "done": True}))
+
+    model = model_with(handler)
+    options = lively(OllamaSettings())
+
+    async def go():
+        return await model.complete(
+            [{"role": "user", "content": "hi"}], None, "gemma4:e4b", options
+        )
+
+    assert asyncio.run(go()) == "Hi."
+    assert "format" not in seen and seen["model"] == "gemma4:e4b"
+    assert seen["options"] == {
+        "temperature": 0.95,
+        "num_ctx": 8192,
+        "min_p": 0.05,
+        "repeat_penalty": 1.08,
+    }
+    assert "repeat_penalty" not in lively(OllamaSettings(), plain=False)

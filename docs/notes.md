@@ -1,14 +1,20 @@
-# Taking notes
+# Your notes
 
-Say "take a note", "jot this down" or "add milk to my shopping list" and Kit
-writes it as a plain markdown file in your notes folder on the NAS, where
-Obsidian (or any editor) can open it. A note with the same title gets the new
-text added at the end under the time, so a list stays one note. Each note is
-also put in Kit's memory, so "what did I note about the dentist?" finds it.
+Kit reads and writes your notes vault on the NAS (`nas.vault`), the only place on
+the NAS Kit may write. Obsidian (or any editor) sees the same plain markdown files.
 
-The notes folder is `nas.vault`, the only place on the NAS Kit may write.
-`nas.notes_folder` picks a folder inside it (for example `Inbox`); leave it out
-to save at the top level.
+**Reading.** Every note in the vault is read into Kit's memory, split at its
+headings, and kept in step every five minutes (new, changed and deleted notes).
+Folders starting with a dot (`.obsidian`, `.trash`, `.SynologyWorkingDirectory`)
+are skipped. Kit sees the names of your most recent notes, so "what's in my
+holiday planner?" opens that note and answers from it, and "what did I write
+about the bins?" searches all your notes. `kit notes` reads the vault now and
+lists what Kit sees.
+
+**Writing.** Say "take a note", "jot this down" or "add milk to my shopping
+list". If a note with that name is anywhere in the vault, the new text goes on
+the end under the time; otherwise it's a new note in `nas.notes_folder` (for
+example `Inbox`), or in the folder you name ("put it in Projects").
 
 ## 1. Let the kit user write to the share
 
@@ -51,4 +57,8 @@ next message, so there's nothing to restart.
       "Saved ... in your notes" and the file is on the NAS
 - [ ] "Add bread to my shopping list" twice → one `Shopping list.md` with both
 - [ ] The note opens in Obsidian (or Notepad) on the PC
+- [ ] `kit notes` lists your notes (not `.obsidian` or the Synology folders)
+- [ ] "What's in my Holiday Planner?" → Kit opens it and answers from it
+- [ ] "Add 'book the car' to my holiday planner" → it goes on the end of that note
+- [ ] Edit a note in Obsidian, wait five minutes, ask about the change → Kit knows
 - [ ] Next day, "what did I note about the bins?" → Kit finds it

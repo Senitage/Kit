@@ -36,11 +36,20 @@
   .pinned { border-color: var(--pin); }
   .pinned .pin { color: var(--pin); font-weight: 600; }
   .old { opacity: .6; text-decoration: line-through; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .sheet .text { font-size: 16px; white-space: pre-wrap; }
+  .said { color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
 <main>
   <header><h1>What Kit remembers</h1><a href="/">Chat</a><a href="/settings">Settings</a></header>
+  <div class="tabs">
+    <button id="tabKnows" class="on">What Kit knows</button>
+    <button id="tabNotebook">Kit's notebook</button>
+  </div>
+  <section id="knows">
   <div class="row">
     <input type="text" id="q" placeholder="Search memory the way Kit does">
     <button id="search">Search</button>
@@ -65,6 +74,31 @@
   <div id="facts"></div>
   <h2>Days</h2>
   <div id="days"></div>
+  </section>
+  <section id="notebook" hidden>
+    <p class="note">Kit's own thoughts, opinions and wants, his journal, and who he thinks he is, in his own words. He writes these himself; you can forget any entry or undo a change.</p>
+    <div class="row">
+      <button id="thinkNow">Have a thought now</button>
+      <button id="reflectNow">Reflect on today now (a few cents)</button>
+    </div>
+    <div class="note" id="bookNote"></div>
+    <h2>Who he thinks he is</h2>
+    <div id="sheet"></div>
+    <div id="reviews"></div>
+    <h2>Quirks</h2>
+    <div id="quirks"></div>
+    <h2>Wants to bring up</h2>
+    <div id="wants"></div>
+    <h2>Thoughts</h2>
+    <div id="thoughts"></div>
+    <h2>Opinions</h2>
+    <div id="opinions"></div>
+    <h2>Moments he's keeping</h2>
+    <div id="moments"></div>
+    <h2>Journal</h2>
+    <div id="journal"></div>
+    <div id="vetoes"></div>
+  </section>
 </main>
 <script>
 function token() {
@@ -230,6 +264,139 @@ async function search() {
     box.appendChild(c);
   }
 }
+
+// Kit's notebook
+const bookNote = document.getElementById("bookNote");
+function when(item) { return item.kind === "journal" ? item.day : item.day + " " + (item.created || "").slice(11, 16); }
+function noteCard(item, extra) {
+  const card = el("div", "item");
+  card.appendChild(el("div", "text", item.text));
+  const meta = el("div", "meta");
+  meta.append(el("span", "", when(item)));
+  if (extra) meta.append(el("span", "", extra));
+  if (item.meta && item.meta.said) meta.append(el("span", "said", "said to you " + item.meta.said.slice(11, 16)));
+  meta.append(button("Forget", async () => {
+    if (confirm("Take this out of Kit's notebook?")) { await api(`/api/life/notebook/${item.id}`, { method: "DELETE" }); loadNotebook(); }
+  }));
+  card.appendChild(meta);
+  return card;
+}
+function fill(id, items, empty, card) {
+  const box = document.getElementById(id);
+  box.innerHTML = "";
+  if (!items.length) box.appendChild(el("p", "note", empty));
+  for (const item of items) box.appendChild(card ? card(item) : noteCard(item));
+}
+function sheetCard(book) {
+  const box = document.getElementById("sheet");
+  box.innerHTML = "";
+  const s = book.sheet;
+  if (!s) { box.appendChild(el("p", "note", "Kit writes this himself on his first night, and it grows as he does (life.reflect_with).")); return; }
+  const card = el("div", "item sheet");
+  card.appendChild(el("div", "text", s.text));
+  const meta = el("div", "meta");
+  meta.append(el("span", "", "written " + s.day + (s.meta && s.meta.note ? ": " + s.meta.note : "")));
+  meta.append(button("Earlier versions", () => {
+    const list = el("div", "");
+    if (!book.sheet_history.length) list.appendChild(el("div", "note", "No earlier versions yet."));
+    for (const v of book.sheet_history) {
+      const old = el("div", "item");
+      old.append(el("div", "text", v.text));
+      const m = el("div", "meta");
+      m.append(el("span", "", v.day), button("Go back to this", async () => {
+        if (!confirm("Go back to this version? Kit is told you undid the change.")) return;
+        await api("/api/life/sheet/restore", { method: "POST", body: JSON.stringify({ id: v.id }) });
+        loadNotebook();
+      }));
+      old.appendChild(m);
+      list.appendChild(old);
+    }
+    card.appendChild(list);
+  }));
+  card.appendChild(meta);
+  box.appendChild(card);
+}
+function quirkCards(book) {
+  const box = document.getElementById("quirks");
+  box.innerHTML = "";
+  for (const q of book.quirks) {
+    const card = el("div", "item");
+    card.append(el("div", "text", q));
+    const meta = el("div", "meta");
+    meta.append(button("Take away", async () => {
+      if (!confirm("Take this quirk away? Kit won't pick it up again.")) return;
+      await api("/api/life/quirks/retire", { method: "POST", body: JSON.stringify({ quirk: q }) });
+      loadNotebook();
+    }));
+    card.appendChild(meta);
+    box.appendChild(card);
+  }
+  for (const r of book.retired_quirks) {
+    const card = el("div", "item");
+    card.append(el("div", "text old", r.quirk));
+    const meta = el("div", "meta");
+    meta.append(el("span", "", (r.by && r.by !== "kit" ? "you took it away " : "he dropped it ") + (r.day || "")));
+    meta.append(button("Give back", async () => {
+      await api("/api/life/quirks/restore", { method: "POST", body: JSON.stringify({ quirk: r.quirk }) });
+      loadNotebook();
+    }));
+    card.appendChild(meta);
+    box.appendChild(card);
+  }
+  if (!book.quirks.length && !book.retired_quirks.length) box.appendChild(el("p", "note", "No quirks yet."));
+}
+async function loadNotebook() {
+  const book = await api("/api/life/notebook");
+  sheetCard(book);
+  const reviews = document.getElementById("reviews");
+  reviews.innerHTML = "";
+  for (const r of book.reviews.slice(0, 1)) {
+    const card = el("div", "item");
+    card.append(el("div", "text", r.text), el("div", "meta", "weekly review, " + r.day + (r.meta && r.meta.by ? " by " + r.meta.by : "")));
+    reviews.appendChild(card);
+  }
+  quirkCards(book);
+  fill("wants", book.wants, "Nothing he's waiting to bring up.", w => noteCard(w, w.due ? "presses " + Math.round(w.pressure * 100) + "%" : "not before " + (w.meta.after || "").slice(0, 16).replace("T", " ")));
+  fill("thoughts", book.thoughts, "No thoughts yet. He thinks in quiet moments while you're around.");
+  fill("opinions", book.opinions, "No opinions formed yet.");
+  fill("moments", book.moments, "Nothing kept yet.");
+  fill("journal", book.journal, "He writes a journal entry each night.");
+  const vetoes = document.getElementById("vetoes");
+  vetoes.innerHTML = "";
+  if (book.vetoes.length) {
+    vetoes.appendChild(el("h2", "", "Changes you undid (he knows)"));
+    for (const v of book.vetoes) vetoes.appendChild(el("div", "note", v));
+  }
+}
+document.getElementById("thinkNow").addEventListener("click", async () => {
+  bookNote.textContent = "Thinking...";
+  try {
+    const r = await api("/api/life/think", { method: "POST" });
+    bookNote.textContent = r.thought && r.thought.text ? "He thought: " + r.thought.text : "Nothing came to mind.";
+    loadNotebook();
+  } catch (e) { bookNote.textContent = "Couldn't think: " + e.message; }
+});
+document.getElementById("reflectNow").addEventListener("click", async () => {
+  bookNote.textContent = "Reflecting on today...";
+  try {
+    const r = await api("/api/life/reflect", { method: "POST" });
+    bookNote.textContent = r.journal ? "Journal: " + r.journal : "Nothing to reflect on yet today.";
+    loadNotebook();
+  } catch (e) { bookNote.textContent = "Couldn't reflect: " + e.message; }
+});
+function showTab(name) {
+  document.getElementById("knows").hidden = name !== "knows";
+  document.getElementById("notebook").hidden = name !== "notebook";
+  document.getElementById("tabKnows").classList.toggle("on", name === "knows");
+  document.getElementById("tabNotebook").classList.toggle("on", name === "notebook");
+  try { localStorage.setItem("kitMemoryTab", name); } catch (e) {}
+  if (name === "notebook") loadNotebook().catch(e => { bookNote.textContent = "Can't reach Kit: " + e.message; });
+}
+document.getElementById("tabKnows").addEventListener("click", () => showTab("knows"));
+document.getElementById("tabNotebook").addEventListener("click", () => showTab("notebook"));
+let startTab = "knows";
+try { startTab = localStorage.getItem("kitMemoryTab") || "knows"; } catch (e) {}
+showTab(startTab === "notebook" ? "notebook" : "knows");
 load().catch(e => { note.textContent = "Can't reach Kit: " + e.message; });
 </script>
 </body>

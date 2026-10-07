@@ -1,9 +1,9 @@
 """Finding what Kit knows that matters right now.
 
-Every turn, the message is used to search memory (facts, past days and old
-conversation) by words and by meaning, and the best matches go into the
-prompt with their dates. If the embedding model is down, recall falls back to
-words only rather than failing.
+Every turn, the message is used to search memory (facts, past days, old
+conversation, the register of things and Kit's own notebook) by words and by
+meaning, and the best matches go into the prompt with their dates. If the
+embedding model is down, recall falls back to words only rather than failing.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from kit.embed import Embedder, EmbedError
 from kit.knowledge import Hit, Item
-from kit.memory import CONVERSATION, DAYS, FACTS, Memory
+from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.settings import Settings
 from kit.things import THINGS, Register, Thing
 
@@ -26,11 +26,12 @@ class Recalled:
     memories: list[Hit]
     conversation: list[Hit]
     things: list[Thing] = field(default_factory=list)
+    own: list[Hit] = field(default_factory=list)  # from Kit's own notebook
 
     def ids(self) -> set[int]:
         return (
             {i.id for i in self.pinned}
-            | {h.item.id for h in self.memories + self.conversation}
+            | {h.item.id for h in self.memories + self.conversation + self.own}
             | {t.id for t in self.things}
         )
 
@@ -87,7 +88,8 @@ class Recall:
             conversation = [h for h in hits if h.item.ref not in recent_refs][
                 : s.conversation_snippets
             ]
-        return Recalled(pinned, memories, conversation, await self.things_for(text))
+        own = await self.search(text, [SELF], s.own_memories) if s.own_memories else []
+        return Recalled(pinned, memories, conversation, await self.things_for(text), own)
 
     async def closeness(self, text: str, others: list[str]) -> float | None:
         """How close ``text`` is in meaning to the closest of ``others`` (cosine,

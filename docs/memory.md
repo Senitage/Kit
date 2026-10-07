@@ -17,10 +17,12 @@ a reference back to where it came from.
 | `things` | The register of things: one entry per person, vehicle, place, project or equipment, with where it lives | Stage 1 |
 | `thing-suggestions` | Names Kit met and suggested adding, waiting for a yes or no | Stage 1 |
 | `conversation` | Every exchange, so old conversations can be found | Stage 1 |
+| `self` | Kit's own notebook: his thoughts, opinions, wants, moments and daily journal ([life.md](life.md)) | Inner life |
+| `self-sheet` | Who Kit thinks he is, in his own words, every version, and the weekly reviews of it. Always in his prompt, so never recalled | Inner life |
 | `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
 | `files` | NAS documents and folders (names, paths, text) | Stage 5 |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
-| `notes` | Notes Kit takes when you ask ([taking notes](notes.md)); later the whole Obsidian vault, by note and heading | Notes Kit takes: now. The vault: stage 6 |
+| `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([your notes](notes.md)) | Now |
 
 A later stage adds a source by putting items into the same index. Recall,
 search, the memory page and the accuracy test then work for it with no other
@@ -47,10 +49,13 @@ says so. Nothing is lost: missing vectors are filled in once it's back.
 ## Every turn
 
 1. Kit searches for memories relevant to your message: up to 8 facts or day
-   summaries, plus up to 4 older conversation snippets.
+   summaries, up to 4 older conversation snippets, and up to 3 entries from his
+   own notebook (`memory.own_memories`), so he remembers what he thought, not
+   only what you said.
 2. Those go into the prompt with their dates, along with pinned facts, which
    are always there. The prompt tells Kit that newer memories win and never
-   to invent one.
+   to invent one. His own notes are marked as his, so they're never taken for
+   facts about you.
 3. If you mention something Kit can't see, it can search deeper (the `recall`
    action) and then answer with what it found, or say it doesn't know.
 4. The exchange is indexed, so it can be found later.
@@ -107,6 +112,8 @@ end-of-day pass, which writes the day's summary and learns its lasting facts.
   removes a fact and all its earlier versions.
 - The memory page and `kit things ...` show the register, with links,
   suggestions to confirm or reject, other names, history and forget.
+- The memory page's **Kit's notebook** tab (and `kit life notebook`) shows
+  Kit's own notes, journal, self-sheet and quirks, with forget and undo.
 - `kit eval memory` measures accuracy on a scratch memory: right fact
   recalled, nothing recalled for unknown things, no stale or duplicate facts.
   Run it after changing models or memory settings.

@@ -200,3 +200,90 @@ def test_kit_life_asks_the_running_brain(paths, capsys):
     assert "mood:     bored" in out and "waits 10 minutes" in out
     assert cmd_life(paths, "poke", httpx.MockTransport(handler)) == 0
     assert "Kit: Oi." in capsys.readouterr().out
+
+
+def test_voice_eval_runs_in_scratch_space(paths, capsys, offline_models):
+    code = main(["eval", "voice", "--n", "2", "--one-pass"])
+    out = capsys.readouterr().out
+    assert code == 0 and "warming up qwen3:8b" in out
+    assert "qwen3:8b (one pass): 6/6 answered" in out
+    reports = list((paths.state_dir / "evals").glob("voice-*.md"))
+    assert len(reports) == 1 and "## Piping up: want" in reports[0].read_text(encoding="utf-8")
+    assert not (paths.state_dir / "voice-eval").exists()
+    assert not (paths.state_dir / "memory.db").exists()
+
+
+def test_voice_eval_skips_a_model_that_isnt_there(paths, capsys, offline_models):
+    offline_models.error = "Ollama said 404: model not found"
+    assert main(["eval", "voice", "--models", "nope:1b"]) == 1
+    assert "skipped nope:1b" in capsys.readouterr().out
+
+
+def test_kit_life_think_reflect_and_notebook(paths, capsys):
+    import httpx
+
+    from kit.cli import cmd_life
+
+    def handler(request):
+        path = request.url.path
+        if path == "/api/life/think":
+            thought = {"text": "Pumps again.", "kind": "opinion", "want": "Ask about pumps."}
+            return httpx.Response(200, json={"thought": thought})
+        if path == "/api/life/reflect":
+            return httpx.Response(
+                200,
+                json={
+                    "day": "2026-10-07",
+                    "journal": "Quiet day.",
+                    "sheet": "",
+                    "quirks": ["puns"],
+                    "added": ["opinion: Pumps are great."],
+                    "by": "Claude Sonnet",
+                    "first_sheet": True,
+                },
+            )
+        if path == "/api/life/notebook":
+            entry = {"id": 7, "day": "2026-10-07", "text": "Ask about pumps.", "meta": {}}
+            return httpx.Response(
+                200,
+                json={
+                    "sheet": {"day": "2026-10-07", "text": "I'm Kit."},
+                    "reviews": [],
+                    "quirks": ["puns"],
+                    "wants": [entry],
+                },
+            )
+        return httpx.Response(404)
+
+    paths.ensure()
+    transport = httpx.MockTransport(handler)
+    assert cmd_life(paths, "think", transport) == 0
+    out = capsys.readouterr().out
+    assert (
+        "Kit thought (an opinion): Pumps again." in out and "He wants to: Ask about pumps." in out
+    )
+    assert cmd_life(paths, "reflect", transport) == 0
+    out = capsys.readouterr().out
+    assert (
+        "first self-sheet" in out and "Quiet day." in out and "+ opinion: Pumps are great." in out
+    )
+    assert "stays as it was" in out
+    assert cmd_life(paths, "notebook", transport) == 0
+    out = capsys.readouterr().out
+    assert (
+        "Who Kit thinks he is (2026-10-07):" in out
+        and "     7  2026-10-07  Ask about pumps." in out
+    )
+
+
+def test_kit_life_reflect_says_when_its_off(paths, capsys):
+    import httpx
+
+    from kit.cli import cmd_life
+
+    def handler(request):
+        return httpx.Response(409, json={"detail": "Kit's reflection is off (life.reflect_with)"})
+
+    paths.ensure()
+    assert cmd_life(paths, "reflect", httpx.MockTransport(handler)) == 1
+    assert "reflection is off" in capsys.readouterr().out

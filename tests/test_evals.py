@@ -78,3 +78,73 @@ def test_fact_similarities_cover_every_fact(paths):
     sims = dict(asyncio.run(_fact_similarities(memory, recall, "How does Dan take coffee?")))
     assert sims["Dan drinks his coffee black."] > sims["Dan drives a Ford Ranger."]
     memory.close()
+
+
+def test_voice_eval_reads_his_lines_thoughts_and_pipe_ups(paths):
+    import json
+
+    from fakes import Clock
+    from kit.brain import Brain
+    from kit.cloud import Cloud
+    from kit.evals import VOICE_THOUGHTS, run_voice_eval, seed_voice, voice_report
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    s = Settings.model_validate({"ollama": {"speak_pass": False}})
+    idea = {
+        "thought": "Cheese toasties would cover dinner nicely.",
+        "kind": "opinion",
+        "want": "Ask about dinner.",
+        "feeling": "amused",
+        "why": "the recipes",
+    }
+    model = FakeModel(
+        reply("G'day. Kettle on yet?"),
+        reply("How can I help you today?"),
+        reply("Morning. Sleep all right, or was it one of those nights?"),
+        json.dumps(idea),
+        reply("Oi, still picking a dinner?"),
+    )
+    brain = Brain(
+        lambda: s, memory, model, Cloud(memory, lambda p: None, {}), Recall(memory, None, lambda: s)
+    )
+    seed_voice(brain)
+    ticks = count()
+    report = asyncio.run(
+        run_voice_eval(
+            brain,
+            "fake:1b",
+            ["Morning Kit.", "Hi.", "Morning."],
+            ["curious"],
+            VOICE_THOUGHTS[:1],
+            clock=lambda: next(ticks),
+        )
+    )
+    memory.close()
+    chat = report.spoken
+    assert report.answered == 4 and len(chat) == 4 and not report.two_pass
+    assert not chat[0].echo and chat[1].canned and chat[2].echo  # copied an example line
+    assert report.thoughts[0].text == "Cheese toasties would cover dinner nicely."
+    assert "wants to say: Ask about dinner." in report.thoughts[0].note
+    assert chat[3].kind == "pipe_up" and chat[3].text == "Oi, still picking a dinner?"
+    assert report.first_words is not None and 0 < report.variety <= 1
+    system = model.calls[0][0]["content"]
+    assert "I live on Dan's desk" in system and "Your traits:" not in system  # seeded sheet
+    assert "out of ten" in system  # fixed quirks, the same for every model
+    assert "weeknight dinners" in model.calls[-1][-1]["content"]  # curious about the screen
+    md = voice_report([report])
+    assert "**fake:1b** (one pass): 4/4 answered" in md
+    assert "## Morning Kit." in md and "## Thinking: chat_ended" in md
+    assert "## Piping up: curious" in md and "**[canned]**" in md and "**[echo]**" in md
+
+
+def test_a_pipe_up_he_kept_quiet_on_counts_against_the_model():
+    from kit.evals import _spoken
+
+    async def kept_quiet():
+        yield {"type": "kept_quiet", "repeated": "Still picking a dinner?"}
+
+    ticks = count()
+    line = asyncio.run(_spoken("pipe_up", "bored", kept_quiet(), lambda: next(ticks)))
+    assert not line.ok and line.error == 'kept quiet: every go repeated "Still picking a dinner?"'

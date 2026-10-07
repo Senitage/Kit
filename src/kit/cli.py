@@ -344,7 +344,7 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
     host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
     headers = {"Authorization": f"Bearer {api_token(paths)}"}
     with httpx.Client(
-        base_url=f"http://{host}:{s.port}", headers=headers, timeout=120, transport=transport
+        base_url=f"http://{host}:{s.port}", headers=headers, timeout=300, transport=transport
     ) as client:
         try:
             if action == "poke":
@@ -352,7 +352,31 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
                 r.raise_for_status()
                 reply = r.json().get("reply")
                 said = " ".join(seg["say"] for seg in reply["segments"]) if reply else None
-                print(f"Kit: {said}" if said else "Kit didn't say anything (is the model up?)")
+                print(
+                    f"Kit: {said}"
+                    if said
+                    else "Kit didn't say anything: the local model isn't answering, or all he "
+                    "came up with was something he'd said lately (logs/kit.log says which)."
+                )
+                return 0
+            if action == "think":
+                r = client.post("/api/life/think")
+                r.raise_for_status()
+                _print_thought(r.json().get("thought"))
+                return 0
+            if action == "reflect":
+                print("Kit is looking back on today so far...")
+                r = client.post("/api/life/reflect")
+                if r.status_code in (409, 503):
+                    print(r.json().get("detail", r.text))
+                    return 1
+                r.raise_for_status()
+                _print_reflection(r.json())
+                return 0
+            if action == "notebook":
+                r = client.get("/api/life/notebook")
+                r.raise_for_status()
+                _print_notebook(r.json())
                 return 0
             r = client.get("/api/life")
             r.raise_for_status()
@@ -361,11 +385,79 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
             return 1
     state = r.json()
     print(f"mood:     {state['mood']}")
+    felt = state.get("feeling")
+    if felt:
+        print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")
     print("drives:   " + ", ".join(f"{k} {v}" for k, v in state["drives"].items()))
+    if state.get("thinking"):
+        print(f"thinking: {state['thinking']}")
+    for want in state.get("wants", [])[:3]:
+        print(f"wants to: {want}")
+    for want in state.get("later", [])[:3]:
+        print(f"later:    {want['text']} (from {want['after'][:16].replace('T', ' ')})")
     print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
     print(f"last pipe-up: {state['last_piped_up'] or 'not yet'}")
+    if "thoughts_this_hour" in state:
+        print(
+            f"thoughts: {state['thoughts_this_hour']} this hour, next one around "
+            f"{state.get('next_thought', '')[11:16]} (sooner if something happens)"
+        )
     print("quirks:   " + "; ".join(state.get("quirks", [])))
     return 0
+
+
+def _print_thought(thought: dict | None) -> None:
+    if not thought or not (thought.get("text") or thought.get("want")):
+        print("Nothing came to mind (or the local model isn't answering).")
+        return
+    if thought.get("text"):
+        kind = " (an opinion)" if thought.get("kind") == "opinion" else ""
+        print(f"Kit thought{kind}: {thought['text']}")
+    if thought.get("want"):
+        print(f"He wants to: {thought['want']}")
+    if thought.get("feeling"):
+        print(f"He feels {thought['feeling']}: {thought.get('why', '')}")
+
+
+def _print_reflection(done: dict) -> None:
+    if done.get("first_sheet"):
+        print("(he wrote his first self-sheet too)")
+    if not done.get("by"):
+        print("Nothing happened today for him to reflect on yet.")
+        return
+    print(f"\nJournal, {done['day']}:\n  {done['journal'] or '(none)'}")
+    if done.get("sheet"):
+        print(f"\nHis self-sheet changed:\n  {done['sheet']}")
+    else:
+        print("\nHis self-sheet stays as it was.")
+    print("\nQuirks: " + "; ".join(done.get("quirks", [])))
+    for line in done.get("added", []):
+        print(f"  + {line}")
+    print(f"\n(written by {done['by']})")
+
+
+def _print_notebook(book: dict) -> None:
+    sheet = book.get("sheet")
+    print("Who Kit thinks he is" + (f" ({sheet['day']}):" if sheet else ":"))
+    print(f"  {sheet['text']}" if sheet else "  (not written yet: he writes it on first start)")
+    if book.get("reviews"):
+        latest = book["reviews"][0]
+        print(f"\nLatest weekly review ({latest['day']}):\n  {latest['text']}")
+    print("\nQuirks: " + ("; ".join(book.get("quirks", [])) or "(none)"))
+    for title, key in [
+        ("Wants to bring up", "wants"),
+        ("Thoughts", "thoughts"),
+        ("Opinions", "opinions"),
+        ("Moments", "moments"),
+        ("Journal", "journal"),
+    ]:
+        entries = book.get(key, [])
+        if entries:
+            print(f"\n{title}:")
+            for e in entries[:8]:
+                said = "  (said)" if e.get("meta", {}).get("said") else ""
+                print(f"{e['id']:>6}  {e['day']}  {e['text']}{said}")
+    print("\nForget an entry on the memory page (Kit's notebook tab).")
 
 
 def cmd_new_chat(paths: KitPaths) -> int:
@@ -656,11 +748,115 @@ async def _eval_routing(paths: KitPaths) -> int:
     return 0 if passed else 1
 
 
+async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, prompts, show):
+    """One model's turn at the voice eval, in a scratch memory that's deleted after."""
+    from kit.brain import Brain
+    from kit.cloud import Cloud
+    from kit.evals import run_voice_eval, seed_voice
+    from kit.local_model import LocalModelError, OllamaModel
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    name = settings.ollama.model
+    model = OllamaModel(lambda: settings.ollama, client)
+    print(f"warming up {name}...")
+    try:
+        await model.complete([{"role": "user", "content": "Hi."}], None)
+    except LocalModelError as e:
+        print(f"  skipped {name}: {e}\n  (is it pulled? ollama pull {name})")
+        return None
+    scratch = paths.state_dir / "voice-eval"
+    shutil.rmtree(scratch, ignore_errors=True)
+    memory = Memory(scratch / "memory.db")
+    try:
+        # No cloud, no web and words-only recall: the local model alone, as on the desk.
+        cloud = Cloud(memory, lambda provider: None, {})
+        brain = Brain(
+            lambda: settings, memory, model, cloud, Recall(memory, None, lambda: settings)
+        )
+        seed_voice(brain)
+        return await run_voice_eval(brain, name, prompts, on_line=show)
+    finally:
+        memory.close()
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int | None) -> int:
+    """The same chat, pipe-ups and thoughts through each local model, written side by
+    side, to pick the model that sounds most like Kit."""
+    from datetime import datetime
+
+    from kit.evals import VOICE_PROMPTS, voice_report
+
+    paths.ensure()
+    base = SettingsStore(paths).current()
+    names = names or [base.ollama.model]
+    prompts = VOICE_PROMPTS[:n] if n else VOICE_PROMPTS
+
+    def show(line):
+        mark = "FAIL" if not line.ok else ("ECHO" if line.echo else "ok  ")
+        t = line.first_s if line.first_s is not None else line.total_s
+        said = line.error or line.text or "(nothing came to mind)"
+        print(f"{mark} {t:4.1f}s  {line.prompt[:28]:<28}  {said[:90]}")
+
+    reports = []
+    async with httpx.AsyncClient() as client:
+        for name in names:
+            settings = base.model_copy(
+                update={
+                    "ollama": base.ollama.model_copy(
+                        update={"model": name, "speak_pass": not one_pass}
+                    ),
+                    "routing": base.routing.model_copy(update={"mode": "local-heavy"}),
+                    "life": base.life.model_copy(update={"reflect_with": "off"}),
+                }
+            )
+            report = await _voice_run(paths, client, settings, prompts, show)
+            if report is not None:
+                reports.append(report)
+            print()
+    if not reports:
+        return 1
+    out = paths.state_dir / "evals" / f"voice-{datetime.now():%Y%m%d-%H%M%S}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(voice_report(reports), encoding="utf-8")
+    for report in reports:
+        print(f"- {report.summary()}".replace("**", ""))
+    print(f"\nevery line, side by side: {out}")
+    print("pick one with: kit config set ollama.model <name>")
+    return 0 if all(r.answered == len(r.spoken) for r in reports) else 1
+
+
 def _parse_link(text: str) -> dict:
     system, _, target = text.partition("=")
     if not target:
         raise SystemExit(f"links look like system=target, e.g. nas=Documents/Tax (got {text!r})")
     return {"system": system.strip(), "target": target.strip()}
+
+
+def cmd_notes(paths: KitPaths) -> int:
+    """Read the notes vault now and show what Kit sees."""
+    from kit.memory import Memory
+    from kit.notes import Notes
+
+    paths.ensure()
+    nas = SettingsStore(paths).current().nas
+    if not nas.vault:
+        print("no notes vault set; see docs/notes.md (kit config set nas.vault ...)")
+        return 1
+    memory = Memory(paths.state_dir / "memory.db")
+    try:
+        notes = Notes(memory.index, memory.clock)
+        indexed, removed = notes.sync(nas)
+        names = notes.names(limit=1_000_000)
+        print(f"{len(names)} notes in {nas.vault} ({indexed} read now, {removed} gone)")
+        for name in names[:15]:
+            print(f"  {name}")
+        if len(names) > 15:
+            print(f"  ... and {len(names) - 15} more")
+    finally:
+        memory.close()
+    return 0
 
 
 def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -734,8 +930,15 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("chat", help="talk to Kit in this terminal")
     sub.add_parser("new-chat", help="start a fresh conversation (the old one stays in memory)")
     sub.add_parser("token", help="show the API token for the pages and home_app")
-    life = sub.add_parser("life", help="Kit's mood and why he is or isn't piping up")
-    life.add_argument("action", nargs="?", choices=["show", "poke"], default="show")
+    life = sub.add_parser(
+        "life", help="Kit's mood and thoughts; poke, think or reflect now; his notebook"
+    )
+    life.add_argument(
+        "action",
+        nargs="?",
+        choices=["show", "poke", "think", "reflect", "notebook"],
+        default="show",
+    )
 
     config = sub.add_parser("config", help="see or change Kit's settings")
     csub = config.add_subparsers(dest="action", required=True)
@@ -779,6 +982,7 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
 
+    sub.add_parser("notes", help="read the notes vault now and list what Kit sees")
     things = sub.add_parser("things", help="the register of things and where they live")
     tsub = things.add_subparsers(dest="action", required=True)
     tsub.add_parser("list", help="list the register")
@@ -805,14 +1009,25 @@ def main(argv: list[str] | None = None) -> int:
 
     ev = sub.add_parser(
         "eval",
-        help="test the local model's replies, memory recall or routing, or compare cloud models",
+        help="test the local model's replies, memory recall, routing or voice, or compare "
+        "cloud models",
     )
     ev.add_argument(
-        "which", nargs="?", default="replies", choices=["replies", "memory", "routing", "compare"]
+        "which",
+        nargs="?",
+        default="replies",
+        choices=["replies", "memory", "routing", "compare", "voice"],
     )
-    ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10)")
+    ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
-        "--models", nargs="+", default=[], help="compare: model profiles, e.g. sonnet gpt-sol"
+        "--models",
+        nargs="+",
+        default=[],
+        help="compare: model profiles, e.g. sonnet gpt-sol; voice: local models, e.g. "
+        "qwen3:8b gemma4:e4b (default: the one in use)",
+    )
+    ev.add_argument(
+        "--one-pass", action="store_true", help="voice: answer in one JSON pass, as in stage 1"
     )
 
     args = parser.parse_args(argv)
@@ -837,6 +1052,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_memory(paths, args)
     if args.command == "models":
         return cmd_models(paths, args)
+    if args.command == "notes":
+        return cmd_notes(paths)
     if args.command == "things":
         return cmd_things(paths, args)
     if args.command == "weather":
@@ -846,6 +1063,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_eval_routing(paths))
         if args.which == "memory":
             return asyncio.run(_eval_memory(paths))
+        if args.which == "voice":
+            return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
         if args.which == "compare":
             if not args.models:
                 print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")
