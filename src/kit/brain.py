@@ -14,6 +14,8 @@ Each turn:
    - look_at_pc: Kit reads the full picture from the desk app (open windows,
      what's had focus this hour and today, PC health), then answers again;
    - remember: the fact is learned, merging with or updating what Kit knew;
+   - note: a note Dan asked for is saved as markdown in his Obsidian vault
+     (kit.notes), and indexed so it can be found later;
    - thing: a named thing goes in the register of things. A new name becomes a
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
      for a known thing ("no, it's in Tax/2023") corrects the entry;
@@ -33,6 +35,15 @@ Each message says where Dan is talking from (kit.channels: the desk app, voice,
 his phone, the chat page or the terminal). Kit is told in the prompt and answers
 to suit, and the message is stored with it.
 
+Kit has a life of his own between messages (kit.life): drives and feelings with
+causes, private thoughts (``think``, kit.thinking) kept in his notebook
+(kit.notebook), and a nightly reflection (``reflect``, kit.reflection) in which
+he writes his journal and his self-sheet. All of it colours what he says.
+
+With ``ollama.speak_pass`` the local model answers in two steps: a quick plan in
+JSON (emotion, gesture, action), then Kit's words in plain text at a livelier
+temperature, so he sounds like himself rather than a form being filled in.
+
 Settings are read on every turn, so model, routing and persona changes apply at once.
 """
 
@@ -45,35 +56,75 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
+from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
-from kit.learning import Learner
-from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt, same_words
-from kit.local_model import LocalModel, LocalModelError
-from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
+from kit.learning import Learner, said_so
+from kit.life import (
+    REPLY_FEELINGS,
+    SHUSH,
+    UNSHUSH,
+    Life,
+    Voice,
+    cheek_style,
+    feeling_from,
+    pipe_up_prompt,
+    quoted,
+    repeats,
+    same_words,
+)
+from kit.local_model import LocalModel, LocalModelError, lively
+from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, SELF, Memory, Message
+from kit.notebook import (
+    ASK_LATER,
+    FOR_LATER,
+    Notebook,
+    as_aim,
+    basis,
+    later_want,
+    tomorrow_morning,
+)
+from kit.notes import ALL, NOTES, NoteError, Notes, Request, asked_text, request, title_for
 from kit.pc_context import PcContext
 from kit.prompt import (
+    IN_WORDS,
+    answering_pipe_up,
     history_messages,
+    not_again,
     recall_results,
+    speak_note,
     system_prompt,
     weather_results,
+    with_mind,
     with_pc_look,
 )
 from kit.recall import Recall, Recalled
+from kit.reflection import Reflector
 from kit.reply import (
+    Action,
+    Plan,
     Reply,
     ReplyError,
     SayExtractor,
+    SpokenStream,
+    early_plan,
     parse_cloud_reply,
+    parse_plan,
     parse_reply,
+    plan_json,
+    plan_schema,
     reply_json,
     reply_schema,
+    sentences,
+    spoken_reply,
+    without_plans,
 )
 from kit.settings import Settings
-from kit.things import THINGS, Register
+from kit.things import THINGS, Register, named_in
+from kit.thinking import THOUGHT_SCHEMA, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
 
 log = logging.getLogger(__name__)
@@ -81,6 +132,7 @@ log = logging.getLogger(__name__)
 Event = dict
 LOCAL, WORK, EXPERT = "local", "work", "expert"
 PIPE_UP = "pipe_up"  # the source of a message Kit said of his own accord
+HELD_TRIES = 3  # a pipe-up that repeats a recent line gets two more goes, then he keeps quiet
 DEEP_RECALL = 10
 
 # Where the message being answered came from. Each turn is its own task, so each
@@ -88,6 +140,9 @@ DEEP_RECALL = 10
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
 # How Kit feels and sounds this turn (kit.life.Voice), for the local model's prompt.
 VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", default=None)
+# A plain note request Kit has already carried out this turn (kit.notes.request), as
+# told to the model; while set, the model's own note and read_note actions are skipped.
+NOTE_DONE: contextvars.ContextVar[str] = contextvars.ContextVar("note_done", default="")
 SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
 SAID_CHARS = 160
 
@@ -96,6 +151,10 @@ SAID_CHARS = 160
 _END = r"(,? (please|thanks|mate|kit))?[.!]*"
 YES = re.compile(rf"(yes|yep|yeah|yup|sure|ok|okay|do it|add it|go ahead){_END}", re.I)
 NO = re.compile(rf"(no|nope|nah|skip it|don'?t|leave it|no thanks){_END}", re.I)
+# "Where?" or "what's that?" back: the question is still open, so a "yes" after
+# Kit explains still adds the thing.
+ASKED_BACK = re.compile(r"^\W*(where|what|which|why|how|huh|eh|sorry|pardon)\b|\?\W*$", re.I)
+ASKED_BACK_WORDS = 3
 
 # Ways to choose who answers one message.
 KEEP_LOCAL = re.compile(
@@ -154,6 +213,21 @@ CORRECTION = re.compile(
 PLACE = re.compile(r"\b[\w.\-]+(?:/[\w.\-]+)+")
 # A bare "hello?" or "hey" while Kit is busy is checking in too.
 NUDGE = re.compile(r"^\W*(hello|hey|hi|oi|kit|um+|so+|and|well|anything)?\W*\?+\W*$", re.I)
+# "What are you thinking about?" gets Kit's actual recent thoughts (kit.notebook).
+THINKING_Q = re.compile(
+    r"\b(what('?s| is) on your mind|what('?re| are) you (thinking|pondering)( about)?|"
+    r"penny for (your|them)|what('?ve| have) you been (thinking|pondering)( about)?)\b",
+    re.IGNORECASE,
+)
+SHARES = ("want", "bored", "social")  # pipe-ups that can bring up a thought or want
+# Words a small model sometimes gives as its search when it meant to say them
+# ("Let me think...", "I checked the log for you"): Dan's message is the better search.
+SPOKEN_NOT_SEARCH = re.compile(
+    r"^\W*(let me|lemme|let's see|hmm+|um+|uh+|one (sec|second|moment)|hang on|"
+    r"just a (sec|second|moment)|give me a (sec|second|moment)|thinking|checking|"
+    r"i('m| am|'ll| will|'ve| have)?\b|you('re| are)?\b)",
+    re.I,
+)
 
 
 def _patience(asked: int) -> str:
@@ -232,17 +306,31 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.pc = PcContext(memory.clock)
-        self.life = Life(settings, self.pc, memory.clock)
-        self.quirks = my_quirks(memory)
+        self.life = Life(settings, self.pc, memory.clock, store=memory)
+        self.notebook = Notebook(memory)
+        self.notebook.swap_work_quirks(settings().persona.owner)
+        self.reflector = Reflector(memory, self.notebook, model, cloud, settings)
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self.learner = Learner(memory, recall, model)
         self.register = Register(memory)
+        self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
+        # His latest pipe-up and why he said it, for when Dan answers it ("what's up?").
+        self._pipe_up: tuple[int, str] | None = None
+
+    @property
+    def quirks(self) -> list[str]:
+        """The quirks Kit picked for himself; the nightly reflection may change one."""
+        return self.notebook.quirks()
+
+    def talking(self) -> bool:
+        """A chat turn is under way."""
+        return bool(self._turns)
 
     async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
@@ -279,6 +367,16 @@ class Brain:
             history = []
             emit({"type": "new_topic"})
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
+        owner = settings.persona.owner
+        felt = feeling_from(text, owner)
+        if felt is not None:
+            self.life.feel(*felt)
+        if ASK_LATER.search(text):  # "ask me tomorrow how the shutdown went"
+            due = tomorrow_morning(self.memory.clock(), settings.life.quiet_until)
+            self.notebook.write("want", later_want(text, owner), after=due)
+        answering = self._answering(history, owner)
+        if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
+            self.notebook.mark_said(shared.id)
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
         self.life.note_chat()
         answered = self._answer_suggestion(text) or self._answer_shush(text)
@@ -293,10 +391,15 @@ class Brain:
         recalled = await self.recall.for_turn(text, recent_refs)
         # "hey" finds every earlier "hey", and the model copies what it said then.
         fresh = [h for h in recalled.conversation if not same_words(_asked(h.item.text), text)]
-        recalled = replace(recalled, conversation=fresh)
+        # His notes already on his mind (kit.notebook) are in the prompt once, not twice.
+        shown = {e.id for e in self.notebook.on_mind()}
+        own = [h for h in recalled.own if h.item.id not in shown]
+        recalled = replace(recalled, conversation=fresh, own=own)
         role, chosen = route(text, settings)
         if self.jobs and not chosen:
             role = LOCAL  # busy: chat locally while the cloud works
+        if role == LOCAL and THINKING_Q.search(text):
+            chosen = True  # his own thoughts: nobody else can answer that
         said: list[str] = []
 
         if role != LOCAL and chosen:
@@ -317,14 +420,36 @@ class Brain:
                 forecast = await self._home_forecast(settings)
                 emit({"type": "weather", "place": settings.persona.location})
                 chosen = chosen or plainly  # a weather question stays local
+        if settings.nas.vault:
+            asked = request(text, self.notes.names(limit=ALL))
+            if asked is not None:
+                done, events = await asyncio.to_thread(self._do_note, asked, settings)
+                NOTE_DONE.set(done)
+                for event in events:
+                    emit(event)
+        emotion = ""
         async for event in self._converse(
-            text, history, recalled, settings, role, chosen, forecast=forecast, pc_detail=pc_detail
+            text,
+            history,
+            recalled,
+            settings,
+            role,
+            chosen,
+            forecast=forecast,
+            pc_detail=pc_detail,
+            answering=answering,
         ):
-            if event["type"] == "reply" and self.jobs:
-                event = {**event, "question": text}
+            if event["type"] == "reply":
+                emotion = event["reply"]["emotion"]
+                if self.jobs:
+                    event = {**event, "question": text}
             emit(self._track(event, said))
 
+        if emotion in REPLY_FEELINGS and felt is None:
+            # How he felt answering lingers a little: "sad" about Dan's news stays.
+            self.life.feel(REPLY_FEELINGS[emotion], f'{owner} said "{quoted(text)}"', 0.4)
         if said:
+            self.notebook.said_in(" ".join(said), owner)  # brought something up himself
             self.memory.index_exchange(
                 user_id, settings.persona.owner, text, settings.persona.name, " ".join(said)
             )
@@ -372,9 +497,25 @@ class Brain:
         except WeatherError as e:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
 
-    def _user_turn(self, text: str, role: str, settings: Settings, pc_detail: str) -> str:
+    def _user_turn(
+        self, text: str, role: str, settings: Settings, pc_detail: str, answering: str = ""
+    ) -> str:
+        owner = settings.persona.owner
+        if THINKING_Q.search(text) and not pc_detail:
+            text = with_mind(text, self.notebook.mind(owner), owner)
         text = self._with_busy_note(text, role)
-        return with_pc_look(text, pc_detail, settings.persona.owner) if pc_detail else text
+        text = with_pc_look(text, pc_detail, owner) if pc_detail else text
+        return f"{text}\n\n{answering}" if answering else text
+
+    def _answering(self, history: list[Message], owner: str) -> str:
+        """The note beside a message that answers a pipe-up (Kit had the last word, of
+        his own accord), saying why he piped up, so "yeah what's up?" gets the actual
+        thing rather than the same line again."""
+        last = history[-1] if history else None
+        if last is None or last.role == "user" or last.source != PIPE_UP:
+            return ""
+        why = self._pipe_up[1] if self._pipe_up and self._pipe_up[0] == last.id else ""
+        return answering_pipe_up(last.text.split("\n\n", 1)[0], why, owner)
 
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
@@ -409,7 +550,8 @@ class Brain:
 
     def _answer_suggestion(self, text: str) -> Reply | None:
         """If Kit just suggested a thing and Dan answers yes or no, act on it without
-        asking a model. Anything else leaves the suggestion for the memory page."""
+        asking a model. A short question back ("where?") keeps the question open;
+        anything else leaves the suggestion for the memory page."""
         pending, self.pending_thing = self.pending_thing, None
         if pending is None:
             return None
@@ -422,30 +564,47 @@ class Brain:
         if NO.fullmatch(text):
             self.register.reject(pending)
             return Reply.plain(f"Okay, I'll leave {thing.name} out.", "neutral", "nod")
+        if ASKED_BACK.search(text) and len(text.split()) <= ASKED_BACK_WORDS:
+            self.pending_thing = pending
         return None
 
     def _answer_shush(self, text: str) -> Reply | None:
         """ "Shush" or "not now" keeps Kit from piping up for an hour; "you can talk
         again" lets him. Answered on the spot, so it works even when models are down."""
+        owner = self.settings().persona.owner
         if UNSHUSH.search(text):
             self.life.wake()
+            self.life.feel("pleased", f"{owner} said you can talk again", 0.6)
             return Reply.plain("Oh good. I had things to say.", "excited", "perk_up")
         if SHUSH.search(text) and len(text) < 60:
             self.life.snooze(60)
+            self.life.feel("put_out", f"{owner} told you to shush", 0.5)
             return Reply.plain("Righto, zipping it for an hour.", "shy", "nod")
         return None
 
     async def pipe_up(self, reason: str) -> AsyncIterator[Event]:
         """Kit says something of his own accord (see kit.life): one short line, written
-        by the local model from what Dan's doing and what Kit remembers."""
+        by the local model from what Dan's doing and what Kit remembers. A bored or
+        lonely Kit, or one with something to say, brings up his most pressing want or
+        newest thought from his notebook. Nobody is waiting on it, so the line is
+        judged whole before it's shown, and if all he comes up with is something he's
+        said lately, he keeps quiet."""
         settings = self.settings()
         owner = settings.persona.owner
         history = self.memory.recent(settings.brain.history_messages)
+        share = self.notebook.to_share() if reason in SHARES else None
+        if reason == "want" and share is None:
+            reason = "bored"  # it was dropped meanwhile; he's still restless
+        aim, about = "", share.text if share else ""
+        if share is not None and share.kind == "want":
+            aim, about = as_aim(share.text, owner)  # "tell Dan", not a note read out
         token = CHANNEL.set("desk")
         voice_token = VOICE.set(self._voice(settings, history))
+        said: list[str] = []
+        message_id = None
         try:
-            about = self.pc.now_line(owner) or "what Dan is up to"
-            recalled = await self.recall.for_turn(about, {str(m.id) for m in history})
+            doing = self.pc.now_line(owner) or f"what {owner} is up to"
+            recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             prompt = pipe_up_prompt(
                 reason,
@@ -454,26 +613,136 @@ class Brain:
                 self.life.curious_about,
                 quiet_h,
                 self.life.butting_in,
+                share=about,
+                aim=aim,
             )
             messages = [
                 {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
-                *history_messages(history, "desk"),
+                *history_messages(history, "desk", plain=settings.ollama.speak_pass),
                 {"role": "user", "content": prompt},
             ]
-            async for event in self._local_reply(messages, PIPE_UP):
+            async for event in self._local_reply(messages, PIPE_UP, hold=True):
                 if event["type"] == "reply":
-                    event = {**event, "piped_up": reason}
+                    event = {**self._track(event, said), "piped_up": reason}
+                    message_id = event["message_id"]
                 yield event
         finally:
             CHANNEL.reset(token)
             VOICE.reset(voice_token)
+        if not said:
+            self.life.held_back(reason)
+            return
+        if share is not None:
+            self.notebook.mark_said(share.id)
+        self.notebook.said_in(" ".join(said), owner)
+        why = self._why_piped(reason, aim, about, owner)
+        self._pipe_up = (message_id, why) if message_id is not None else None
         self.life.piped_up(reason)
+        self.life.wanting = self.notebook.pressing()
+
+    def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
+        """Why he piped up, in a few words for his next prompt, or "" when the line
+        says it all."""
+        if aim:
+            return f'you wanted to {aim}: "{about}"'
+        if about:
+            return f'you\'d been thinking: "{about}"'
+        if reason == "nag" and self._pipe_up:
+            return self._pipe_up[1]  # still on about the same thing
+        if reason in ("curious", "watching") and self.life.curious_about:
+            return f"{owner} had just opened {self.life.curious_about}"
+        return ""
+
+    async def think(self, trigger: tuple[str, str] | None = None) -> Thought | None:
+        """One private thought (kit.thinking), kept in Kit's notebook. It may add
+        something he wants to bring up, or change how he feels. ``trigger`` is what
+        set it off, from ``Life.think_now``."""
+        kind, happened = trigger or ("asked", "A moment to yourself.")
+        settings = self.settings()
+        persona = settings.persona
+        owner = persona.owner
+        pc = self.pc.now_line(owner)
+        try:
+            recalled = await self.recall.for_turn(pc or happened, set())
+            remembered = (
+                [i.text for i in recalled.pinned][:3]
+                + [h.item.text for h in recalled.memories][:4]
+                + [h.item.text for h in recalled.own][:3]
+            )
+            sheet = self.notebook.sheet()
+            who = sheet.text if sheet else f"{persona.backstory} {', '.join(persona.traits)}."
+            said_today = [
+                f"{owner}: {quoted(m.text, 200)}"
+                if m.role == "user"
+                else f"{persona.name}: {quoted(without_plans(m.text), 200)}"
+                for m in self.memory.messages_on(self.memory.today())[-8:]
+            ]
+            messages = thinking_messages(
+                persona.name,
+                owner,
+                who,
+                self.quirks,
+                cheek_style(settings.life.cheek),
+                self.memory.clock(),
+                happened,
+                pc,
+                self.life.feeling_line(owner),
+                self.notebook.mind(owner, 5),
+                remembered,
+                said_today,
+            )
+            options = lively(settings.ollama, plain=False)
+            raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
+        except LocalModelError as e:
+            log.warning("Kit couldn't think just now: %s", e)
+            return None
+        finally:
+            self.life.thought_had()  # tried, at least: no hammering a model that's down
+        thought = parse_thought(raw, kind)
+        if thought is None:
+            return None
+        if thought.text and self.notebook.write(thought.kind, thought.text, trigger=kind):
+            self.life.publish({"type": "fidget", "gesture": "look_up", "mood": "thinking"})
+        if thought.want:
+            later = FOR_LATER.search(thought.want)
+            when = tomorrow_morning(self.memory.clock(), settings.life.quiet_until)
+            due = {"after": when} if later else {}
+            self.notebook.write("want", thought.want, trigger=kind, **due)
+            self.life.wanting = self.notebook.pressing()
+        if thought.feeling:
+            self.life.feel(thought.feeling, thought.why or thought.text, 0.7)
+        await self.recall.index_pending()
+        return thought
+
+    async def reflect(self) -> list[str]:
+        """Kit's nightly reflection (kit.reflection): his first self-sheet if he has
+        none, each finished day since he last reflected, and the weekly review when
+        it's due. Returns the days he reflected on."""
+        if self.settings().life.reflect_with == "off":
+            return []
+        r = self.reflector
+        first = "first sheet"
+        if self.notebook.sheet() is None and not r.gave_up(first) and not await r.first_sheet():
+            r.failed(first)  # his nightly reflection writes one if this never works
+            return []
+        done = []
+        for day in r.days_to_reflect():
+            if await r.reflect_day(day) is not None:
+                done.append(day)
+            elif not r.failed(day):
+                break  # no model could do it: try again next time
+            r.reflected(day)
+        await r.review_week()
+        await self.recall.index_pending()
+        return done
 
     def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
         persona = settings.persona
-        said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
+        said = [without_plans(m.text)[:SAID_CHARS] for m in history if m.role != "user"]
+        said = [line for line in said if line][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
-        return self.life.voice(persona.owner, own, said, self.quirks, text)
+        mind = self.notebook.mind(persona.owner)
+        return self.life.voice(persona.owner, own, said, self.quirks, text, mind)
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -508,6 +777,60 @@ class Brain:
         thing = self.register.suggest(name, a.thing_kind, link)
         self.pending_thing = thing.id
         return {"type": "thing_suggested", "thing": thing.as_dict()}
+
+    def _take_note(self, reply: Reply, settings: Settings, heard: str) -> Event:
+        """Save the note. If the model left it empty (a small model planning in a
+        hurry), what Dan asked to note is taken from his message."""
+        text = reply.action.text.strip() or asked_text(heard)
+        try:
+            saved = self.notes.take(settings.nas, reply.action.title, text)
+        except NoteError as e:
+            log.warning("note not saved: %s", e)
+            return {"type": "notice", "message": f"The note wasn't saved: {e}."}
+        verb = "Added to" if saved.added else "Saved"
+        return {"type": "notice", "message": f"{verb} {saved.shown} in your notes."}
+
+    def _do_note(self, asked: Request, settings: Settings) -> tuple[str, list[Event]]:
+        """Carry out a plain note request before the model answers, so a small model
+        can't mistake "what's in my planner?" for "write that down", or ask first.
+        Returns what to tell the model and the events to show."""
+        owner, nas = settings.persona.owner, settings.nas
+        if asked.kind == "read":
+            event = {"type": "reading_note", "note": asked.note}
+            try:
+                where, body = self.notes.read(nas, asked.note)
+            except NoteError as e:
+                return f"You tried to open {owner}'s note '{asked.note}', but {e}.", [event]
+            return f"{owner}'s note {where}, opened just now:\n{body}", [event]
+        try:
+            saved = self.notes.take(nas, asked.note or title_for(asked.text), asked.text)
+        except NoteError as e:
+            log.warning("note not saved: %s", e)
+            message = f"The note wasn't saved: {e}."
+            return f"You couldn't save {owner}'s note: {e}.", [
+                {"type": "notice", "message": message}
+            ]
+        verb = "Added to" if saved.added else "Saved"
+        did = "added to" if saved.added else "saved a new note,"
+        return (
+            f"You've just {did} {saved.shown} in {owner}'s notes: \"{asked.text}\". It's "
+            f"done, so don't ask whether to write it down.",
+            [{"type": "notice", "message": f"{verb} {saved.shown} in your notes."}],
+        )
+
+    def _read_note(self, name: str, settings: Settings) -> str:
+        owner = settings.persona.owner
+        try:
+            where, body = self.notes.read(settings.nas, name)
+        except NoteError as e:
+            return (
+                f"[Not from {owner}. You tried to open the note '{name}', but {e}. Tell "
+                f"{owner}, or try the recall action to search the notes instead.]"
+            )
+        return (
+            f"[Not from {owner}. {owner}'s note {where}, as it is now:]\n{body}\n"
+            f"[Answer {owner}'s last message from it. Action none.]"
+        )
 
     def _implied_correction(self, text: str, recalled: Recalled) -> Event | None:
         """A correction the model didn't act on: "my tax stuff is actually in Tax/2023"
@@ -545,6 +868,7 @@ class Brain:
     ) -> str:
         routing = settings.routing
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
+        sheet = self.notebook.sheet()
         if role == LOCAL:
             helper, further, web = (work.name if hand_off else None), None, False
         elif role == WORK:
@@ -567,8 +891,14 @@ class Brain:
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
+            notes=bool(settings.nas.vault),
+            note_names=self.notes.names() if settings.nas.vault else None,
+            note_done=NOTE_DONE.get(),
             forecast=forecast,
             pc_detail=pc_detail,
+            sheet=sheet.text if sheet else "",
+            traits=sheet is None or sheet.meta.get("basis") != basis(settings.persona),
+            two_pass=role == LOCAL and settings.ollama.speak_pass,
         )
 
     async def _converse(
@@ -583,13 +913,18 @@ class Brain:
         question: str = "",
         forecast: str = "",
         pc_detail: str = "",
+        answering: str = "",
     ) -> AsyncIterator[Event]:
         hand_off = role == LOCAL and not chosen and hops == 0
         system = self._system(settings, recalled, role, hand_off, forecast, pc_detail)
+        plain = role == LOCAL and settings.ollama.speak_pass  # the words come as plain text
         messages = [
             {"role": "system", "content": system},
-            *history_messages(history, CHANNEL.get()),
-            {"role": "user", "content": self._user_turn(text, role, settings, pc_detail)},
+            *history_messages(history, CHANNEL.get(), plain=plain),
+            {
+                "role": "user",
+                "content": self._user_turn(text, role, settings, pc_detail, answering),
+            },
         ]
         job = None
         if role != LOCAL:
@@ -608,9 +943,11 @@ class Brain:
             look_up = None
             owner = settings.persona.owner
             if reply.action.kind == "recall":
-                query = reply.action.text.strip() or text
+                query = reply.action.text.strip()
+                if not query or SPOKEN_NOT_SEARCH.search(query):
+                    query = text
                 hits = await self.recall.search(
-                    query, [FACTS, DAYS, CONVERSATION, THINGS], DEEP_RECALL
+                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], DEEP_RECALL
                 )
                 yield {"type": "recalled", "query": query, "found": len(hits)}
                 if job:
@@ -632,9 +969,16 @@ class Brain:
                 if job:
                     job.steps.append(f"checked the forecast for {place}")
                 look_up = weather_results(place, forecast, owner)
+            elif reply.action.kind == "read_note" and not NOTE_DONE.get():
+                name = reply.action.text.strip() or reply.action.title.strip()
+                yield {"type": "reading_note", "note": name}
+                look_up = self._read_note(name, settings)
+                if job:
+                    job.steps.append(f"read your note '{name}'")
             if look_up is not None:
+                said = reply.full_text if plain else reply_json(reply)
                 messages += [
-                    {"role": "assistant", "content": reply_json(reply)},
+                    {"role": "assistant", "content": said},
                     {"role": "user", "content": look_up},
                 ]
                 # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
@@ -656,20 +1000,25 @@ class Brain:
             self._end_job(job)
 
         kind = reply.action.kind
-        if kind == "remember" and reply.action.text.strip():
-            learned = await self.learner.learn(
-                reply.action.text, reply.action.category, settings.persona.owner
-            )
+        said = [text, *[m.text for m in history if m.role == "user"][-2:]]
+        fact = reply.action.text.strip()
+        if kind == "remember" and fact and not said_so(fact, said, settings.persona.owner):
+            # Small models "remember" their own lines and guesses; only what Dan said counts.
+            log.info("not remembering %r: %s didn't say it", fact, settings.persona.owner)
+        elif kind == "remember" and fact:
+            learned = await self.learner.learn(fact, reply.action.category, settings.persona.owner)
             yield {
                 "type": "remembered",
                 "fact": learned.text,
                 "decision": learned.decision,
                 "replaced": learned.replaced,
             }
-        elif kind == "thing":
+        elif kind == "thing" and named_in(fact, " ".join(said)):
             event = self._note_thing(reply)
             if event:
                 yield event
+        elif kind == "note" and not NOTE_DONE.get():
+            yield self._take_note(reply, settings, text)
         if kind in ("none", "remember") and hops == 0:
             event = self._implied_correction(text, recalled)
             if event:
@@ -679,7 +1028,15 @@ class Brain:
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}
             async for event in self._converse(
-                text, history, recalled, settings, to, chosen, hops + 1, question
+                text,
+                history,
+                recalled,
+                settings,
+                to,
+                chosen,
+                hops + 1,
+                question,
+                answering=answering,
             ):
                 yield event
 
@@ -724,7 +1081,7 @@ class Brain:
         job: Job | None = None,
     ) -> AsyncIterator[Event]:
         if role == LOCAL:
-            async for event in self._local_reply(messages, LOCAL):
+            async for event in self._local_reply(messages, LOCAL, heard=question):
                 yield event
             return
         profile = settings.profile(role)
@@ -753,6 +1110,140 @@ class Brain:
         }
 
     async def _local_reply(
+        self,
+        messages: list[dict],
+        source: str,
+        model: str | None = None,
+        heard: str = "",
+        hold: bool = False,
+    ) -> AsyncIterator[Event]:
+        """The local model's reply: in two passes with ``ollama.speak_pass`` (for Kit's
+        own local model), else in one JSON pass. ``heard`` is what Dan said, if this
+        answers him; ``hold`` judges the whole line before showing it (a pipe-up)."""
+        if model is None and self.settings().ollama.speak_pass:
+            replies = self._two_pass_reply(messages, source, heard, hold)
+        else:
+            replies = self._one_pass_reply(messages, source, model)
+        async for event in replies:
+            yield event
+
+    async def _plan(self, messages: list[dict]) -> Plan:
+        """The first pass: how Kit feels, a gesture and an action. Reading stops as soon
+        as it's plain the action is "none" (the rest would be empty fields), so he
+        starts talking sooner."""
+        raw = ""
+        async with aclosing(self.model.stream(messages, plan_schema())) as pieces:
+            async for piece in pieces:
+                raw += piece
+                early = early_plan(raw)
+                if early is not None:
+                    return early
+        try:
+            return parse_plan(raw)
+        except ReplyError:
+            return Plan.default()
+
+    def _repeats(self, line: str, voice: Voice | None) -> bool:
+        return voice is not None and repeats(line, voice.said, voice.examples)
+
+    def _repeated(self, line: str, voice: Voice | None) -> str:
+        """What in ``line`` he's said lately or copied from an example: all of it, or
+        a sentence of four words or more ("" if nothing)."""
+        if not line or self._repeats(line, voice):
+            return line
+        long_enough = (s for s in sentences(line) if len(s.split()) >= 4)
+        return next((s for s in long_enough if self._repeats(s, voice)), "")
+
+    async def _two_pass_reply(
+        self, messages: list[dict], source: str, heard: str = "", hold: bool = False
+    ) -> AsyncIterator[Event]:
+        """A plan in JSON, then Kit's words in plain text at a livelier temperature,
+        shown as they arrive. If his opening repeats a recent line (or copies an
+        example), he's asked once more, before anything is shown. With ``hold`` (a
+        pipe-up, which nobody is waiting on) nothing is shown till the line is whole;
+        if any of it repeats he has two more goes, then keeps quiet rather than say it
+        again, and a pipe-up has no written detail."""
+        settings = self.settings()
+        voice = VOICE.get()
+        spoken = detail = ""
+        tries = HELD_TRIES if hold else 2
+        try:
+            plan = await self._plan(messages)
+            if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
+                # Dan never named it, so no "shall I add it to the register?"
+                plan = plan.model_copy(update={"action": Action(kind="none")})
+            note = speak_note(
+                plan.action,
+                settings.persona.owner,
+                settings.profile(WORK).name,
+                settings.profile(EXPERT).name,
+                voice,
+                heard,
+            )
+            talk = [
+                *messages,
+                {"role": "assistant", "content": plan_json(plan)},
+                {"role": "user", "content": note},
+            ]
+            options = lively(settings.ollama)
+            for attempt in range(tries):
+                last = attempt == tries - 1
+                stream, again = SpokenStream(settings.persona.name), ""
+                async with aclosing(self.model.stream(talk, None, None, options)) as pieces:
+                    async for piece in pieces:
+                        stream.feed(piece)
+                        if hold:
+                            continue
+                        if not stream.released:
+                            first = stream.first()
+                            if first is None:
+                                continue
+                            if not last and self._repeats(first, voice):
+                                again = first
+                                break
+                            stream.release()
+                        if out := stream.take():
+                            yield {"type": "say", "text": out}
+                if hold:
+                    again = self._repeated(stream.result()[0], voice)
+                    if again and last:
+                        log.info("kept quiet rather than say %r again", again)
+                        yield {"type": "kept_quiet", "repeated": again}
+                        return
+                elif not again and not stream.released and not last:
+                    whole = stream.result()[0]  # it ended before the opening was judged
+                    again = whole if whole and self._repeats(whole, voice) else ""
+                if again:
+                    talk = [*talk[:-1], {"role": "user", "content": note + not_again(again)}]
+                    options = {**options, "temperature": options["temperature"] + 0.1}
+                    continue
+                if out := stream.end():
+                    yield {"type": "say", "text": out}
+                spoken, detail = stream.result()
+                if spoken:
+                    break
+                if stream.wrote_json():  # his plan again rather than words
+                    talk = [*talk[:-1], {"role": "user", "content": note + IN_WORDS}]
+        except LocalModelError as e:
+            yield {"type": "error", "message": f"My local brain isn't answering: {e}"}
+            return
+        except Exception as e:  # a bug in the stream reader must not drop the chat
+            log.exception("reading the local model's reply failed")
+            yield {"type": "error", "message": f"I lost my train of thought ({e}). Say again?"}
+            return
+        if not spoken:
+            yield {"type": "error", "message": "I lost my train of thought. Say again?"}
+            return
+        reply = spoken_reply(plan, spoken, "" if hold else detail)
+        message_id = self._remember_reply(reply, source)
+        yield {
+            "type": "reply",
+            "source": source,
+            "reply": reply.model_dump(),
+            "message_id": message_id,
+        }
+
+    async def _one_pass_reply(
         self, messages: list[dict], source: str, model: str | None = None
     ) -> AsyncIterator[Event]:
         extractor = SayExtractor()

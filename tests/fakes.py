@@ -21,26 +21,77 @@ def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail=
     )
 
 
+def plan(emotion="happy", gesture="nod", action="none", text=""):
+    """The first pass of a two-pass reply (kit.reply.Plan)."""
+    return json.dumps(
+        {"emotion": emotion, "gesture": gesture, "action": {"kind": action, "text": text}}
+    )
+
+
 class FakeModel:
-    """Answers each call with the next canned output, streamed a few characters at a time."""
+    """Answers each call with the next canned output, streamed a few characters at a time.
+
+    Two-pass replies (``ollama.speak_pass``) work with the same canned replies: asked
+    for a plan, it plans the next ``reply(...)`` and says that reply's words when the
+    plain-text call comes. ``calls`` records every call except those plain-text ones,
+    which go in ``speak_calls``, so a test sees one call per answer either way. A
+    canned output that isn't a reply (``plan(...)`` or plain words) is used as it is."""
 
     def __init__(self, *outputs, error=None):
         self.outputs = list(outputs)
         self.error = error
         self.calls: list[list[dict]] = []
         self.models: list[str | None] = []
+        self.options: list[dict | None] = []
+        self.speak_calls: list[list[dict]] = []
+        self.speak_options: list[dict | None] = []
+        self._words: list[str] = []  # what the planned replies will say
 
-    async def stream(self, messages, schema, model=None):
-        self.calls.append(messages)
-        self.models.append(model)
+    def _next(self) -> str:
+        return self.outputs.pop(0) if self.outputs else reply("Okay.")
+
+    async def stream(self, messages, schema, model=None, options=None):
+        if schema is None:
+            self.speak_calls.append(messages)
+            self.speak_options.append(options)
+        else:
+            self.calls.append(messages)
+            self.models.append(model)
+            self.options.append(options)
         if self.error:
             raise LocalModelError(self.error)
-        out = self.outputs.pop(0) if self.outputs else reply("Okay.")
+        if schema is None:
+            out = self._words.pop(0) if self._words else self._next()
+        else:
+            out = self._next()
+            if "gist" not in schema.get("properties", {}) and "gesture" in schema.get(
+                "properties", {}
+            ):
+                out = self._as_plan(out)
         for i in range(0, len(out), 4):
             yield out[i : i + 4]
 
-    async def complete(self, messages, schema, model=None):
-        return "".join([p async for p in self.stream(messages, schema, model)])
+    def _as_plan(self, out: str) -> str:
+        try:
+            data = json.loads(out)
+        except ValueError:
+            return out
+        if not isinstance(data, dict) or "segments" not in data:
+            return out
+        segments = data["segments"] or [{}]
+        self._words.append(" ".join(seg.get("say", "") for seg in segments))
+        if data.get("detail"):
+            self._words[-1] += "\n\n" + data["detail"]
+        return json.dumps(
+            {
+                "emotion": data.get("emotion", "neutral"),
+                "gesture": segments[0].get("gesture", "none"),
+                "action": data.get("action", {"kind": "none"}),
+            }
+        )
+
+    async def complete(self, messages, schema, model=None, options=None):
+        return "".join([p async for p in self.stream(messages, schema, model, options)])
 
 
 class FakeMessages:

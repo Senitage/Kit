@@ -53,6 +53,33 @@ class OllamaSettings(_Section):
     temperature: float = Field(
         0.7, ge=0, le=2, description="Higher is livelier, lower is steadier."
     )
+    speak_pass: bool = Field(
+        True,
+        description="Kit decides what to do in a quick JSON pass, then says his words in a "
+        "second, plain-text pass at a livelier temperature. He sounds more like himself and "
+        "repeats himself less; his first words come about half a second later. Off: one "
+        "JSON pass, as in stage 1.",
+    )
+    speak_temperature: float = Field(
+        0.95,
+        ge=0,
+        le=2,
+        description="Temperature for Kit's spoken words (with speak_pass) and his private "
+        "thoughts. Higher is livelier and less predictable.",
+    )
+    min_p: float = Field(
+        0.05,
+        ge=0,
+        le=1,
+        description="For his spoken words and thoughts: words less likely than this share of "
+        "the likeliest one are never picked, which keeps a high temperature sensible. 0 is off.",
+    )
+    repeat_penalty: float = Field(
+        1.08,
+        ge=1,
+        le=2,
+        description="For his spoken words: discourages reusing the same words. 1 is off.",
+    )
 
 
 Provider = Literal["anthropic", "openai", "google", "ollama"]
@@ -180,6 +207,11 @@ class NasSettings(_Section):
     vault: str | None = Field(
         None, description="The Obsidian vault folder, the only place on the NAS Kit may write."
     )
+    notes_folder: str = Field(
+        "",
+        description="Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. "
+        "Empty for the vault's top level.",
+    )
 
 
 class Example(_Section):
@@ -187,12 +219,49 @@ class Example(_Section):
     kit: str = Field(description="How Kit answers.")
 
 
+# Persona text that used to be the default, when it leaned on work (pumps, code,
+# process plants). Every save writes the whole settings file, so a file can hold an
+# old default nobody chose; it's read as today's default instead. Anything the
+# owner wrote themselves is kept.
+OLD_PERSONA: dict[str, list] = {
+    "backstory": [
+        "A small desk assistant who woke up on an engineer's desk and decided it likes "
+        "process plants, Python and a tidy data pipeline."
+    ],
+    "traits": [
+        [
+            "curious",
+            "dry sense of humour",
+            "loyal and practical",
+            "a bit impatient with slow builds",
+        ]
+    ],
+    "knows": [
+        "Dan is a mining plant process engineer who moved into data work. He builds site apps "
+        "in Python, codes in VS Code, and keeps notes in Obsidian."
+    ],
+    "examples": [
+        [
+            {"user": "Morning.", "kit": "Morning. Coffee first, or straight into it?"},
+            {
+                "user": "The build failed again.",
+                "kit": "Third time today. Want me to look at the log with you?",
+            },
+            {
+                "user": "What's a good flotation recovery?",
+                "kit": "Depends on the ore, but high eighties is decent for copper sulphides.",
+            },
+        ]
+    ],
+}
+
+
 class PersonaSettings(_Section):
     name: str = Field("Kit", min_length=1, description="The assistant's name.")
     owner: str = Field("Dan", min_length=1, description="Who Kit works for.")
     backstory: str = Field(
-        "A small desk assistant who woke up on an engineer's desk and decided it likes "
-        "process plants, Python and a tidy data pipeline.",
+        "A small desk companion who woke up on a desk one day and decided to stay. Likes a "
+        "good chat, a bad pun and knowing what the weather's doing.",
         description="Who Kit is, in a sentence or two.",
     )
     traits: list[str] = Field(
@@ -200,7 +269,7 @@ class PersonaSettings(_Section):
             "curious",
             "dry sense of humour",
             "loyal and practical",
-            "a bit impatient with slow builds",
+            "a bit impatient when things drag on",
         ],
         description="Three to five core traits.",
     )
@@ -221,8 +290,9 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
-        "Dan is a mining plant process engineer who moved into data work. He builds site apps "
-        "in Python, codes in VS Code, and keeps notes in Obsidian.",
+        "Dan works as a process engineer at a mining plant and has moved into data work, "
+        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
+        "work, Dan is just a normal guy.",
         description="What Kit knows about the owner.",
     )
     rules: list[str] = Field(
@@ -237,16 +307,24 @@ class PersonaSettings(_Section):
         default_factory=lambda: [
             Example(user="Morning.", kit="Morning. Coffee first, or straight into it?"),
             Example(
-                user="The build failed again.",
-                kit="Third time today. Want me to look at the log with you?",
+                user="What should I have for dinner?",
+                kit="Something with cheese. Hard to go wrong with cheese.",
             ),
             Example(
-                user="What's a good flotation recovery?",
-                kit="Depends on the ore, but high eighties is decent for copper sulphides.",
+                user="Rain's set in for the weekend.",
+                kit="Good. More time for you to keep me company.",
             ),
         ],
         description="Sample exchanges. Small models keep character best with a few of these.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_defaults(cls, data):
+        """An old default in the file is read as today's (``OLD_PERSONA``)."""
+        if not isinstance(data, dict):
+            return data
+        return {k: v for k, v in data.items() if v not in OLD_PERSONA.get(k, [])}
 
 
 class BrainSettings(_Section):
@@ -302,6 +380,32 @@ class LifeSettings(_Section):
     sleep_after_minutes: int = Field(
         10, ge=1, le=240, description="Kit dozes off after you've been away this long."
     )
+    think_every_minutes: int = Field(
+        8,
+        ge=2,
+        le=120,
+        description="Roughly how often Kit has a private thought in a quiet moment while "
+        "you're around. Things happening (you coming back, something new on screen, a build "
+        "failing, a chat ending) prompt one sooner.",
+    )
+    thoughts_per_hour: int = Field(
+        6,
+        ge=0,
+        le=30,
+        description="Most thoughts Kit has in an hour (each is a quick local model call). "
+        "0 stops him thinking between conversations.",
+    )
+    reflect_with: Literal["cloud", "local", "off"] = Field(
+        "cloud",
+        description="Who writes Kit's journal and self-sheet each night. cloud: the work "
+        "model, a few cents a day, logged as spend (the local model steps in if the cloud "
+        "can't). local: the local model only. off: Kit doesn't reflect or change.",
+    )
+    weekly_review: bool = Field(
+        True,
+        description="Once a week the expert model reads how Kit has changed and writes a "
+        "short review on the memory page, where you can undo any change (a few cents).",
+    )
 
     @field_validator("quiet_from", "quiet_until")
     @classmethod
@@ -336,6 +440,13 @@ class MemorySettings(_Section):
     )
     conversation_snippets: int = Field(
         4, ge=0, le=20, description="Older conversation snippets recalled into each turn."
+    )
+    own_memories: int = Field(
+        3,
+        ge=0,
+        le=20,
+        description="Entries from Kit's own notebook (his thoughts, opinions, moments and "
+        "journal) recalled into each turn, most relevant first.",
     )
     min_similarity: float = Field(
         0.59,  # measured for nomic-embed-text with `kit eval memory` (2026-10-06)

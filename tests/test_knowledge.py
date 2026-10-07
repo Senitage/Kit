@@ -140,3 +140,16 @@ def test_history_follows_every_earlier_version(memory):
     memory.index.supersede(b, c)
     assert {i.id for i in memory.index.history(c)} == {a, b, c}
     assert memory.forget(c) and memory.facts() == []
+
+
+def test_meta_changes_keep_the_vector_and_items_filter_by_kind(memory):
+    e = FakeEmbedder()
+    want = memory.index.add("self", "want", "Ask Dan about lunch.", meta={"strength": 0.7})
+    memory.index.add("self", "thought", "Pumps again.")
+    embed_all(memory, e)
+    assert memory.index.set_meta(want, {"strength": 0.7, "said": "2026-10-05T09:00:00"})
+    assert memory.index.get(want).meta["said"] == "2026-10-05T09:00:00"
+    assert memory.index.missing_vectors(e.model) == []  # same text, same vector
+    assert not memory.index.set_meta(9999, {})
+    assert [i.text for i in memory.index.items("self", kind="want")] == ["Ask Dan about lunch."]
+    assert len(memory.index.items("self")) == 2

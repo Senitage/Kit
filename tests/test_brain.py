@@ -50,10 +50,11 @@ def decision(what, which=0, fact=""):
 
 
 def test_reply_streams_words_then_whole_reply(memory):
-    brain, model, _ = make(memory, reply("Morning.", "Coffee?", emotion="playful"))
+    words = ("Morning! You're in nice and early today.", "Coffee first, or straight in?")
+    brain, model, _ = make(memory, reply(*words, emotion="playful"))
     events = collect(brain.chat("Morning Kit"))
     said = "".join(e["text"] for e in events if e["type"] == "say")
-    assert said == "Morning. Coffee?"
+    assert said == " ".join(words)
     assert len([e for e in events if e["type"] == "say"]) > 1  # streamed, not all at once
     final = events[-1]
     assert final["type"] == "reply" and final["reply"]["emotion"] == "playful"
@@ -132,7 +133,8 @@ def test_recall_action_searches_then_answers(memory):
     assert kinds.count("reply") == 2 and "recalled" in kinds
     assert next(e for e in events if e["type"] == "recalled")["found"] == 1
     second = model.calls[1]
-    assert second[-2]["role"] == "assistant" and "recall" in second[-2]["content"]
+    assert second[-2] == {"role": "assistant", "content": "Let me think."}
+    assert "searched your memory for 'tax returns folder'" in second[-1]["content"]
     assert "Documents/Finance/Tax" in second[-1]["content"]
     assert "Dan: Where did I say" in memory.index.items("conversation")[0].text
     assert "Let me think. They're in" in memory.index.items("conversation")[0].text
@@ -175,6 +177,26 @@ def test_remember_action_updates(memory):
     assert [f.text for f in memory.facts()] == ["Dan drives a Ford Ranger."]
 
 
+def test_only_what_dan_said_is_remembered(memory):
+    # Small models "remembered" their own lines: "You've said good night at 10:42 PM...".
+    brain, _, _ = make(
+        memory,
+        reply(
+            "Night!",
+            action="remember",
+            text="You've said good night at 10:42 PM. I'll keep watch while you sleep.",
+        ),
+        reply("Nice."),
+        reply("Got it.", action="remember", text="Dan's sister Sarah's birthday is 12 March."),
+    )
+    events = collect(brain.chat("Good night."))
+    assert not [e for e in events if e["type"] == "remembered"] and memory.facts() == []
+    collect(brain.chat("My sister Sarah's birthday is 12 March."))
+    events = collect(brain.chat("Remember that."))  # said a message ago counts
+    got = next(e for e in events if e["type"] == "remembered")
+    assert got["fact"] == "Dan's sister Sarah's birthday is 12 March."
+
+
 def test_local_model_hands_off_with_memories(memory):
     memory.add_fact("Dan is studying Kalman filters for the flotation model.", "project")
     brain, _, claude = make(
@@ -196,6 +218,19 @@ def test_local_model_hands_off_with_memories(memory):
     assert memory.recent(1)[0].source == "cloud"
 
 
+def test_work_is_a_job_not_his_whole_life(memory):
+    brain, model, _ = make(memory, reply("Cheese toasties."))
+    collect(brain.chat("What should I have for dinner?"))
+    assert "Dan's work is a job, not Dan's whole life" in model.calls[0][0]["content"]
+
+
+def test_what_hes_thinking_is_his_to_answer(memory):
+    # gemma4 handed "What are you thinking about?" to Sonnet.
+    brain, model, _ = make(memory, reply("Mostly about dinner."))
+    collect(brain.chat("What are you thinking about?"))
+    assert "ask_cloud" not in model.calls[0][0]["content"]
+
+
 def test_local_prompt_offers_hand_off_by_mode(memory):
     brain, model, _ = make(memory, settings=settings_with(routing={"mode": "local-heavy"}))
     collect(brain.chat("hi"))
@@ -205,7 +240,13 @@ def test_local_prompt_offers_hand_off_by_mode(memory):
     balanced = model.calls[0][0]["content"]
     assert "ask_cloud: for anything you can't answer well" in heavy
     assert "ask_cloud: for anything more than small talk or a quick command" in balanced
-    assert "Let me check with Sonnet" in balanced
+    assert "Never for chat: news, a moan" in balanced  # "The build failed again." went to Sonnet
+    assert "Sonnet's answer next" in balanced
+    # His words come in the second pass, so the plan has none to put in the wrong place.
+    assert "Let me check with Sonnet" not in balanced
+    brain, model, _ = make(memory, settings=settings_with(ollama={"speak_pass": False}))
+    collect(brain.chat("hi"))
+    assert "Let me check with Sonnet" in model.calls[0][0]["content"]
 
 
 def test_saying_ask_claude_skips_the_local_model(memory):
@@ -329,21 +370,29 @@ def test_routing_phrases():
     assert route("morning", cloud_first) == ("work", False)
 
 
+ONE_PASS = {"ollama": {"speak_pass": False}}
+
+
 def test_broken_json_keeps_the_words(memory):
-    brain, _, _ = make(memory, '{"emotion": "happy", "segments": [{"say": "Half a thou')
+    brain, _, _ = make(
+        memory,
+        '{"emotion": "happy", "segments": [{"say": "Half a thou',
+        settings=settings_with(**ONE_PASS),
+    )
     events = collect(brain.chat("hi"))
     assert events[-1]["type"] == "reply"
     assert events[-1]["reply"]["segments"][0]["say"] == "Half a thou"
 
 
 def test_bad_escape_in_the_stream_keeps_the_words(memory):
-    brain, _, _ = make(memory, '{"segments": [{"say": "Hi\\uZZZZ there')  # bad escape, cut off
+    cut_off = '{"segments": [{"say": "Hi\\uZZZZ there'  # a bad escape, then cut off
+    brain, _, _ = make(memory, cut_off, settings=settings_with(**ONE_PASS))
     events = collect(brain.chat("hi"))
     assert events[-1]["type"] == "reply" and events[-1]["reply"]["segments"][0]["say"] == "Hi there"
 
 
 def test_garbage_is_an_error_and_not_indexed(memory):
-    brain, _, _ = make(memory, "nonsense")
+    brain, _, _ = make(memory, "nonsense", settings=settings_with(**ONE_PASS))
     assert collect(brain.chat("hi"))[-1]["type"] == "error"
     assert memory.index.items("conversation") == []
 
@@ -581,7 +630,7 @@ def test_kit_gets_shorter_with_repeated_check_ins(memory):
 def test_only_the_latest_reply_keeps_its_detail_in_history(memory):
     brain, model, _ = make(
         memory,
-        reply("CPU is fine.", detail="Your PC is running smoothly with 15% CPU"),
+        reply("CPU is fine.", detail="CPU: 15%, running smoothly\nMemory: 40%"),
         reply("Sure.", detail="Step 1: fill the tank"),
         reply("Ok."),
     )

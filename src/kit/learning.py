@@ -11,14 +11,42 @@ stays in its history.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Literal
 
+from kit.knowledge import STOPWORDS
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import FACT_KINDS, FACTS, Memory
 from kit.recall import Recall
 
 CANDIDATES = 5
+# Words a fact may add without Dan having said them: dates and times, and "Dan said".
+DATE_WORDS = frozenset(
+    "january february march april may june july august september october november december "
+    "jan feb mar apr jun jul aug sep sept oct nov dec monday tuesday wednesday thursday "
+    "friday saturday sunday today yesterday tomorrow tonight morning afternoon evening "
+    "now currently recently still anymore".split()
+)
+SAYING = frozenset("said says told tells mentioned mentions remember remembers noted".split())
+
+
+def _gist(text: str, owner: str) -> set[str]:
+    """The words that carry ``text``'s meaning, cut to five letters so "drives" and
+    "drive" match."""
+    skip = STOPWORDS | DATE_WORDS | SAYING | {owner.lower(), f"{owner.lower()}s"}
+    words = re.findall(r"[a-z0-9]+", text.lower().replace("'", "").replace("\u2019", ""))
+    return {w[:5] for w in words if len(w) > 2 and not w.isdigit() and w not in skip}
+
+
+def said_so(fact: str, said: list[str], owner: str) -> bool:
+    """Did the owner actually say ``fact`` (in ``said``, their latest messages)? At
+    least half the words that carry its meaning must be there, so Kit can't keep
+    his own lines, jokes or guesses as facts about them."""
+    gist = _gist(fact, owner)
+    heard = set().union(*(_gist(s, owner) for s in said)) if said else set()
+    return bool(gist) and 2 * len(gist & heard) >= len(gist)
+
 
 DECISION_SCHEMA = {
     "type": "object",
