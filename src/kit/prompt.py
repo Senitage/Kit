@@ -67,8 +67,8 @@ HAND_OFF = {
 
 REPLY_SHAPE = (
     '{"emotion": "neutral", "segments": [{"gesture": "nod", "say": "One short sentence."}], '
-    '"action": {"kind": "none", "text": "", "category": "other", "thing_kind": "other", '
-    '"link_system": "none", "link_target": ""}, "detail": ""}'
+    '"action": {"kind": "none", "text": "", "title": "", "category": "other", '
+    '"thing_kind": "other", "link_system": "none", "link_target": ""}, "detail": ""}'
 )
 
 
@@ -86,6 +86,7 @@ def system_prompt(
     channel: str = "",
     quirks: list[str] | None = None,
     weather: bool = False,
+    notes: bool = False,
     forecast: str = "",
     pc_detail: str = "",
     voice: Voice | None = None,
@@ -95,7 +96,8 @@ def system_prompt(
     to; either is None when there's nowhere to hand it. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
     "right now" from Dan's PC, empty when it has never reported. ``channel`` says
-    where Dan is talking from (kit.channels)."""
+    where Dan is talking from (kit.channels). ``notes`` says Kit has a notes folder
+    to write to (kit.notes)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -166,6 +168,14 @@ def system_prompt(
         f"text as one sentence that makes sense on its own later, with real dates, and set "
         f"category.",
     ]
+    if notes:
+        lines.append(
+            f"- note: when {owner} asks you to take, make or write down a note, jot "
+            f"something down, or add to a note or list. Use this, not remember. Put the "
+            f"note in text as markdown, tidied up but in {owner}'s words, and a short title "
+            f"in title. The same title adds to that note ('Shopping list'). It's saved in "
+            f"{owner}'s notes in Obsidian."
+        )
     lines.append(
         f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "

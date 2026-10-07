@@ -34,6 +34,9 @@ kit eval compare --models sonnet gpt-sol   # same questions, side by side
 kit token          # the API token for the pages and home_app
 ```
 
+Kit takes notes when you ask, as markdown files in your notes folder on the NAS:
+set it up with [docs/notes.md](docs/notes.md).
+
 Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
 `kit init`, `kit paths` and `kit check` are still there.
 
