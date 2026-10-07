@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 
 from kit.desk import theme
 from kit.desk.client import BrainClient, BrainError
+from kit.desk.voice import Speaker
 
 MAX_SHOWN = 200
 BUBBLE_SHARE = 0.8  # a bubble is at most this share of the window's width
@@ -309,6 +310,7 @@ class ChatWindow(QWidget):
     ) -> None:
         super().__init__()
         self.client = client
+        self.speaker: Speaker | None = None  # says Kit's replies aloud, if speech is on
         self.palette = palette or theme.palette()
         self.font_pt = font_pt
         self.setObjectName("root")
@@ -457,6 +459,8 @@ class ChatWindow(QWidget):
     def send(self, text: str) -> int:
         """Ask Kit something. Kit can be asked again before he answers."""
         turn = next(self._turns)
+        if self.speaker is not None:
+            self.speaker.stop()  # Dan's talking: Kit stops
         self._stick = True  # sending always brings the newest message into view
         self._add(Line("you", text))
         self._in_flight += 1
@@ -536,6 +540,8 @@ class ChatWindow(QWidget):
 
     def on_event(self, turn: int, ev: dict) -> None:
         kind = ev.get("type")
+        if self.speaker is not None:
+            self._speak(turn, kind, ev)
         if kind == "say":
             role = "claude" if ev.get("source") == "cloud" else "kit"
             if turn not in self._current:
@@ -591,7 +597,18 @@ class ChatWindow(QWidget):
             self.state.emit("error")
         self._show_typing()
 
+    def _speak(self, turn: int, kind: str | None, ev: dict) -> None:
+        speaker = self.speaker
+        if kind == "mood":
+            speaker.mood(turn, ev.get("emotion", "neutral"))
+        elif kind == "say":
+            speaker.say(turn, ev.get("text", ""))
+        elif kind in ("reply", "error", "handing_off"):
+            speaker.end(turn)
+
     def _turn_done(self, turn: int) -> None:
+        if self.speaker is not None:
+            self.speaker.end(turn)
         self._current.pop(turn, None)
         self._in_flight = max(0, self._in_flight - 1)
         if self._in_flight == 0:

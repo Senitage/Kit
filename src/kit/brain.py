@@ -1172,6 +1172,8 @@ class Brain:
             if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
                 # Dan never named it, so no "shall I add it to the register?"
                 plan = plan.model_copy(update={"action": Action(kind="none")})
+            if not hold:  # how he feels, before his words: the voice speaks in this mood
+                yield {"type": "mood", "emotion": plan.emotion}
             note = speak_note(
                 plan.action,
                 settings.persona.owner,

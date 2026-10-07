@@ -56,11 +56,12 @@ from kit.desk import startup, theme
 from kit.desk.alive import Alive
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
-from kit.desk.client import BrainClient, BrainError
+from kit.desk.client import BrainClient, BrainError, SpeechOff
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
+from kit.desk.voice import Speaker
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
 from kit.desk.window import ConnectionForm, KitWindow, in_background
 from kit.face import Face
@@ -277,6 +278,7 @@ class DeskApp(QObject):
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
+        self.chat.speaker = Speaker(self._speak)
         self._save_soon = QTimer(self)
         self._save_soon.setSingleShot(True)
         self._save_soon.timeout.connect(lambda: self.config.save())
@@ -382,6 +384,12 @@ class DeskApp(QObject):
         fade.setEndValue(1.0)
         fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _speak(self, text: str, emotion: str, first: bool) -> bytes:
+        """One sentence of Kit's speech from the server (SpeechOff if it's turned off)."""
+        if self.client is None:
+            raise SpeechOff("not connected")
+        return self.client.speak(text, emotion, first)
 
     def _chat_resized(self, size) -> None:
         if (size.width(), size.height()) != (self.config.chat_width, self.config.chat_height):

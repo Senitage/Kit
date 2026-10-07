@@ -50,7 +50,15 @@ and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
 
-## Now: Kit's inner life (side stage)
+## Stage 3: Kit's voice
+
+Kit speaks his replies through the desk PC's speakers, sentence by sentence as
+the brain writes them, in the mood he's in. The voice engine is swappable
+(Chatterbox, Chatterbox Turbo, Kokoro, Piper) with `kit speech use <name>`, and
+`kit speech bench` compares engines on the same lines. Set it up and test it with
+[docs/stage-3-voice.md](docs/stage-3-voice.md).
+
+## Kit's inner life (side stage)
 
 Kit gets a life between conversations: feelings with a reason, private thoughts
 while you work, things he wants to bring up (including "ask me tomorrow..."),
