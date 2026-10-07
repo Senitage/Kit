@@ -7,7 +7,7 @@ on-screen helper and later gets a body: a desk robot arm.
 Kit is built in tested stages. The plan and each stage's test checklist are in
 the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91).
 
-## Current stage: 1, text brain
+## Stage 1: text brain
 
 Kit chats by text in a browser or terminal. It recalls what's relevant from
 everything it has learned, by words and by meaning, and keeps its facts tidy
@@ -37,13 +37,31 @@ kit token          # the API token for the pages and home_app
 Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
 `kit init`, `kit paths` and `kit check` are still there.
 
-## Next stage: 2, the desk app
+## Stage 2: the desk app
 
 `Kit-Desk-Setup.exe` puts Kit on the Windows desk PC: his Glow face in the tray
 and floating on the desktop, a chat window, and a feed of which windows are
 open and what has focus (titles only, no screenshots), plus PC health. A Chrome
 extension adds the open tabs and the site you're on. Install
 and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
+
+## Now: Kit's inner life (side stage)
+
+Kit gets a life between conversations: feelings with a reason, private thoughts
+while you work, things he wants to bring up (including "ask me tomorrow..."),
+and a notebook with his journal and a self-sheet he rewrites each night, so he
+grows a little each day. A weekly review shows how he's changed, and you can
+undo any of it on the memory page. How it works is in [docs/life.md](docs/life.md);
+update, pick his voice and test it with
+[docs/stage-inner-life.md](docs/stage-inner-life.md).
+
+```
+kit life             # how he feels and why, what he's thinking, what he wants to bring up
+kit life think       # have a thought now
+kit life reflect     # look back on today so far (a few cents)
+kit life notebook    # his self-sheet, quirks, thoughts, opinions and journal
+kit eval voice --models qwen3:8b gemma4:e4b   # which local model sounds most alive?
+```
 
 ## How Kit is laid out
 
