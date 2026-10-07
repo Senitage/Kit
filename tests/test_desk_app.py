@@ -434,3 +434,9 @@ def test_updates_page_offers_a_newer_version(qapp, sync_window, tmp_path):
     win.updates.download()
     assert installs and installs[0].name == "K.exe"
     win.close()
+
+
+def test_a_new_topic_shows_as_a_note(qapp):
+    chat = ChatWindow()
+    chat.on_event(1, {"type": "new_topic"})
+    assert chat.lines[-1].role == "note" and "started fresh" in chat.text()

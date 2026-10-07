@@ -536,6 +536,8 @@ class ChatWindow(QWidget):
             self._add(Line("note", f"Add to the register? {thing.get('line', '')} (yes or no)"))
         elif kind == "thing_updated" and ev.get("thing"):
             self._add(Line("note", f"Updated the register: {ev['thing'].get('line', '')}"))
+        elif kind == "new_topic":  # the brain left the old conversation behind
+            self._add(Line("note", ev.get("message") or "New topic, so Kit started fresh."))
         elif kind == "error":
             self._add(Line("error", ev.get("message", "Something went wrong.")))
             self.state.emit("error")
