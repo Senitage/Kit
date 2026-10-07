@@ -16,6 +16,7 @@ from __future__ import annotations
 import itertools
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import (
@@ -58,6 +59,10 @@ LINK_COLOUR = re.compile(r"color:#0000ff;", re.IGNORECASE)  # Qt's default link 
 BODY_STYLE = re.compile(r"<body style=\"[^\"]*\">")
 PAD_X = 14  # a bubble's padding either side of its text
 INPUT_LINES = (1, 6)  # the message box grows from one line to six as Dan types
+# Words held back for his voice show anyway once it has gone quiet for this long,
+# or after this long whatever it's doing (it failed, or speech went off).
+HOLD_IDLE_S = 1.0
+HOLD_MAX_S = 12.0
 
 
 @dataclass
@@ -66,6 +71,17 @@ class Line:
     text: str
     detail: str = ""
     meta: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _Held:
+    """Kit's words for one reply, waiting for his voice to get to them."""
+
+    role: str
+    since: float  # when his voice last got somewhere (or the words started arriving)
+    text: str = ""
+    final: Line | None = None  # the finished reply, shown once he's said it all
+    reply: dict | None = None  # acted out (face, speech bubble) when his voice starts
 
 
 class Bubble(QFrame):
@@ -289,6 +305,7 @@ class _Signals(QObject):
     event = Signal(int, dict)
     done = Signal(int)
     history = Signal(list)
+    heard = Signal(int, str)
 
 
 class ChatWindow(QWidget):
@@ -311,6 +328,7 @@ class ChatWindow(QWidget):
         super().__init__()
         self.client = client
         self.speaker: Speaker | None = None  # says Kit's replies aloud, if speech is on
+        self.in_step = True  # with his voice on, show his words as he says them
         self.palette = palette or theme.palette()
         self.font_pt = font_pt
         self.setObjectName("root")
@@ -320,6 +338,7 @@ class ChatWindow(QWidget):
         self.lines: list[Line] = []
         self.rows: list[Row] = []
         self._current: dict[int, int] = {}  # turn -> index of Kit's line being streamed
+        self._held: dict[int, _Held] = {}  # turn -> words waiting for his voice
         self._turns = itertools.count(1)
         self._in_flight = 0
         self._loaded = False
@@ -329,6 +348,10 @@ class ChatWindow(QWidget):
         self._signals.event.connect(self.on_event)
         self._signals.done.connect(self._turn_done)
         self._signals.history.connect(self._show_history)
+        self._signals.heard.connect(self._reveal)
+        self._hold_check = QTimer(self)
+        self._hold_check.setInterval(250)
+        self._hold_check.timeout.connect(self._check_held)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
 
         # Header: who and what he's doing, a fresh start, and Kit's window.
@@ -460,7 +483,9 @@ class ChatWindow(QWidget):
         """Ask Kit something. Kit can be asked again before he answers."""
         turn = next(self._turns)
         if self.speaker is not None:
-            self.speaker.stop()  # Dan's talking: Kit stops
+            self.speaker.stop(turn)  # Dan's talking: Kit stops, and listens for his answer
+        for held in list(self._held):
+            self._show_said(held)  # the rest of what he was saying, above Dan's message
         self._stick = True  # sending always brings the newest message into view
         self._add(Line("you", text))
         self._in_flight += 1
@@ -501,7 +526,7 @@ class ChatWindow(QWidget):
         """Show the recent conversation each time the window opens, so a new chat
         started elsewhere (the chat page, ``kit new-chat``) shows here too. Not while
         Kit is still answering, so a streaming reply isn't swept away."""
-        if self.client is None or self._in_flight:
+        if self.client is None or self._in_flight or self._held:
             return
         self._replace = self._loaded  # first time: keep anything already shown
         self._loaded = True
@@ -542,13 +567,18 @@ class ChatWindow(QWidget):
         kind = ev.get("type")
         if self.speaker is not None:
             self._speak(turn, kind, ev)
+        if kind in ("handing_off", "recalled", "looked_at_pc", "notice", "error"):
+            self._show_said(turn)  # that part of the turn is over: all his words show
         if kind == "say":
             role = "claude" if ev.get("source") == "cloud" else "kit"
-            if turn not in self._current:
-                self._current[turn] = self._add(Line(role, ""))
-            index = self._current[turn]
-            self.lines[index].text += ev.get("text", "")
-            self.rows[index].update_line(self.lines[index])
+            if self._holding(turn):
+                self._hold(turn, role, ev.get("text", ""))
+            else:
+                if turn not in self._current:
+                    self._current[turn] = self._add(Line(role, ""))
+                index = self._current[turn]
+                self.lines[index].text += ev.get("text", "")
+                self.rows[index].update_line(self.lines[index])
             self._set_state("speaking")
         elif kind == "reply":
             reply = ev.get("reply") or {}
@@ -561,13 +591,17 @@ class ChatWindow(QWidget):
                     line.meta.append(f"${ev['cost_usd']:.3f}")
                 if ev.get("searches"):
                     line.meta.append(f"{ev['searches']} searches")
-            if turn in self._current:
-                index = self._current.pop(turn)
-                self.lines[index] = line
-                self.rows[index].update_line(line)
+            held = self._held.get(turn)
+            if held is not None and held.text.strip():
+                held.final = line  # shown when his voice gets to the end
+                if turn in self._current:  # he's started talking
+                    self.replied.emit(reply)
+                else:
+                    held.reply = reply
             else:
-                self._add(line)
-            self.replied.emit(reply)
+                self._held.pop(turn, None)
+                self._show_reply(turn, line)
+                self.replied.emit(reply)
         elif kind == "handing_off":
             self._current.pop(turn, None)
             self._set_state(f"asking {ev.get('to', 'the cloud')}")
@@ -597,18 +631,124 @@ class ChatWindow(QWidget):
             self.state.emit("error")
         self._show_typing()
 
+    def pipe_up(self, reply: dict, lead_in_ms: int = 0) -> None:
+        """A line Kit came out with by himself: said aloud unless he's talking, and
+        shown as he says it (or after ``lead_in_ms``, if his voice is off)."""
+        turn = next(self._turns)
+        said = " ".join(s.get("say", "") for s in reply.get("segments", [])).strip()
+        line = Line("kit", said, reply.get("detail", ""))
+        speaker = self.speaker
+        speaking = bool(said) and speaker is not None
+        if speaking:
+            speaking = speaker.pipe_up(turn, said, reply.get("emotion") or "neutral")
+        if speaking and self._holding(turn):
+            self._hold(turn, "kit", said)
+            self._held[turn].final, self._held[turn].reply = line, reply
+        else:
+            QTimer.singleShot(lead_in_ms, lambda: self._show_pipe_up(turn, line, reply))
+
+    def _show_pipe_up(self, turn: int, line: Line, reply: dict) -> None:
+        self._show_reply(turn, line)
+        self.replied.emit(reply)
+
+    def _show_reply(self, turn: int, line: Line) -> None:
+        if turn in self._current:
+            index = self._current.pop(turn)
+            self.lines[index] = line
+            self.rows[index].update_line(line)
+        else:
+            self._add(line)
+
     def _speak(self, turn: int, kind: str | None, ev: dict) -> None:
         speaker = self.speaker
         if kind == "mood":
             speaker.mood(turn, ev.get("emotion", "neutral"))
         elif kind == "say":
             speaker.say(turn, ev.get("text", ""))
-        elif kind in ("reply", "error", "handing_off"):
-            speaker.end(turn)
+        elif kind in ("spoken", "reply", "error", "handing_off"):
+            speaker.end(turn)  # "spoken": his words are complete, so the last one is said now
+
+    # Kit's words in step with his voice
+
+    def heard(self, turn: int, text: str) -> None:
+        """His voice has got to ``text`` (a sentence of the reply for ``turn``). Safe
+        to call from any thread: the speaker calls it from its own."""
+        self._signals.heard.emit(turn, text)
+
+    def _holding(self, turn: int) -> bool:
+        """Do this reply's words wait for his voice? Only while it's on, and not for
+        a reply that's already showing."""
+        if turn in self._held:
+            return True
+        speaker = self.speaker
+        live = speaker is not None and speaker.enabled and speaker.live
+        return self.in_step and live and turn not in self._current
+
+    def _hold(self, turn: int, role: str, text: str) -> None:
+        held = self._held.get(turn)
+        if held is None:
+            held = self._held[turn] = _Held(role, since=time.monotonic())
+            self._hold_check.start()
+        held.text += text
+
+    def _reveal(self, turn: int, said: str) -> None:
+        held = self._held.get(turn)
+        if held is None:
+            return
+        # The voice has the sentence with its spaces tidied, so match word by word.
+        # Not there (a sentence from before he handed over to the cloud): nothing to
+        # show yet; the next sentence, or his voice going quiet, shows the rest.
+        words = r"\s+".join(re.escape(word) for word in said.split())
+        found = re.search(words, held.text) if words else None
+        if found is not None:
+            self._show_held(turn, found.end())
+
+    def _show_said(self, turn: int) -> None:
+        """Everything held back for this turn, now."""
+        if turn in self._held:
+            self._show_held(turn, len(self._held[turn].text))
+            self._held.pop(turn, None)
+
+    def _show_held(self, turn: int, upto: int) -> None:
+        held = self._held[turn]
+        shown, held.text = held.text[:upto], held.text[upto:]
+        held.since = time.monotonic()
+        if shown.strip():
+            if turn not in self._current:
+                self._current[turn] = self._add(Line(held.role, ""))
+            index = self._current[turn]
+            line = self.lines[index]
+            line.text = (line.text + shown) if line.text else shown.lstrip()
+            self.rows[index].update_line(line)
+        finished = not held.text.strip() and held.final is not None
+        if held.reply is not None and (shown.strip() or finished):
+            reply, held.reply = held.reply, None
+            self.replied.emit(reply)  # his face acts it out as his voice starts
+        if finished:
+            del self._held[turn]
+            self._show_reply(turn, held.final)
+        self._show_typing()
+
+    def _check_held(self) -> None:
+        """Words still waiting for a voice that isn't coming (it failed, or speech
+        went off) show anyway."""
+        now = time.monotonic()
+        talking = self.speaker is not None and self.speaker.talking()
+        for turn in list(self._held):
+            held = self._held[turn]
+            waited = now - held.since
+            late = waited > HOLD_MAX_S or (not talking and waited > HOLD_IDLE_S)
+            if held.text.strip() and late:
+                self._show_said(turn)
+        if not self._held:
+            self._hold_check.stop()
 
     def _turn_done(self, turn: int) -> None:
         if self.speaker is not None:
             self.speaker.end(turn)
+        held = self._held.get(turn)
+        if held is not None and not held.text.strip():
+            self._show_said(turn)  # nothing left for his voice to get to
         self._current.pop(turn, None)
         self._in_flight = max(0, self._in_flight - 1)
         if self._in_flight == 0:
@@ -653,7 +793,7 @@ class ChatWindow(QWidget):
         for row in self.rows:
             self.column.removeWidget(row)
             row.deleteLater()
-        self.lines, self.rows, self._current = [], [], {}
+        self.lines, self.rows, self._current, self._held = [], [], {}, {}
         for line in lines[-MAX_SHOWN:]:
             self._add(line, animate=False)
         QTimer.singleShot(0, self.scroll_to_end)

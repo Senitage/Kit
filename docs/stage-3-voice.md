@@ -30,11 +30,35 @@ word, speech to text) is the next part of stage 3.
   is cut at its first comma), asks the server for each one, and plays it while the
   next is being made. So Kit starts talking about one sentence after the brain
   does, not after the whole reply.
+- **His last sentence doesn't wait.** The brain says `spoken` as soon as Kit's
+  words are complete (a blank line, or three sentences), while the local model is
+  still writing any detail for the screen. His voice used to wait about two
+  seconds for that.
+- **One steady sound output.** The desk app keeps one sound output open while Kit
+  talks (PortAudio, from the `sounddevice` package), and opens it while he's still
+  thinking. Sentences follow each other with no gaps, and his first word isn't
+  clipped: playing each sentence on its own woke the speakers every time, and
+  waking them lost the first letters. If that output won't open, the desk app
+  falls back to playing each sentence on its own, with a moment of silence first.
+- **His words show as he says them.** With his voice on, each sentence appears in
+  the chat as he starts saying it, and his face acts the reply out as his voice
+  starts. Turn it off on the Look page ("Show Kit's words as he says them"). If his
+  voice fails or goes quiet, the words show anyway.
+- **Pipe-ups are said too.** A line Kit comes out with by himself is spoken, unless
+  he's already talking.
 - **Mood.** Kit's emotion sets `exaggeration` for Chatterbox (per emotion, in
   `speech.engines.chatterbox.exaggeration`), an opening sound for Turbo
   (`mood_tags`), and a small speed change for Kokoro and Piper (`mood_speed`).
-- **Dan talking stops Kit.** Sending a message drops whatever Kit hadn't said yet;
-  the sentence playing at that moment finishes.
+- **Dan talking stops Kit.** Sending a message stops Kit straight away, mid-word,
+  and drops whatever he hadn't said yet. The rest of his words still show above
+  Dan's message.
+- **Reading ahead (optional).** `kit config set ollama.warm_up true` has the local
+  model read the conversation in after each reply, once Kit's voice has finished,
+  so the next message only has itself left to read. Gemma models re-read the whole
+  prompt whenever anything in it changes, which took about two seconds a message.
+  With it on, what changes every message (the time, what Kit recalled, the PC)
+  goes beside Dan's message rather than in Kit's instructions. Off by default
+  while it's tried.
 - **Speech off** (`kit speech off`) stops the engine within a few seconds, which
   frees its memory. With speech on, the server loads the engine at start-up, so
   the first reply isn't kept waiting.
@@ -42,7 +66,8 @@ word, speech to text) is the next part of stage 3.
 ## Set it up on the server
 
 1. Update Kit (`git pull`, then `pip install -e .`) and restart it
-   (`sudo systemctl restart kit`).
+   (`sudo systemctl restart kit`). Install the desk app build from the same
+   change: it brings the `sounddevice` package with it.
 2. **Kokoro** in Kit's own Python: `pip install kokoro-onnx`. Its model files
    download into `<data>/state/speech/models` the first time.
 3. **Chatterbox** in its own Python 3.11 environment. `~/kit-voice/.venv` from the
@@ -101,8 +126,18 @@ The engine's own messages go to `<data>/logs/speech.log`.
 - [ ] `kit speech use chatterbox-turbo` and `kit speech on`, then in the desk app's
       chat, ask something. Kit starts speaking after his first sentence and the
       rest follows without gaps.
-- [ ] Ask something, then send a new message while he's talking: he stops after
-      the current sentence.
+- [ ] The first word of each reply is whole: no missing first letters.
+- [ ] A one-sentence reply starts speaking about a second after its words would
+      have shown, and the words appear as he says them.
+- [ ] Ask something, then send a new message while he's talking: he stops at
+      once, and the rest of what he was saying shows above your message.
+- [ ] When Kit pipes up by himself, he says it out loud.
+- [ ] Untick "Show Kit's words as he says them" on the Look page: words appear as
+      they stream in again, and he still speaks.
+- [ ] `kit config set ollama.warm_up true`, then chat for a few turns. In
+      `<data>/logs/kit.log`, each message's first `local model: read N tokens` line
+      drops from thousands of tokens to a few hundred from the second message on,
+      and replies start sooner.
 - [ ] Ask something that makes him grumpy or tired: Turbo opens with a groan or sigh.
 - [ ] `kit speech off`: within a few seconds `nvidia-smi` shows the memory freed,
       and replies are silent.

@@ -1,5 +1,6 @@
 """Kit's two-pass replies: a quick plan in JSON, then his words in plain text."""
 
+import asyncio
 import json
 
 import pytest
@@ -316,3 +317,113 @@ def test_spoken_words_become_segments():
     ]
     reply_ = spoken_reply(Plan(emotion="happy", gesture="wave", action={"kind": "none"}), "Hi. Yo.")
     assert [(s.say, s.gesture) for s in reply_.segments] == [("Hi.", "wave"), ("Yo.", "none")]
+
+
+# His voice and the local model's prompt cache
+
+
+def test_his_words_are_whole_at_a_blank_line_or_at_the_limit_before_the_model_stops():
+    stream = SpokenStream("Kit")
+    stream.feed("Kit:\n\nRighto, done")
+    assert not stream.finished()  # a "Kit:" and a blank line in front isn't the end
+    stream.feed(".\n\n1. Check")
+    assert stream.finished()  # the rest is written detail
+    three = SpokenStream()
+    three.feed("One. Two. Three.")
+    assert not three.finished()
+    three.feed(" And")  # a fourth sentence won't be said
+    assert three.finished()
+    in_json = SpokenStream()
+    in_json.feed('{"emotion": "happy"}\n\n')
+    assert not in_json.finished()
+
+
+def test_his_voice_gets_his_last_sentence_before_the_detail_is_written(memory):
+    order = []
+
+    class Watched(FakeModel):
+        async def stream(self, messages, schema, model=None, options=None):
+            async for piece in super().stream(messages, schema, model, options):
+                if schema is None:
+                    order.append("written")
+                yield piece
+
+    detail = "1. Check the pump.\n2. Check the valve.\n3. Check the motor."
+    s = Settings.model_validate({"memory": {"min_similarity": 0.3}})
+    model = Watched(plan(), f"Here's the plan.\n\n{detail}", plan(), "Morning.")
+    recall = Recall(memory, FakeEmbedder(), lambda: s)
+    brain = Brain(lambda: s, memory, model, make_cloud(memory, FakeAnthropic()), recall)
+    asked = [{"role": "user", "content": "What should I check?"}]
+
+    async def go():
+        async for event in brain._two_pass_reply(asked, "local"):
+            order.append(event["type"])
+
+    asyncio.run(go())
+    assert order.count("spoken") == 1
+    assert order.index("say") < order.index("spoken") < order.index("reply")
+    assert "written" in order[order.index("spoken") :]  # the model was still writing
+    order.clear()
+    asyncio.run(go())  # no detail: his words are whole when the model stops
+    assert [e for e in order if e != "written"] == ["mood", "say", "spoken", "reply"]
+
+
+def test_with_warm_up_what_changes_each_turn_goes_beside_dans_message(memory):
+    brain, model = make(memory, reply("Morning."), ollama={"warm_up": True})
+    collect(brain.chat("Morning Kit"))
+    system, heard = model.calls[0][0]["content"], model.calls[0][-1]["content"]
+    assert "\n\nIt is " not in system
+    assert heard.startswith("[Not from Dan: how things stand right now, for you to use.\nIt is ")
+    assert heard.endswith("]\n\nMorning Kit")
+    off, model = make(memory, reply("Morning."))
+    collect(off.chat("Morning again"))
+    assert "\n\nIt is " in model.calls[0][0]["content"]  # off: as before
+    assert model.calls[0][-1]["content"] == "Morning again"
+    assert model.warm_calls == []
+
+
+@pytest.fixture
+def quick_warm(monkeypatch):
+    import kit.brain
+
+    monkeypatch.setattr(kit.brain, "WARM_AFTER_S", 0.01)
+    monkeypatch.setattr(kit.brain, "WARM_POLL_S", 0.01)
+
+
+def test_the_conversation_is_read_ahead_once_his_voice_is_quiet(memory, quick_warm):
+    brain, model = make(memory, reply("Morning."), reply("Not bad."), ollama={"warm_up": True})
+    quiet = [0.0]
+    brain.voice_quiet = lambda: quiet[0]
+
+    async def go():
+        [e async for e in brain.chat("Morning Kit")]
+        await asyncio.sleep(0.1)
+        assert model.warm_calls == []  # his voice is still being made: it'd stutter
+        quiet[0] = 5.0
+        await asyncio.sleep(0.1)
+        assert len(model.warm_calls) == 1
+        [e async for e in brain.chat("How's things?")]
+
+    asyncio.run(go())
+    ahead, then = model.warm_calls[0], model.calls[1]
+    assert ahead[-1] == {"role": "assistant", "content": "Morning."}
+    # The next message's prompt carries straight on from what was read ahead, so the
+    # model only has Dan's message left to read.
+    assert then[: len(ahead)] == ahead and len(then) == len(ahead) + 1
+
+
+def test_a_message_before_the_read_ahead_starts_cancels_it(memory, quick_warm):
+    brain, model = make(memory, reply("Morning."), reply("Not bad."), ollama={"warm_up": True})
+    quiet = [0.0]
+    brain.voice_quiet = lambda: quiet[0]
+
+    async def go():
+        [e async for e in brain.chat("Morning Kit")]
+        await asyncio.sleep(0.05)
+        [e async for e in brain.chat("How's things?")]
+        quiet[0] = 5.0
+        await asyncio.sleep(0.1)
+
+    asyncio.run(go())
+    [ahead] = model.warm_calls  # only the one after the second reply
+    assert ahead[-1] == {"role": "assistant", "content": "Not bad."}

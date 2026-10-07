@@ -82,3 +82,35 @@ def test_plain_text_and_livelier_sampling_when_asked():
         "repeat_penalty": 1.08,
     }
     assert "repeat_penalty" not in lively(OllamaSettings(), plain=False)
+
+
+def test_reading_ahead_fills_the_cache_with_the_same_model_and_context():
+    seen = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "O"}, "done": True})
+
+    messages = [{"role": "system", "content": "You are Kit."}]
+    asyncio.run(model_with(handler).warm(messages))
+    assert seen["messages"] == messages and seen["stream"] is False
+    assert seen["model"] == "qwen3:8b" and "format" not in seen
+    # The same context size as every other call, or Ollama would reload the model.
+    assert seen["options"] == {"temperature": 0.7, "num_ctx": 8192, "num_predict": 1}
+    with pytest.raises(LocalModelError, match="500"):
+        asyncio.run(model_with(lambda r: httpx.Response(500, text="boom")).warm(messages))
+
+
+def test_how_much_ollama_read_goes_in_the_log(caplog):
+    done = {
+        "message": {"content": "Hi."},
+        "done": True,
+        "prompt_eval_count": 120,
+        "prompt_eval_duration": 80_000_000,
+        "eval_count": 9,
+        "eval_duration": 150_000_000,
+    }
+    model = model_with(lambda r: httpx.Response(200, text=json.dumps(done)))
+    with caplog.at_level("INFO", logger="kit.local_model"):
+        assert run(model) == ["Hi."]
+    assert "read 120 tokens in 0.08 s, wrote 9 in 0.15 s" in caplog.text

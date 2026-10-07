@@ -502,17 +502,26 @@ class SpokenStream:
         """Did any JSON turn up where his words should be?"""
         return "{" in _THINKING.sub("", self.raw)
 
-    def _spoken(self, final: bool) -> str:
+    def _body(self) -> str:
+        """What he wrote, without a "Kit:" or an opening quote in front."""
         text = self._text()
         if self._prefix is not None:
             text = self._prefix.sub("", text, count=1)
-        text = text.lstrip('"\u201c ').split("\n\n", 1)[0]
-        text = _STAGE.sub("", text)
+        return text.lstrip('"\u201c ')
+
+    def _said(self) -> str:
+        """What he wrote before any blank line (which ends what's said)."""
+        return self._body().split("\n\n", 1)[0]
+
+    def _spoken(self, final: bool, cap: bool = True) -> str:
+        text = _STAGE.sub("", self._said())
         if "*" in text:  # a stage direction still being written, or a stray star
             text = text.replace("*", "") if final else text[: text.index("*")]
         if "{" in text:  # JSON that's still being written, or broken: never words
             text = text[: text.index("{")]
-        text = _cap(re.sub(r"\s+", " ", text))
+        text = re.sub(r"\s+", " ", text)
+        if cap:
+            text = _cap(text)
         if final:
             return text.strip().rstrip('"\u201d').strip()
         text = text.rstrip()  # a space or newline may yet turn out to end what's said
@@ -534,6 +543,18 @@ class SpokenStream:
 
     def release(self) -> None:
         self.released = True
+
+    def finished(self) -> bool:
+        """Is what he says complete, while the model is still writing? A blank line
+        ends it (what follows is written detail, or dropped), and so does the limit on
+        how much he says. His voice can then say the last sentence straight away
+        rather than wait for the rest, which took a couple of seconds."""
+        if self.in_json():
+            return False
+        if "\n\n" in self._body():
+            return bool(self._spoken(final=True))
+        whole = self._spoken(final=False, cap=False)
+        return _cap(whole) != whole
 
     def take(self) -> str:
         """Spoken text that's ready and hasn't been handed out yet."""

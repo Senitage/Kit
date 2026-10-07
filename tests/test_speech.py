@@ -15,8 +15,6 @@ from fastapi.testclient import TestClient
 from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
 from kit.brain import Brain
 from kit.cli import main
-from kit.desk.client import BrainError, SpeechOff
-from kit.desk.voice import Speaker
 from kit.memory import Memory
 from kit.recall import Recall
 from kit.server import create_app
@@ -247,6 +245,9 @@ class FakeSpeech:
     def stop(self):
         self.on = False
 
+    def quiet_s(self):
+        return 99.0
+
 
 @pytest.fixture
 def server(paths):
@@ -278,6 +279,35 @@ def test_the_server_says_a_sentence_only_when_speech_is_on(server):
     assert client.get("/api/speech", headers=AUTH).json()["available"] is True
 
 
+def test_his_voice_says_how_long_its_been_quiet_for_the_brain_to_wait_on(paths):
+    clock = [100.0]
+    service = SpeechService(lambda: Settings().speech, paths, clock=lambda: clock[0])
+    assert service.quiet_s() == float("inf")  # never spoken
+    inside, gate = threading.Event(), threading.Event()
+
+    def slow(text, mood, engine, first):
+        inside.set()
+        gate.wait(5)
+        return Spoken(wav=b"RIFF", synth_ms=1, audio_ms=1, engine="tone")
+
+    service._speak = slow
+    worker = threading.Thread(target=service.speak, args=("Hi.",))
+    worker.start()
+    assert inside.wait(5)
+    assert service.quiet_s() == 0.0  # a sentence is being made
+    gate.set()
+    worker.join(5)
+    clock[0] = 102.5
+    assert service.quiet_s() == 2.5
+    # The brain reads ahead only once his voice is quiet (ollama.warm_up).
+    memory = Memory(paths.state_dir / "memory.db", Clock())
+    recall = Recall(memory, FakeEmbedder(), lambda: Settings())
+    brain = Brain(lambda: Settings(), memory, FakeModel(), make_cloud(memory), recall)
+    create_app(SettingsStore(paths), memory, brain, TOKEN, speech=FakeSpeech())
+    assert brain.voice_quiet() == 99.0
+    memory.close()
+
+
 def test_the_server_loads_the_engine_when_speech_is_on_and_frees_it_when_off(server):
     client, store, speech = server
     store.update({"speech": {"enabled": True}}, "test")
@@ -289,101 +319,6 @@ def test_the_server_loads_the_engine_when_speech_is_on_and_frees_it_when_off(ser
     while speech.on and time.monotonic() < deadline:
         time.sleep(0.02)
     assert not speech.on
-
-
-# The desk app
-
-
-class Played:
-    def __init__(self):
-        self.wavs = []
-        self.done = threading.Event()
-        self.expect = 0
-
-    def __call__(self, wav):
-        self.wavs.append(wav)
-        if len(self.wavs) >= self.expect:
-            self.done.set()
-
-
-def test_the_desk_speaks_each_sentence_in_the_mood_with_a_sound_only_first():
-    asked = []
-
-    def fetch(text, emotion, first):
-        asked.append((text, emotion, first))
-        return f"wav:{text}".encode()
-
-    played = Played()
-    played.expect = 3
-    speaker = Speaker(fetch, played)
-    speaker.mood(1, "playful")
-    for piece in ["Ha! Nice ", "one. Told you it'd ", "pass"]:
-        speaker.say(1, piece)
-    speaker.end(1)
-    assert played.done.wait(5)
-    assert asked == [
-        ("Ha!", "playful", True),
-        ("Nice one.", "playful", False),
-        ("Told you it'd pass", "playful", False),
-    ]
-    assert played.wavs == [b"wav:Ha!", b"wav:Nice one.", b"wav:Told you it'd pass"]
-
-
-def test_dan_talking_stops_kit_and_speech_off_is_silent():
-    gate = threading.Event()
-
-    def fetch(text, emotion, first):
-        if text == "Off.":
-            raise SpeechOff("speech is off")
-        if text == "Broken.":
-            raise BrainError("no voice")
-        gate.wait(5)
-        return text.encode()
-
-    played = Played()
-    played.expect = 1
-    speaker = Speaker(fetch, played)
-    speaker.say(1, "One. Two. Three. ")
-    speaker.stop()  # Dan sends a message while Kit is mid-reply
-    gate.set()
-    speaker.say(2, "Off. Broken. New one.")
-    speaker.end(2)
-    assert played.done.wait(5)
-    time.sleep(0.1)
-    # "One." may already have been on its way; nothing after the stop is.
-    assert played.wavs[-1] == b"New one."
-    assert b"Two." not in played.wavs and b"Three." not in played.wavs
-
-
-def test_the_chat_window_feeds_the_speaker(monkeypatch):
-    pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication
-
-    from kit.desk.chat import ChatWindow
-
-    QApplication.instance() or QApplication([])
-    calls = []
-
-    class Recorder:
-        def mood(self, turn, emotion):
-            calls.append(("mood", turn, emotion))
-
-        def say(self, turn, text):
-            calls.append(("say", turn, text))
-
-        def end(self, turn):
-            calls.append(("end", turn))
-
-        def stop(self):
-            calls.append(("stop",))
-
-    chat = ChatWindow()
-    chat.speaker = Recorder()
-    chat.on_event(1, {"type": "mood", "emotion": "happy"})
-    chat.on_event(1, {"type": "say", "text": "Hi there."})
-    chat.on_event(1, {"type": "reply", "reply": {"segments": [{"say": "Hi there."}]}})
-    chat.send("hello")  # no client: an error line, but Kit stops talking first
-    assert calls[:4] == [("mood", 1, "happy"), ("say", 1, "Hi there."), ("end", 1), ("stop",)]
 
 
 # The brain and the command line
@@ -427,20 +362,6 @@ def test_kit_speech_say_saves_the_line_and_shows_the_timing(paths, capsys, monke
     [saved] = (paths.state_dir / "speech" / "said").glob("*-tone.wav")
     with wave.open(str(saved)) as w:
         assert w.getnframes() == int(0.48 * 16000)
-
-
-def test_an_older_reply_still_streaming_isnt_spoken_over_the_newer_one():
-    asked = []
-    played = Played()
-    played.expect = 1
-    speaker = Speaker(lambda text, emotion, first: asked.append(text) or text.encode(), played)
-    speaker.say(2, "Newer.")
-    speaker.say(1, "Older. ")  # Dan asked twice; the first answer arrives late
-    speaker.end(1)
-    speaker.end(2)
-    assert played.done.wait(5)
-    time.sleep(0.1)
-    assert asked == ["Newer."]
 
 
 def test_the_worker_stops_when_kit_does(tmp_path):

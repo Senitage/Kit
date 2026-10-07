@@ -152,6 +152,8 @@ def create_app(
             await asyncio.to_thread(speech.stop)
 
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
+    if speech is not None:
+        brain.voice_quiet = speech.quiet_s  # reading ahead waits for his voice to finish
 
     def require_token(authorization: Annotated[str, Header()] = "") -> None:
         given = authorization.removeprefix("Bearer ").strip()

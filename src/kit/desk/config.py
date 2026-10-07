@@ -71,6 +71,7 @@ class DeskConfig:
     eye_colour: str = "#7ef3e6"
     font_pt: float = 10.5
     speech_bubble: bool = True  # say replies beside the face while the chat is closed
+    words_with_voice: bool = True  # with his voice on, his words show as he says them
     chat_width: int = 460
     chat_height: int = 640
     # Updates (kit.desk.update).

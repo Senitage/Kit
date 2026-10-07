@@ -35,7 +35,8 @@ class FakeModel:
     for a plan, it plans the next ``reply(...)`` and says that reply's words when the
     plain-text call comes. ``calls`` records every call except those plain-text ones,
     which go in ``speak_calls``, so a test sees one call per answer either way. A
-    canned output that isn't a reply (``plan(...)`` or plain words) is used as it is."""
+    canned output that isn't a reply (``plan(...)`` or plain words) is used as it is.
+    Read-aheads (``warm``) go in ``warm_calls``."""
 
     def __init__(self, *outputs, error=None):
         self.outputs = list(outputs)
@@ -45,6 +46,7 @@ class FakeModel:
         self.options: list[dict | None] = []
         self.speak_calls: list[list[dict]] = []
         self.speak_options: list[dict | None] = []
+        self.warm_calls: list[list[dict]] = []
         self._words: list[str] = []  # what the planned replies will say
 
     def _next(self) -> str:
@@ -92,6 +94,9 @@ class FakeModel:
 
     async def complete(self, messages, schema, model=None, options=None):
         return "".join([p async for p in self.stream(messages, schema, model, options)])
+
+    async def warm(self, messages):
+        self.warm_calls.append(messages)
 
 
 class FakeMessages:

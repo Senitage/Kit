@@ -709,6 +709,10 @@ class LookPage(QWidget):
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
         form.addRow(self.speech)
+        self.in_step = QCheckBox("Show Kit's words as he says them (when his voice is on)")
+        self.in_step.setChecked(config.words_with_voice)
+        self.in_step.toggled.connect(self._changed)
+        form.addRow(self.in_step)
         layout.addLayout(form)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -729,6 +733,7 @@ class LookPage(QWidget):
             face_size=self.size.value(),
             font_pt=self.font_pt.value(),
             speech_bubble=self.speech.isChecked(),
+            words_with_voice=self.in_step.isChecked(),
         )
 
     def _changed(self, *_args) -> None:
@@ -757,6 +762,7 @@ class LookPage(QWidget):
         self.size.setValue(d.face_size)
         self.font_pt.setValue(d.font_pt)
         self.speech.setChecked(d.speech_bubble)
+        self.in_step.setChecked(d.words_with_voice)
 
 
 # Updates

@@ -27,7 +27,7 @@ jobs:
       - name: Desk app tests (real Windows API, Qt without a screen)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q tests/test_desk_app.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_desk_update.py tests/test_pc_context.py
+        run: pytest -q tests/test_desk_app.py tests/test_desk_voice.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_desk_update.py tests/test_pc_context.py
       - name: Install Inno Setup
         shell: pwsh
         run: |

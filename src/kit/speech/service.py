@@ -90,6 +90,9 @@ class SpeechService:
         self.note = ""  # anything Dan should know about the running engine
         self.load_s: float | None = None
         self._failed: tuple[tuple, float, str] | None = None  # (key, when, why)
+        self._making = 0  # sentences being made right now
+        self._made_at = float("-inf")  # when the last one was done
+        self._making_lock = threading.Lock()
 
     @property
     def url(self) -> str:
@@ -190,6 +193,22 @@ class SpeechService:
         self, text: str, mood: str = "neutral", engine: str | None = None, first: bool = False
     ) -> Spoken:
         """``first``: the opening of a reply, where an engine may add a sound (a sigh)."""
+        with self._making_lock:
+            self._making += 1
+        try:
+            return self._speak(text, mood, engine, first)
+        finally:
+            with self._making_lock:
+                self._making -= 1
+                self._made_at = self.clock()
+
+    def quiet_s(self) -> float:
+        """Seconds since Kit's voice was last being made (0 while it is), so other work
+        on the GPU can wait for a quiet moment rather than make him stutter."""
+        with self._making_lock:
+            return 0.0 if self._making else max(0.0, self.clock() - self._made_at)
+
+    def _speak(self, text: str, mood: str, engine: str | None, first: bool) -> Spoken:
         health = self.ensure(engine)
         payload = {"text": text, "mood": mood, "first": first}
         try:

@@ -21,6 +21,10 @@ speak_pass = true
 speak_temperature = 0.95     # his spoken words and his private thoughts
 min_p = 0.05                 # keeps a high temperature sensible; 0 is off
 repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
+# Read the conversation into the model ahead of your next message, once Kit and
+# his voice have finished, so he starts answering sooner (about two seconds on
+# Gemma, which otherwise re-reads the whole prompt every message).
+warm_up = false
 
 [routing]
 # How much Kit leans on the local model:

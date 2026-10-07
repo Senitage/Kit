@@ -8,12 +8,15 @@ spoken words in the speaking pass are plain text (no schema), sampled livelier.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Protocol
 
 import httpx
 
 from kit.settings import OllamaSettings
+
+log = logging.getLogger(__name__)
 
 
 class LocalModelError(Exception):
@@ -41,6 +44,11 @@ class LocalModel(Protocol):
         options: dict | None = None,
     ) -> str:
         """The model's whole output at once."""
+        ...
+
+    async def warm(self, messages: list[dict]) -> None:
+        """Read ``messages`` in without answering, so a later call that starts with
+        them only has the rest to read."""
         ...
 
 
@@ -107,6 +115,7 @@ class OllamaModel:
                     if piece:
                         yield piece
                     if data.get("done"):
+                        _log_timing(data)
                         return
         except httpx.HTTPError as e:
             raise LocalModelError(f"can't reach Ollama at {s.url}: {e}") from e
@@ -119,3 +128,34 @@ class OllamaModel:
         options: dict | None = None,
     ) -> str:
         return "".join([piece async for piece in self.stream(messages, schema, model, options)])
+
+    async def warm(self, messages: list[dict]) -> None:
+        """Ollama keeps what it last read (its prompt cache) and only reads on from
+        there when the next prompt starts the same way; one token is the least it
+        will do. Same model and options as the real calls, or Ollama would reload it."""
+        s = self.settings()
+        body = {**self._body(s, messages, None, None, {"num_predict": 1}), "stream": False}
+        try:
+            r = await self.client.post(f"{s.url}/api/chat", json=body, timeout=120)
+        except httpx.HTTPError as e:
+            raise LocalModelError(f"can't reach Ollama at {s.url}: {e}") from e
+        if r.status_code != 200:
+            raise LocalModelError(f"Ollama said {r.status_code}: {r.text[:200]}")
+        try:
+            _log_timing(r.json())
+        except ValueError:
+            pass
+
+
+def _log_timing(done: dict) -> None:
+    """How long Ollama took, for the server log. What it had read before (its prompt
+    cache) isn't read again, so a prompt that reused it shows few tokens read."""
+    if "prompt_eval_count" not in done:
+        return
+    log.info(
+        "local model: read %s tokens in %.2f s, wrote %s in %.2f s",
+        done["prompt_eval_count"],
+        done.get("prompt_eval_duration", 0) / 1e9,
+        done.get("eval_count", 0),
+        done.get("eval_duration", 0) / 1e9,
+    )

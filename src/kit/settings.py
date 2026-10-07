@@ -80,6 +80,15 @@ class OllamaSettings(_Section):
         le=2,
         description="For his spoken words: discourages reusing the same words. 1 is off.",
     )
+    warm_up: bool = Field(
+        False,
+        description="Read the conversation into the local model ahead of your next "
+        "message, once Kit (and his voice) has finished, so he starts answering sooner. "
+        "Some models (Gemma) re-read the whole prompt whenever anything in it changes, "
+        "which took about two seconds a message. With this on, what changes every message "
+        "(the time, what he recalled, your PC) goes beside your message instead of in "
+        "his instructions.",
+    )
 
 
 Provider = Literal["anthropic", "openai", "google", "ollama"]
