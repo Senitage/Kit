@@ -26,6 +26,14 @@ EMOTIONS: dict[str, str] = {
     "playful": "joking or teasing",
     "tired": "low energy or bored",
     "proud": "something went well",
+    "excited": "can't wait, really keen",
+    "sad": "disappointed or sorry",
+    "confused": "doesn't follow, puzzled",
+    "shy": "flattered or a bit embarrassed",
+    "grumpy": "annoyed or fed up, mildly",
+    "focused": "concentrating on a task",
+    "relieved": "a worry has gone away",
+    "fond": "warm and affectionate",
 }
 
 GESTURES: dict[str, str] = {
@@ -40,6 +48,15 @@ GESTURES: dict[str, str] = {
     "wave": "hello or goodbye",
     "bounce": "happy, celebrating",
     "lean_in": "listening closely, concerned",
+    "wink": "a joke or a shared secret",
+    "laugh": "something is funny",
+    "sigh": "resigned, or letting go of a worry",
+    "startle": "a sudden fright or shock",
+    "yawn": "sleepy or bored",
+    "double_take": "wait, what? surprised on second look",
+    "wiggle": "a little happy dance",
+    "peek": "sneaking a look, playful",
+    "look_up": "trying to remember something",
 }
 
 FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
