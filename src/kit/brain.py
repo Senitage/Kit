@@ -55,7 +55,13 @@ from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt, sam
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.pc_context import PcContext
-from kit.prompt import history_messages, recall_results, system_prompt, weather_results
+from kit.prompt import (
+    history_messages,
+    recall_results,
+    system_prompt,
+    weather_results,
+    with_pc_look,
+)
 from kit.recall import Recall, Recalled
 from kit.reply import (
     Reply,
@@ -323,6 +329,10 @@ class Brain:
         except WeatherError as e:
             return f"The forecast lookup for {place or 'home'} failed: {e}"
 
+    def _user_turn(self, text: str, role: str, settings: Settings, pc_detail: str) -> str:
+        text = self._with_busy_note(text, role)
+        return with_pc_look(text, pc_detail, settings.persona.owner) if pc_detail else text
+
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
         long prompt, so when Dan checks in, say it again right next to his words."""
@@ -536,7 +546,7 @@ class Brain:
         messages = [
             {"role": "system", "content": system},
             *history_messages(history, CHANNEL.get()),
-            {"role": "user", "content": self._with_busy_note(text, role)},
+            {"role": "user", "content": self._user_turn(text, role, settings, pc_detail)},
         ]
         job = None
         if role != LOCAL:

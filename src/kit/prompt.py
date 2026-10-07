@@ -219,7 +219,6 @@ def system_prompt(
         *([channel] if channel else []),
         *([pc] if pc else []),
         *voice_block(voice, owner, name),
-        *pc_block(pc_detail, owner),
         *forecast_block(forecast, owner),
     ]
     return "\n".join(lines)
@@ -251,17 +250,16 @@ def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
     return lines
 
 
-def pc_block(detail: str, owner: str) -> list[str]:
-    """The full picture of the PC, fetched because the message is about it."""
-    if not detail:
-        return []
-    return [
-        "",
-        f"What you can see on {owner}'s PC (looked just now, because they asked about it):",
-        detail,
-        "You've already looked, so answer now from this with action none, in a sentence "
-        "or two with the numbers or names that matter. Don't list everything unless asked.",
-    ]
+def with_pc_look(text: str, detail: str, owner: str) -> str:
+    """Dan's message with a fresh look at his PC right beside it. A small model reads
+    what's next to the question; in the system prompt it copied its last PC answer
+    from the chat instead."""
+    return (
+        f"{text}\n\n[You just looked at {owner}'s PC for this. Answer exactly what he asked "
+        f"(windows, tabs, the last hour, today or how the PC is coping) from this fresh "
+        f"look, not from earlier answers, in a sentence or two with the names or numbers "
+        f"that matter. Action none.\n{detail}]"
+    )
 
 
 def forecast_block(forecast: str, owner: str) -> list[str]:

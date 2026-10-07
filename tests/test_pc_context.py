@@ -130,6 +130,7 @@ def make_brain(paths, *outputs):
         "is my PC struggling?",
         "look at what i have open on my PC",
         "what's open?",
+        "what tabs have i got open?",
     ],
 )
 def test_pc_questions_are_answered_locally_from_a_fresh_look(paths, question):
@@ -138,7 +139,9 @@ def test_pc_questions_are_answered_locally_from_a_fresh_look(paths, question):
     events = collect(brain.chat(question))
     assert "looked_at_pc" in [e["type"] for e in events]
     system = brain.model.calls[0][0]["content"]
-    assert "Open windows (3):" in system and "PC health: CPU 12%" in system
+    asked = brain.model.calls[0][-1]["content"]
+    assert asked.startswith(question) and "fresh look" in asked
+    assert "Open windows (3):" in asked and "PC health: CPU 12%" in asked
     assert "ask_cloud" not in system  # the cloud can't see the PC, so no hand-off
     assert "- look_at_pc:" not in system  # already looked, so one answer, not two
     assert not claude.calls
@@ -153,7 +156,7 @@ def test_other_questions_dont_look_at_the_pc(paths, question):
     brain.pc.update(snap())
     events = collect(brain.chat(question))
     assert "looked_at_pc" not in [e["type"] for e in events]
-    assert "Open windows" not in brain.model.calls[0][0]["content"]
+    assert "Open windows" not in brain.model.calls[0][-1]["content"]
     memory.close()
 
 
