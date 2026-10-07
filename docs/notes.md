@@ -16,6 +16,10 @@ list". If a note with that name is anywhere in the vault, the new text goes on
 the end under the time; otherwise it's a new note in `nas.notes_folder` (for
 example `Inbox`), or in the folder you name ("put it in Projects").
 
+Kit only writes a note when you ask for one. If something you say sounds worth
+keeping but you didn't ask, he asks "want me to note that?" and saves it only if
+you say yes.
+
 ## 1. Let the kit user write to the share
 
 In DSM: **Control Panel → Shared Folder**, select your notes share, **Edit →

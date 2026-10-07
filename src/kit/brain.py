@@ -89,7 +89,17 @@ from kit.notebook import (
     later_want,
     tomorrow_morning,
 )
-from kit.notes import ALL, NOTES, NoteError, Notes, Request, asked_text, request, title_for
+from kit.notes import (
+    ALL,
+    NOTES,
+    NoteError,
+    Notes,
+    Request,
+    asked_text,
+    asks_for_note,
+    request,
+    title_for,
+)
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
@@ -337,6 +347,7 @@ class Brain:
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
+        self.pending_note: tuple[str, str] | None = None  # (title, text) Kit offered to note
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
@@ -399,7 +410,11 @@ class Brain:
             self.notebook.mark_said(shared.id)
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
         self.life.note_chat()
-        answered = self._answer_suggestion(text) or self._answer_shush(text)
+        answered = (
+            self._answer_note_offer(text, settings)
+            or self._answer_suggestion(text)
+            or self._answer_shush(text)
+        )
         if answered is not None:
             for event in self._say_locally(answered):
                 emit(event)
@@ -632,6 +647,23 @@ class Brain:
             self.pending_thing = pending
         return None
 
+    def _answer_note_offer(self, text: str, settings: Settings) -> Reply | None:
+        """Kit offered to write something down ("want me to note that?"): a yes
+        saves it, a no drops it, anything else lets the offer lapse."""
+        pending, self.pending_note = self.pending_note, None
+        if pending is None or not settings.nas.vault:
+            return None
+        if YES.fullmatch(text):
+            title, note = pending
+            try:
+                saved = self.notes.take(settings.nas, title or title_for(note), note)
+            except NoteError as e:
+                return Reply.plain(f"I couldn't save it: {e}.", "concerned", "droop")
+            return Reply.plain(f"Done, it's in {saved.shown}.", "happy", "nod")
+        if NO.fullmatch(text):
+            return Reply.plain("Okay, I'll leave it.", "neutral", "nod")
+        return None
+
     def _answer_shush(self, text: str) -> Reply | None:
         """ "Shush" or "not now" keeps Kit from piping up for an hour; "you can talk
         again" lets him. Answered on the spot, so it works even when models are down."""
@@ -861,6 +893,10 @@ class Brain:
             return {"type": "notice", "message": f"The note wasn't saved: {e}."}
         verb = "Added to" if saved.added else "Saved"
         return {"type": "notice", "message": f"{verb} {saved.shown} in your notes."}
+
+    def _offer_note(self, reply: Reply, heard: str) -> None:
+        note = reply.action.text.strip() or heard.strip()
+        self.pending_note = (reply.action.title.strip(), note) if note else None
 
     def _do_note(self, asked: Request, settings: Settings) -> tuple[str, list[Event]]:
         """Carry out a plain note request before the model answers, so a small model
@@ -1101,7 +1137,13 @@ class Brain:
             if event:
                 yield event
         elif kind == "note" and not NOTE_DONE.get():
-            yield self._take_note(reply, settings, text)
+            if asks_for_note(text):
+                yield self._take_note(reply, settings, text)
+            else:  # never a note Dan didn't ask for: it waits for his yes
+                self._offer_note(reply, text)
+                yield {"type": "notice", "message": "Not in your notes yet: say yes to add it."}
+        elif kind == "offer_note" and not NOTE_DONE.get():
+            self._offer_note(reply, text)
         if kind in ("none", "remember") and hops == 0:
             event = self._implied_correction(text, recalled)
             if event:
@@ -1255,6 +1297,10 @@ class Brain:
             if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
                 # Dan never named it, so no "shall I add it to the register?"
                 plan = plan.model_copy(update={"action": Action(kind="none")})
+            if plan.action.kind == "note" and not asks_for_note(heard):
+                # Dan didn't ask for a note, so Kit offers rather than writes one.
+                offer = plan.action.model_copy(update={"kind": "offer_note"})
+                plan = plan.model_copy(update={"action": offer})
             note = speak_note(
                 plan.action,
                 settings.persona.owner,

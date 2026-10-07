@@ -53,6 +53,10 @@ _WRITE = re.compile(
     r"^\W*note(?:\s+(?:that|this|down)\b|\s*:)",
     re.IGNORECASE,
 )
+# Dan's message is about his notes at all: only then may the model write one.
+_ABOUT_NOTES = re.compile(
+    r"\b(?:notes?|jot|memo|write\s+(?:\w+\s+)?down|list|planner)\b", re.IGNORECASE
+)
 # "add book the car to my holiday planner", "put milk on the shopping list".
 _ADD_TO = re.compile(
     r"^\W*(?:(?:can|could|would) you\s+|please\s+)*(?:add|put|append|stick|pop)\s+"
@@ -168,6 +172,12 @@ def request(message: str, names: Iterable[str]) -> Request | None:
         if note:
             return Request("read", note)
     return None
+
+
+def asks_for_note(message: str) -> bool:
+    """Dan's message asks for something to be written in his notes. Kit never takes
+    a note on his own: without this he offers instead ("want me to note that?")."""
+    return bool(_ABOUT_NOTES.search(message))
 
 
 def title_for(text: str) -> str:

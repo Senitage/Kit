@@ -243,8 +243,13 @@ def system_prompt(
             f"what to write in text as markdown, tidied up but in {owner}'s words (never "
             f"empty), and a short title in title. To add to a note that exists, use its "
             f"name as the title ('Shopping list'). It's saved in {owner}'s notes in "
-            f"Obsidian. Never ask whether to write it down: just do it. A question "
+            f"Obsidian. Only when {owner} asks for it: never on your own. A question "
             f"about a note is read_note, not note."
+        )
+        lines.append(
+            f"- offer_note: when something {owner} says sounds worth writing down (a "
+            f"plan, a date, a to-do) but they didn't ask. Put what you'd write in text "
+            f"and ask if they'd like it in their notes; it's saved only if they say yes."
         )
         lines.append(
             f"- read_note: when {owner} asks what's in one of their notes, or to check, "
@@ -364,6 +369,8 @@ SPEAK_FOR = {
     "remember": 'You\'re keeping this in your memory: "{text}". Answer {owner} naturally; '
     "you can say you'll remember it.",
     "note": "You're writing that down in {owner}'s notes. Say so in a few words.",
+    "offer_note": "Ask {owner}, in a few words, whether they'd like that written down in "
+    "their notes. Don't say you've noted it: you haven't yet.",
     "read_note": "You're about to open {owner}'s note '{text}'. Say so in a few words.",
     "thing": "You're noting \"{text}\". If it's new to you, ask {owner} whether to add it to "
     "the register.",
