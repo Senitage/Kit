@@ -615,3 +615,14 @@ def test_examples_change_from_turn_to_turn(memory):
         collect(brain.chat("hi"))
     shown = {c[0]["content"].split("never reuse these lines):")[1][:300] for c in model.calls}
     assert len(shown) > 1
+
+
+def test_an_earlier_answer_to_the_same_words_is_not_recalled(memory):
+    s = Settings.model_validate(
+        {"brain": {"history_messages": 2}, "memory": {"min_similarity": 0.0}}
+    )
+    brain, model, _ = make(memory, reply("Coffee first?"), reply("Hi."), reply("Yo."), settings=s)
+    collect(brain.chat("Hey!"))
+    collect(brain.chat("filler message about pumps"))
+    collect(brain.chat("hey"))
+    assert "Coffee first?" not in model.calls[2][0]["content"]

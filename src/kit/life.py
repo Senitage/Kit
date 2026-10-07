@@ -115,6 +115,7 @@ class Life:
         self.sulky = False
         self.snoozed_until: datetime | None = None
         self.curious_about = ""
+        self.quiet_because = "just started"  # why Kit isn't piping up, for kit life
         self.asleep = False
         self._seen: set[str] = set()
         self._day = now.date()
@@ -211,27 +212,37 @@ class Life:
         return self._wants_to_talk(now, snap, present)
 
     def _wants_to_talk(self, now: datetime, snap, present: bool) -> str | None:
+        reason, self.quiet_because = self._urge(now, snap, present)
+        return reason
+
+    def _urge(self, now: datetime, snap, present: bool) -> tuple[str | None, str]:
+        """(why Kit wants to talk, or None; and if not, why he's keeping quiet)."""
         life = self.settings().life
         if not life.enabled or life.chattiness <= 0 or life.max_per_hour <= 0:
-            return None
+            return None, "turned off in settings (life.enabled, chattiness or max_per_hour)"
         if self.snoozed_until and now < self.snoozed_until:
-            return None
+            return None, f"snoozed until {self.snoozed_until:%H:%M}"
         if in_quiet_hours(now, life.quiet_from, life.quiet_until):
-            return None
-        if not present or snap is None or snap.idle_seconds < TYPING_S:
-            return None  # away, or mid-flow: wait for a natural pause
+            return None, f"quiet hours ({life.quiet_from} to {life.quiet_until})"
+        if not present or snap is None:
+            return None, "you're away, or the desk app isn't reporting"
+        if snap.idle_seconds < TYPING_S:
+            return None, "you're typing or clicking: waiting for a pause"
         focus = snap.focus
         if focus and (
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
-            return None
+            return None, "you're on a call or presenting"
         if now - self.last_chat < AFTER_CHAT:
-            return None
+            return None, f"you chatted at {self.last_chat:%H:%M}: waits 10 minutes after a chat"
         gap = timedelta(minutes=max(60 / life.max_per_hour, 10) * 2**self.ignored)
         if self.last_pipe and now - self.last_pipe < gap:
-            return None
+            return (
+                None,
+                f"piped up at {self.last_pipe:%H:%M}: next chance {self.last_pipe + gap:%H:%M}",
+            )
         if sum(1 for t in self.pipes if now - t < timedelta(hours=1)) >= life.max_per_hour:
-            return None
+            return None, f"already piped up {life.max_per_hour} times this hour"
         drives = {
             "bored": self.drives.boredom,
             "curious": self.drives.curiosity,
@@ -239,8 +250,9 @@ class Life:
         }
         reason, urge = max(drives.items(), key=lambda kv: kv[1])
         if urge * (0.5 + life.chattiness) < 0.9:
-            return None
-        return reason
+            need = 0.9 / (0.5 + life.chattiness)
+            return None, f"not {reason} enough yet ({urge:.2f} of {min(need, 1):.2f})"
+        return reason, ""
 
     def piped_up(self) -> None:
         now = self.clock()
@@ -285,6 +297,7 @@ class Life:
         own_examples: list[tuple[str, str]],
         said: list[str],
         quirks: list[str],
+        text: str = "",
     ) -> Voice:
         """How Kit feels and sounds for the next reply. Call it before ``note_chat``,
         so "I've been bored" or "I missed you" is still true when he answers."""
@@ -295,7 +308,14 @@ class Life:
             owner=owner,
             hours=f"{hours:.0f} hours" if hours >= 1.5 else "a while",
         )
-        pool = list(own_examples) + VOICE_LINES
+        # A small model answers "I broke the build" with the example for "The build
+        # failed" word for word, so examples close to the message, or already said,
+        # are left out.
+        pool = [
+            (u, k)
+            for u, k in list(own_examples) + VOICE_LINES
+            if not alike(u, text) and not any(alike(k, s) for s in said)
+        ]
         examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
         quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
         return Voice(feeling, cheek_style(self.settings().life.cheek), examples, said, quirk)
@@ -312,6 +332,7 @@ class Life:
             if self.last_pipe
             else None,
             "ignored_in_a_row": self.ignored,
+            "quiet_because": self.quiet_because,
             "last_event": self._next_id - 1,
         }
 
@@ -348,6 +369,26 @@ FEELINGS = {
     "sulky": "a little sulky: {owner} ignored you earlier, though you're warming up again",
     "asleep": "just woken up, still a bit dozy",
 }
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", text.lower().replace("'", "")) if len(w) > 2}
+
+
+def alike(a: str, b: str) -> bool:
+    """Do two lines share most of their words?"""
+    wa, wb = _words(a), _words(b)
+    if not wa or not wb:
+        return a.strip().lower().strip(".!?") == b.strip().lower().strip(".!?")
+    return len(wa & wb) / min(len(wa), len(wb)) >= 0.5
+
+
+def same_words(a: str, b: str) -> bool:
+    """Are two lines near enough the same thing said again ("hey" and "Hey!")?"""
+    wa, wb = _words(a), _words(b)
+    if not wa or not wb:
+        return a.strip().lower().strip(".!?") == b.strip().lower().strip(".!?")
+    return len(wa & wb) / len(wa | wb) >= 0.75
 
 
 def cheek_style(cheek: float) -> str:

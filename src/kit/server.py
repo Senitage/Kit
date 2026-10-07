@@ -363,6 +363,12 @@ def create_app(
         events = await brain.life.wait_for_events(after, wait)
         return {"events": events, "last": brain.life.state()["last_event"]}
 
+    @app.post("/api/life/poke", dependencies=auth)
+    async def life_poke() -> dict:
+        """Make Kit pipe up now, whatever his manners say (for testing)."""
+        reply = await pipe_up_now(brain, "bored")
+        return {"ok": reply is not None, "reply": reply}
+
     @app.post("/api/life/snooze", dependencies=auth)
     def snooze(minutes: Annotated[float, Body(embed=True, ge=0, le=24 * 60)] = 60) -> dict:
         """Keep Kit from piping up for a while (0 lets him again)."""
@@ -397,6 +403,11 @@ async def life_tick(brain: Brain) -> None:
     reason = brain.life.tick()
     if reason is None or brain.jobs:
         return
+    await pipe_up_now(brain, reason)
+
+
+async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
+    """Kit says something unprompted, and every body (desk app, arm) is told."""
     reply = None
     async for event in brain.pipe_up(reason):
         if event["type"] == "reply":
@@ -410,6 +421,8 @@ async def life_tick(brain: Brain) -> None:
                 "message_id": reply["message_id"],
             }
         )
+        return reply["reply"]
+    return None
 
 
 async def _upkeep_loop(

@@ -114,3 +114,14 @@ quirks to let show, four example lines picked fresh each time from your
 `persona.examples` and a built-in pool, and his own last few lines so he
 doesn't repeat himself. The mood is read before your message resets it, so
 "I've been bored" is still true when he answers.
+
+## Checking on him
+
+- `kit life` shows his mood, drives, quirks, and why he isn't piping up right
+  now (typing, quiet hours, just chatted, not bored enough yet...).
+- `kit life poke` makes him pipe up now, whatever his manners say. Handy for
+  testing; the desk app shows it like any other pipe-up.
+
+On his own, with default settings, boredom needs about 25 quiet minutes with
+you at the PC (not chatting, not mid-typing) before he speaks first. A restart
+of the brain starts his drives again from scratch.

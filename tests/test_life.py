@@ -207,3 +207,35 @@ def test_the_brain_decides_when_kit_sleeps_and_wakes():
     life.on_report()
     states = [e["state"] for e in life.events_after(0) if e["type"] == "state"]
     assert states == ["asleep", "awake"] and not life.asleep
+
+
+def test_kit_says_why_hes_keeping_quiet():
+    life, pc, clock = setup(chattiness=0.5)
+    run(life, pc, clock, 1, snap(idle=2))
+    assert "typing" in life.state()["quiet_because"]
+    life.note_chat()
+    run(life, pc, clock, 1, snap(idle=40))
+    assert "waits 10 minutes after a chat" in life.quiet_because
+    run(life, pc, clock, 10, snap(idle=40))
+    assert "not bored enough yet" in life.quiet_because
+
+
+def test_poke_makes_kit_pipe_up_now(paths):
+    brain, memory, model, store = make_brain(paths, reply("Oi. Still on pumps?"))
+    app = create_app(store, memory, brain, "t", summarise_every_s=None, life_every_s=None)
+    with TestClient(app) as client:
+        got = client.post("/api/life/poke", headers={"Authorization": "Bearer t"}).json()
+    assert got["ok"] and got["reply"]["segments"][0]["say"] == "Oi. Still on pumps?"
+    assert brain.life.events_after(0)[-1]["type"] == "pipe_up"
+    memory.close()
+
+
+def test_examples_like_the_message_or_already_said_are_left_out():
+    life, _, _ = setup()
+    for _ in range(20):
+        voice = life.voice(
+            "Dan", [], ["Watching the cursor blink. Riveting stuff."], [], "i broke the build again"
+        )
+        users = [u for u, _ in voice.examples]
+        assert "The build failed again." not in users
+        assert "What are you up to?" not in users

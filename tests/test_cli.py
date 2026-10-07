@@ -172,3 +172,31 @@ def test_eval_compare_needs_known_models(paths, capsys):
     assert main(["eval", "compare"]) == 2
     assert main(["eval", "compare", "--models", "sonnet", "nope"]) == 2
     assert "unknown model(s): nope" in capsys.readouterr().out
+
+
+def test_kit_life_asks_the_running_brain(paths, capsys):
+    import httpx
+
+    from kit.cli import cmd_life
+
+    def handler(request):
+        assert request.headers["Authorization"].startswith("Bearer ")
+        if request.url.path == "/api/life/poke":
+            return httpx.Response(200, json={"ok": True, "reply": {"segments": [{"say": "Oi."}]}})
+        return httpx.Response(
+            200,
+            json={
+                "mood": "bored",
+                "drives": {"boredom": 0.7},
+                "quiet_because": "you chatted at 10:00: waits 10 minutes after a chat",
+                "last_piped_up": None,
+                "quirks": ["puns"],
+            },
+        )
+
+    paths.ensure()
+    assert cmd_life(paths, "show", httpx.MockTransport(handler)) == 0
+    out = capsys.readouterr().out
+    assert "mood:     bored" in out and "waits 10 minutes" in out
+    assert cmd_life(paths, "poke", httpx.MockTransport(handler)) == 0
+    assert "Kit: Oi." in capsys.readouterr().out

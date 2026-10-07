@@ -45,13 +45,13 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner
-from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt
+from kit.life import SHUSH, UNSHUSH, Life, Voice, my_quirks, pipe_up_prompt, same_words
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import CONVERSATION, DAYS, FACTS, RECALL_STEP, Memory, Message
 from kit.pc_context import PcContext
@@ -182,6 +182,12 @@ class Job:
         }
 
 
+def _asked(exchange: str) -> str:
+    """What Dan said in an indexed exchange ("Dan: ...\nKit: ...")."""
+    first = exchange.split("\n", 1)[0]
+    return first.split(": ", 1)[-1]
+
+
 def route(text: str, settings: Settings) -> tuple[str, bool]:
     """Who answers first: (role, whether Dan chose it for this message)."""
     if KEEP_LOCAL.search(text):
@@ -250,7 +256,7 @@ class Brain:
         settings = self.settings()
         history = self.memory.recent(settings.brain.history_messages)
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
-        VOICE.set(self._voice(settings, history))  # before note_chat: how Kit felt till now
+        VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
         self.life.note_chat()
         answered = self._answer_suggestion(text) or self._answer_shush(text)
         if answered is not None:
@@ -262,6 +268,9 @@ class Brain:
             return
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         recalled = await self.recall.for_turn(text, recent_refs)
+        # "hey" finds every earlier "hey", and the model copies what it said then.
+        fresh = [h for h in recalled.conversation if not same_words(_asked(h.item.text), text)]
+        recalled = replace(recalled, conversation=fresh)
         role, chosen = route(text, settings)
         if self.jobs and not chosen:
             role = LOCAL  # busy: chat locally while the cloud works
@@ -402,11 +411,11 @@ class Brain:
             VOICE.reset(voice_token)
         self.life.piped_up()
 
-    def _voice(self, settings: Settings, history: list[Message]) -> Voice:
+    def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
         persona = settings.persona
         said = [m.text[:SAID_CHARS] for m in history if m.role != "user" and m.text][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
-        return self.life.voice(persona.owner, own, said, self.quirks)
+        return self.life.voice(persona.owner, own, said, self.quirks, text)
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
