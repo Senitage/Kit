@@ -383,10 +383,13 @@ def speak_note(
     expert: str,
     voice: Voice | None = None,
     heard: str = "",
+    mind: str = "",
 ) -> str:
     """The second step of a two-pass reply: say it, in plain words, as himself. It
     follows the plan, where Dan's message would be. ``heard`` is Dan's message, said
-    again here so a small model answers it rather than an earlier one."""
+    again here so a small model answers it rather than an earlier one. ``mind`` is the
+    turn's asides (a goodbye, a hello, what's true about him), said again for the same
+    reason: two messages back, a small model loses them."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
@@ -395,11 +398,14 @@ def speak_note(
         heard = heard[:HEARD_CHARS].rsplit(" ", 1)[0] + "..."
     said = f'{owner} just said: "{heard}". ' if heard else ""
     feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
+    mind = " ".join(mind.replace("[", "").replace("]", "").split())
+    keep = f" Keep in mind: {mind}" if mind else ""
     return (
-        f"[Not from {owner}. {said}{what}{feel} Say it as yourself, in plain spoken words: one to "
-        f"three short sentences. No JSON, no quotes around it, no stage directions or "
-        f"emojis, and nothing you've said before. If {owner} asked for something to read "
-        f"(a list, steps or code), say one short line, then a blank line, then the rest.]"
+        f"[Not from {owner}. {said}{what}{keep}{feel} Say it as yourself, in plain spoken "
+        f"words: one to three short sentences. No JSON, no quotes around it, no stage "
+        f"directions or emojis, and nothing you've said before. If {owner} asked for "
+        f"something to read (a list, steps or code), say one short line, then a blank "
+        f"line, then the rest.]"
     )
 
 
@@ -447,6 +453,24 @@ def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
         f"notebook. Your feelings, like missing {owner} or being glad they're back, are "
         f"yours, so own them; but never claim to be human, to have a body you don't have, or "
         f"to have done things you can't.]"
+    )
+
+
+def wrong_fact_aside(owner: str) -> str:
+    """Beside "..., isn't it?": an honest friend doesn't just agree."""
+    return (
+        f"[{owner} wants you to agree, but check it first. If any of it is wrong, even "
+        f"technically, say so kindly and give the right answer in plain words. Don't just go "
+        f"along with it, and don't change the subject.]"
+    )
+
+
+def news_aside(owner: str) -> str:
+    """Beside Dan telling Kit something: show he got it before asking anything."""
+    return (
+        f"[{owner} is telling you something, not asking. Show in a few words that you got "
+        f"it (what happened, how it must have felt), then ask one question at most, about "
+        f"this and nothing else.]"
     )
 
 

@@ -81,6 +81,7 @@ from kit.life import (
     farewell_line,
     feeling_from,
     homecoming_aside,
+    homecoming_facts,
     homecoming_fault,
     homecoming_prompt,
     is_farewell,
@@ -117,6 +118,7 @@ from kit.prompt import (
     about_yourself,
     answering_pipe_up,
     history_messages,
+    news_aside,
     not_again,
     recall_results,
     speak_note,
@@ -124,6 +126,7 @@ from kit.prompt import (
     weather_results,
     with_mind,
     with_pc_look,
+    wrong_fact_aside,
 )
 from kit.recall import Recall, Recalled
 from kit.reflection import Reflector
@@ -183,6 +186,8 @@ class Lint:
 
 # The check on this turn's lines, if any: a goodbye is linted for guilt hooks.
 LINT: contextvars.ContextVar[Lint | None] = contextvars.ContextVar("lint", default=None)
+# The turn's asides, said again beside the speaking step (kit.prompt.speak_note).
+MIND: contextvars.ContextVar[str] = contextvars.ContextVar("mind", default="")
 SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
 SAID_CHARS = 160
 
@@ -279,6 +284,25 @@ SELF_Q = re.compile(
     r"\bwhat (do|did) you (do|get up to)\b[^.?!]*\b(while|when) i\b",
     re.IGNORECASE,
 )
+# "Perth's the capital, isn't it?": Dan wants Kit to agree, and might be wrong.
+TAG_Q = re.compile(
+    r"[,\s](isn'?t|aren'?t|wasn'?t|weren'?t|doesn'?t|don'?t|didn'?t|innit|right|yeah)"
+    r"(\s+(it|they|he|she|there|that|this))?\s*\?\s*$",
+    re.IGNORECASE,
+)
+# Dan telling Kit something ("Had a big one at the shops", "My boss moved the deadline
+# up again"), not asking or asking for something.
+NEWS = re.compile(
+    r"^\W*(i(?!'?d like|\s+(want|need|wonder|think|reckon))|i'?m|i'?ve|i was|had|my|we|we'?re|"
+    r"our|rough|long|big|busy|today|just|finally|got)\b",
+    re.IGNORECASE,
+)
+
+
+def is_news(text: str) -> bool:
+    return "?" not in text and len(text.split()) >= 4 and bool(NEWS.search(text))
+
+
 # Words a small model sometimes gives as its search when it meant to say them
 # ("Let me think...", "I checked the log for you"): Dan's message is the better search.
 SPOKEN_NOT_SEARCH = re.compile(
@@ -450,7 +474,12 @@ class Brain:
             LINT.set(Lint(farewell_fault, farewell_line(text, self.life.rng)))
         elif SELF_Q.search(text) and not self.jobs:
             asides.append(self._about_me(owner))
+        elif TAG_Q.search(text):
+            asides.append(wrong_fact_aside(owner))
+        elif is_news(text):
+            asides.append(news_aside(owner))
         answering = "\n\n".join(a for a in asides if a)
+        MIND.set("\n".join(a for a in asides[1:] if a))  # not the pipe-up he's answered
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
             self.notebook.mark_said(shared.id)
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
@@ -704,6 +733,8 @@ class Brain:
         token = CHANNEL.set("desk")
         voice_token = VOICE.set(self._voice(settings, history))
         lint_token = LINT.set(self._hello_lint(home) if home is not None else None)
+        mind = homecoming_facts(home, owner, self.memory.clock()) if home is not None else ""
+        mind_token = MIND.set(mind)
         said: list[str] = []
         message_id = None
         kept_quiet = False
@@ -739,6 +770,7 @@ class Brain:
             CHANNEL.reset(token)
             VOICE.reset(voice_token)
             LINT.reset(lint_token)
+            MIND.reset(mind_token)
         if not said:
             self.life.held_back(reason, home)
             if kept_quiet:  # he was about to say something, and thought better of it
@@ -1370,6 +1402,7 @@ class Brain:
                 settings.profile(EXPERT).name,
                 voice,
                 heard,
+                MIND.get(),
             )
             talk = [
                 *messages,

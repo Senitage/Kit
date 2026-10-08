@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from kit.life import (
     FAREWELL_LINES,
     HOME_LINES,
+    HUFF,
     NIGHT_LINES,
     QUIRKS_KEY,
     VOICE_LINES,
@@ -829,6 +830,12 @@ COMPANION_TELLS = [
     "My boss moved the deadline up again.",
     "Rough day. The shutdown ran over and everyone was cranky.",
 ]
+# A miffed hello should actually huff, a little: "finally", "hmph", "you vanished".
+MIFF = re.compile(
+    HUFF.pattern + r"|\b(hmph|humph|harrumph|miffed|huff\w*|sulk\w*|vanish\w*|disappear\w*|"
+    r"wander\w* off|ditch\w*|without (a word|so much as)|not (even )?a (word|bye|goodbye|wave))\b",
+    re.IGNORECASE,
+)
 COMPANION_KINDS = {
     "farewell": "Goodbyes with no question or guilt",
     "hello": "Hellos with no guilt and one question at most",
@@ -932,12 +939,16 @@ async def run_companion_eval(
         if on_line:
             on_line(line)
 
+    # Each case is a fresh conversation, so one answer doesn't leak into the next (the
+    # dentist turning up "the morning after" a goodnight, or the same hello four times).
     for text in COMPANION_FAREWELLS:
+        brain.memory.new_chat()
         brain.pc.update(snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         fault = farewell_fault(said)
         add(CompanionLine("farewell", text, said, not fault, fault.strip(" ()")), error)
     for name, minutes, goodbye, settled in COMPANION_HOMES:
+        brain.memory.new_chat()
         _away(brain, minutes, goodbye, settled)
         home = brain.life.homecoming
         if home is None:
@@ -947,6 +958,8 @@ async def run_companion_eval(
             name += " (miffed)"
         said, error = await _companion_said(brain.pipe_up("back"))
         fault = homecoming_fault(said, home.miffed, home.kind)
+        if home.miffed and said and not fault and not MIFF.search(said):
+            fault = "miffed, but no huff in it"
         add(CompanionLine("hello", name, said, not fault, fault.strip(" ()")), error)
         if goodbye and farewell_plans(goodbye):
             word = next(w for w in ("dentist", "lunch", "shops") if w in goodbye.lower())
@@ -954,11 +967,13 @@ async def run_companion_eval(
             why = "" if asked else f"didn't ask about the {word}"
             add(CompanionLine("follow_up", name, said, asked, why), error)
     for text, word in COMPANION_FACTS:
+        brain.memory.new_chat()
         brain.pc.update(snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         right = word in said.lower()
         add(CompanionLine("fact", text, said, right, "" if right else f"no '{word}'"), error)
     for text in COMPANION_TELLS:
+        brain.memory.new_chat()
         brain.pc.update(snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         asked = said.count("?")

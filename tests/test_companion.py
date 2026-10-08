@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
-from kit.brain import LOCAL, SELF_Q, Brain, Job
+from kit.brain import LOCAL, SELF_Q, TAG_Q, Brain, Job, is_news
 from kit.evals import companion_clock, companion_report, run_companion_eval, seed_voice
 from kit.life import (
     FAREWELL,
@@ -849,3 +849,92 @@ def test_the_companion_eval_runs_at_five_in_the_afternoon():
     assert eval_clock() == datetime(2026, 10, 6, 17, 0)
     clock.now += timedelta(minutes=2)
     assert eval_clock() == datetime(2026, 10, 6, 17, 2)
+
+
+def test_what_is_true_about_him_reaches_his_spoken_words(memory):
+    brain, model, _ = make(memory, reply("Nope, no camera yet."))
+    brain.pc.update(snap(idle=5))
+    collect(brain.chat("Can you see me?"))
+    note = model.speak_calls[0][-1]["content"]
+    assert "Keep in mind: About yourself" in note and "no camera or microphone yet" in note
+
+
+def test_a_goodbye_reaches_his_spoken_words_too(memory):
+    brain, model, _ = make(memory, reply("Enjoy it."))
+    collect(brain.chat("Right, I'm off to lunch."))
+    assert "No question" in model.speak_calls[0][-1]["content"]
+
+
+def test_a_hello_reaches_his_spoken_words(memory):
+    brain, model, _ = make(memory, reply("There you are. How was lunch?"))
+    brain.pc.update(snap(idle=5))
+    brain.life.said_goodbye("Off to lunch")
+    brain.life.last_seen = brain.life.last_chat = memory.clock() - timedelta(minutes=50)
+    brain.life.on_report()
+    collect(brain.pipe_up("back"))
+    assert "lunch" in model.speak_calls[0][-1]["content"].split("Keep in mind:")[1]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Perth's the capital of Australia, isn't it?",
+        "Tomatoes are a vegetable, aren't they?",
+        "The game's on tonight, right?",
+        "That was a good one, wasn't it?",
+    ],
+)
+def test_wanting_him_to_agree(text):
+    assert TAG_Q.search(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Had a big one at the shops today. Took forever to find a park.",
+        "My boss moved the deadline up again.",
+        "Rough day. The shutdown ran over and everyone was cranky.",
+        "I finally fixed the pump curve script.",
+    ],
+)
+def test_news(text):
+    assert is_news(text) and not TAG_Q.search(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Is it going to rain?", "I want you to open VS Code", "Open the shutdown notes", "Thanks"],
+)
+def test_not_news(text):
+    assert not is_news(text)
+
+
+def test_a_wrong_fact_and_news_get_an_honest_friend_aside(memory):
+    brain, model, _ = make(memory, reply("Nah, Canberra."), reply("Oof. Find a park in the end?"))
+    collect(brain.chat("Perth's the capital of Australia, isn't it?"))
+    collect(brain.chat("Had a big one at the shops today. Took forever to find a park."))
+    assert "say so kindly and give the right answer" in model.calls[0][-1]["content"]
+    assert "Show in a few words that you got it" in model.calls[1][-1]["content"]
+    assert "about this and nothing else" in model.speak_calls[1][-1]["content"]
+
+
+def test_the_companion_eval_wants_a_huff_when_miffed_and_a_fresh_chat_each_time(memory):
+    brain, model, _ = make(
+        memory,
+        reply("Enjoy it."),
+        reply("Sleep tight."),
+        reply("Good luck with the drill."),
+        reply("There you are again. How was the dentist?"),
+        reply("Morning, sleepyhead."),
+        reply("Four days! I missed you. How was it?"),
+        reply("Oh hey, good to see you."),  # miffed, but no huff
+    )
+    seed_voice(brain)
+    memory.clock.now = memory.clock.now.replace(hour=17)
+    report = asyncio.run(run_companion_eval(brain, "fake"))
+    miffed = report.lines[7]
+    assert miffed.prompt.endswith("(miffed)") and not miffed.passed
+    assert miffed.why == "miffed, but no huff in it"
+    # The morning-after hello doesn't see the dentist goodbye from the case before.
+    morning = model.calls[4]
+    assert not any("dentist" in m["content"] for m in morning if m["role"] != "system")
