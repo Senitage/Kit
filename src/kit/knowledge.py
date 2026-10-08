@@ -224,6 +224,18 @@ class Index:
             )
         return cur.rowcount > 0
 
+    def update_meta(self, item_ids: list[int], changes: dict) -> None:
+        """Merge ``changes`` into each item's meta (e.g. when a fact was last recalled),
+        leaving the rest, its text and its vectors as they are."""
+        with self.lock, self.db:
+            for item_id in item_ids:
+                row = self.db.execute("SELECT meta FROM items WHERE id = ?", (item_id,)).fetchone()
+                if row is not None:
+                    meta = {**json.loads(row[0] or "{}"), **changes}
+                    self.db.execute(
+                        "UPDATE items SET meta = ? WHERE id = ?", (json.dumps(meta), item_id)
+                    )
+
     def set_pinned(self, item_id: int, pinned: bool) -> bool:
         with self.lock, self.db:
             cur = self.db.execute(

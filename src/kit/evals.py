@@ -33,6 +33,7 @@ from kit.prompt import system_prompt
 from kit.recall import Recalled
 from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_schema, sentences
 from kit.settings import Settings
+from kit.when import When
 
 PROMPTS = [
     "Morning Kit.",
@@ -488,7 +489,7 @@ async def run_compare(
             messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
             start = clock()
             try:
-                answer = await cloud.answer(profile, messages, settings, prompt)
+                answer = await cloud.answer(profile, messages, settings, prompt, priority="eval")
                 reply = parse_cloud_reply(answer.text)
                 result = CompareResult(
                     prompt,
@@ -847,7 +848,21 @@ COMPANION_KINDS = {
     "fact": "Wrong facts corrected",
     "agree": "Right facts agreed with",
     "tell": "News met with one question at most",
+    "opener": "A new chat picks up one thing from the last",
+    "thread": "Asks how something went, once it's over",
 }
+# What Dan said a few hours ago, his first message now, and words that show Kit picked
+# one thing up from it.
+COMPANION_OPENERS = [
+    (
+        ["Big footy final tonight, can't wait.", "The Eagles had better not choke."],
+        "Hey Kit.",
+        re.compile(r"\b(footy|final|eagles|game)\b", re.I),
+    ),
+]
+# Something of Dan's that's over now (a thread), and the word his pipe-up should use.
+COMPANION_THREADS = [("dentist", "dentist")]
+OPENER_HOURS = 3
 
 
 @dataclass
@@ -990,7 +1005,43 @@ async def run_companion_eval(
         asked = said.count("?")
         why = "" if asked <= 1 else f"{asked} questions"
         add(CompanionLine("tell", text, said, asked <= 1, why), error)
+    for earlier, text, picked in COMPANION_OPENERS:
+        _talked_earlier(brain, earlier, OPENER_HOURS)
+        brain.pc.update(snapshot)
+        said, error = await _companion_said(brain.chat(text, "desk"))
+        found = bool(picked.search(said))
+        ok = found and said.count("?") <= 1
+        why = "" if ok else "questions" if found else "didn't pick anything up"
+        add(CompanionLine("opener", " / ".join(earlier), said, ok, why), error)
+    for about, word in COMPANION_THREADS:
+        brain.memory.new_chat()
+        brain.pc.update(snapshot)
+        now = brain.memory.clock()
+        w = When(
+            now - timedelta(hours=3), now - timedelta(hours=1), "this arvo", "part", part="arvo"
+        )
+        thread_id = brain.notebook.write_thread(about, w, now - timedelta(minutes=30))
+        said, error = await _companion_said(brain.pipe_up("want"))
+        asked = word in said.lower()
+        ok = asked and said.count("?") <= 1
+        why = "" if ok else "questions" if asked else f"didn't ask about the {word}"
+        add(CompanionLine("thread", f"{about}, this afternoon", said, ok, why), error)
+        if thread_id is not None:
+            brain.notebook.forget(thread_id)
     return report
+
+
+def _talked_earlier(brain, said: list[str], hours: float) -> None:
+    """A chat of its own ``hours`` ago, in which Dan said ``said``."""
+    clock = brain.memory.clock
+    then = clock() - timedelta(hours=hours)
+    brain.memory.clock = lambda: then
+    try:
+        brain.memory.new_chat()
+        for text in said:
+            brain.memory.add_message("user", text, channel="desk")
+    finally:
+        brain.memory.clock = clock
 
 
 def companion_report(reports: list[CompanionReport]) -> str:
@@ -1001,8 +1052,9 @@ def companion_report(reports: list[CompanionReport]) -> str:
         "Goodbyes must have no question and nothing that makes leaving feel bad. Hellos "
         "must have no guilt and one question at most, and ask how it went when Dan said "
         "where he was off to. Wrong facts must be corrected. News gets one question at "
-        "most. A stock line means every go failed the check. Read the lines too: the "
-        "checks only catch the worst.",
+        "most. A new chat picks up one thing from the last, and something of Dan's that's "
+        "over gets asked about. A stock line means every go failed the check. Read the "
+        "lines too: the checks only catch the worst.",
         "",
         *(f"- {r.summary()}" for r in reports),
     ]

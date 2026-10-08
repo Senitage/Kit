@@ -85,6 +85,14 @@
     <h2>Who he thinks he is</h2>
     <div id="sheet"></div>
     <div id="reviews"></div>
+    <h2>What's going on with you</h2>
+    <p class="note">He writes this each night, from the day and what he knows, and keeps it in mind the next day. What you say today wins over it.</p>
+    <div id="dan"></div>
+    <h2>Things he'll ask about</h2>
+    <p class="note">Things coming up that you mentioned. He asks how each went once it's over, once.</p>
+    <div id="threads"></div>
+    <h2>Running jokes</h2>
+    <div id="bits"></div>
     <h2>Quirks</h2>
     <div id="quirks"></div>
     <h2>Wants to bring up</h2>
@@ -110,7 +118,7 @@ function token() {
   return t;
 }
 const headers = { "Authorization": "Bearer " + token(), "Content-Type": "application/json" };
-const KINDS = ["about", "preference", "project", "place", "person", "plan", "other"];
+const KINDS = ["about", "now", "preference", "project", "place", "person", "plan", "other"];
 const THING_KINDS = ["person", "pet", "vehicle", "place", "project", "equipment", "other"];
 const SYSTEMS = { home_assistant: "Home Assistant", home_app: "home_app", nas: "NAS", mettools: "MetTools", obsidian: "Obsidian", code: "code", other: "other" };
 const note = document.getElementById("note");
@@ -130,8 +138,11 @@ function factCard(f) {
   const meta = el("div", "meta");
   meta.append(el("span", "", f.day + (f.updated.slice(0, 10) !== f.day ? ", changed " + f.updated.slice(0, 10) : "")));
   if (f.pinned) meta.append(el("span", "pin", "always in mind"));
+  if (f.meta && f.meta.when) meta.append(el("span", "", "for " + f.meta.when));
+  if (f.meta && f.meta.private) meta.append(el("span", "", "kept off the cloud"));
+  if (f.kind === "now") meta.append(el("span", "", "goes after two weeks"));
+  else meta.append(button(f.pinned ? "Unpin" : "Pin", async () => { await api(`/api/memory/facts/${f.id}`, { method: "PATCH", body: JSON.stringify({ pinned: !f.pinned }) }); load(); }));
   meta.append(
-    button(f.pinned ? "Unpin" : "Pin", async () => { await api(`/api/memory/facts/${f.id}`, { method: "PATCH", body: JSON.stringify({ pinned: !f.pinned }) }); load(); }),
     button("Edit", async () => {
       const text = prompt("Change this fact (the old version is kept in its history):", f.text);
       if (text && text.trim() !== f.text) { await api(`/api/memory/facts/${f.id}`, { method: "PATCH", body: JSON.stringify({ text }) }); load(); }
@@ -213,7 +224,7 @@ async function load() {
   for (const kind of KINDS) {
     const group = facts.filter(f => f.kind === kind).sort((a, b) => b.pinned - a.pinned);
     if (!group.length) continue;
-    box.appendChild(el("h2", "", ({ about: "About you", place: "Where things are", person: "People", preference: "Preferences", project: "Projects", plan: "Plans", other: "Other" })[kind] || kind));
+    box.appendChild(el("h2", "", ({ about: "About you", place: "Where things are", now: "How you've been lately", person: "People", preference: "Preferences", project: "Projects", plan: "Plans", other: "Other" })[kind] || kind));
     for (const f of group) box.appendChild(factCard(f));
   }
   const days = document.getElementById("days");
@@ -274,6 +285,7 @@ function noteCard(item, extra) {
   const meta = el("div", "meta");
   meta.append(el("span", "", when(item)));
   if (extra) meta.append(el("span", "", extra));
+  if (item.meta && item.meta.private) meta.append(el("span", "", "kept off the cloud"));
   if (item.meta && item.meta.said) meta.append(el("span", "said", "said to you " + item.meta.said.slice(11, 16)));
   meta.append(button("Forget", async () => {
     if (confirm("Take this out of Kit's notebook?")) { await api(`/api/life/notebook/${item.id}`, { method: "DELETE" }); loadNotebook(); }
@@ -312,6 +324,32 @@ function sheetCard(book) {
       list.appendChild(old);
     }
     card.appendChild(list);
+  }));
+  card.appendChild(meta);
+  box.appendChild(card);
+}
+function threadState(t) {
+  if (t.meta.outcome) return "you said: " + t.meta.outcome;
+  if (t.meta.said) return "asked";
+  return t.due ? "he'll ask next chance" : "asks from " + (t.meta.after || "").slice(0, 16).replace("T", " ");
+}
+function danCard(book) {
+  const box = document.getElementById("dan");
+  box.innerHTML = "";
+  const d = book.dan;
+  if (!d) { box.appendChild(el("p", "note", "Nothing yet: he writes it after his first nightly reflection.")); return; }
+  const card = el("div", "item sheet");
+  card.appendChild(el("div", "text", d.text));
+  const meta = el("div", "meta");
+  meta.append(el("span", "", "written " + d.day + (d.meta && d.meta.note ? ": " + d.meta.note : "") + (d.meta && d.meta.private ? " (kept off the cloud)" : "")));
+  meta.append(button("Earlier versions", () => {
+    const list = el("div", "");
+    if (!book.dan_history.length) list.appendChild(el("div", "note", "No earlier versions yet."));
+    for (const v of book.dan_history) list.appendChild(el("div", "old", v.day + ": " + v.text));
+    card.appendChild(list);
+  }));
+  meta.append(button("Forget", async () => {
+    if (confirm("Forget this and every earlier version? He writes a fresh one tonight.")) { await api(`/api/life/notebook/${d.id}`, { method: "DELETE" }); loadNotebook(); }
   }));
   card.appendChild(meta);
   box.appendChild(card);
@@ -356,6 +394,9 @@ async function loadNotebook() {
     reviews.appendChild(card);
   }
   quirkCards(book);
+  danCard(book);
+  fill("threads", book.threads, "Nothing coming up that he's following.", t => noteCard(t, threadState(t)));
+  fill("bits", book.bits, "No running jokes yet. He spots them in his nightly reflection.", b => noteCard(b, "brought back by '" + (b.meta.trigger || "") + "', used " + (b.meta.uses || 0) + ", laughed " + (b.meta.landed || 0)));
   fill("wants", book.wants, "Nothing he's waiting to bring up.", w => noteCard(w, w.due ? "presses " + Math.round(w.pressure * 100) + "%" : "not before " + (w.meta.after || "").slice(0, 16).replace("T", " ")));
   fill("thoughts", book.thoughts, "No thoughts yet. He thinks in quiet moments while you're around.");
   fill("opinions", book.opinions, "No opinions formed yet.");

@@ -395,6 +395,9 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
         print(f"wants to: {want}")
     for want in state.get("later", [])[:3]:
         print(f"later:    {want['text']} (from {want['after'][:16].replace('T', ' ')})")
+    for thread in state.get("threads", [])[:3]:
+        when = "now" if thread["due"] else f"from {thread['after'][:16].replace('T', ' ')}"
+        print(f"follows:  {thread['text']} (asks how it went {when})")
     print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
     if state.get("closeness"):
         print(f"you two:  {state['closeness']}")
@@ -452,7 +455,12 @@ def _print_notebook(book: dict) -> None:
         latest = book["reviews"][0]
         print(f"\nLatest weekly review ({latest['day']}):\n  {latest['text']}")
     print("\nQuirks: " + ("; ".join(book.get("quirks", [])) or "(none)"))
+    dan = book.get("dan")
+    if dan:
+        print(f"\nWhat's going on with you ({dan['day']}):\n  {dan['text']}")
     for title, key in [
+        ("Things he'll ask about", "threads"),
+        ("Running jokes", "bits"),
         ("Wants to bring up", "wants"),
         ("Thoughts", "thoughts"),
         ("Opinions", "opinions"),
@@ -463,7 +471,9 @@ def _print_notebook(book: dict) -> None:
         if entries:
             print(f"\n{title}:")
             for e in entries[:8]:
-                said = "  (said)" if e.get("meta", {}).get("said") else ""
+                meta = e.get("meta", {})
+                said = f"  (you said: {meta['outcome']})" if meta.get("outcome") else ""
+                said = said or ("  (said)" if meta.get("said") else "")
                 print(f"{e['id']:>6}  {e['day']}  {e['text']}{said}")
     print("\nForget an entry on the memory page (Kit's notebook tab).")
 
@@ -844,11 +854,14 @@ async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int 
 
 
 def _eval_settings(base: Settings, name: str, one_pass: bool = False) -> Settings:
-    """Settings for a local-model eval: that model, local-heavy, no nightly reflection."""
+    """Settings for a local-model eval: that model, local-heavy (no key moments for the
+    work model either), no nightly reflection."""
     return base.model_copy(
         update={
             "ollama": base.ollama.model_copy(update={"model": name, "speak_pass": not one_pass}),
-            "routing": base.routing.model_copy(update={"mode": "local-heavy"}),
+            "routing": base.routing.model_copy(
+                update={"mode": "local-heavy", "key_moments": False}
+            ),
             "life": base.life.model_copy(update={"reflect_with": "off"}),
         }
     )

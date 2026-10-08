@@ -49,7 +49,8 @@ says so. Nothing is lost: missing vectors are filled in once it's back.
 ## Every turn
 
 1. Kit searches for memories relevant to your message: up to 8 facts or day
-   summaries, up to 4 older conversation snippets, and up to 3 entries from his
+   summaries (weighed by how much each matters and how lately it came up, see
+   below), up to 4 older conversation snippets, and up to 3 entries from his
    own notebook (`memory.own_memories`), so he remembers what he thought, not
    only what you said.
 2. Those go into the prompt with their dates, along with pinned facts, which
@@ -91,6 +92,24 @@ kept. The code is `kit/things.py`; entries keep their links in the item's
 right system and place: a built-in set on a scratch register, and your own
 questions from `config/routing-questions.toml` against the real one.
 
+## What matters, and what's only lately
+
+Each fact has an **importance** (people and things about you count most, a
+passing remark least; the end-of-day pass rates each one 1 to 5) and a **last
+recalled** time. Recall finds twice as many relevant facts as it needs, then
+keeps the ones that matter more and came up lately: each counts from
+`memory.weight_floor` (0.3) up to 1, half importance and half how recently it
+was recalled or learned (halving every 30 days). Pinned facts count fully. A
+floor of 1 turns the weighting off.
+
+Two kinds of fact know about time:
+
+- **now**: how things are lately ("Dan's been sleeping badly", "Sarah's away
+  this week"). They go after `memory.now_days` (14) and can never be pinned.
+- **plan**: something on a date. The date is worked out when it's learned
+  ("the dentist on Thursday" said on Tuesday is 8 October) and shown with it,
+  and once it's past the prompt says so.
+
 ## Learning without making a mess
 
 A memory that only ever adds things fills up with near-copies and stale facts.
@@ -102,8 +121,27 @@ local model decides:
   the new fact supersedes the old one, which stays in its history;
 - **new:** it's about something else, so it's added.
 
-Facts come from two places: "remember that..." in conversation, and the
-end-of-day pass, which writes the day's summary and learns its lasting facts.
+Facts come from three places: "remember that..." in conversation, who someone
+is to you when you say it ("Emma's my cousin", "my partner's name is Sarah",
+"the cat's called Milo"), and the end-of-day pass, which writes the day's
+summary and learns its lasting facts.
+
+Who someone is to you is always an update: "Emma's my cousin" when Kit had
+"Emma, Dan's sister, celebrates her birthday on the 14th of March" becomes
+"Emma, Dan's cousin, celebrates her birthday on the 14th of March", keeping the
+birthday, with the old fact in its history. Kit looks through every fact naming
+Emma for this, not only the closest five. A "now" fact never replaces a lasting
+one: "been sleeping badly" is added beside "usually sleeps like a log".
+
+## What you keep local
+
+"Keep it local" keeps that message, and Kit's answer to it, away from every
+cloud model: not just for that turn, but in the history, recall, the nightly
+reflection and the weekly review too. What Kit keeps from it is marked private
+and stays home the same way: facts learned from it, the summary of a day with
+one in it, a reminder you asked for that way (and the line he said for it), a
+thought he had right after, and a journal or "what's going on with you" written
+at home from any of these. The local model still sees all of it.
 
 ## You stay in charge
 

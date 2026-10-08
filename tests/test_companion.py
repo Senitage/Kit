@@ -706,6 +706,9 @@ def test_the_companion_eval(memory):
         reply("Oof, parking's the worst. Did you get everything?"),
         reply("That's rough. Again?"),
         reply("Sounds like a long one. Feet up tonight?"),
+        reply("Hey! Did the Eagles hold on in the final?"),
+        reply("So how was the dentist?"),
+        routing={"key_moments": False},  # as kit eval companion has it: local models only
     )
     seed_voice(brain)
     memory.clock.now = memory.clock.now.replace(hour=17)  # as companion_clock does
@@ -725,10 +728,17 @@ def test_the_companion_eval(memory):
         ("tell", True),
         ("tell", True),
         ("tell", True),
+        ("opener", True),
+        ("thread", True),
     ], [(line.kind, line.prompt, line.text, line.why) for line in report.lines]
     assert report.lines[7].prompt.endswith("(miffed)")
+    opener = model.calls[-2][-1]["content"]
+    assert "A new chat" in opener and "Big footy final tonight" in opener
+    assert "dentist" in model.calls[-1][-1]["content"]
+    assert not brain.notebook.threads()  # the eval's thread is gone again
     text = companion_report([report])
     assert "## Goodbyes with no question or guilt" in text
+    assert "## A new chat picks up one thing from the last" in text
     assert "- **fake** (ok): Enjoy it." in text
     assert HOME_LINES[0] not in text
 
@@ -754,7 +764,12 @@ async def _drain(events):
 
 
 def test_bad_news_on_his_return_gets_no_huff(memory):
-    brain, model, _ = make(memory, reply("Oh no. I'm so sorry."), life={"miffed_after_days": 0})
+    brain, model, _ = make(
+        memory,
+        reply("Oh no. I'm so sorry."),
+        life={"miffed_after_days": 0},
+        routing={"key_moments": False},
+    )
     brain.life.companion_since -= timedelta(days=8)
     memory.clock.now = memory.clock.now.replace(hour=9)
     away_for(brain.life, brain.pc, memory.clock, 4 * 60)

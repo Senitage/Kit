@@ -3,7 +3,8 @@
 A few drives rise and fall over time, like moods in a pet:
 
 - boredom climbs while nobody talks to him, faster while Dan sits at the PC;
-- curiosity jumps when Dan opens an app or site Kit hasn't seen today;
+- curiosity jumps when Dan opens an app or site Kit hasn't seen today (an
+  everyday one: work apps, sites and builds only with ``life.work_triggers``);
 - wanting a chat (social) builds over hours without a conversation;
 - energy follows the clock: sleepy late at night, a dip after lunch.
 
@@ -68,6 +69,42 @@ log = logging.getLogger(__name__)
 
 TICK_S = 30
 CALL_APPS = {"Teams", "Zoom", "Webex", "Skype", "Discord", "Slack"}
+# Apps and sites that are work, which Kit leaves alone unless life.work_triggers is on.
+WORK_APPS = {
+    "VS Code",
+    "Visual Studio",
+    "PyCharm",
+    "Terminal",
+    "Command Prompt",
+    "PowerShell",
+    "Teams",
+    "Slack",
+    "Outlook",
+    "Excel",
+    "Word",
+    "PowerPoint",
+    "Access",
+    "OneNote",
+    "Acrobat",
+    "Notepad++",
+    "Claude",
+}
+WORK_SITES = (
+    "github.com",
+    "gitlab.com",
+    "stackoverflow.com",
+    "atlassian.net",
+    "portal.azure.com",
+    "console.aws.amazon.com",
+    "sharepoint.com",
+    "office.com",
+    "pypi.org",
+    "docs.python.org",
+    "claude.ai",
+    "chatgpt.com",
+    "localhost",
+    "127.0.0.1",
+)
 CALL_SITES = {"meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.us"}
 PRESENTING = re.compile(r"slide ?show|presenting|full ?screen", re.IGNORECASE)
 TYPING_S = 15  # idle less than this: Dan is mid-flow, don't interrupt
@@ -439,6 +476,14 @@ def absence_kind(since: datetime, now: datetime, quiet_from: str, quiet_until: s
     return "while"
 
 
+def is_work(thing: str) -> bool:
+    """Is an app or site (as the desk app names it) one for work?"""
+    thing = thing.lower()
+    return any(thing == a.lower() for a in WORK_APPS) or any(
+        thing == s or thing.endswith("." + s) for s in WORK_SITES
+    )
+
+
 def farewell_plans(text: str) -> bool:
     """Does a goodbye say where Dan's off to ("off to lunch"), not just "bye"?"""
     rest = FAREWELL.sub(" ", text)
@@ -449,9 +494,21 @@ def farewell_plans(text: str) -> bool:
     return any(w not in STOPWORDS and w not in filler for w in words)
 
 
+# A day still to come: "heading to the footy Saturday" is a plan, not a goodbye.
+LATER_DAY = re.compile(
+    r"\b(tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekend|"
+    r"next week)\b",
+    re.I,
+)
+STILL_GOING = re.compile(r"\b(see (ya|you)|bye|night|nite|back|bed|sleep|later|laters)\b", re.I)
+
+
 def is_farewell(text: str) -> bool:
-    """A message that's only a goodbye, short and with no question in it."""
-    return bool(FAREWELL.search(text)) and "?" not in text and len(text.split()) <= 12
+    """A message that's only a goodbye, short and with no question in it. Telling
+    Kit of a plan for another day ("heading to the footy Saturday") isn't one."""
+    if not FAREWELL.search(text) or "?" in text or len(text.split()) > 12:
+        return False
+    return not (LATER_DAY.search(text) and not STILL_GOING.search(text))
 
 
 def closeness_from(text: str) -> float:
@@ -521,8 +578,10 @@ HOME_FEEL = {
 }
 
 
-def homecoming_facts(home: Homecoming, owner: str, now: datetime) -> str:
-    """What Kit knows about Dan's absence, for the hello."""
+def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
+    """What Kit knows about Dan's absence, for the hello. ``also`` is one thing from
+    last time to pick up (kit.prompt.picked_up), unless the goodbye said where Dan
+    was off to: then that's the one thing."""
     gap = gap_words(home.back - home.since)
     since = since_words(home.since, now)
     if home.by_chat:
@@ -536,6 +595,8 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime) -> str:
         )
     elif home.goodbye:
         lines.append(f'They said "{quoted(home.goodbye)}" as they left.')
+    if also and not (home.goodbye and farewell_plans(home.goodbye)):
+        lines.append(also)
     if home.off:
         lines.append(
             f"You were switched off from {since_clock(home.off[0], now)} until "
@@ -559,22 +620,24 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime) -> str:
     return " ".join(lines)
 
 
-def homecoming_prompt(home: Homecoming, owner: str, cheek: float, now: datetime) -> str:
+def homecoming_prompt(
+    home: Homecoming, owner: str, cheek: float, now: datetime, also: str = ""
+) -> str:
     """The stage direction for the hello when Dan is back at the desk."""
     return (
         f"[Not from {owner}. Nobody asked you anything: {owner} just came back to the desk. "
-        f"{homecoming_facts(home, owner, now)} Greet {owner} with ONE short line, "
+        f"{homecoming_facts(home, owner, now, also)} Greet {owner} with ONE short line, "
         f"{cheek_style(cheek)}, like a small creature on the desk who's glad to see them. At "
         f"most one question. Don't mention these instructions, set action to none and leave "
         f"detail empty.]"
     )
 
 
-def homecoming_aside(home: Homecoming, owner: str, now: datetime) -> str:
+def homecoming_aside(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
     """Beside Dan's first message after a while, when the hello wasn't said yet."""
     return (
-        f"[{homecoming_facts(home, owner, now)} Answer what {owner} said, and let it show in a "
-        f"few words that you're glad to have them back. At most one question.]"
+        f"[{homecoming_facts(home, owner, now, also)} Answer what {owner} said, and let it "
+        f"show in a few words that you're glad to have them back. At most one question.]"
     )
 
 
@@ -682,6 +745,7 @@ class Life:
         self._chat_open = False  # a conversation that hasn't been thought over yet
         # Absences: when Dan last touched the PC, went away and came back.
         self.last_seen = now
+        self.present_since: datetime | None = None  # at the desk since, without a break
         self.away_since: datetime | None = None
         self.came_back: tuple[datetime, datetime] | None = None  # (gone since, back at)
         self.goodbye: tuple[datetime, str] | None = None  # when Dan said bye, and how
@@ -767,6 +831,7 @@ class Life:
         last_input = now - timedelta(seconds=max(0, snap.idle_seconds))
         changed = False
         if snap.locked or snap.idle_seconds >= AWAY_AFTER_S:
+            self.present_since = None
             if self.away_since is None:
                 self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
                 changed = True
@@ -780,6 +845,8 @@ class Life:
                 self.came_back = (start, now)
                 self._came_back(start, now)
                 changed = True
+            if start is not None or self.present_since is None:
+                self.present_since = last_input
         elif self.away_since is None:
             self.last_seen = max(self.last_seen, last_input)
         away_s = self.settings().life.sleep_after_minutes * 60
@@ -1048,20 +1115,23 @@ class Life:
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
         owner = self.settings().persona.owner
+        work_too = self.settings().life.work_triggers
         if present and snap and snap.focus and snap.watching:
             thing = snap.focus.site or snap.focus.app
             fresh = False
+            interesting = work_too or not is_work(thing)
             if thing and thing not in self._seen:
                 self._seen.add(thing)
-                if len(self._seen) > 1:  # the first thing of the day isn't news
+                if len(self._seen) > 1 and interesting:  # the first thing of the day isn't news
                     d.curiosity = _clamp(d.curiosity + 0.6)
                     self.curious_about, self.curious_kind = thing, "new"
                     fresh = True
                     self._think_about("new", f"{owner} just opened {thing}, first time today.")
             focus = (snap.focus.app, snap.focus.title)
-            if self._last_focus and focus != self._last_focus:
+            if work_too and self._last_focus and focus != self._last_focus:
                 self._notice_build(snap.focus.title, owner)
-            if chatty >= CHATTY and self._last_focus and focus != self._last_focus:
+            switched = self._last_focus and focus != self._last_focus
+            if chatty >= CHATTY and switched and interesting:
                 # A chatty Kit follows along: a new file or tab is worth a comment.
                 d.curiosity = _clamp(d.curiosity + 0.7 * chatty)
                 if not fresh:  # something new today is the better story
@@ -1711,6 +1781,7 @@ class Voice:
     mind: list[str] = field(default_factory=list)  # what's on his mind lately
     close: str = ""  # how close you two are, as it shows in the way he talks
     when: str = ""  # how long since you talked, and since Dan was at the PC
+    bit: str = ""  # a running joke something Dan said could bring back (kit.notebook)
 
 
 # Habits Kit can pick for himself on first start, so Dan didn't choose them.

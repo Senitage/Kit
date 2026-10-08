@@ -1,8 +1,8 @@
 """Each night Kit looks back on his day and writes himself down.
 
-After the day's summary (kit.learning), the work model (Claude Sonnet unless
-you change it) reads the day as Kit: the conversation, the summary, and his
-own thoughts and feelings. It writes:
+After the day's summary (kit.learning), the expert model (Claude Opus unless
+you change it, ``life.reflect_role``) reads the day as Kit: the conversation, the
+summary, and his own thoughts and feelings. It writes:
 
 - a journal entry for the day, in his own words;
 - his self-sheet: who he is, how he talks, how he and Dan get on and what's on
@@ -10,16 +10,25 @@ own thoughts and feelings. It writes:
   list of traits, so he grows a little each day;
 - his quirks: usually the same, now and then one retired or a new one picked
   up (never more than one change a night);
-- opinions he formed, moments worth keeping, and things to bring up tomorrow.
+- opinions he formed, moments worth keeping, and things to bring up tomorrow;
+- what's going on with Dan lately: a short paragraph (how he's been, what's
+  coming up, who's around) that goes in front of Kit every time he talks, so he
+  never asks what he already knows;
+- threads: things coming up in Dan's life he mentioned, to ask how they went
+  (the chat catches most as they're said; this catches the rest);
+- now and then a running joke worth keeping, and the words that bring it back.
+
+Anything said after "keep it local" (and Kit's answer) is left out of what goes
+to a cloud model, and so is that day's summary.
 
 The first time, he writes his first self-sheet from the persona Dan gave him.
 Once a week the expert model reviews how he's changed; the memory page shows
 that review with buttons to undo a change, and he's told what was undone so he
 doesn't do it again. Every change is a new version, so nothing is lost.
 
-``life.reflect_with`` picks the model: cloud (the work model, a few cents a
-day, logged as spend, with the local model stepping in if the cloud can't),
-local, or off.
+``life.reflect_with`` picks the model: cloud (the expert or work model, a few
+cents a day, logged as spend, with the local model stepping in if the cloud
+can't), local, or off.
 """
 
 from __future__ import annotations
@@ -32,11 +41,12 @@ from datetime import date, timedelta
 
 from kit.cloud import Cloud, CloudError
 from kit.knowledge import Item
-from kit.life import alike, cheek_style, everyday, parse_time, same_words
+from kit.life import alike, cheek_style, everyday, parse_time, quoted, same_words
 from kit.local_model import LocalModel, LocalModelError
-from kit.memory import DAYS, Memory
+from kit.memory import DAYS, FACTS, Memory
 from kit.notebook import Notebook, basis, morning
 from kit.settings import Settings
+from kit.when import date_in, follow_up, on_day
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +55,7 @@ TRIES_KEY = "reflect_tries"  # kit_self: failed tries at each job, so he gives u
 MAX_TRIES = 3  # then skip it, rather than paying for another try every hour
 CATCH_UP_DAYS = 3  # after time off he reflects on the last few days, not every one
 SHEET_WORDS = 180
+DAN_WORDS = (60, 90)  # what's going on with Dan: long enough to know him, short enough to read
 TRANSCRIPT_CHARS = 12_000
 REVIEW_EVERY = timedelta(days=7)
 MAX_QUIRKS = 4
@@ -58,13 +69,46 @@ REFLECTION_SCHEMA = {
         "opinions": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "moments": {"type": "array", "items": {"type": "string"}, "maxItems": 2},
         "wants": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+        "dan": {"type": "string"},
+        "threads": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "about": {"type": "string"},
+                    "day": {"type": "string"},
+                    "part": {"type": "string", "enum": ["morning", "arvo", "evening", "day"]},
+                },
+                "required": ["about", "day", "part"],
+                "additionalProperties": False,
+            },
+        },
+        "bit": {
+            "type": "object",
+            "properties": {"line": {"type": "string"}, "trigger": {"type": "string"}},
+            "required": ["line", "trigger"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["journal", "self_sheet", "quirks", "opinions", "moments", "wants"],
+    "required": [
+        "journal",
+        "self_sheet",
+        "quirks",
+        "opinions",
+        "moments",
+        "wants",
+        "dan",
+        "threads",
+        "bit",
+    ],
     "additionalProperties": False,
 }
 REFLECTION_SHAPE = (
     '{"journal": "...", "self_sheet": "...", "quirks": ["..."], "opinions": ["..."], '
-    '"moments": ["..."], "wants": ["..."]}'
+    '"moments": ["..."], "wants": ["..."], "dan": "...", "threads": [{"about": "...", '
+    '"day": "YYYY-MM-DD", "part": "morning|arvo|evening|day"}], '
+    '"bit": {"line": "", "trigger": ""}}'
 )
 SHEET_SCHEMA = {
     "type": "object",
@@ -87,6 +131,7 @@ class Reflection:
     day: str
     journal: str = ""
     sheet: str = ""  # the new self-sheet, or "" if it didn't change
+    dan: str = ""  # what's going on with Dan, or "" if it wasn't written
     quirks: list[str] = field(default_factory=list)
     added: list[str] = field(default_factory=list)  # "opinion: ...", "want: ..."
     by: str = ""  # the model that wrote it; "" when there was nothing to reflect on
@@ -127,6 +172,22 @@ def clean_sheet(text) -> str:
     words = text.split(" ")
     if len(words) > SHEET_WORDS * 3 // 2:
         text = " ".join(words[: SHEET_WORDS * 3 // 2])
+        cut = max(text.rfind(". "), text.rfind("! "), text.rfind("? "))
+        text = text[: cut + 1] if cut > 0 else text
+    return text
+
+
+def clean_dan(text) -> str:
+    """What's going on with Dan, fit for the prompt: one paragraph, cut at a sentence
+    if it runs long."""
+    if not isinstance(text, str):
+        return ""
+    text = " ".join(text.split())
+    if not text or "as an ai" in text.lower():
+        return ""
+    words = text.split(" ")
+    if len(words) > DAN_WORDS[1] * 3 // 2:
+        text = " ".join(words[: DAN_WORDS[1] * 3 // 2])
         cut = max(text.rfind(". "), text.rfind("! "), text.rfind("? "))
         text = text[: cut + 1] if cut > 0 else text
     return text
@@ -188,7 +249,7 @@ class Reflector:
             ]
             quiet = profile.model_copy(update={"web_search": False})
             try:
-                answer = await self.cloud.answer(quiet, ask, settings, question)
+                answer = await self.cloud.answer(quiet, ask, settings, question, priority="reflect")
                 data = json_with(answer.text, key)
                 if data is not None:
                     return data, profile.name
@@ -236,7 +297,11 @@ class Reflector:
         user = f"{self._persona()}\nYour quirks (you picked these yourself): {quirks}."
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         data, by = await self._ask(
-            messages, SHEET_SCHEMA, '{"self_sheet": "..."}', "work", "Kit's first self-sheet"
+            messages,
+            SHEET_SCHEMA,
+            '{"self_sheet": "..."}',
+            self.settings().life.reflect_role,
+            "Kit's first self-sheet",
         )
         sheet = clean_sheet(data.get("self_sheet")) if data else ""
         if not sheet:
@@ -294,10 +359,18 @@ class Reflector:
         quirks = self.notebook.quirks()
         if not said and not noted:
             return Reflection(day, quirks=quirks)  # a day he wasn't part of
+        summary = next((i.text for i in self.memory.index.items(DAYS) if i.ref == day), "")
+        held = len(shown := self.memory.shared(said)) < len(said)
+        cloud = settings.life.reflect_with == "cloud"
+        cloud = cloud and settings.profile(settings.life.reflect_role).provider != "ollama"
+        if cloud and held:
+            said, summary = shown, ""  # the summary may tell what was kept local
+        if cloud:  # nothing Kit kept from what Dan kept local
+            noted = [e for e in noted if not e.meta.get("private")]
+        held = held or any(e.meta.get("private") for e in noted)
         transcript = "\n".join(
             f"[{m.at[11:16]}] {owner if m.role == 'user' else name}: {m.text}" for m in said
         )[-TRANSCRIPT_CHARS:]
-        summary = next((i.text for i in self.memory.index.items(DAYS) if i.ref == day), "")
         sheet = self.notebook.sheet()
         redo = (
             f" {owner} has changed how they describe you since you wrote it, so this time "
@@ -329,7 +402,21 @@ class Reflector:
             f"ones.\n"
             f"- moments: up to two moments from today worth keeping, one sentence each.\n"
             f"- wants: up to three things you'd like to say or ask {owner} tomorrow, one "
-            f"short line each.\n\n"
+            f"short line each.\n"
+            f"- dan: what's going on with {owner} lately, {DAN_WORDS[0]} to {DAN_WORDS[1]} "
+            f"words, plain, in the third person: how {owner}'s been, what's coming up, who's "
+            f"around, what {owner}'s into. Bring your last version up to date: keep what's "
+            f"still true, drop what's over. It goes in front of you every time you talk, so "
+            f"you never ask what you already know. Everyday life first; work only if it's "
+            f"big in {owner}'s life right now.\n"
+            f"- threads: up to two things coming up in {owner}'s life that {owner} mentioned "
+            f"and you'd like to ask how they went (an appointment, a visit, a game, a trip), "
+            f"each with about (a few words), day (YYYY-MM-DD) and part (morning, arvo, "
+            f"evening or day). Only ones with a day, only everyday life, never work, and not "
+            f"ones you're already following.\n"
+            f"- bit: a running joke from today worth keeping, if one got a laugh: line (the "
+            f"joke, short) and trigger (two or three words that would bring it back). Empty "
+            f"strings if there wasn't one.\n\n"
             f"Never invent things {owner} said or did. Cheeky is fine, mean isn't. You're a "
             f"small robot with a real inner life, not a person: feelings like missing "
             f"{owner} are yours to have and write about, but never claim to be human or to "
@@ -337,6 +424,41 @@ class Reflector:
             f"{owner}, or yourself. {everyday(owner)}"
         )
         before = [j for j in self.notebook.entries("journal", 10) if (j.ref or "") < day][:3]
+        dan = self.notebook.dan()
+        if cloud and dan is not None and dan.meta.get("private"):
+            dan = None  # written from what Dan kept local
+        if cloud:
+            before = [j for j in before if not j.meta.get("private")]
+        lately_facts = self.memory.index.items(FACTS, kind="now")
+        plan_facts = [
+            f
+            for f in self.memory.index.items(FACTS, kind="plan")
+            if str(f.meta.get("when", "")) >= day
+        ]
+        if cloud:
+            lately_facts = [f for f in lately_facts if not f.meta.get("private")]
+            plan_facts = [f for f in plan_facts if not f.meta.get("private")]
+        # Written at home from what Dan kept local: it stays at home.
+        private = not cloud and (
+            held
+            or bool(dan and dan.meta.get("private"))
+            or any(x.meta.get("private") for x in before + lately_facts + plan_facts)
+        )
+        lately = [f"({f.day}) {f.text}" for f in lately_facts]
+        plans = [f"({f.meta['when']}) {f.text}" for f in plan_facts]
+        following = [
+            f"{t.text}" + (f" ({owner} said: '{t.meta['heard']}')" if t.meta.get("heard") else "")
+            for t in self.notebook.threads()
+        ]
+        heard = [
+            f"{t.text}: {owner} said '{t.meta['outcome']}'"
+            for t in self.notebook.followed()
+            if t.meta.get("outcome")
+        ]
+        bits = [
+            f"{b.text} (brought back by: {b.meta.get('trigger', '')})"
+            for b in self.notebook.entries("bit", 20)
+        ]
         parts = [
             f"Your self-sheet so far: {sheet.text if sheet else '(none yet)'}",
             f"Your quirks: {'; '.join(quirks) or '(none)'}",
@@ -344,8 +466,18 @@ class Reflector:
             _lines(f"Changes {owner} undid (respect these):", self.notebook.vetoes()),
             _lines(
                 "Things you already mean to bring up (don't repeat them in wants):",
-                [w.text for w in self.notebook.unsaid_wants()],
+                [
+                    w.text
+                    for w in self.notebook.unsaid_wants()
+                    if w.kind == "want" and not (cloud and w.meta.get("private"))
+                ],
             ),
+            f"What's going on with {owner}, your last version: {dan.text}" if dan else "",
+            _lines(f"How {owner}'s been lately (your notes, two weeks at most):", lately),
+            _lines(f"Coming up for {owner} (plans you know of):", plans),
+            _lines("Threads you're already following (ask how they went later):", following),
+            _lines("How things went, from what you asked this week:", heard),
+            _lines("Running jokes you two already have:", bits),
             _lines(
                 "Your own thoughts and feelings that day:",
                 [f"({e.created[11:16]}, {e.kind}) {e.text}" for e in noted],
@@ -358,14 +490,18 @@ class Reflector:
             {"role": "user", "content": "\n\n".join(x for x in parts if x)},
         ]
         data, by = await self._ask(
-            messages, REFLECTION_SCHEMA, REFLECTION_SHAPE, "work", f"Kit's reflection on {day}"
+            messages,
+            REFLECTION_SCHEMA,
+            REFLECTION_SHAPE,
+            settings.life.reflect_role,
+            f"Kit's reflection on {day}",
         )
         if data is None:
             return None
         done = Reflection(day, by=by)
         journal = " ".join(str(data.get("journal") or "").split())
         if journal:
-            self.notebook.write_journal(day, journal)
+            self.notebook.write_journal(day, journal, private=private)
             done.journal = journal
         new_sheet = clean_sheet(data.get("self_sheet"))
         if new_sheet and (sheet is None or not same_words(new_sheet, sheet.text)):
@@ -374,6 +510,16 @@ class Reflector:
         done.quirks = next_quirks(data.get("quirks"), quirks, self.notebook.banned_quirks())
         if done.quirks != quirks:
             self.notebook.set_quirks(done.quirks)
+        about_dan = clean_dan(data.get("dan"))
+        if about_dan and (dan is None or not same_words(about_dan, dan.text)):
+            self.notebook.set_dan(about_dan, note=f"after {day}, by {by}", private=private)
+            done.dan = about_dan
+        self._follow(data.get("threads"), day, by, done)
+        bit = data.get("bit")
+        if isinstance(bit, dict) and str(bit.get("line") or "").strip():
+            line, trigger = str(bit["line"]), str(bit.get("trigger") or "")
+            if self.notebook.write_bit(line, trigger, by=by):
+                done.added.append(f"bit: {' '.join(line.split())}")
         tomorrow = morning(date.fromisoformat(day) + timedelta(days=1), settings.life.quiet_until)
         for kind, key, most in (
             ("opinion", "opinions", 3),
@@ -386,6 +532,25 @@ class Reflector:
                     done.added.append(f"{kind}: {' '.join(text.split())}")
         self.notebook.tidy()
         return done
+
+    def _follow(self, threads, day: str, by: str, done: Reflection) -> None:
+        """Threads from the reflection: everyday things coming up, by day and part."""
+        if not isinstance(threads, list):
+            return
+        now = self.memory.clock()
+        wake = self.settings().life.quiet_until
+        for t in threads[:2]:
+            if not isinstance(t, dict) or not str(t.get("about") or "").strip():
+                continue
+            day_of = date_in(str(t.get("day") or ""), now)  # "2026-10-11", or "Sunday"
+            if day_of is None:
+                continue
+            when = on_day(day_of, str(t.get("part") or ""), now, wake)
+            if when.past(now) or (when.start - now).days > 21:
+                continue
+            about = " ".join(str(t["about"]).split())
+            if self.notebook.write_thread(about, when, follow_up(when, wake), by=by or day):
+                done.added.append(f"thread: {quoted(about)} ({when.words})")
 
     # Once a week
 
@@ -407,10 +572,12 @@ class Reflector:
         week_ago = now - REVIEW_EVERY
         before = next((h for h in history if parse_time(h.created, now) <= week_ago), history[-1])
         first_day = week_ago.date().isoformat()
+        cloud = settings.life.reflect_with == "cloud"
+        cloud = cloud and settings.profile("expert").provider != "ollama"
         journal = [
             f"({j.ref}) {j.text}"
             for j in reversed(self.notebook.entries("journal", 14))
-            if (j.ref or "") >= first_day
+            if (j.ref or "") >= first_day and not (cloud and j.meta.get("private"))
         ]
         opinions = [o.text for o in self.notebook.entries("opinion", 30) if o.day >= first_day]
         retired = [

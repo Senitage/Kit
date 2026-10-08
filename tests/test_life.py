@@ -201,6 +201,7 @@ def test_answering_a_pipe_up_he_knows_why_he_piped_up(paths):
         reply("Forty-one, mate. A personal best."),
         reply("Ha."),
     )
+    memory.clock.now += timedelta(days=1)  # a Tuesday: no weekend to ask about first
     brain.notebook.write("want", "Tell Dan I counted forty-one open tabs.")
     brain.pc.update(snap())
     asyncio.run(life_tick_with(brain, "want"))
@@ -330,12 +331,25 @@ def test_a_chatty_kit_speaks_up_soon_and_often():
 
 
 def test_a_chatty_kit_follows_along_with_switches():
-    life, pc, clock = setup(chattiness=1)
+    life, pc, clock = setup(chattiness=1, work_triggers=True)
     run(life, pc, clock, 3, snap(title="pumps.py"))
     reasons = run(life, pc, clock, 1, snap(title="cyclones.py"))
     reasons += run(life, pc, clock, 3, snap(title="cyclones.py"))
     assert life.curious_about == "cyclones.py"
     assert "watching" in reasons
+
+
+def test_work_on_screen_sets_nothing_off_unless_asked():
+    # Dan's "just a normal guy": code in VS Code and a CI page aren't talking points.
+    life, pc, clock = setup(chattiness=1)
+    run(life, pc, clock, 3, snap(title="pumps.py"))
+    reasons = run(life, pc, clock, 4, snap(title="cyclones.py"))
+    assert life.curious_about == "" and "watching" not in reasons
+    run(life, pc, clock, 0.5, snap(app="Chrome", title="Build failed · Kit", site="github.com"))
+    assert life.feeling_now() is None
+    # Something that isn't work still gets a look.
+    run(life, pc, clock, 1, snap(app="Chrome", title="Footy tipping", site="footytips.com.au"))
+    assert life.curious_about != "" or life.drives.curiosity > 0
 
 
 def test_a_chatty_kit_nags_twice_then_sulks():
@@ -488,7 +502,7 @@ def test_something_new_on_screen_prompts_a_thought_sooner():
 
 
 def test_a_failed_or_passing_build_on_screen_is_felt_and_thought_about():
-    life, pc, clock = setup()
+    life, pc, clock = setup(work_triggers=True)
     run(life, pc, clock, 3, snap(app="Chrome", title="CI · Senitage/Kit", site="github.com"))
     run(life, pc, clock, 0.5, snap(app="Chrome", title="Build failed · Kit", site="github.com"))
     assert life.feeling_now().name == "sympathetic"

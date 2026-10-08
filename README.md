@@ -50,7 +50,23 @@ and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
 
-## Now: Kit as a companion, stage 1
+## Now: Kit as a companion, stage 2
+
+He follows your life. Mention something coming up ("dentist Thursday arvo") and
+he asks how it went once it's over; ask him to check in after your 2 pm and he
+does. A new chat picks up one thing from the last, Monday brings "how was the
+weekend?", and each night he writes what's going on with you so he never asks
+what he already knows. He gets to know you a question a day, nudges you to bed
+or outside once a day, keeps running jokes, and Claude steps in for the moments
+that matter. Update and test it with
+[docs/stage-companion-2.md](docs/stage-companion-2.md).
+
+```
+kit life             # now also: what he'll ask about and when
+kit life notebook    # what's going on with you, threads, running jokes
+```
+
+## Kit as a companion, stage 1
 
 Kit knows how long you were gone, even across a restart. He's glad when you're
 back and says hello once (asking how lunch was, if you said), sees you off with
