@@ -154,15 +154,64 @@ A thought can:
 Ask "what are you thinking about?" and he tells you his actual recent thoughts,
 not an invented one. If nothing's been on his mind, he says so.
 
-## Something for tomorrow
+## Something for later
 
-"Ask me tomorrow how the shutdown went" goes straight into his notebook as a
-want that waits till the morning: it's due when quiet hours end
-(`life.quiet_until`), and by then it has waited all night, so he brings it up
-at his first chance. The same goes for a thought of his that starts with
-"tomorrow", and for the things his nightly reflection says he'd like to bring
-up. Once he's said it, in a pipe-up or in passing in a chat, he doesn't ask
-again.
+"Ask me tomorrow how the shutdown went", "check in after my 2 pm" or "remind me
+at 5 to call Bob" goes straight into his notebook as a want that waits till
+then (`kit.when` reads the time: "this arvo" is 1:30 pm, "after my 2 pm" about
+2:30, "tomorrow" when quiet hours end). You asked for it, so it comes up at his
+first chance once it's due. A thought of his that starts with "tomorrow", and
+the things his nightly reflection says he'd like to bring up, wait till the
+morning the same way. Once he's said it, in a pipe-up or in passing in a chat,
+he doesn't ask again.
+
+## Following your life
+
+Kit keeps up with what's coming up for you, the way a friend does
+(`life.threads`):
+
+- **Threads.** Mention something coming up with a time ("got the dentist
+  Thursday arvo", "footy Saturday", "Mum's birthday lunch on Sunday") and he
+  writes it in his notebook as a thread. It waits till it's over (the end of
+  that afternoon, or the next morning for an evening or a whole day), then he
+  asks how it went, once: in a pipe-up, in his next reply, or as the one thing
+  a new chat picks up. Your answer is kept with it, so his reflection knows how
+  it went. Questions, things already over, work (meetings, deadlines, the
+  shutdown) and anything more than three weeks off aren't threads, and only one
+  is taken from a message. Name it again ("the dentist's moved to Friday") and
+  the thread moves. Tell him how it went before he asks ("dentist was fine")
+  and he doesn't ask. His nightly reflection can add up to two more from the
+  day, by date.
+- **Monday.** Monday morning, once, he asks how the weekend was, unless he's
+  already following something from it.
+- **One thing from last time.** A new chat (you're back after
+  `brain.new_chat_after_minutes`) opens with one thing from the last one: how
+  something that's over went, or something you said last time, if it was a
+  while ago (`life.chat_opener`). The hello when you're back at the desk does
+  the same, unless your goodbye said where you were off to.
+- **Getting to know you.** While you two are talking, once a day at most, he
+  writes down one everyday question to ask: your partner's name, the cat's,
+  family, mates, a good weekend, dinner, music, footy, hobbies, your birthday
+  (`life.interview`). He skips what he already knows, asks each at most twice,
+  and never when you've had bad news. A short answer with a name ("Milo") is
+  learned as a fact ("Milo is Dan's cat.").
+- **Two nudges, once a day each** (`life.nudges`): toward bed when you're still
+  at the PC or chatting past `life.bedtime` (it lapses at 4 am if he never got
+  to it), and outside or to see someone after `life.desk_hours` at the desk
+  without a break, in the daytime. Light, kind and once; never at bad news.
+- **Running jokes.** His nightly reflection keeps a joke that got a laugh, with
+  the words that bring it back. When you say one of them, the joke is offered
+  to him for that reply (once a day at most). A laugh right after means it
+  landed; one brought back three times without a laugh is retired.
+- **What's going on with you.** Each night his reflection writes 60 to 90 words
+  on what's going on with you lately (who's around, what's coming up, how
+  you've been), and it's in every prompt the next day, so he never asks what he
+  already knows. What you say today wins over it. Every version is kept; the
+  notebook tab shows it, and you can forget it.
+
+Code and builds on your screen don't set him off any more (`life.work_triggers`
+is off): he isn't curious about a new file in VS Code or sympathetic about a
+failed build. Turn it on to have that back.
 
 ## His notebook
 
@@ -171,10 +220,14 @@ Facts in memory are about you. The notebook is Kit's own:
 - **thoughts** from quiet moments; small ones fade after two weeks;
 - **opinions** he's formed;
 - **wants**: things he means to say or ask, until he does (or a week passes);
+- **threads**: things coming up in your life, to ask how they went once
+  they're over;
+- **running jokes** you two share, and the words that bring each back;
 - **moments** worth keeping;
 - a **journal** entry for each day;
 - his **self-sheet**: who he thinks he is, in his own words, with every earlier
   version kept;
+- **what's going on with you** lately, in a paragraph he writes each night;
 - his **quirks**, including the ones he dropped or you took away.
 
 Thoughts, opinions, moments and the journal are in the knowledge index (the
@@ -186,8 +239,8 @@ away or give it back, and go back to an earlier self-sheet.
 ## Each night, looking back
 
 After midnight, once the day's summary is written, Kit reflects on the day. The
-work model (Claude Sonnet unless you change `routing.work`) reads the day as
-Kit: the conversation, the summary, his thoughts and feelings, his journal from
+expert model (Claude Opus; `life.reflect_role` picks `expert` or `work`) reads
+the day as Kit: the conversation, the summary, his thoughts and feelings, his journal from
 the days before, and what you undid lately. It writes:
 
 - a **journal** entry, in his own words: what happened, what he noticed, how
@@ -200,14 +253,24 @@ the days before, and what you undid lately. It writes:
 - his **quirks**: usually the same, at most one dropped or picked up a night.
   One that has fallen flat for days running can go;
 - up to three **opinions**, two **moments** and three things to **bring up
-  tomorrow**.
+  tomorrow**;
+- **what's going on with you**, 60 to 90 words, for every prompt tomorrow;
+- up to two **threads** from the day (things coming up, by date), and a
+  **running joke** if one got a laugh.
+
+He's shown how you've been lately ("now" facts), your plans with dates, the
+threads he's following and how the ones he asked about went, and the jokes you
+already share. A cloud model never sees what you said to keep local, or Kit's
+answer to it: those messages are left out, and so is the day's summary on such
+a day. Written at home from them, the paragraph about you is marked so, and
+never goes in a cloud model's prompt.
 
 The first time the brain starts, he writes his first self-sheet from the
 persona. If you change the persona's traits later, he sees both until his next
 reflection folds the change in.
 
-`life.reflect_with` picks who writes it: `cloud` (the default: the work model,
-about 2 cents a day, logged as spend, with the local model stepping in if the
+`life.reflect_with` picks who writes it: `cloud` (the default: the expert model,
+a few cents a day, logged as spend, with the local model stepping in if the
 cloud can't), `local` (free, but a small model writes a flatter diary), or
 `off` (he doesn't reflect or change). If no model gives a readable answer, he
 tries again an hour later, and after three tries he skips that day rather than
@@ -394,6 +457,18 @@ moan, how you feel or a joke get his own answer, even about work, and so does
 "what are you thinking about?". He only asks to add something to the register
 when you named it.
 
+The exception is a **key moment** (`routing.key_moments`): bad news that hits
+hard (a strong sad or worried feeling, `routing.key_moment_strength`) is
+answered by the work model, as Kit, since that's when a flat answer hurts most.
+So is his hello after a night or days away (`routing.key_moment_hellos`),
+checked for guilt like any hello. Never when you said to keep it local or chose
+a model yourself; if the cloud can't answer, his local model does.
+
+As the month's cloud budget runs low, the least needed calls stop first, each
+step keeping `cloud.reserve_usd` ($3) more in hand: evals first, then key
+moments and the fact check, then ordinary chat, so the nightly reflection
+always has the last few dollars.
+
 ## Two passes: deciding, then talking
 
 With `ollama.speak_pass` on (the default), the local model answers in two
@@ -417,8 +492,10 @@ sees of the chat, so he doesn't copy it. Cloud models still answer in one piece.
 
 `kit eval voice` compares local models on this: see
 [stage-inner-life.md](stage-inner-life.md). `kit eval companion` checks the
-goodbyes, hellos and honesty above: see
-[stage-companion-1.md](stage-companion-1.md).
+goodbyes, hellos and honesty above, and that a new chat picks up one thing
+from the last and he asks how something went: see
+[stage-companion-1.md](stage-companion-1.md) and
+[stage-companion-2.md](stage-companion-2.md).
 
 ## Checking on him
 

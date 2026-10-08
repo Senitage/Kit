@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
+NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes after two weeks."
 
 
 class ChatIn(BaseModel):
@@ -250,6 +251,8 @@ def create_app(
     @app.post("/api/memory/facts", dependencies=auth)
     async def add_fact(body: FactIn) -> dict:
         owner = store.current().persona.owner
+        if body.pinned and body.kind == "now":
+            raise HTTPException(422, NOW_PINNED)
         learned = await brain.learner.learn(body.text, body.kind, owner)
         if body.pinned:
             memory.index.set_pinned(learned.item_id, True)
@@ -260,6 +263,9 @@ def create_app(
         item = memory.index.get(fact_id)
         if item is None or item.source != FACTS or item.superseded_by:
             raise HTTPException(404, "no such current fact")
+        kind = body.kind or item.kind
+        if body.pinned and kind == "now":
+            raise HTTPException(422, NOW_PINNED)
         if body.text is not None and body.text.strip() != item.text:
             fact_id = memory.replace_fact(fact_id, body.text.strip(), body.kind)
             await brain.recall.index_pending()
@@ -267,6 +273,8 @@ def create_app(
             memory.index.update(fact_id, kind=body.kind)
         if body.pinned is not None:
             memory.index.set_pinned(fact_id, body.pinned)
+        if kind == "now":
+            memory.index.set_pinned(fact_id, False)  # lately is never always
         return _item(memory.index.get(fact_id))
 
     @app.get("/api/memory/facts/{fact_id}/history", dependencies=auth)
@@ -376,11 +384,15 @@ def create_app(
         return {
             **brain.life.state(),
             "thinking": thought.text if thought else None,
-            "wants": [w.text for w in brain.notebook.open_wants()],
+            "wants": [w.text for w in brain.notebook.open_wants() if w.kind == "want"],
             "later": [
                 {"text": w.text, "after": w.meta.get("after")}
                 for w in brain.notebook.unsaid_wants()
-                if not brain.notebook.due(w)
+                if w.kind == "want" and not brain.notebook.due(w)
+            ],
+            "threads": [
+                {"text": t.text, "after": t.meta.get("after"), "due": brain.notebook.due(t)}
+                for t in brain.notebook.threads()
             ],
             "quirks": brain.quirks,
             "games_retired": brain.life.retired_games(),
@@ -392,17 +404,22 @@ def create_app(
         """Kit's own notebook: his self-sheet and its earlier versions, the weekly
         reviews, his quirks, wants, thoughts, opinions, moments and journal."""
         nb = brain.notebook
-        sheet = nb.sheet()
+        sheet, dan = nb.sheet(), nb.dan()
         return {
             "sheet": _item(sheet) if sheet else None,
             "sheet_history": [_item(i) for i in nb.sheet_history()[1:]],
+            "dan": _item(dan) if dan else None,
+            "dan_history": [_item(i) for i in nb.dan_history()[1:]],
             "reviews": [_item(i) for i in nb.reviews(3)],
             "quirks": brain.quirks,
             "retired_quirks": nb.retired_quirks(),
             "wants": [
                 {**_item(w), "pressure": round(nb.pressure(w), 2), "due": nb.due(w)}
                 for w in nb.unsaid_wants()
+                if w.kind == "want"
             ],
+            "threads": [{**_item(t), "due": nb.due(t)} for t in nb.entries("thread", 60)],
+            "bits": [_item(i) for i in nb.entries("bit", 50)],
             "thoughts": [_item(i) for i in nb.entries("thought", 40)],
             "opinions": [_item(i) for i in nb.entries("opinion", 100)],
             "moments": [_item(i) for i in nb.entries("moment", 100)],
@@ -520,8 +537,9 @@ async def _life_loop(brain: Brain, every_s: float) -> None:
 async def life_tick(brain: Brain) -> None:
     """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
     thought of his own. Neither happens while he's answering something. Once a day
-    he may think of a small game to suggest (``Brain.offer_game``)."""
-    brain.offer_game()
+    he may think of a small game to suggest, a getting-to-know-you question, or a
+    nudge toward bed or outside (``Brain.offer_wants``)."""
+    brain.offer_wants()
     brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()
     if brain.jobs or brain.talking():
@@ -567,6 +585,10 @@ async def _upkeep_loop(
             await brain.reflect()
         except Exception:
             log.exception("Kit's nightly reflection failed")
+        try:
+            brain.tidy()
+        except Exception:
+            log.exception("tidying memory and the notebook failed")
         try:
             await brain.recall.index_pending(limit=5000)
         except Exception:

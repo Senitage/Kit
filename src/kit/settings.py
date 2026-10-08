@@ -218,11 +218,38 @@ class RoutingSettings(_Section):
         "to answer, and he says the answer himself. Off: the local model goes by what it "
         "knows.",
     )
+    key_moments: bool = Field(
+        True,
+        description="For the moments that matter, the work model writes Kit's words, in his "
+        "voice and mood: his hello after a night or more away, and his answer when you share "
+        "something sad or stressful. A second or two slower; the local model steps in if "
+        "the cloud can't. Never for 'keep it local'.",
+    )
+    key_moment_strength: float = Field(
+        0.7,
+        ge=0,
+        le=1,
+        description="How strongly sad or stressful something you say has to land (0 to 1) to "
+        "count as a key moment. 'Rough day' is about 0.8, 'bad news' 0.7.",
+    )
+    key_moment_hellos: list[Literal["while", "hours", "overnight", "days", "long"]] = Field(
+        default_factory=lambda: ["overnight", "days", "long"],
+        description="Which hellos count as key moments: after a while, hours, overnight, days "
+        "or a week and more away.",
+    )
 
 
 class CloudSettings(_Section):
     monthly_cap_usd: float = Field(
         40.0, ge=0, description="Kit stops using cloud models once this month's spend reaches this."
+    )
+    reserve_usd: float = Field(
+        3.0,
+        ge=0,
+        le=100,
+        description="As the budget runs low, cloud calls give way in order, each this much "
+        "sooner than the last: evals first, then fact checks and key moments, then chat. "
+        "Kit's nightly reflection always has the last of it. 0 treats them all the same.",
     )
 
 
@@ -448,6 +475,12 @@ class LifeSettings(_Section):
         "model, a few cents a day, logged as spend (the local model steps in if the cloud "
         "can't). local: the local model only. off: Kit doesn't reflect or change.",
     )
+    reflect_role: Literal["expert", "work"] = Field(
+        "expert",
+        description="Which cloud model writes Kit's journal, self-sheet and what's going on "
+        "with you each night (with reflect_with cloud). expert: Opus by default, about 2 to "
+        "4 cents a night. work: Sonnet, about half that.",
+    )
     weekly_review: bool = Field(
         True,
         description="Once a week the expert model reads how Kit has changed and writes a "
@@ -476,8 +509,45 @@ class LifeSettings(_Section):
         description="At most once a day, when he's bored and you're around, Kit suggests a "
         "small game (a weather bet, a would-you-rather). Ones that keep falling flat retire.",
     )
+    threads: bool = Field(
+        True,
+        description="Kit follows what's coming up in your life when you mention it with a "
+        "day or time ('dentist Thursday arvo') and asks how it went once it's over, once. "
+        "Never for work. 'Ask me tomorrow...' and 'check in after my 2 pm' work either way.",
+    )
+    chat_opener: bool = Field(
+        True,
+        description="When you come back to a new chat, Kit picks up one thing from the last "
+        "one (how something went), the way a friend would.",
+    )
+    interview: bool = Field(
+        True,
+        description="Kit gets to know you by chat: at most one everyday question a day (your "
+        "partner's name, the cat's, your mates, what you like doing), until he knows. He "
+        "skips what he already knows.",
+    )
+    nudges: bool = Field(
+        True,
+        description="Once a day each: a nudge toward bed when you're still up past bedtime, "
+        "and toward getting outside or seeing someone after a long stretch at the desk.",
+    )
+    bedtime: str = Field(
+        "22:30", description="When Kit starts nudging you toward bed (with nudges on)."
+    )
+    desk_hours: float = Field(
+        3.0,
+        ge=0.5,
+        le=12,
+        description="Hours at the desk without a break before Kit nudges you outside (with "
+        "nudges on, in the daytime).",
+    )
+    work_triggers: bool = Field(
+        False,
+        description="Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) "
+        "and reacts to builds and tests on screen. Off: only everyday things catch his eye.",
+    )
 
-    @field_validator("quiet_from", "quiet_until")
+    @field_validator("quiet_from", "quiet_until", "bedtime")
     @classmethod
     def _clock_time(cls, value: str) -> str:
         h, _, m = value.partition(":")
@@ -524,6 +594,22 @@ class MemorySettings(_Section):
         le=1,
         description="How close in meaning a memory must be to count as relevant (0 to 1). "
         "It depends on the embedding model: `kit eval memory` suggests a value.",
+    )
+    weight_floor: float = Field(
+        0.3,
+        ge=0,
+        le=1,
+        description="Among relevant memories, the ones that matter more to your life and "
+        "the ones recalled lately come first; this is the least an old, small one counts "
+        "(0 to 1). 1 weighs them all the same.",
+    )
+    now_days: int = Field(
+        14,
+        ge=1,
+        le=90,
+        description="Days a 'now' memory lasts: how you've been or what's going on lately "
+        "(flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep "
+        "the gist.",
     )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 

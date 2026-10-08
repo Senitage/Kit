@@ -156,3 +156,31 @@ def test_new_chat_clears_the_shown_conversation(setup):
     assert client.post("/api/chat/new").status_code == 401
     assert client.post("/api/chat/new", headers=AUTH).json() == {"ok": True}
     assert client.get("/api/messages", headers=AUTH).json() == []
+
+
+def test_a_now_fact_is_never_pinned(setup):
+    client, _, _ = setup
+    r = client.post(
+        "/api/memory/facts",
+        json={"text": "Dan's been sleeping badly.", "kind": "now", "pinned": True},
+        headers=AUTH,
+    )
+    assert r.status_code == 422 and "two weeks" in r.json()["detail"]
+    r = client.post(
+        "/api/memory/facts",
+        json={"text": "Dan loves a quiet Sunday.", "pinned": True},
+        headers=AUTH,
+    )
+    fact_id = r.json()["id"]
+    edited = client.patch(f"/api/memory/facts/{fact_id}", json={"kind": "now"}, headers=AUTH)
+    assert edited.json()["kind"] == "now" and not edited.json()["pinned"]
+
+
+def test_the_notebook_shows_threads_jokes_and_whats_going_on(setup):
+    client, _, _ = setup
+    client.post("/api/chat", json={"text": "Got the dentist Thursday arvo"}, headers=AUTH)
+    book = client.get("/api/life/notebook", headers=AUTH).json()
+    assert book["threads"][0]["meta"]["about"] == "dentist" and not book["threads"][0]["due"]
+    assert book["wants"] == [] and book["bits"] == [] and book["dan"] is None
+    life = client.get("/api/life", headers=AUTH).json()
+    assert life["threads"][0]["text"].startswith("dentist, ")

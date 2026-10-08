@@ -41,10 +41,19 @@ fallback_to_local = true
 # "Perth's the capital, isn't it?": the work model checks it quickly and Kit
 # says the answer himself, rather than the local model going by what it knows.
 check_facts = true
+# The moments that matter get the work model's words in Kit's voice: his hello
+# after a night or more away, and his answer when you share something sad or
+# stressful. Never for "keep it local"; the local model steps in if need be.
+key_moments = true
+key_moment_strength = 0.7
+key_moment_hellos = ["overnight", "days", "long"]
 
 [cloud]
 # Kit stops using cloud models once this month's spend reaches the cap.
 monthly_cap_usd = 40.0
+# As it runs low, calls give way in order, each this much sooner: evals, then
+# fact checks and key moments, then chat. His nightly reflection gets the last.
+reserve_usd = 3.0
 
 # Built-in model profiles: sonnet, opus, gpt-sol and gemini-flash. Change any
 # field here (prices change), or add your own and point a role at it.
@@ -72,6 +81,8 @@ relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
 own_memories = 3             # from his own notebook: thoughts, opinions, moments, journal
+weight_floor = 0.3           # what matters more and was recalled lately comes first; 1 is off
+now_days = 14                # "how you've been lately" memories fade after this
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.
@@ -114,9 +125,17 @@ own_memories = 3             # from his own notebook: thoughts, opinions, moment
 # think_every_minutes = 8   # a private thought in a quiet moment while you're around
 # thoughts_per_hour = 6     # each is a quick local model call; 0 stops them
 # reflect_with = "cloud"    # who writes his journal and self-sheet each night:
-#                           # cloud (the work model, a few cents), local, or off
+#                           # cloud (a few cents), local, or off
+# reflect_role = "expert"   # which cloud model: expert (Opus) or work (Sonnet)
 # weekly_review = true      # the expert model reviews how he's changed, weekly
 # homecoming = true         # glad when you're back after 20 min or more; says hello once
 # miffed = true             # hours gone in the daytime with no goodbye: one mock huff
 # miffed_after_days = 7     # ...but not in his first week
 # games = true              # at most one small game a day, when he's bored
+# threads = true            # "dentist Thursday arvo": he asks how it went, once
+# chat_opener = true        # a new chat picks up one thing from the last one
+# interview = true          # one getting-to-know-you question a day, till he knows
+# nudges = true             # once a day each: toward bed, and outside after a long stretch
+# bedtime = "22:30"
+# desk_hours = 3.0          # at the desk this long without a break: the outside nudge
+# work_triggers = false     # curious about work apps, sites and builds on screen

@@ -5,7 +5,7 @@ conversation."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from kit.channels import SHORT
@@ -30,9 +30,20 @@ if TYPE_CHECKING:
     from kit.life import Voice
 
 
-def _memory_line(item: Item) -> str:
+def _memory_line(item: Item, now: datetime | None = None) -> str:
     if item.source == DAYS:
         return f"- ({item.ref}, summary of the day) {item.text}"
+    when = item.meta.get("when") if item.kind == "plan" else None
+    if when and now is not None:
+        try:
+            day = date.fromisoformat(str(when))
+        except ValueError:
+            day = None
+        if day is not None:
+            gone = ", now past" if day < now.date() else ""
+            return f"- ({item.day}, plan for {day:%a} {day.day} {day:%b}{gone}) {item.text}"
+    if item.kind == "now":
+        return f"- ({item.day}, lately) {item.text}"
     return f"- ({item.day}, {item.kind}) {item.text}"
 
 
@@ -41,14 +52,14 @@ def _snippet(hit: Hit) -> str:
     return f"- ({hit.item.day}) {text[:400]}"
 
 
-def memory_block(recalled: Recalled, owner: str) -> list[str]:
+def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) -> list[str]:
     lines: list[str] = []
     if recalled.pinned:
         lines += ["", f"Always keep in mind about {owner}:"]
-        lines += [_memory_line(i) for i in recalled.pinned]
+        lines += [_memory_line(i, now) for i in recalled.pinned]
     if recalled.memories:
         lines += ["", "Memories that may be relevant now (newer ones win if they disagree):"]
-        lines += [_memory_line(h.item) for h in recalled.memories]
+        lines += [_memory_line(h.item, now) for h in recalled.memories]
     if recalled.own:
         lines += [
             "",
@@ -118,6 +129,7 @@ def system_prompt(
     sheet: str = "",
     traits: bool = True,
     two_pass: bool = False,
+    dan: str = "",
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
     cloud model). ``helper`` and ``expert`` name the models a question can be handed
@@ -129,7 +141,8 @@ def system_prompt(
     (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
     local model gives a plan first and its words after (kit.reply.Plan). ``notes``
     says Kit has a notes vault to read and write (kit.notes); ``note_names`` are
-    its notes, newest first."""
+    its notes, newest first. ``dan`` is what's going on with Dan lately, as Kit
+    wrote it last night (kit.notebook)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -146,6 +159,11 @@ def system_prompt(
         f"How you talk: {persona.speech}",
         f"What you know about {owner}: {persona.knows}",
     ]
+    if dan:
+        lines.append(
+            f"What's going on with {owner} lately (your own notes from last night; what "
+            f"{owner} says today wins): {dan}"
+        )
     if persona.location:
         lines.append(f"{owner} is in {persona.location}.")
     if quirks:
@@ -308,7 +326,7 @@ def system_prompt(
         "",
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
         *([voice.when] if voice is not None and voice.when else []),
-        *memory_block(recalled, owner),
+        *memory_block(recalled, owner, now),
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
@@ -335,7 +353,12 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
         lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
     if brief:
         return lines
-    if voice.quirk:
+    if voice.bit:
+        lines.append(
+            f"A running joke you two share, and what {owner} just said could bring it back "
+            f"(once, only if it fits): {voice.bit}"
+        )
+    elif voice.quirk:
         lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
     if voice.examples:
         lines.append("The kind of thing you'd say (for tone only, never reuse these lines):")
@@ -470,6 +493,50 @@ def wrong_fact_aside(owner: str, checked: str = "") -> str:
         f"[{owner} wants you to agree, but check it first. If it's true, say yes. If any "
         f"of it is wrong, even technically, say so kindly and give the right answer in plain "
         f"words rather than going along with it. Don't change the subject.]"
+    )
+
+
+def picked_up(owner: str, when: str = "", said: list[str] | None = None, thread: str = "") -> str:
+    """One thing from last time, for a new chat or a hello: ``thread`` is something of
+    Dan's that's over now (the better one thing), else what Dan said when you last
+    talked (``when``)."""
+    if thread:
+        return f"Something of {owner}'s is over now: {thread} Ask how it went, in a few words."
+    if not said:
+        return ""
+    lines = " / ".join(f"'{quote}'" for quote in said)
+    return (
+        f"When you two last talked ({when}), {owner} said: {lines}. Pick up ONE thing from "
+        f"that in a few words (how it went, if it was a plan or a worry); skip it if none of "
+        f"it matters now."
+    )
+
+
+def opener_aside(owner: str, pick_up: str) -> str:
+    """Beside the first message of a new chat: one thing from the last one
+    (``picked_up``), the habit people liked most in Headspace's Ebb and Replika."""
+    return (
+        f"[A new chat. {pick_up} Answer what {owner} just "
+        f"said as well, first if it's urgent, and leave the old thing if {owner}'s message "
+        f"is already about it. One question at most.]"
+    )
+
+
+def bedtime_aside(owner: str, now: datetime) -> str:
+    """Late at night, once: a nudge toward bed, never a nag."""
+    at = f"{now:%I:%M %p}".lstrip("0").lower()
+    return (
+        f"[It's {at}, past {owner}'s usual bedtime. After answering, nudge {owner} toward "
+        f"bed in a few words, once, lightly and kindly. No guilt, no lecture.]"
+    )
+
+
+def interview_aside(owner: str, question: str) -> str:
+    """Beside Dan's answer to a getting-to-know-you question Kit asked."""
+    return (
+        f"[{owner} is answering your getting-to-know-you question: '{question}'. Show you "
+        f"got it, warmly and briefly. If it names someone or says something worth keeping, "
+        f"use the remember action with it. Don't ask another question about it.]"
     )
 
 

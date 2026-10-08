@@ -4,6 +4,10 @@ Each provider has an adapter that turns Kit's chat messages (a system prompt
 then alternating turns) into one request and returns the text and token
 counts. ``Cloud`` picks the adapter for a model profile, keeps to the monthly
 budget, and logs what every call cost, so swapping models is a settings change.
+
+As the budget runs low, calls give way in a set order (``SKIP_ORDER``): evals
+first, then fact checks and key moments, then chat, so Kit's nightly reflection
+always has the last of it.
 """
 
 from __future__ import annotations
@@ -20,6 +24,9 @@ from kit.prompt import TURN_PART
 from kit.settings import ModelProfile, PersonaSettings, Settings
 
 CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
+# Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
+# sooner than the one before, so evals can never use up the nightly reflection's share.
+SKIP_ORDER = {"reflect": 0, "chat": 1, "moment": 2, "check": 2, "eval": 3}
 
 
 class CloudError(Exception):
@@ -419,17 +426,21 @@ class Cloud:
         settings: Settings,
         question: str = "",
         on_step: Step | None = None,
+        priority: str = "chat",
     ) -> CloudAnswer:
         """``question`` is what Dan asked, for the spend log. ``on_step`` hears about
-        progress (web searches so far) while the model is still working."""
+        progress (web searches so far) while the model is still working. ``priority``
+        is the call's place in ``SKIP_ORDER``."""
         provider = self.providers.get(profile.provider)
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
         spent = self.memory.month_spend()
         cap = settings.cloud.monthly_cap_usd
-        if spent >= cap:
+        kept = settings.cloud.reserve_usd * SKIP_ORDER.get(priority, 1)
+        if spent >= cap - kept:
+            saving = f", keeping the last ${kept:.2f} for my nightly reflection" if kept else ""
             raise CloudError(
-                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}). "
+                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}{saving}). "
                 "You can raise cloud.monthly_cap_usd in my settings."
             )
         key = self.api_key(profile.provider)
