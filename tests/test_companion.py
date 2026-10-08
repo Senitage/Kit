@@ -735,6 +735,10 @@ def test_the_companion_eval(memory):
     opener = model.calls[-2][-1]["content"]
     assert "A new chat" in opener and "Big footy final tonight" in opener
     assert "dentist" in model.calls[-1][-1]["content"]
+    # Neither is coloured by the rough day in the case before: not how Kit felt about it
+    # "just now", nor the exchange recalled.
+    later = [m["content"] for m in model.calls[-2] + model.calls[-1]]
+    assert not any("shutdown" in c for c in later)
     assert not brain.notebook.threads()  # the eval's thread is gone again
     text = companion_report([report])
     assert "## Goodbyes with no question or guilt" in text
