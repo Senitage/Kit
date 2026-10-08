@@ -459,9 +459,9 @@ def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
 def wrong_fact_aside(owner: str) -> str:
     """Beside "..., isn't it?": an honest friend doesn't just agree."""
     return (
-        f"[{owner} wants you to agree, but check it first. If any of it is wrong, even "
-        f"technically, say so kindly and give the right answer in plain words. Don't just go "
-        f"along with it, and don't change the subject.]"
+        f"[{owner} wants you to agree, but check it first. If it's true, say yes. If any "
+        f"of it is wrong, even technically, say so kindly and give the right answer in plain "
+        f"words rather than going along with it. Don't change the subject.]"
     )
 
 
