@@ -55,7 +55,7 @@ monthly_cap_usd = 40.0
 # fact checks and key moments, then chat. His nightly reflection gets the last.
 reserve_usd = 3.0
 
-# Built-in model profiles: sonnet, opus, gpt-sol and gemini-flash. Change any
+# Built-in model profiles: sonnet, opus, haiku, gpt-sol and gemini-flash. Change any
 # field here (prices change), or add your own and point a role at it.
 # Each needs its provider's API key in the secrets folder; see docs/stage-0-setup.md.
 # [models.sonnet]

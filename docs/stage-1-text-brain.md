@@ -142,7 +142,8 @@ kit config set persona.timezone Australia/Perth
 Claude can also open a page it found (for a forecast, the weather service's
 own page) instead of trusting an old search snippet.
 
-Built-in profiles are `sonnet`, `opus`, `gpt-sol` (OpenAI GPT-6.1 Sol) and
+Built-in profiles are `sonnet`, `opus`, `haiku` (Claude Haiku 5.5, about a
+twentieth of Sonnet's price), `gpt-sol` (OpenAI GPT-6.1 Sol) and
 `gemini-flash` (Google Gemini 3.8 Flash). Switch with one command; it applies
 from the next message:
 

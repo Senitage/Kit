@@ -162,6 +162,17 @@ DEFAULT_MODELS: dict[str, dict] = {
         "output_usd_per_mtok": 20.0,
         "search_usd_per_k": 10.0,
     },
+    # Cheap enough for everyday chat; prompts over 100K tokens cost five times more.
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 0.1,
+        "cached_input_usd_per_mtok": 0.01,
+        "output_usd_per_mtok": 0.5,
+        "search_usd_per_k": 10.0,
+    },
     "gpt-sol": {
         "label": "GPT",
         "provider": "openai",
