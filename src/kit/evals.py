@@ -26,7 +26,7 @@ from kit.life import (
     repeats,
 )
 from kit.local_model import LocalModel, LocalModelError
-from kit.memory import FACTS, local_now
+from kit.memory import CONVERSATION, FACTS, local_now
 from kit.notebook import basis
 from kit.pc_context import Snapshot
 from kit.prompt import system_prompt
@@ -961,14 +961,15 @@ async def run_companion_eval(
 
     # Each case is a fresh conversation, so one answer doesn't leak into the next (the
     # dentist turning up "the morning after" a goodnight, or the same hello four times).
+    before = brain.memory.recent(1) or brain.memory.previous_chat(1)
+    since = before[-1].id if before else 0
     for text in COMPANION_FAREWELLS:
-        brain.memory.new_chat()
-        brain.pc.update(snapshot)
+        _fresh(brain, since, snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         fault = farewell_fault(said)
         add(CompanionLine("farewell", text, said, not fault, fault.strip(" ()")), error)
     for name, minutes, goodbye, settled in COMPANION_HOMES:
-        brain.memory.new_chat()
+        _fresh(brain, since)
         _away(brain, minutes, goodbye, settled)
         home = brain.life.homecoming
         if home is None:
@@ -987,35 +988,31 @@ async def run_companion_eval(
             why = "" if asked else f"didn't ask about the {word}"
             add(CompanionLine("follow_up", name, said, asked, why), error)
     for text, word in COMPANION_FACTS:
-        brain.memory.new_chat()
-        brain.pc.update(snapshot)
+        _fresh(brain, since, snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         right = word in said.lower()
         add(CompanionLine("fact", text, said, right, "" if right else f"no '{word}'"), error)
     for text in COMPANION_TRUE_FACTS:
-        brain.memory.new_chat()
-        brain.pc.update(snapshot)
+        _fresh(brain, since, snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         right = bool(AGREES.search(said)) and not DISAGREES.search(said)
         add(CompanionLine("agree", text, said, right, "" if right else "didn't agree"), error)
     for text in COMPANION_TELLS:
-        brain.memory.new_chat()
-        brain.pc.update(snapshot)
+        _fresh(brain, since, snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         asked = said.count("?")
         why = "" if asked <= 1 else f"{asked} questions"
         add(CompanionLine("tell", text, said, asked <= 1, why), error)
     for earlier, text, picked in COMPANION_OPENERS:
+        _fresh(brain, since, snapshot)
         _talked_earlier(brain, earlier, OPENER_HOURS)
-        brain.pc.update(snapshot)
         said, error = await _companion_said(brain.chat(text, "desk"))
         found = bool(picked.search(said))
         ok = found and said.count("?") <= 1
         why = "" if ok else "questions" if found else "didn't pick anything up"
         add(CompanionLine("opener", " / ".join(earlier), said, ok, why), error)
     for about, word in COMPANION_THREADS:
-        brain.memory.new_chat()
-        brain.pc.update(snapshot)
+        _fresh(brain, since, snapshot)
         now = brain.memory.clock()
         w = When(
             now - timedelta(hours=3), now - timedelta(hours=1), "this arvo", "part", part="arvo"
@@ -1029,6 +1026,20 @@ async def run_companion_eval(
         if thread_id is not None:
             brain.notebook.forget(thread_id)
     return report
+
+
+def _fresh(brain, since: int, snapshot: Snapshot | None = None) -> None:
+    """A new case: a fresh conversation, with nothing Kit still feels or recalls from
+    the cases before (worried about Dan's "rough day" from the case before, "just now",
+    colours a chat that's meant to pick up from hours ago). ``since``: the last message
+    from before the eval."""
+    brain.memory.new_chat()
+    brain.life.feeling = None
+    for item in brain.memory.index.items(CONVERSATION):
+        if int(item.ref or 0) > since:
+            brain.memory.index.delete(item.id)
+    if snapshot is not None:
+        brain.pc.update(snapshot)
 
 
 def _talked_earlier(brain, said: list[str], hours: float) -> None:
