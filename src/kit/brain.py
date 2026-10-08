@@ -3,8 +3,9 @@
 Each turn:
 
 1. Route: pick who answers. The routing mode sets the default (the local model,
-   or the cloud ``work`` model in cloud-first), and Dan can say "keep it local",
-   "ask Claude" or "think hard" to choose for one message.
+   the cloud ``work`` model in cloud-first, or the cloud ``chat`` model in
+   cloud-only), and Dan can say "keep it local", "ask Claude" or "think hard" to
+   choose for one message.
 2. Recall: search memory (facts, past days, old conversations) for anything
    relevant to the message, and put it in the prompt.
 3. Answer. The local model's words stream out as they arrive; a cloud model
@@ -20,7 +21,9 @@ Each turn:
      suggestion Dan confirms with a quick "yes" (or on the memory page); a link
      for a known thing ("no, it's in Tax/2023") corrects the entry;
    - weather: Kit gets the forecast (kit.weather), then answers again from it;
-   - ask_cloud / ask_expert: the question goes to the work or expert model.
+   - ask_cloud / ask_expert: the question goes to the work or expert model. With
+     ``routing.confirm_expert``, Kit asks Dan first when the work model wants the
+     expert, and only a "yes" sends it.
    If a cloud model can't answer (offline, no key, budget used up), the local
    model answers instead when ``routing.fallback_to_local`` is on.
 5. Index the exchange so it can be found later.
@@ -135,6 +138,7 @@ from kit.prompt import (
     about_yourself,
     answering_pipe_up,
     bedtime_aside,
+    expert_yes_aside,
     history_messages,
     interview_aside,
     news_aside,
@@ -179,7 +183,7 @@ from kit.when import follow_up
 log = logging.getLogger(__name__)
 
 Event = dict
-LOCAL, WORK, EXPERT = "local", "work", "expert"
+LOCAL, CHAT, WORK, EXPERT = "local", "chat", "work", "expert"
 PIPE_UP = "pipe_up"  # the source of a message Kit said of his own accord
 HELD_TRIES = 3  # a pipe-up that repeats a recent line gets two more goes, then he keeps quiet
 DEEP_RECALL = 10
@@ -411,7 +415,14 @@ def route(text: str, settings: Settings) -> tuple[str, bool]:
         return EXPERT, True
     if ASK_CLOUD.search(text):
         return WORK, True
-    return (WORK if settings.routing.mode == "cloud-first" else LOCAL), False
+    mode = settings.routing.mode
+    return (WORK if mode == "cloud-first" else own_role(settings)), False
+
+
+def own_role(settings: Settings) -> str:
+    """Who answers what is Kit's own to say (a goodbye, his thoughts, chat while a
+    cloud model works): the chat model in cloud-only, else the local model."""
+    return CHAT if settings.routing.mode == "cloud-only" else LOCAL
 
 
 class Brain:
@@ -443,6 +454,7 @@ class Brain:
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
         self.pending_note: tuple[str, str] | None = None  # (title, text) Kit offered to note
+        self.pending_expert = ""  # the question Kit asked to hand to the expert model
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
@@ -545,6 +557,9 @@ class Brain:
             asides.append(wrong_fact_aside(owner))
         elif is_news(text) and not answer_aside:
             asides.append(news_aside(owner))
+        expert_ask, declined = self._answer_expert_offer(text)
+        if expert_ask:
+            asides.append(expert_yes_aside(owner, expert_ask))
         answering = "\n\n".join(a for a in asides if a)
         MIND.set("\n".join(a for a in asides[1:] if a))  # not the pipe-up he's answered
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
@@ -554,7 +569,8 @@ class Brain:
         VOICE.set(replace(voice, bit=bit.text) if bit is not None else voice)
         self.life.note_chat(text)
         answered = (
-            self._answer_note_offer(text, settings)
+            declined
+            or self._answer_note_offer(text, settings)
             or self._answer_suggestion(text)
             or self._answer_shush(text)
         )
@@ -580,26 +596,28 @@ class Brain:
         own = [h for h in recalled.own if h.item.id not in shown]
         recalled = replace(recalled, conversation=fresh, own=own)
         role, chosen = route(text, settings)
+        if expert_ask:
+            role, chosen = EXPERT, True  # Dan said yes to the expert
         if self.jobs and not chosen:
-            role = LOCAL  # busy: chat locally while the cloud works
+            role = own_role(settings)  # busy: chat locally (or with the chat model) meanwhile
         if self._key_moment(felt, settings, role, chosen, farewell):
             role = WORK  # bad news: the work model answers, as Kit
             PRIORITY.set("moment")
-        if role == LOCAL and THINKING_Q.search(text):
+        if role == own_role(settings) and THINKING_Q.search(text):
             chosen = True  # his own thoughts: nobody else can answer that
         if farewell and not chosen:
-            role, chosen = LOCAL, True  # a goodbye is his own to say
+            role, chosen = own_role(settings), True  # a goodbye is his own to say
         said: list[str] = []
 
-        if role != LOCAL and chosen:
+        if role not in (LOCAL, CHAT) and chosen:
             name = settings.profile(role).name
             for event in self._say_locally(Reply.plain(f"Sure, asking {name}.", "thinking", "nod")):
                 emit(event)
         pc_detail = ""
         about_pc = PC_QUESTION.search(text) or (AGAIN.search(text) and self._pc_recently())
-        if self.pc.latest is not None and about_pc and not (chosen and role != LOCAL):
+        if self.pc.latest is not None and about_pc and not (chosen and role not in (LOCAL, CHAT)):
             self._pc_at = self.memory.clock()
-            role, chosen = LOCAL, True
+            role, chosen = own_role(settings), True
             pc_detail = self.pc.detail(settings.persona.owner)
             emit({"type": "looked_at_pc", "online": self.pc.online()})
         forecast = ""
@@ -773,7 +791,8 @@ class Brain:
             return False
         if felt[0] not in SOFT_NEWS or felt[2] < routing.key_moment_strength:
             return False
-        return (role, chosen) == (LOCAL, False) and settings.profile(WORK).provider != "ollama"
+        home_turn = role in (LOCAL, CHAT) and not chosen
+        return home_turn and settings.profile(WORK).provider != "ollama"
 
     async def _new_topic(self, text: str, history: list[Message], settings: Settings) -> bool:
         """A clearly new subject: the chat so far would only lead the model astray (it
@@ -843,7 +862,7 @@ class Brain:
     def _with_busy_note(self, text: str, role: str) -> str:
         """A small local model can miss the background work listed at the end of a
         long prompt, so when Dan checks in, say it again right next to his words."""
-        if role != LOCAL or not self.jobs:
+        if role not in (LOCAL, CHAT) or not self.jobs:
             return text
         work = " ".join(job.line() for job in self.jobs.values())
         owner = self.settings().persona.owner
@@ -908,6 +927,18 @@ class Brain:
         if NO.fullmatch(text):
             return Reply.plain("Okay, I'll leave it.", "neutral", "nod")
         return None
+
+    def _answer_expert_offer(self, text: str) -> tuple[str, Reply | None]:
+        """Kit asked whether to hand a question to the expert model: a yes gives the
+        question to ask it, a no a reply that leaves it; anything else lets it lapse."""
+        pending, self.pending_expert = self.pending_expert, ""
+        if not pending:
+            return "", None
+        if YES.fullmatch(text):
+            return pending, None
+        if NO.fullmatch(text):
+            return "", Reply.plain("Okay, I'll leave it there.", "neutral", "nod")
+        return "", None
 
     def _answer_shush(self, text: str) -> Reply | None:
         """ "Shush" or "not now" keeps Kit from piping up for an hour; "you can talk
@@ -1400,6 +1431,10 @@ class Brain:
         sheet = self.notebook.sheet()
         if role == LOCAL:
             helper, further, web = (work.name if hand_off else None), None, False
+        elif role == CHAT:
+            chat = settings.profile(CHAT)
+            onward = hand_off and routing.chat != routing.work
+            helper, further, web = (work.name if onward else None), None, chat.web_search
         elif role == WORK:
             different = routing.expert != routing.work
             helper, further, web = None, (expert.name if different else None), work.web_search
@@ -1413,6 +1448,7 @@ class Brain:
             mode=routing.mode,
             helper=helper,
             expert=further,
+            confirm_expert=routing.confirm_expert,
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
             quirks=self.quirks,
@@ -1453,7 +1489,7 @@ class Brain:
         pc_detail: str = "",
         answering: str = "",
     ) -> AsyncIterator[Event]:
-        hand_off = role == LOCAL and not chosen and hops == 0
+        hand_off = role in (LOCAL, CHAT) and not chosen and hops == 0
         seen, shown = history, recalled
         if role != LOCAL:  # what Dan kept local, and what Kit kept from it, stays home
             seen, shown = self.memory.shared(history), recalled.for_cloud()
@@ -1574,7 +1610,12 @@ class Brain:
             event = self._implied_correction(text, recalled)
             if event:
                 yield event
-        if (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
+        if kind == "ask_expert" and role == WORK and settings.routing.confirm_expert:
+            # Kit has asked whether to hand it over; it goes only on a "yes".
+            self.pending_expert = reply.action.text.strip() or text
+            expert = settings.profile(EXPERT).name
+            yield {"type": "notice", "message": f"Say yes to ask {expert}."}
+        elif (kind == "ask_cloud" and hand_off) or (kind == "ask_expert" and role == WORK):
             to = WORK if kind == "ask_cloud" else EXPERT
             question = reply.action.text.strip() or text
             yield {"type": "handing_off", "to": settings.profile(to).name, "question": question}

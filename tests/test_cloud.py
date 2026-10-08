@@ -8,6 +8,8 @@ import pytest
 from fakes import Clock, FakeAnthropic, make_cloud
 from kit.cloud import (
     ANTHROPIC_SEARCH_TOOL,
+    BASIC_FETCH_TOOL,
+    BASIC_SEARCH_TOOL,
     FALLBACK_BETA,
     CloudError,
     GoogleProvider,
@@ -62,6 +64,17 @@ def test_web_search_can_be_turned_off(memory):
     s = Settings.model_validate({"models": {"opus": {"web_search": False}}})
     ask(make_cloud(memory, fake), settings=s)
     assert "tools" not in fake.calls[0]
+
+
+def test_haiku_gets_the_basic_web_tools_and_no_fallback(memory):
+    fake = FakeAnthropic()
+    answer = ask(make_cloud(memory, fake), "haiku")
+    call = fake.calls[0]
+    assert call["model"] == "claude-haiku-5-5"
+    assert [t["type"] for t in call["tools"]] == [BASIC_SEARCH_TOOL, BASIC_FETCH_TOOL]
+    assert "fallbacks" not in call and "betas" not in call
+    # 1000 in at $0.10/M + 2000 out at $0.50/M
+    assert answer.cost_usd == pytest.approx(0.0011)
 
 
 def test_searches_are_counted_and_priced(memory):

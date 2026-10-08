@@ -109,7 +109,7 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 class ModelProfile(_Section):
     """One model Kit can use, with what it costs. Swap models by pointing a role
-    (``routing.work``, ``routing.expert``) at a different profile."""
+    (``routing.chat``, ``routing.work``, ``routing.expert``) at a different profile."""
 
     label: str = Field("", description="Name Kit uses when it mentions this model.")
     provider: Provider = Field(
@@ -162,6 +162,17 @@ DEFAULT_MODELS: dict[str, dict] = {
         "output_usd_per_mtok": 20.0,
         "search_usd_per_k": 10.0,
     },
+    # Cheap enough for everyday chat; prompts over 100K tokens cost five times more.
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 0.1,
+        "cached_input_usd_per_mtok": 0.01,
+        "output_usd_per_mtok": 0.5,
+        "search_usd_per_k": 10.0,
+    },
     "gpt-sol": {
         "label": "GPT",
         "provider": "openai",
@@ -191,7 +202,7 @@ def _default_models() -> dict[str, ModelProfile]:
     return {name: ModelProfile.model_validate(p) for name, p in DEFAULT_MODELS.items()}
 
 
-Mode = Literal["local-heavy", "balanced", "cloud-first"]
+Mode = Literal["local-heavy", "balanced", "cloud-first", "cloud-only"]
 
 
 class RoutingSettings(_Section):
@@ -200,12 +211,26 @@ class RoutingSettings(_Section):
         description="How much Kit leans on the local model. local-heavy: the local model "
         "answers and only hands over what it can't do. balanced: the local model takes "
         "small talk and quick commands, the cloud takes real questions and work. "
-        "cloud-first: the cloud answers everything.",
+        "cloud-first: the cloud answers everything. cloud-only: the chat model answers "
+        "everything, even goodbyes and messages while another model is busy, and hands "
+        "real work to the work model; the local model only steps in if the cloud fails "
+        "(fallback_to_local) or you say 'keep it local'.",
+    )
+    chat: str = Field(
+        "haiku",
+        description="Model profile that answers everyday messages in cloud-only mode, "
+        "handing real work to the work model.",
     )
     work: str = Field(
         "sonnet", description="Model profile for real questions, work and web searches."
     )
     expert: str = Field("opus", description="Model profile for the hardest questions.")
+    confirm_expert: bool = Field(
+        True,
+        description="When the work model decides a question needs the expert model, Kit "
+        "asks you first and only hands it over if you say yes. Saying 'think hard' or "
+        "'ask the expert' still goes straight there.",
+    )
     fallback_to_local: bool = Field(
         True,
         description="If the cloud can't be reached (offline, no key, budget used up), "
@@ -648,7 +673,7 @@ class Settings(_Section):
 
     @model_validator(mode="after")
     def _roles_name_models(self) -> Settings:
-        for role in ("work", "expert"):
+        for role in ("chat", "work", "expert"):
             name = getattr(self.routing, role)
             if name not in self.models:
                 known = ", ".join(sorted(self.models))
@@ -656,7 +681,7 @@ class Settings(_Section):
         return self
 
     def profile(self, role: str) -> ModelProfile:
-        """The model profile a role ("work" or "expert") points at."""
+        """The model profile a role ("chat", "work" or "expert") points at."""
         return self.models[getattr(self.routing, role)]
 
 

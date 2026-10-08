@@ -138,6 +138,10 @@ def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 ANTHROPIC_SEARCH_TOOL = "web_search_20260209"
 ANTHROPIC_FETCH_TOOL = "web_fetch_20260209"
+# Haiku doesn't take the newer search tools (which filter results as they come
+# in) or the server-side fallback, so it gets the basic tools and no fallback.
+BASIC_SEARCH_TOOL = "web_search_20250305"
+BASIC_FETCH_TOOL = "web_fetch_20250910"
 MAX_SEARCHES = 5
 MAX_FETCHES = 3
 MAX_FETCH_TOKENS = 20_000  # a page is cut to this much text
@@ -163,7 +167,9 @@ class AnthropicProvider:
         where: Where | None = None,
     ) -> Completion:
         client = self.make_client(key)
-        tools = anthropic_web_tools(where) if profile.web_search else []
+        haiku = profile.model.startswith("claude-haiku")
+        tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
+        fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
@@ -175,8 +181,7 @@ class AnthropicProvider:
                     system=system_blocks(system),
                     messages=messages,
                     output_config={"effort": profile.effort},
-                    fallbacks="default",
-                    betas=[FALLBACK_BETA],
+                    **fallback,
                     **({"tools": tools} if tools else {}),
                 )
                 _add_anthropic_usage(usage, response.usage)
@@ -209,16 +214,17 @@ class AnthropicProvider:
         )
 
 
-def anthropic_web_tools(where: Where | None) -> list[dict]:
+def anthropic_web_tools(where: Where | None, basic: bool = False) -> list[dict]:
     """Claude's web search, which finds pages, and web fetch, which opens one (say
     the weather service's page for the owner's city) so the answer isn't from an
-    old search snippet."""
-    search = {"type": ANTHROPIC_SEARCH_TOOL, "name": "web_search", "max_uses": MAX_SEARCHES}
+    old search snippet. ``basic``: the older versions, for models without the new."""
+    search_tool = BASIC_SEARCH_TOOL if basic else ANTHROPIC_SEARCH_TOOL
+    search = {"type": search_tool, "name": "web_search", "max_uses": MAX_SEARCHES}
     near = where.approximate() if where else None
     if near:
         search["user_location"] = near
     fetch = {
-        "type": ANTHROPIC_FETCH_TOOL,
+        "type": BASIC_FETCH_TOOL if basic else ANTHROPIC_FETCH_TOOL,
         "name": "web_fetch",
         "max_uses": MAX_FETCHES,
         "max_content_tokens": MAX_FETCH_TOKENS,
