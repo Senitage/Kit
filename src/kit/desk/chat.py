@@ -394,6 +394,7 @@ class ChatWindow(QWidget):
         self.input.document().setDocumentMargin(2)
         self.input.installEventFilter(self)
         self.input.textChanged.connect(self._grow_input)
+        self.input.textChanged.connect(self._typing)
         send = QPushButton("↑")
         send.setObjectName("send")
         send.setToolTip("Send (Enter)")
@@ -710,6 +711,17 @@ class ChatWindow(QWidget):
             row.fit(width)
         self._place_jump()
         self.resized.emit(self.size())
+
+    def _typing(self) -> None:
+        """Kit listens while Dan types to him (his face leans in), unless he's busy
+        answering; an emptied box lets him go back to what he was doing."""
+        if self._in_flight:
+            return
+        typing = bool(self.input.toPlainText().strip())
+        if typing and self.status.text() != "listening":
+            self._set_state("listening")
+        elif not typing and self.status.text() == "listening":
+            self._set_state("idle")
 
     def _grow_input(self) -> None:
         lines = int(self.input.document().documentLayout().documentSize().height()) or 1

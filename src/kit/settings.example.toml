@@ -21,6 +21,9 @@ speak_pass = true
 speak_temperature = 0.95     # his spoken words and his private thoughts
 min_p = 0.05                 # keeps a high temperature sensible; 0 is off
 repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
+repeat_last_n = 64           # how far back repeat_penalty looks, in tokens
+top_k = 64                   # Gemma's suggested sampling: only the likeliest 64 words
+top_p = 0.95                 # ...that make up 95% of the chance
 
 [routing]
 # How much Kit leans on the local model:
@@ -110,3 +113,7 @@ own_memories = 3             # from his own notebook: thoughts, opinions, moment
 # reflect_with = "cloud"    # who writes his journal and self-sheet each night:
 #                           # cloud (the work model, a few cents), local, or off
 # weekly_review = true      # the expert model reviews how he's changed, weekly
+# homecoming = true         # glad when you're back after 20 min or more; says hello once
+# miffed = true             # hours gone in the daytime with no goodbye: one mock huff
+# miffed_after_days = 7     # ...but not in his first week
+# games = true              # at most one small game a day, when he's bored

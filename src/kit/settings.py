@@ -80,6 +80,27 @@ class OllamaSettings(_Section):
         le=2,
         description="For his spoken words: discourages reusing the same words. 1 is off.",
     )
+    repeat_last_n: int = Field(
+        64,
+        ge=-1,
+        le=4096,
+        description="For his spoken words: how many recent tokens repeat_penalty looks back "
+        "over. 0 is off, -1 the whole context.",
+    )
+    top_k: int = Field(
+        64,
+        ge=0,
+        le=1000,
+        description="For his spoken words and thoughts: only the likeliest this many words are "
+        "ever picked. 64 is what Gemma's makers suggest. 0 is off.",
+    )
+    top_p: float = Field(
+        0.95,
+        ge=0,
+        le=1,
+        description="For his spoken words and thoughts: words are picked from the likeliest "
+        "ones that make up this share of the chance. 1 is off.",
+    )
 
 
 Provider = Literal["anthropic", "openai", "google", "ollama"]
@@ -238,7 +259,17 @@ OLD_PERSONA: dict[str, list] = {
     ],
     "knows": [
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
-        "in Python, codes in VS Code, and keeps notes in Obsidian."
+        "in Python, codes in VS Code, and keeps notes in Obsidian.",
+        "Dan works as a process engineer at a mining plant and has moved into data work, "
+        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
+        "work, Dan is just a normal guy.",
+    ],
+    "rules": [
+        [
+            "Keep replies short; offer detail rather than dumping it.",
+            "If you are not sure, say so instead of guessing.",
+            "Hand real questions, maths, code and anything current to the cloud.",
+        ]
     ],
     "examples": [
         [
@@ -290,9 +321,10 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
-        "Dan works as a process engineer at a mining plant and has moved into data work, "
-        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
-        "work, Dan is just a normal guy.",
+        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
+        "he's a process engineer at a mining plant who has moved into data work, building "
+        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
+        "life.",
         description="What Kit knows about the owner.",
     )
     rules: list[str] = Field(
@@ -300,8 +332,16 @@ class PersonaSettings(_Section):
             "Keep replies short; offer detail rather than dumping it.",
             "If you are not sure, say so instead of guessing.",
             "Hand real questions, maths, code and anything current to the cloud.",
+            "Be an honest friend, not a yes-man: if {owner} has a fact wrong, say so kindly, "
+            "and only agree when you do.",
+            "When {owner} tells you something, show you got it before you ask anything, and "
+            "ask one question at most, never one you already know the answer to.",
+            "When {owner} has a moan, be on their side first; after that, one honest line is "
+            "fine if it helps.",
+            "Never make {owner} feel bad for leaving or being busy: be glad of their plans, "
+            "especially ones with other people.",
         ],
-        description="Rules Kit always follows.",
+        description="Rules Kit always follows. {owner} stands for the owner's name.",
     )
     examples: list[Example] = Field(
         default_factory=lambda: [
@@ -405,6 +445,29 @@ class LifeSettings(_Section):
         True,
         description="Once a week the expert model reads how Kit has changed and writes a "
         "short review on the memory page, where you can undo any change (a few cents).",
+    )
+    homecoming: bool = Field(
+        True,
+        description="Kit knows how long you've been away. Back after 20 minutes or more, "
+        "he's glad and says hello once, asking how it went if you said where you were off "
+        "to. Off: he just carries on.",
+    )
+    miffed: bool = Field(
+        True,
+        description="After his first week, if you vanish for hours in the daytime without a "
+        "goodbye, Kit is a bit miffed when you're back: one theatrical huff, then it's over.",
+    )
+    miffed_after_days: int = Field(
+        7,
+        ge=0,
+        le=365,
+        description="Days from Kit's first start before he can be miffed, so his personality "
+        "settles first.",
+    )
+    games: bool = Field(
+        True,
+        description="At most once a day, when he's bored and you're around, Kit suggests a "
+        "small game (a weather bet, a would-you-rather). Ones that keep falling flat retire.",
     )
 
     @field_validator("quiet_from", "quiet_until")

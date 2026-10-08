@@ -54,7 +54,14 @@ def test_he_plans_in_json_then_speaks_in_plain_words_livelier(memory):
     assert speak[-1]["content"].startswith(
         '[Not from Dan. Dan just said: "Morning Kit". Now say your reply to Dan.'
     )
-    assert model.speak_options[0] == {"temperature": 0.95, "min_p": 0.05, "repeat_penalty": 1.08}
+    assert model.speak_options[0] == {
+        "temperature": 0.95,
+        "min_p": 0.05,
+        "top_k": 64,
+        "top_p": 0.95,
+        "repeat_penalty": 1.08,
+        "repeat_last_n": 64,
+    }
     assert says(events) == "Morning. Coffee first?"
     final = events[-1]["reply"]
     assert final["emotion"] == "playful"

@@ -77,6 +77,7 @@ LOOK_FIELDS = ("theme", "accent", "eye_colour", "face_size", "font_pt", "speech_
 UPDATE_FIELDS = ("check_updates", "update_repo")
 # What Kit's state reads as on the face while he works.
 FACE_STATES = {
+    "listening": "listening",
     "thinking": "thinking",
     "remembering": "thinking",
     "looking at your PC": "working",
@@ -667,6 +668,9 @@ class DeskApp(QObject):
         elif event.get("type") == "fidget":
             if not self._busy() and not self.alive.asleep:
                 face.play(event.get("gesture", "look_away"), time.monotonic())
+        elif event.get("type") == "react":  # a reaction plays even mid-conversation
+            if not self.alive.asleep:
+                face.play(event.get("gesture", "perk_up"), time.monotonic())
         elif event.get("type") == "pipe_up":
             reply = event.get("reply") or {}
             if self.alive.asleep:

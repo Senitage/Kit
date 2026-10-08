@@ -383,6 +383,7 @@ def create_app(
                 if not brain.notebook.due(w)
             ],
             "quirks": brain.quirks,
+            "games_retired": brain.life.retired_games(),
             "settings": s.model_dump(),
         }
 
@@ -518,7 +519,9 @@ async def _life_loop(brain: Brain, every_s: float) -> None:
 
 async def life_tick(brain: Brain) -> None:
     """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
-    thought of his own. Neither happens while he's answering something."""
+    thought of his own. Neither happens while he's answering something. Once a day
+    he may think of a small game to suggest (``Brain.offer_game``)."""
+    brain.offer_game()
     brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()
     if brain.jobs or brain.talking():

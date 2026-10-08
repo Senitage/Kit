@@ -64,13 +64,26 @@ from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.learning import Learner, said_so
 from kit.life import (
+    FAREWELL,
+    FEELING_KINDS,
+    GAME_PRESS,
+    GAMES,
+    HOME_LINES,
     REPLY_FEELINGS,
     SHUSH,
     UNSHUSH,
+    Homecoming,
     Life,
     Voice,
     cheek_style,
+    farewell_aside,
+    farewell_fault,
+    farewell_line,
     feeling_from,
+    homecoming_aside,
+    homecoming_fault,
+    homecoming_prompt,
+    is_farewell,
     pipe_up_prompt,
     quoted,
     repeats,
@@ -101,6 +114,7 @@ from kit.notes import (
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
+    about_yourself,
     answering_pipe_up,
     history_messages,
     not_again,
@@ -153,6 +167,22 @@ VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", de
 # A plain note request Kit has already carried out this turn (kit.notes.request), as
 # told to the model; while set, the model's own note and read_note actions are skipped.
 NOTE_DONE: contextvars.ContextVar[str] = contextvars.ContextVar("note_done", default="")
+
+
+@dataclass
+class Lint:
+    """A check on a whole line before it's said (a goodbye, a hello). ``check`` says
+    what's wrong as a note for another go ("" if nothing); after the last go fails,
+    ``fallback`` is said instead (or he keeps quiet, if there is none). ``repeats``
+    also holds him to saying something new."""
+
+    check: Callable[[str], str]
+    fallback: str = ""
+    repeats: bool = True
+
+
+# The check on this turn's lines, if any: a goodbye is linted for guilt hooks.
+LINT: contextvars.ContextVar[Lint | None] = contextvars.ContextVar("lint", default=None)
 SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
 SAID_CHARS = 160
 
@@ -230,6 +260,19 @@ THINKING_Q = re.compile(
     re.IGNORECASE,
 )
 SHARES = ("want", "bored", "social")  # pipe-ups that can bring up a thought or want
+# A question about Kit himself: he's given what's true about him right now to answer from.
+SELF_Q = re.compile(
+    r"\bwhy(\s+(did|do|have|had|would)|'?d)\s+you\s+(say|go|gone|get|keep|stop|stopped|"
+    r"pipe|ask|been)\b|"
+    r"\bwhy (are|were|have) you (been )?(so )?(quiet|grumpy|sulk\w*|miffed|annoyed|upset|sad|"
+    r"cheeky|chatty|asleep|dozing)|\b(do|did) you (miss|care about|like|love|remember) me\b|"
+    r"\bare you (real|alive|conscious|sentient|human|a person|ok|okay|happy|lonely|bored)\b|"
+    r"\bdo you (have|get) (feelings|emotions|bored|lonely)|\bwhat can you (see|hear|sense)\b|"
+    r"\bcan you (see|hear) me\b|\bhow (do|are) you feel(ing)?\b|"
+    r"\bwhat('?s| is) it like (being|to be) you|"
+    r"\bwhat (do|did) you (do|get up to)\b[^.?!]*\b(while|when) i\b",
+    re.IGNORECASE,
+)
 # Words a small model sometimes gives as its search when it meant to say them
 # ("Let me think...", "I checked the log for you"): Dan's message is the better search.
 SPOKEN_NOT_SEARCH = re.compile(
@@ -381,15 +424,28 @@ class Brain:
         owner = settings.persona.owner
         felt = feeling_from(text, owner)
         if felt is not None:
-            self.life.feel(*felt)
+            self.life.feel(*felt, show=False)
+        home = self.life.homecoming_for_chat()  # a hello he still owes Dan
+        farewell = is_farewell(text)
+        if FAREWELL.search(text):
+            self.life.said_goodbye(text)
+        self._react(felt, home, farewell)
         if ASK_LATER.search(text):  # "ask me tomorrow how the shutdown went"
             due = tomorrow_morning(self.memory.clock(), settings.life.quiet_until)
             self.notebook.write("want", later_want(text, owner), after=due)
-        answering = self._answering(history, owner)
+        asides = [self._answering(history, owner)]
+        if home is not None:
+            asides.append(homecoming_aside(home, owner, self.memory.clock()))
+        if farewell:
+            asides.append(farewell_aside(text, owner))
+            LINT.set(Lint(farewell_fault, farewell_line(text, self.life.rng)))
+        elif SELF_Q.search(text) and not self.jobs:
+            asides.append(self._about_me(owner))
+        answering = "\n\n".join(a for a in asides if a)
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
             self.notebook.mark_said(shared.id)
         VOICE.set(self._voice(settings, history, text))  # before note_chat: how Kit felt till now
-        self.life.note_chat()
+        self.life.note_chat(text)
         answered = (
             self._answer_note_offer(text, settings)
             or self._answer_suggestion(text)
@@ -415,6 +471,8 @@ class Brain:
             role = LOCAL  # busy: chat locally while the cloud works
         if role == LOCAL and THINKING_Q.search(text):
             chosen = True  # his own thoughts: nobody else can answer that
+        if farewell and not chosen:
+            role, chosen = LOCAL, True  # a goodbye is his own to say
         said: list[str] = []
 
         if role != LOCAL and chosen:
@@ -623,6 +681,9 @@ class Brain:
         said lately, he keeps quiet."""
         settings = self.settings()
         owner = settings.persona.owner
+        home = self.life.homecoming if reason == "back" else None
+        if reason == "back" and home is None:
+            return  # the moment passed meanwhile
         history = self.memory.recent(settings.brain.history_messages)
         share = self.notebook.to_share() if reason in SHARES else None
         if reason == "want" and share is None:
@@ -632,22 +693,27 @@ class Brain:
             aim, about = as_aim(share.text, owner)  # "tell Dan", not a note read out
         token = CHANNEL.set("desk")
         voice_token = VOICE.set(self._voice(settings, history))
+        lint_token = LINT.set(self._hello_lint(home) if home is not None else None)
         said: list[str] = []
         message_id = None
+        kept_quiet = False
         try:
             doing = self.pc.now_line(owner) or f"what {owner} is up to"
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
-            prompt = pipe_up_prompt(
-                reason,
-                owner,
-                settings.life.cheek,
-                self.life.curious_about,
-                quiet_h,
-                self.life.butting_in,
-                share=about,
-                aim=aim,
-            )
+            if home is not None:
+                prompt = homecoming_prompt(home, owner, settings.life.cheek, self.memory.clock())
+            else:
+                prompt = pipe_up_prompt(
+                    reason,
+                    owner,
+                    settings.life.cheek,
+                    self.life.curious_about,
+                    quiet_h,
+                    self.life.butting_in,
+                    share=about,
+                    aim=aim,
+                )
             messages = [
                 {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
                 *history_messages(history, "desk", plain=settings.ollama.speak_pass),
@@ -657,20 +723,77 @@ class Brain:
                 if event["type"] == "reply":
                     event = {**self._track(event, said), "piped_up": reason}
                     message_id = event["message_id"]
+                kept_quiet = kept_quiet or event["type"] == "kept_quiet"
                 yield event
         finally:
             CHANNEL.reset(token)
             VOICE.reset(voice_token)
+            LINT.reset(lint_token)
         if not said:
             self.life.held_back(reason)
+            if kept_quiet:  # he was about to say something, and thought better of it
+                self.life.publish({"type": "fidget", "gesture": "look_away", "mood": "thinking"})
             return
         if share is not None:
             self.notebook.mark_said(share.id)
+            if share.meta.get("game"):
+                self.life.game_asked(str(share.meta["game"]))
         self.notebook.said_in(" ".join(said), owner)
         why = self._why_piped(reason, aim, about, owner)
         self._pipe_up = (message_id, why) if message_id is not None else None
         self.life.piped_up(reason)
         self.life.wanting = self.notebook.pressing()
+
+    def _hello_lint(self, home: Homecoming) -> Lint:
+        """A hello is checked for guilt ("where have you been?"), not for being said
+        before: "there you are" is fine every time."""
+        fallback = self.life.rng.choice(HOME_LINES)
+        return Lint(lambda line: homecoming_fault(line, home.miffed), fallback, repeats=False)
+
+    def offer_game(self) -> bool:
+        """At most once a day, when he's bored and Dan's about (``Life.game_due``),
+        Kit writes a small game into his notebook as something he wants to bring up."""
+        name = self.life.game_due()
+        if name is None:
+            return False
+        for want in self.notebook.unsaid_wants():
+            if want.meta.get("game"):
+                self.notebook.forget(want.id)  # an earlier day's, never got to: moot now
+        text = GAMES[name][0].format(owner=self.settings().persona.owner)
+        added = self.notebook.write("want", text, again=True, game=name, strength=GAME_PRESS)
+        return added is not None
+
+    def _react(
+        self, felt: tuple[str, str, float] | None, home: Homecoming | None, farewell: bool
+    ) -> None:
+        """A visible reaction the moment a message lands, before any answer: perking up
+        when Dan's back, a wave goodbye, a wiggle at praise. Bodies play these even
+        mid-conversation, so Dan sees he's been heard."""
+        if home is not None:
+            self.life.react("look_away" if home.miffed else "perk_up", "you're back")
+        elif farewell:
+            self.life.react("wave", "see you")
+        elif felt is not None:
+            self.life.react(self.life.rng.choice(FEELING_KINDS[felt[0]][2]), felt[0])
+
+    def _about_me(self, owner: str) -> str:
+        """What's true about Kit right now, for a question about himself."""
+        snap = self.pc.latest if self.pc.online() else None
+        if snap is None:
+            senses = (
+                f"The desk app isn't reporting just now, so you can't tell what's on {owner}'s "
+                f"PC. You know the time and date, and the weather when you look it up."
+            )
+        else:
+            tabs = ", the tabs open in Chrome" if snap.browser else ""
+            senses = (
+                f"What you can sense: {owner}'s PC through the desk app (the window in "
+                f"front{tabs}, how long since they touched the keyboard or mouse, and whether "
+                f"it's locked), the time and date, and the weather when you look it up."
+            )
+        senses += f" You can't see or hear {owner}: you have no camera or microphone yet."
+        feeling = self.life.feeling_line(owner)
+        return about_yourself(owner, feeling, self.life.why_quiet(owner), senses)
 
     def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
         """Why he piped up, in a few words for his next prompt, or "" when the line
@@ -923,7 +1046,7 @@ class Brain:
             web_search=web,
             busy=[job.line() for job in self.jobs.values()],
             quirks=self.quirks,
-            voice=VOICE.get() if role == LOCAL else None,
+            voice=VOICE.get(),
             pc=self.pc.now_line(settings.persona.owner),
             channel=channel_line(CHANNEL.get(), settings.persona.owner),
             weather=self.weather is not None,
@@ -1097,6 +1220,7 @@ class Brain:
     ) -> AsyncIterator[Event]:
         """A cloud model couldn't answer. Unless Dan asked for it by name, the local
         model has a go instead (when fallback is on); otherwise Kit says why."""
+        self.life.react("droop", "the cloud didn't answer")
         if settings.routing.fallback_to_local and not chosen:
             yield {"type": "notice", "message": f"{error} I'll answer myself."}
             async for event in self._converse(
@@ -1133,6 +1257,7 @@ class Brain:
             return
         on_step = job.steps.append if job else None
         answer = await self.cloud.answer(profile, messages, settings, question, on_step)
+        self.life.react("perk_up", "the answer came back")
         reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"
@@ -1204,11 +1329,16 @@ class Brain:
         example), he's asked once more, before anything is shown. With ``hold`` (a
         pipe-up, which nobody is waiting on) nothing is shown till the line is whole;
         if any of it repeats he has two more goes, then keeps quiet rather than say it
-        again, and a pipe-up has no written detail."""
+        again, and a pipe-up has no written detail. A ``LINT`` for the turn (a goodbye,
+        a hello) also holds the line back till it's whole and checked; if every go
+        fails it, or the model is down, its stock line is said instead."""
         settings = self.settings()
         voice = VOICE.get()
+        lint = LINT.get()
+        hold = hold or lint is not None
         spoken = detail = ""
         tries = HELD_TRIES if hold else 2
+        plan = Plan.default()
         try:
             plan = await self._plan(messages)
             if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
@@ -1250,17 +1380,29 @@ class Brain:
                             stream.release()
                         if out := stream.take():
                             yield {"type": "say", "text": out}
+                retry = ""  # what the speaking note says next go, if there is one
                 if hold:
-                    again = self._repeated(stream.result()[0], voice)
-                    if again and last:
+                    whole = stream.result()[0]
+                    fault = lint.check(whole) if lint is not None and whole else ""
+                    if not fault and (lint is None or lint.repeats):
+                        again = self._repeated(whole, voice)
+                    retry = fault or (not_again(again) if again else "")
+                    if retry and last:
+                        if lint is not None and lint.fallback:
+                            log.info("said a stock line rather than %r", whole)
+                            spoken, detail = lint.fallback, ""
+                            yield {"type": "say", "text": spoken}
+                            break
                         log.info("kept quiet rather than say %r again", again)
                         yield {"type": "kept_quiet", "repeated": again}
                         return
                 elif not again and not stream.released and not last:
                     whole = stream.result()[0]  # it ended before the opening was judged
                     again = whole if whole and self._repeats(whole, voice) else ""
-                if again:
-                    talk = [*talk[:-1], {"role": "user", "content": note + not_again(again)}]
+                if again and not retry:
+                    retry = not_again(again)
+                if retry:
+                    talk = [*talk[:-1], {"role": "user", "content": note + retry}]
                     options = {**options, "temperature": options["temperature"] + 0.1}
                     continue
                 if out := stream.end():
@@ -1271,12 +1413,17 @@ class Brain:
                 if stream.wrote_json():  # his plan again rather than words
                     talk = [*talk[:-1], {"role": "user", "content": note + IN_WORDS}]
         except LocalModelError as e:
-            yield {"type": "error", "message": f"My local brain isn't answering: {e}"}
-            return
+            if lint is None or not lint.fallback:
+                yield {"type": "error", "message": f"My local brain isn't answering: {e}"}
+                return
+            log.warning("the local model isn't answering (%s): a stock line instead", e)
         except Exception as e:  # a bug in the stream reader must not drop the chat
             log.exception("reading the local model's reply failed")
             yield {"type": "error", "message": f"I lost my train of thought ({e}). Say again?"}
             return
+        if not spoken and lint is not None and lint.fallback:
+            spoken, detail = lint.fallback, ""
+            yield {"type": "say", "text": spoken}
         if not spoken:
             yield {"type": "error", "message": "I lost my train of thought. Say again?"}
             return

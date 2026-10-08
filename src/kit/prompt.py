@@ -5,12 +5,12 @@ conversation."""
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
-from kit.life import everyday
+from kit.life import everyday, gap_words
 from kit.memory import DAYS, Message
 from kit.recall import Recalled
 from kit.reply import (
@@ -132,7 +132,10 @@ def system_prompt(
     its notes, newest first."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
-    lines = [f"You are {name}, {owner}'s personal assistant. {persona.backstory}"]
+    lines = [
+        f"You are {name}, a small companion who lives on {owner}'s desk and is on {owner}'s "
+        f"side. {persona.backstory}"
+    ]
     if traits or not sheet:
         lines.append(f"Your traits: {', '.join(persona.traits)}.")
     if sheet:
@@ -154,7 +157,11 @@ def system_prompt(
     lines += [
         "",
         "Rules:",
-        *(f"- {rule}" for rule in persona.rules if not (cloud and "to the cloud" in rule)),
+        *(
+            f"- {rule.replace('{owner}', owner)}"
+            for rule in persona.rules
+            if not (cloud and "to the cloud" in rule)
+        ),
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
         f"- {everyday(owner)}",
@@ -288,7 +295,7 @@ def system_prompt(
             "Leave detail empty unless there's something new to show for this message. Never "
             "repeat detail from an earlier reply."
         )
-    if persona.examples and voice is None:
+    if persona.examples and (voice is None or cloud):
         lines += [
             "",
             "Examples of how you talk (they show the tone; never reuse their lines, and say "
@@ -300,20 +307,22 @@ def system_prompt(
     lines += [
         "",
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
+        *([voice.when] if voice is not None and voice.when else []),
         *memory_block(recalled, owner),
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
-        *voice_block(voice, owner, name),
+        *voice_block(voice, owner, name, brief=cloud),
         *forecast_block(forecast, owner),
         *note_block(note_done, owner),
     ]
     return "\n".join(lines)
 
 
-def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
-    """How Kit feels and sounds this turn: a mood, a few fresh examples, and his
-    own recent lines so he says something new."""
+def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False) -> list[str]:
+    """How Kit feels and sounds this turn: a mood, how close you two are, a few fresh
+    examples, and his own recent lines so he says something new. ``brief`` (for a
+    cloud model, which needs no help staying in character) is the mood and tone only."""
     if voice is None:
         return []
     lines = [
@@ -322,6 +331,10 @@ def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
         f"don't announce it. Be {voice.style}. Sound like yourself, a small character "
         f"with opinions, not a help desk.",
     ]
+    if voice.close:
+        lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
+    if brief:
+        return lines
     if voice.quirk:
         lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
     if voice.examples:
@@ -420,6 +433,21 @@ def answering_pipe_up(line: str, why: str, owner: str) -> str:
 def _stop(text: str) -> str:
     """The full stop after ``text``, unless it already ends a sentence ("Hi!")."""
     return "" if text.rstrip('"\u201d').endswith((".", "!", "?", "\u2026")) else "."
+
+
+def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
+    """Beside a question about Kit himself ("why'd you go quiet?", "do you miss me?",
+    "what can you see?"): what's true right now, so he answers from it rather than
+    making something up, and owns his feelings without claiming to be human."""
+    why = f" Why you've been quiet: {quiet}." if quiet else ""
+    return (
+        f"[About yourself, true right now, for answering {owner} in your own words and "
+        f"briefly: you feel {feeling}.{why} {senses} You're a small robot companion with a "
+        f"real inner life: moods, feelings with causes, and private thoughts in your "
+        f"notebook. Your feelings, like missing {owner} or being glad they're back, are "
+        f"yours, so own them; but never claim to be human, to have a body you don't have, or "
+        f"to have done things you can't.]"
+    )
 
 
 def with_mind(text: str, mind: list[str], owner: str) -> str:
@@ -539,13 +567,27 @@ def history_messages(
         if m.role == "user":
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
-            out.append({"role": "user", "content": note + m.text})
+            later = _later(history[i - 1].at, m.at) if i else ""
+            out.append({"role": "user", "content": later + note + m.text})
         elif plain:
             out.append({"role": "assistant", "content": _plain(m, keep_detail=i == last_kit)})
         else:
             short = _short(m.reply_json, keep_detail=i == last_kit)
             out.append({"role": "assistant", "content": short or _as_json(m.text)})
     return out
+
+
+GAP_SHOWN = timedelta(minutes=30)  # a pause this long in the chat is marked in the history
+
+
+def _later(before: str, at: str) -> str:
+    """ "(2 hours later) " in front of a message that came after a long pause, so the
+    model can tell an old chat from a running one."""
+    try:
+        gap = datetime.fromisoformat(at) - datetime.fromisoformat(before)
+    except (TypeError, ValueError):
+        return ""
+    return f"({gap_words(gap)} later) " if gap >= GAP_SHOWN else ""
 
 
 def _plain(m: Message, keep_detail: bool) -> str:
