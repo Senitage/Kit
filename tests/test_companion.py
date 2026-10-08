@@ -965,3 +965,11 @@ def test_no_check_with_check_facts_off(memory):
     brain, model, _ = make(memory, reply("Yep."), claude=claude, routing={"check_facts": False})
     collect(brain.chat("Brisbane's the capital of Queensland, isn't it?"))
     assert claude.calls == []
+
+
+def test_no_check_when_dan_says_to_keep_it_local(memory):
+    claude = FakeAnthropic("True.")
+    brain, model, _ = make(memory, reply("Yep."), claude=claude)
+    collect(brain.chat("Keep it local: a resting heart rate of 50 is fine, isn't it?"))
+    assert claude.calls == []
+    assert "check it first" in model.calls[0][-1]["content"]

@@ -484,7 +484,8 @@ class Brain:
         elif SELF_Q.search(text) and not self.jobs:
             asides.append(self._about_me(owner))
         elif TAG_Q.search(text):
-            check_fact = settings.routing.check_facts and route(text, settings)[0] == LOCAL
+            # Not when Dan said to keep it local: that never leaves the house.
+            check_fact = settings.routing.check_facts and route(text, settings) == (LOCAL, False)
             asides.append(wrong_fact_aside(owner))
         elif is_news(text):
             asides.append(news_aside(owner))
