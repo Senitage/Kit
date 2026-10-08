@@ -260,15 +260,21 @@ THINKING_Q = re.compile(
     re.IGNORECASE,
 )
 SHARES = ("want", "bored", "social")  # pipe-ups that can bring up a thought or want
+# Dan's bad news: no huff, no perking up, whatever else is going on.
+SOFT_NEWS = {"sad", "worried", "sympathetic"}
 # A question about Kit himself: he's given what's true about him right now to answer from.
+# Not "how do you feel about Python?", "are you ok with that?" or "what can you see in
+# this log?": those are about something else.
 SELF_Q = re.compile(
-    r"\bwhy(\s+(did|do|have|had|would)|'?d)\s+you\s+(say|go|gone|get|keep|stop|stopped|"
-    r"pipe|ask|been)\b|"
+    r"\bwhy(\s+(did|do|have|had|would)|'?d)\s+you\s+((go|gone) (quiet|silent|to sleep|off|"
+    r"away|all)|keep|stop|stopped|pipe|ask|been)\b|"
     r"\bwhy (are|were|have) you (been )?(so )?(quiet|grumpy|sulk\w*|miffed|annoyed|upset|sad|"
     r"cheeky|chatty|asleep|dozing)|\b(do|did) you (miss|care about|like|love|remember) me\b|"
-    r"\bare you (real|alive|conscious|sentient|human|a person|ok|okay|happy|lonely|bored)\b|"
-    r"\bdo you (have|get) (feelings|emotions|bored|lonely)|\bwhat can you (see|hear|sense)\b|"
-    r"\bcan you (see|hear) me\b|\bhow (do|are) you feel(ing)?\b|"
+    r"\bare you (real|alive|conscious|sentient|human|a person|lonely|bored)\b|"
+    r"\bare you (ok|okay|alright|all right|happy)\b(?!\s+(about|with|in|on|for|if|to|that)\b)|"
+    r"\bdo you (have|get) (feelings|emotions|bored|lonely)|"
+    r"\bwhat can you (see|hear|sense)\b(?!\s+(about|with|in|on|from|there)\b)|"
+    r"\bcan you (see|hear) me\b|\bhow (do|are) you feel(ing)?\b(?!\s+(about|with|in|on)\b)|"
     r"\bwhat('?s| is) it like (being|to be) you|"
     r"\bwhat (do|did) you (do|get up to)\b[^.?!]*\b(while|when) i\b",
     re.IGNORECASE,
@@ -426,6 +432,9 @@ class Brain:
         if felt is not None:
             self.life.feel(*felt, show=False)
         home = self.life.homecoming_for_chat()  # a hello he still owes Dan
+        if home is not None and home.miffed and felt is not None and felt[0] in SOFT_NEWS:
+            home = replace(home, miffed=False)  # no huffing at bad news
+            self.life.feel(*felt, show=False, force=True)
         farewell = is_farewell(text)
         if FAREWELL.search(text):
             self.life.said_goodbye(text)
@@ -600,7 +609,8 @@ class Brain:
         # A few words while Kit is busy ("hey", "kit", "you there") is getting its
         # attention about the work, the same as asking how it's going.
         short = len(re.findall(r"\w+", text)) <= 3
-        if not (CHECKING_IN.search(text) or NUDGE.search(text) or short):
+        checking_in = CHECKING_IN.search(text) or NUDGE.search(text) or short
+        if not checking_in or is_farewell(text):  # "ok bye" isn't asking how it's going
             return (
                 f"{text}\n\n(Note for you, not from {owner}: you're still working on this "
                 f"in the background: {work} Answer this message normally; mention the "
@@ -681,7 +691,7 @@ class Brain:
         said lately, he keeps quiet."""
         settings = self.settings()
         owner = settings.persona.owner
-        home = self.life.homecoming if reason == "back" else None
+        home = self.life.take_homecoming() if reason == "back" else None
         if reason == "back" and home is None:
             return  # the moment passed meanwhile
         history = self.memory.recent(settings.brain.history_messages)
@@ -730,7 +740,7 @@ class Brain:
             VOICE.reset(voice_token)
             LINT.reset(lint_token)
         if not said:
-            self.life.held_back(reason)
+            self.life.held_back(reason, home)
             if kept_quiet:  # he was about to say something, and thought better of it
                 self.life.publish({"type": "fidget", "gesture": "look_away", "mood": "thinking"})
             return
@@ -748,7 +758,9 @@ class Brain:
         """A hello is checked for guilt ("where have you been?"), not for being said
         before: "there you are" is fine every time."""
         fallback = self.life.rng.choice(HOME_LINES)
-        return Lint(lambda line: homecoming_fault(line, home.miffed), fallback, repeats=False)
+        return Lint(
+            lambda line: homecoming_fault(line, home.miffed, home.kind), fallback, repeats=False
+        )
 
     def offer_game(self) -> bool:
         """At most once a day, when he's bored and Dan's about (``Life.game_due``),
@@ -769,7 +781,7 @@ class Brain:
         """A visible reaction the moment a message lands, before any answer: perking up
         when Dan's back, a wave goodbye, a wiggle at praise. Bodies play these even
         mid-conversation, so Dan sees he's been heard."""
-        if home is not None:
+        if home is not None and not (felt is not None and felt[0] in SOFT_NEWS):
             self.life.react("look_away" if home.miffed else "perk_up", "you're back")
         elif farewell:
             self.life.react("wave", "see you")
@@ -785,7 +797,7 @@ class Brain:
                 f"PC. You know the time and date, and the weather when you look it up."
             )
         else:
-            tabs = ", the tabs open in Chrome" if snap.browser else ""
+            tabs = f", the tabs open in {snap.browser.name}" if snap.browser else ""
             senses = (
                 f"What you can sense: {owner}'s PC through the desk app (the window in "
                 f"front{tabs}, how long since they touched the keyboard or mouse, and whether "
@@ -1152,7 +1164,8 @@ class Brain:
                     return
         except CloudError as e:
             self._end_job(job)
-            async for event in self._cloud_failed(e, text, history, recalled, settings, chosen):
+            failed = self._cloud_failed(e, text, history, recalled, settings, chosen, answering)
+            async for event in failed:
                 yield event
             return
         finally:
@@ -1217,14 +1230,16 @@ class Brain:
         recalled: Recalled,
         settings: Settings,
         chosen: bool,
+        answering: str = "",
     ) -> AsyncIterator[Event]:
         """A cloud model couldn't answer. Unless Dan asked for it by name, the local
-        model has a go instead (when fallback is on); otherwise Kit says why."""
+        model has a go instead (when fallback is on), with the same asides (a hello he
+        owes, what he piped up about); otherwise Kit says why."""
         self.life.react("droop", "the cloud didn't answer")
         if settings.routing.fallback_to_local and not chosen:
             yield {"type": "notice", "message": f"{error} I'll answer myself."}
             async for event in self._converse(
-                text, history, recalled, settings, LOCAL, chosen=True, hops=1
+                text, history, recalled, settings, LOCAL, chosen=True, hops=1, answering=answering
             ):
                 yield event
             return
@@ -1439,6 +1454,10 @@ class Brain:
     async def _one_pass_reply(
         self, messages: list[dict], source: str, model: str | None = None
     ) -> AsyncIterator[Event]:
+        if (lint := LINT.get()) is not None:
+            async for event in self._one_pass_checked(messages, source, model, lint):
+                yield event
+            return
         extractor = SayExtractor()
         raw, said = [], []
         try:
@@ -1464,6 +1483,43 @@ class Brain:
                 yield {"type": "error", "message": "I lost my train of thought. Say again?"}
                 return
             reply = Reply.plain(spoken)
+        message_id = self._remember_reply(reply, source)
+        yield {
+            "type": "reply",
+            "source": source,
+            "reply": reply.model_dump(),
+            "message_id": message_id,
+        }
+
+    async def _one_pass_checked(
+        self, messages: list[dict], source: str, model: str | None, lint: Lint
+    ) -> AsyncIterator[Event]:
+        """A one-pass reply with a ``LINT`` (a goodbye, a hello): the whole reply is
+        checked before it's shown, with two more goes, then the stock line."""
+        reply, talk = None, messages
+        for _ in range(HELD_TRIES):
+            try:
+                reply = parse_reply(await self.model.complete(talk, reply_schema(), model))
+            except LocalModelError as e:
+                log.warning("the local model isn't answering (%s): a stock line instead", e)
+                reply = None
+                break
+            except ReplyError:
+                reply = None
+                continue
+            fault = lint.check(reply.text)
+            if not fault:
+                break
+            reply = None
+            asked = messages[-1]
+            talk = [*messages[:-1], {**asked, "content": asked["content"] + fault}]
+        if reply is None:
+            if not lint.fallback:
+                yield {"type": "error", "message": "I lost my train of thought. Say again?"}
+                return
+            log.info("said a stock line: no clean reply in %d goes", HELD_TRIES)
+            reply = Reply.plain(lint.fallback)
+        yield {"type": "say", "text": reply.text}
         message_id = self._remember_reply(reply, source)
         yield {
             "type": "reply",

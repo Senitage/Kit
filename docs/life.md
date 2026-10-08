@@ -84,19 +84,23 @@ up what he did meanwhile: he dozed, or he was just here, and if the server was
 off he says he doesn't know what happened then. A hello not said within half an
 hour is dropped. Gone less than 20 minutes is only worth a thought.
 
-**Miffed.** After his first week (`life.miffed_after_days`, 7), if you vanish
-for three hours or more in the daytime without a goodbye, he's a bit miffed
-when you're back: one theatrical huff ("Oh, look who it is."), then it's over
-the moment you talk. A goodbye, a night, a weekend away or the server being off
-never count. `life.miffed = false` keeps him just glad.
+**Miffed.** After his first week (`life.miffed_after_days`, 7), if you leave
+the PC in the daytime (before 5 pm) and vanish for three hours or more without
+a goodbye, he's a bit miffed when you're back: one theatrical huff ("Oh, look
+who it is."), then it's over the moment you talk. A goodbye, an evening out, a
+night, a weekend away, the server being off or a gap between messages from your
+phone never count, and if the first thing you tell him is bad news, the huff is
+dropped. `life.miffed = false` keeps him just glad.
 
 **Goodbyes.** "Off to lunch", "night Kit", "heading home", "back in a bit" and
 the like get one short, warm line, made locally even in cloud-first. It has no
 question in it and nothing that makes leaving feel bad ("already?", "so soon",
 "alone", "before you go..."). Research on companion apps found those hooks keep
 people chatting out of guilt; Kit is glad of your plans instead. A line that
-fails gets three goes, then a stock "Righto, see you soon." He remembers what
-you said, for the hello when you're back.
+fails gets three goes, then a stock "Righto, see you soon." (with or without
+`ollama.speak_pass`). He remembers what you said, for the hello when you're
+back. Only you leaving now counts: "I see you've fixed it", "I need to run the
+tests" or "I'm off on Friday" aren't goodbyes.
 
 **Missing you.** A day without seeing or hearing from you and he misses you a
 bit. It shows if you message from your phone while you're away.

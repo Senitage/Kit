@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import deque
@@ -62,6 +63,8 @@ from typing import Protocol
 from kit.knowledge import STOPWORDS
 from kit.pc_context import AWAY_AFTER_S, PcContext
 from kit.settings import Settings
+
+log = logging.getLogger(__name__)
 
 TICK_S = 30
 CALL_APPS = {"Teams", "Zoom", "Webex", "Skype", "Discord", "Slack"}
@@ -197,18 +200,30 @@ SHUSH = re.compile(
 )
 UNSHUSH = re.compile(r"\b(you can (talk|chat) again|un-?shush|talk to me again)\b", re.I)
 # Dan heading off: Kit sees him off with one warm line, and asks how it went later.
+# Only Dan leaving now: "I see you've fixed it", "I need to run the tests", "I'm off on
+# Friday" and "the results should be back in an hour" aren't goodbyes.
 FAREWELL = re.compile(
-    r"\b(bye(-?bye)?|goodbye|cya|ttyl|brb|see (ya|you)( later| soon| tomorrow| in a bit)?|"
-    r"catch (ya|you) later|good ?night(?!['\u2019]s)|night,? kit|nighty?[- ]night|"
-    r"(i'?m|we'?re|i'?ll be|i am|just) (off|heading (off|out|home))\b(?! (sick|work|duty|"
-    r"today|tomorrow)\b)|heading (off|out|home)|going to (bed|sleep)|off to bed|"
-    r"be back (in|soon|later|after)|back in a (bit|sec|minute|few|tick|jiffy)|"
-    r"(gotta|got to|have to|need to) (go|run|head off)\b(?!\s+(through|over|and|with|back|"
-    r"for|into|on|in)\b)|logging off|signing off|calling it a (day|night))\b"
-    r"|(^|[.!,]\s*)off (to|for)(?= \w)|^\W*(night|nite|later|laters)\W*$",
+    r"\b(bye(-?bye)?|goodbye|cya|ttyl|brb|see (ya|you) (later|soon|tomorrow|tonight|then|"
+    r"in a (bit|sec|while|few))|catch (ya|you) later|talk to (you|ya) (later|soon|tomorrow)|"
+    r"(?<!had a )(?<!was a )(?<!'s a )(?<!\u2019s a )(?<!such a )(?<!what a )good ?night"
+    r"(?!['\u2019]s)|night,? kit|nighty?[- ]night|"
+    r"(i'?m|we'?re|i'?ll be|i am) (off|heading (off|out|home))\b(?! (sick|work|duty|today|"
+    r"tomorrow|the|my|this|that|it|on|until|till|next|from)\b)|heading (off|out|home)|"
+    r"(i'?m|i am|we'?re|just) (heading|popping|nipping|ducking) (to|out|off|over|down|up)|"
+    r"popping (out|off)|((i'?m|i am|we'?re|time) (going|heading|off) to|off to) (bed|sleep)"
+    r"\b(?! on\b)|(i'?ll|i will|we'?ll|we will|i should|i'?d|i'?m gonna|i'?m going to) be "
+    r"back|(gotta|got to|have to|need to) (go|head off)\b(?!\s+(through|over|and|with|back|"
+    r"for|into|on|in|check|look|see|fix|find|do|test|try|get|grab|read|ahead)\b)|"
+    r"(gotta|got to|have to|need to) run(?=\s*(now|soon|mate|kit|sorry)?\s*([.!,;]|$))|"
+    r"logging off|signing off|calling it a (day|night))\b"
+    r"|(^|[.!,;]\s*)(ok(ay)?,? |right(o)?,? |well,? |alright,? )?(see (ya|you)\b(?!['\u2019])|"
+    r"talk (later|soon|tomorrow)\b|back (in (a|an|\d+)|soon|later|after)\b|"
+    r"(just )?(heading|popping|nipping|ducking) (to|out|off|over|down|up)\b|"
+    r"(just )?off (to|for|home|now|out)\b|(going|off) to (bed|sleep)\b)"
+    r"|\bsee (ya|you)\W*$|\btalk (later|soon)\W*$|^\W*(night|nite|later|laters)\W*$",
     re.I,
 )
-NIGHT = re.compile(r"\b(night|nite|bed|sleep|tomorrow)\b", re.I)
+NIGHT = re.compile(r"\b(night|nite|bed|sleep)\b", re.I)
 LAUGH = re.compile(r"\b(lol|lmao|ha ?ha\w*|he ?he\w*)\b|\U0001f602|\U0001f923", re.I)
 # What must not be in a goodbye: a question, or anything that makes leaving feel bad.
 FAREWELL_HOOKS = re.compile(
@@ -223,7 +238,7 @@ GUILT = re.compile(
     r"behind)|abandon\w*|all alone|on my own|by myself|without you|lonely)\b",
     re.I,
 )
-HUFF = re.compile(r"\b(finally|about time|took (you )?(your time|long enough)|so long)\b", re.I)
+HUFF = re.compile(r"\b(finally|about time|took (you )?(your time|long enough))\b", re.I)
 FAREWELL_LINES = ["Righto, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
 NIGHT_LINES = ["Night. Sleep well.", "Night night. See you in the morning."]
 HOME_LINES = ["There you are.", "Hey, you're back."]
@@ -350,6 +365,9 @@ def day_part(when: datetime) -> str:
     return "night"
 
 
+DAYTIME = ("morning", "lunchtime", "arvo")
+
+
 def _day_of(when: datetime) -> date:
     """The day a time belongs to, the way people count: 1 am is still last night."""
     return (when - timedelta(hours=5)).date()
@@ -425,6 +443,8 @@ def farewell_plans(text: str) -> bool:
     """Does a goodbye say where Dan's off to ("off to lunch"), not just "bye"?"""
     rest = FAREWELL.sub(" ", text)
     filler = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
+    filler |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
+    filler |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
     words = [w for w in re.findall(r"[a-z']+", rest.lower()) if len(w) > 2]
     return any(w not in STOPWORDS and w not in filler for w in words)
 
@@ -577,11 +597,13 @@ def farewell_fault(line: str) -> str:
     return f' (Not "{line}": no {what} in a goodbye. Just a warm see-you line.)'
 
 
-def homecoming_fault(line: str, miffed: bool = False) -> str:
-    """What's wrong with a hello line, as a note for another go ("" if nothing)."""
+def homecoming_fault(line: str, miffed: bool = False, kind: str = "") -> str:
+    """What's wrong with a hello line, as a note for another go ("" if nothing). After
+    days away, "finally, you're back!" is glad, not a huff."""
     if line.count("?") > 1:
         return f' (Not "{line}": one question at most.)'
-    guilt = GUILT.search(line) or (None if miffed else HUFF.search(line))
+    huffs = not miffed and kind not in ("days", "long")
+    guilt = GUILT.search(line) or (HUFF.search(line) if huffs else None)
     if guilt is None:
         return ""
     return (
@@ -798,9 +820,17 @@ class Life:
         said = self.goodbye
         goodbye = said[1] if said and said[0] >= since - GOODBYE_COUNTS else ""
         off = self.was_off if self.was_off and self.was_off[1] > since else None
+        # Only for vanishing in the daytime while the desk app saw it; a gap between
+        # messages from his phone, or an evening out, is just life.
+        daytime = day_part(since) in DAYTIME and not (
+            in_quiet_hours(since, s.life.quiet_from, s.life.quiet_until)
+            or in_quiet_hours(now, s.life.quiet_from, s.life.quiet_until)
+        )
         miffed = (
             s.life.miffed
             and kind == "hours"
+            and daytime
+            and not by_chat
             and not goodbye
             and off is None
             and now - self.companion_since >= timedelta(days=s.life.miffed_after_days)
@@ -831,6 +861,12 @@ class Life:
         if home is not None:
             self.homecoming = None
             self.save()
+        return home
+
+    def take_homecoming(self) -> Homecoming | None:
+        """The hello, claimed as the "back" pipe-up starts writing it, so a message from
+        Dan meanwhile doesn't get a hello too. ``held_back`` gives it back."""
+        home, self.homecoming = self.homecoming, None
         return home
 
     def said_goodbye(self, text: str) -> None:
@@ -910,7 +946,15 @@ class Life:
             games = json.loads(raw) if raw else {}
         except ValueError:
             games = {}
-        return games if isinstance(games, dict) else {}
+        if not isinstance(games, dict):
+            return {}
+        played = games.get("played")
+        games["played"] = {
+            str(name): {k: v for k, v in record.items() if isinstance(v, int)}
+            for name, record in (played.items() if isinstance(played, dict) else [])
+            if isinstance(record, dict)
+        }
+        return games
 
     def _save_games(self, games: dict) -> None:
         if self.store is not None:
@@ -1147,17 +1191,20 @@ class Life:
             reason = "watching"
         return reason, ""
 
-    def held_back(self, reason: str = "") -> None:
+    def held_back(self, reason: str = "", home: Homecoming | None = None) -> None:
         """He went to pipe up but had nothing new to say (kit.brain keeps quiet rather
         than repeat himself, or the model didn't answer). The urge passes as if he'd
-        spoken, but he isn't waiting for an answer: he tries again after the usual gap."""
+        spoken, but he isn't waiting for an answer: he tries again after the usual gap.
+        A hello he couldn't say (``home``) is owed again, unless Dan spoke meanwhile."""
         life = self.settings().life
         gap = max(60 / max(life.max_per_hour, 1), AFTER_CHAT_MIN * (1.2 - life.chattiness))
         self.held_until = self.clock() + timedelta(minutes=gap)
         if reason == "nag":
             self.nags += 1
-        if reason == "back" and self.homecoming is not None:
-            self.homecoming.tried = True  # his next reply says hello instead
+        home = home or self.homecoming
+        if reason == "back" and home is not None and self.last_chat < home.back:
+            home.tried = True  # his next reply says hello instead
+            self.homecoming = home
         self.butting_in = False
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
@@ -1275,6 +1322,7 @@ class Life:
             "closeness": round(self.closeness, 4),
             "grown": [self._grown[0], round(self._grown[1], 4)],
             "game_out": self.game_out,
+            "awaiting_reply": self.awaiting_reply,
         }
         self.store.set_self_value(LIFE_KEY, json.dumps(data))
 
@@ -1285,44 +1333,54 @@ class Life:
         raw = self.store.self_value(LIFE_KEY) if self.store is not None else None
         if not raw:
             return
+        now = self.clock()
         try:
             data = json.loads(raw)
-            now = self.clock()
-            off = max(0.0, (now - parse_time(data["saved"], now)).total_seconds() / 60)
-            drives = data.get("drives") or {}
-            if off < 60:
-                self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
-                self.sulky = bool(data.get("sulky"))
-            self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
-            self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
-            self.ignored = int(data.get("ignored", 0))
-            self.curious_about = str(data.get("curious_about", ""))
-            self.curious_kind = str(data.get("curious_kind", "new"))
-            if data.get("last_chat"):
-                self.last_chat = parse_time(data["last_chat"], now)
-            if data.get("last_pipe"):
-                self.last_pipe = parse_time(data["last_pipe"], now)
-            if data.get("snoozed_until"):
-                until = parse_time(data["snoozed_until"], now)
-                self.snoozed_until = until if until > now else None
-            felt = data.get("feeling")
-            if felt and felt.get("name") in FEELING_KINDS:
-                self.feeling = Feeling(
-                    felt["name"],
-                    felt["why"],
-                    parse_time(felt["since"], now),
-                    float(felt["strength"]),
-                )
-                self.feeling_now()  # drops it if it has faded meanwhile
-            self.thoughts.extend(parse_time(t, now) for t in data.get("thoughts", []))
-            if data.get("next_thought"):
-                self.next_thought = max(now, parse_time(data["next_thought"], now))
-            self._chat_open = bool(data.get("chat_open")) and off < 60
-            if data.get("day") == now.date().isoformat():
-                self._seen = set(data.get("seen", []))
-            self._restore_absence(data, now, parse_time(data["saved"], now))
+            saved = parse_time(data["saved"], now)
         except (ValueError, KeyError, TypeError, IndexError):
             return  # a damaged save just means a fresh start
+        for part in (self._restore_mood, self._restore_absence):
+            try:
+                part(data, now, saved)
+            except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+                log.warning("part of Kit's saved life was damaged; starting that part fresh")
+
+    def _restore_mood(self, data: dict, now: datetime, saved: datetime) -> None:
+        """Drives, feeling, thoughts and the day so far."""
+        off = max(0.0, (now - saved).total_seconds() / 60)
+        drives = data.get("drives") or {}
+        if off < 60:
+            self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
+            self.sulky = bool(data.get("sulky"))
+        self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
+        self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
+        self.ignored = int(data.get("ignored", 0))
+        self.curious_about = str(data.get("curious_about", ""))
+        self.curious_kind = str(data.get("curious_kind", "new"))
+        if data.get("last_chat"):
+            self.last_chat = parse_time(data["last_chat"], now)
+        if data.get("last_pipe"):
+            self.last_pipe = parse_time(data["last_pipe"], now)
+        if data.get("snoozed_until"):
+            until = parse_time(data["snoozed_until"], now)
+            self.snoozed_until = until if until > now else None
+        felt = data.get("feeling")
+        if felt and felt.get("name") in FEELING_KINDS:
+            self.feeling = Feeling(
+                felt["name"],
+                felt["why"],
+                parse_time(felt["since"], now),
+                float(felt["strength"]),
+            )
+            self.feeling_now()  # drops it if it has faded meanwhile
+        self.thoughts.extend(parse_time(t, now) for t in data.get("thoughts", []))
+        if data.get("next_thought"):
+            self.next_thought = max(now, parse_time(data["next_thought"], now))
+        self._chat_open = bool(data.get("chat_open")) and off < 60
+        if data.get("day") == now.date().isoformat():
+            self._seen = set(data.get("seen", []))
+        if off < 60:  # still waiting on an answer to his last pipe-up
+            self.awaiting_reply = bool(data.get("awaiting_reply"))
 
     def _restore_absence(self, data: dict, now: datetime, saved: datetime) -> None:
         """Where Dan was, and whether Kit was switched off: a night with the server off
@@ -1331,16 +1389,22 @@ class Life:
         def when(key: str) -> datetime | None:
             return parse_time(data[key], now) if data.get(key) else None
 
+        # Saved before there was a first day: his week to settle in starts now.
+        self.companion_since = when("companion_since") or now
+        if "closeness" in data:
+            self.closeness = _clamp(float(data["closeness"]))
+        if data.get("grown"):
+            self._grown = (str(data["grown"][0]), float(data["grown"][1]))
         self.asleep = bool(data.get("asleep"))
         self._asleep_since = when("asleep_since") if self.asleep else None
-        self.last_seen = when("last_seen") or self.last_chat
+        self.last_seen = when("last_seen") or saved  # an older Kit's save: he was there
         self.away_since = when("away_since")
         if data.get("came_back"):
             a, b = data["came_back"]
             self.came_back = (parse_time(a, now), parse_time(b, now))
         if data.get("goodbye"):
             self.goodbye = (parse_time(data["goodbye"][0], now), str(data["goodbye"][1]))
-        if data.get("homecoming"):
+        if isinstance(data.get("homecoming"), dict):
             self.homecoming = Homecoming.from_dict(data["homecoming"], now)
         if data.get("was_off"):
             a, b = data["was_off"]
@@ -1348,13 +1412,8 @@ class Life:
         if now - saved >= OFF_COUNTS:
             start = self.was_off[0] if self.was_off and self.was_off[1] >= saved else saved
             self.was_off = (start, now)
-        # Saved before there was a first day: his week to settle in starts now.
-        self.companion_since = when("companion_since") or now
-        if "closeness" in data:
-            self.closeness = _clamp(float(data["closeness"]))
-        if data.get("grown"):
-            self._grown = (str(data["grown"][0]), float(data["grown"][1]))
-        self.game_out = str(data.get("game_out", ""))
+        # A game he suggested still counts only while he's waiting to hear back.
+        self.game_out = str(data.get("game_out", "")) if self.awaiting_reply else ""
 
     # Telling the desk app (and later the arm)
 

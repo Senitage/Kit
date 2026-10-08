@@ -768,9 +768,12 @@ async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
     )
 
 
-async def _local_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, run):
+async def _local_run(
+    paths: KitPaths, client: httpx.AsyncClient, settings: Settings, run, clock=None
+):
     """``run(brain, model name)`` for one local model, with Kit seeded the same way
-    every time (``seed_voice``), in a scratch memory that's deleted after."""
+    every time (``seed_voice``), in a scratch memory that's deleted after. ``clock``
+    sets the time Kit thinks it is."""
     from kit.brain import Brain
     from kit.cloud import Cloud
     from kit.evals import seed_voice
@@ -788,7 +791,7 @@ async def _local_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
         return None
     scratch = paths.state_dir / "voice-eval"
     shutil.rmtree(scratch, ignore_errors=True)
-    memory = Memory(scratch / "memory.db")
+    memory = Memory(scratch / "memory.db", clock) if clock else Memory(scratch / "memory.db")
     try:
         # No cloud, no web and words-only recall: the local model alone, as on the desk.
         cloud = Cloud(memory, lambda provider: None, {})
@@ -856,7 +859,7 @@ async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
     like a good companion? Written side by side to read."""
     from datetime import datetime
 
-    from kit.evals import companion_report, run_companion_eval
+    from kit.evals import companion_clock, companion_report, run_companion_eval
 
     paths.ensure()
     base = SettingsStore(paths).current()
@@ -871,7 +874,11 @@ async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
         for name in names:
             settings = _eval_settings(base, name)
             report = await _local_run(
-                paths, client, settings, lambda brain, n: run_companion_eval(brain, n, show)
+                paths,
+                client,
+                settings,
+                lambda brain, n: run_companion_eval(brain, n, show),
+                companion_clock(),
             )
             if report is not None:
                 reports.append(report)

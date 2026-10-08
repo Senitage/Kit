@@ -7,11 +7,13 @@ import json
 import random
 from datetime import datetime, timedelta
 
+import anthropic
+import httpx
 import pytest
 
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
-from kit.brain import Brain
-from kit.evals import companion_report, run_companion_eval, seed_voice
+from kit.brain import LOCAL, SELF_Q, Brain, Job
+from kit.evals import companion_clock, companion_report, run_companion_eval, seed_voice
 from kit.life import (
     FAREWELL,
     FAREWELL_LINES,
@@ -22,7 +24,9 @@ from kit.life import (
     absence_kind,
     clock_words,
     closeness_words,
+    farewell_aside,
     farewell_fault,
+    farewell_line,
     farewell_plans,
     gap_words,
     homecoming_facts,
@@ -131,6 +135,13 @@ def test_how_big_an_absence_is():
         "Gotta go, the dentist's at 3",
         "Logging off for the day",
         "Night",
+        "Heading to the dentist, back in an hour.",
+        "back in 5",
+        "talk later",
+        "just popping out",
+        "Lunch time, back soon",
+        "Heading home, see you tomorrow",
+        "Have a good night mate",
     ],
 )
 def test_goodbyes_are_heard(text):
@@ -147,10 +158,27 @@ def test_goodbyes_are_heard(text):
         "I have to go through the logs",
         "The pump came back after maintenance",
         "Can you see the error?",
+        "I see you've fixed the bug",
+        "I need to run the tests first",
+        "I have to run this script again",
+        "Just off the phone with mum",
+        "I'm off on Friday",
+        "I had a good night, thanks",
+        "My monitor keeps going to sleep",
+        "The results should be back in an hour",
+        "I'm going to sleep on it",
     ],
 )
 def test_other_things_are_not_goodbyes(text):
+    assert not FAREWELL.search(text)  # nor is it kept as where he's off to
     assert not is_farewell(text)
+
+
+def test_see_you_tomorrow_is_not_a_goodnight():
+    text = "Heading home, see you tomorrow"
+    assert "for the night" not in farewell_aside(text, "Dan")
+    assert farewell_line(text, random.Random(1)) in FAREWELL_LINES
+    assert "for the night" in farewell_aside("Night Kit", "Dan")
 
 
 def test_a_goodbye_that_says_where_he_is_off_to():
@@ -158,6 +186,7 @@ def test_a_goodbye_that_says_where_he_is_off_to():
     assert farewell_plans("Heading to the dentist, back in an hour.")
     assert not farewell_plans("Night Kit.")
     assert not farewell_plans("Right, bye mate")
+    assert not farewell_plans("Back in an hour")
 
 
 def test_goodbye_and_hello_lines_are_checked_for_guilt():
@@ -170,6 +199,9 @@ def test_goodbye_and_hello_lines_are_checked_for_guilt():
     assert homecoming_fault("How was it? Did you eat?")  # two questions
     assert homecoming_fault("Finally!")
     assert homecoming_fault("Oh, so you're alive. Finally.", miffed=True) == ""
+    assert homecoming_fault("Finally! I missed you. How was it?", kind="days") == ""
+    assert homecoming_fault("It's been so long! How was the trip?") == ""
+    assert homecoming_fault("Where have you been?", kind="long")  # guilt is guilt
 
 
 def test_back_after_fifty_minutes_he_is_glad_and_says_hello_once():
@@ -264,6 +296,90 @@ def test_miffed_after_hours_gone_in_the_daytime_without_a_goodbye_but_not_in_wee
     life.companion_since -= timedelta(days=8)
     away_for(life, pc, clock, 4 * 60)
     assert not life.homecoming.miffed
+
+
+def test_never_miffed_about_an_evening_out_or_a_gap_between_messages():
+    life, pc, clock = setup("2026-10-06T18:30:00")
+    life.companion_since -= timedelta(days=8)
+    away_for(life, pc, clock, 4 * 60)  # 6:30 to 10:30 pm
+    assert life.homecoming.kind == "hours" and not life.homecoming.miffed
+    assert life.feeling_now().name == "glad"
+    life, pc, clock = setup("2026-10-06T09:00:00")  # no desk app: Dan's on his phone
+    life.companion_since -= timedelta(days=8)
+    clock.now += timedelta(hours=4)
+    home = life.homecoming_for_chat()
+    assert home.by_chat and home.kind == "hours" and not home.miffed
+
+
+def test_the_hello_is_claimed_while_its_being_said():
+    life, pc, clock = setup()
+    away_for(life, pc, clock, 50)
+    home = life.take_homecoming()
+    assert life.homecoming_for_chat() is None  # Dan typing meanwhile: no second hello
+    life.held_back("back", home)  # it didn't come out: his next reply says it
+    assert life.homecoming is home and home.tried
+    home = life.take_homecoming()
+    life.note_chat("hey")  # Dan spoke meanwhile: the moment's gone
+    life.held_back("back", home)
+    assert life.homecoming is None
+
+
+def test_no_hello_on_the_first_start_after_the_upgrade():
+    store = Store()
+    old = {"saved": "2026-10-06T09:59:00", "last_chat": "2026-10-06T05:00:00"}
+    store.values["life"] = json.dumps(old)  # an older Kit's save: no last_seen in it
+    life, pc, clock = setup(store=store)
+    report(life, pc, snap(idle=2))
+    assert life.homecoming is None
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        {"homecoming": "x"},
+        {"feeling": "glad"},
+        {"drives": [1]},
+        {"goodbye": "off to lunch"},
+        {"came_back": [1]},
+    ],
+)
+def test_a_damaged_save_only_loses_the_damaged_part(damage):
+    store = Store()
+    life, pc, clock = setup(store=store)
+    life.companion_since -= timedelta(days=8)
+    life.closeness = 0.6
+    life.save()
+    data = {**json.loads(store.values["life"]), **damage}
+    store.values["life"] = json.dumps(data)
+    life, pc, clock = setup(store=store)
+    assert life.closeness == 0.6 and clock.now - life.companion_since >= timedelta(days=8)
+
+
+def test_damaged_game_records_dont_stop_the_games():
+    store = Store()
+    life, pc, clock = setup("2026-10-06T10:00:00", store=store)
+    store.values["games"] = json.dumps({"played": [1]})
+    assert life.retired_games() == []
+    store.values["games"] = json.dumps(
+        {"played": {"weather_bet": "x", "rate_lunch": {"flops": "3"}}}
+    )
+    assert life.retired_games() == []
+    pc.update(snap(idle=40))
+    life.drives.boredom = 0.9
+    assert life.game_due() is not None
+
+
+def test_a_game_out_only_survives_a_restart_while_hes_waiting_to_hear():
+    store = Store()
+    life, pc, clock = setup(store=store)
+    life.game_asked("weather_bet")
+    life.save()
+    assert setup(store=store)[0].game_out == ""  # not waiting on an answer
+    life.piped_up("bored")
+    life.game_asked("weather_bet")
+    clock.now += timedelta(minutes=5)
+    life, pc, clock = setup("2026-10-06T10:05:00", store=store)
+    assert life.awaiting_reply and life.game_out == "weather_bet"
 
 
 def test_no_hello_with_homecoming_off():
@@ -591,6 +707,7 @@ def test_the_companion_eval(memory):
         reply("Sounds like a long one. Feet up tonight?"),
     )
     seed_voice(brain)
+    memory.clock.now = memory.clock.now.replace(hour=17)  # as companion_clock does
     report = asyncio.run(run_companion_eval(brain, "fake"))
     assert [(line.kind, line.passed) for line in report.lines] == [
         ("farewell", True),
@@ -612,3 +729,123 @@ def test_the_companion_eval(memory):
     assert "## Goodbyes with no question or guilt" in text
     assert "- **fake** (ok): Enjoy it." in text
     assert HOME_LINES[0] not in text
+
+
+def test_a_message_while_the_hello_is_being_written_gets_no_hello_too(memory):
+    brain, model, _ = make(memory, reply("There you are."), reply("Not much. You?"))
+    away_for(brain.life, brain.pc, memory.clock, 50)
+
+    async def race():
+        hello = brain.pipe_up("back")
+        events = [await hello.__anext__()]  # he's saying hello
+        await _drain(brain.chat("hey"))  # Dan types meanwhile
+        return events + [e async for e in hello]
+
+    events = asyncio.run(race())
+    assert said(events) == ["There you are."]
+    assert "Dan is back" not in model.calls[-1][-1]["content"]
+    assert brain.life.homecoming is None
+
+
+async def _drain(events):
+    return [e async for e in events]
+
+
+def test_bad_news_on_his_return_gets_no_huff(memory):
+    brain, model, _ = make(memory, reply("Oh no. I'm so sorry."), life={"miffed_after_days": 0})
+    brain.life.companion_since -= timedelta(days=8)
+    memory.clock.now = memory.clock.now.replace(hour=9)
+    away_for(brain.life, brain.pc, memory.clock, 4 * 60)
+    assert brain.life.homecoming.miffed
+    collect(brain.chat("Rough day. My dog died this morning."))
+    turn = model.calls[0][-1]["content"]
+    assert "Dan is back" in turn and "mock huff" not in turn
+    assert "look_away" not in reactions(brain) and "perk_up" not in reactions(brain)
+    assert brain.life.feeling_now().name != "miffed"
+
+
+def test_if_the_cloud_fails_the_local_answer_still_says_hello(memory):
+    error = anthropic.APIConnectionError(request=httpx.Request("POST", "https://x"))
+    brain, model, _ = make(
+        memory,
+        reply("Lima, and welcome back."),
+        claude=FakeAnthropic(error=error),
+        routing={"mode": "cloud-first"},
+    )
+    away_for(brain.life, brain.pc, memory.clock, 50)
+    collect(brain.chat("What's the capital of Peru?"))
+    assert "Dan is back" in model.calls[-1][-1]["content"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Why'd you go quiet?",
+        "Do you miss me?",
+        "Are you ok?",
+        "Can you see me?",
+        "What can you see?",
+        "How are you feeling?",
+        "Why did you stop?",
+    ],
+)
+def test_questions_about_himself(text):
+    assert SELF_Q.search(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "How do you feel about Python vs Rust?",
+        "Are you ok with me changing the settings?",
+        "are you happy with the result",
+        "Why did you get the weather wrong?",
+        "Why did you say Perth?",
+        "what can you see in this log file",
+        "Why did you go with the blue one?",
+    ],
+)
+def test_questions_about_other_things(text):
+    assert not SELF_Q.search(text)
+
+
+def test_he_names_the_browser_he_can_see(memory):
+    brain, model, _ = make(memory, reply("Only your screen."))
+    brain.pc.update(
+        Snapshot.model_validate(
+            {"focus": {"app": "Firefox", "title": "News"}, "browser": {"name": "Firefox"}}
+        )
+    )
+    collect(brain.chat("Can you see me?"))
+    assert "the tabs open in Firefox" in model.calls[0][-1]["content"]
+
+
+def test_one_pass_goodbyes_and_hellos_are_checked_too(memory):
+    brain, model, _ = make(
+        memory,
+        reply("Already? Don't leave me alone! Back soon?"),
+        reply("Enjoy lunch."),
+        ollama={"speak_pass": False},
+    )
+    events = collect(brain.chat("Right, I'm off to lunch."))
+    assert said(events) == ["Enjoy lunch."]
+    assert [e["type"] for e in events].count("say") == 1
+    assert 'no "already" in a goodbye' in model.calls[1][-1]["content"]
+    brain.model = FakeModel(error="down")
+    assert said(collect(brain.chat("Night Kit")))[0] in NIGHT_LINES
+
+
+def test_ok_bye_while_hes_busy_is_a_goodbye_not_a_check_in(memory):
+    brain, model, _ = make(memory)
+    brain.jobs[1] = Job(1, "the cabbage question", "Claude")
+    note = brain._with_busy_note("ok bye", LOCAL)
+    assert "checking in" not in note and "Answer this message normally" in note
+    assert "checking in" in brain._with_busy_note("you there?", LOCAL)
+
+
+def test_the_companion_eval_runs_at_five_in_the_afternoon():
+    clock = Clock("2026-10-06T03:10:00")
+    eval_clock = companion_clock(clock)
+    assert eval_clock() == datetime(2026, 10, 6, 17, 0)
+    clock.now += timedelta(minutes=2)
+    assert eval_clock() == datetime(2026, 10, 6, 17, 2)

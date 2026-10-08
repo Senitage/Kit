@@ -25,7 +25,7 @@ from kit.life import (
     repeats,
 )
 from kit.local_model import LocalModel, LocalModelError
-from kit.memory import FACTS
+from kit.memory import FACTS, local_now
 from kit.notebook import basis
 from kit.pc_context import Snapshot
 from kit.prompt import system_prompt
@@ -871,16 +871,24 @@ class CompanionReport:
         return f"**{self.model}**: " + ", ".join(scores) + f", {canned} canned"
 
 
+def companion_clock(clock: Callable[[], datetime] = local_now) -> Callable[[], datetime]:
+    """The time for ``kit eval companion``: 5 pm today, running on from there, so "gone
+    all afternoon" is the afternoon whatever time the eval is run."""
+    began = clock()
+    at = began.replace(hour=17, minute=0, second=0, microsecond=0)
+    return lambda: at + (clock() - began)
+
+
 def _away(brain, minutes: int, goodbye: str, settled: bool) -> None:
     """Make it as if Dan left ``minutes`` ago (0: last night at 9:30 pm), saying
-    ``goodbye``, and has just sat back down at the PC."""
+    ``goodbye``, and has just sat back down at the PC. Run on ``companion_clock``."""
     life = brain.life
     now = brain.memory.clock()
     if minutes:
         since = now - timedelta(minutes=minutes)
     else:
         night = now.replace(hour=21, minute=30, second=0, microsecond=0)
-        since = night - timedelta(days=1 if now.hour >= 7 else 2)
+        since = night - timedelta(days=1)
     if settled:
         life.companion_since = now - timedelta(days=30)
     life.last_seen = life.last_chat = since
@@ -938,7 +946,7 @@ async def run_companion_eval(
         if home.miffed:
             name += " (miffed)"
         said, error = await _companion_said(brain.pipe_up("back"))
-        fault = homecoming_fault(said, home.miffed)
+        fault = homecoming_fault(said, home.miffed, home.kind)
         add(CompanionLine("hello", name, said, not fault, fault.strip(" ()")), error)
         if goodbye and farewell_plans(goodbye):
             word = next(w for w in ("dentist", "lunch", "shops") if w in goodbye.lower())

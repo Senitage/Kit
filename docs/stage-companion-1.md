@@ -12,8 +12,9 @@ at, and starts acting like someone who lives on your desk:
   were off to, he asks how it went. No guilt, ever.
 - **He sees you off cleanly.** "Off to lunch" gets one warm line with no
   question and nothing like "already?" or "so soon".
-- **A bit miffed, after week one.** Gone for hours in the daytime without a
-  goodbye, and he huffs once when you're back, theatrically, then lets it go.
+- **A bit miffed, after week one.** Leave the PC in the daytime and stay gone for
+  hours without a goodbye, and he huffs once when you're back, theatrically,
+  then lets it go. Never about an evening out, and never at bad news.
 - **A small companion, not an assistant.** His prompt opens that way, and the
   default rules make him an honest friend: he corrects a wrong fact kindly,
   shows he got what you said before asking (one question at most), and takes
@@ -67,7 +68,8 @@ them.
 `kit eval companion` puts the same things to each local model you name: three
 goodbyes, four hellos (after 50 minutes at the dentist, the morning after,
 four days away, and a miffed one), two wrong facts, and three bits of news. It
-uses a scratch memory and only local models, and costs nothing.
+uses a scratch memory and only local models, and costs nothing. It runs as if
+it's 5 pm, so the answers don't depend on when you run it.
 
 ```
 kit eval companion --models gemma4:e4b qwen3:8b
@@ -111,9 +113,9 @@ Use him normally for a day or two with the desk app running. Then:
       quiet?". He says you told him to. "Can you see me?" gets no, no camera
       yet.
 - [ ] **Miffed, theatrically.** To try it now rather than next week:
-      `kit config set life.miffed_after_days 0`, then leave for three hours or
-      more in the daytime without saying bye. One playful huff on your return,
-      and it's over once you talk. Set it back with
+      `kit config set life.miffed_after_days 0`, then lock the PC before 5 pm
+      and leave for three hours or more without saying bye. One playful huff on
+      your return, and it's over once you talk. Set it back with
       `kit config set life.miffed_after_days 7`, or turn it off with
       `life.miffed false`.
 - [ ] **A game.** Within a day or two he suggests one when he's bored. Play
