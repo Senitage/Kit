@@ -92,6 +92,9 @@ HAND_OFF = {
     "facts, advice, maths, code, engineering, and anything current such as weather, prices "
     "or news",
     "cloud-first": "for anything more than small talk",
+    "cloud-only": "for real work you'd do less well yourself: code, maths, engineering, "
+    "detailed advice, plans or research. Answer chat, quick questions and simple lookups "
+    "yourself",
 }
 # Small models handed "The build failed again." to the cloud, as a question about code.
 NOT_HANDED_OFF = (
@@ -114,6 +117,7 @@ def system_prompt(
     mode: str = "balanced",
     helper: str | None = "the cloud",
     expert: str | None = None,
+    confirm_expert: bool = False,
     web_search: bool = False,
     busy: list[str] | None = None,
     pc: str = "",
@@ -131,9 +135,10 @@ def system_prompt(
     two_pass: bool = False,
     dan: str = "",
 ) -> str:
-    """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
-    cloud model). ``helper`` and ``expert`` name the models a question can be handed
-    to; either is None when there's nowhere to hand it. ``busy`` describes work a
+    """Kit's prompt for one role: "local" (the local model), "chat", "work" or
+    "expert" (a cloud model). ``helper`` and ``expert`` name the models a question can
+    be handed to; either is None when there's nowhere to hand it. ``confirm_expert``:
+    handing to the expert waits for the owner's yes. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
     "right now" from Dan's PC, empty when it has never reported. ``channel`` says
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
@@ -294,14 +299,22 @@ def system_prompt(
             "conversation: forecasts change, so use the weather action unless a forecast is "
             "below."
         )
-    if not cloud and helper:
+    if helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. {NOT_HANDED_OFF}. Put "
             f"the full question in text."
             + say(f"Say something short like 'Let me check with {helper}.'")
             + f" {owner} sees {helper}'s answer next."
         )
-    if expert:
+    if expert and confirm_expert:
+        lines.append(
+            "- ask_expert: only for the hardest problems, such as long derivations, tricky "
+            "debugging or big designs, that you can't do justice to and where a stronger "
+            "model is worth the wait and cost. Put the full question in text. It goes to "
+            f"{expert} only if {owner} says yes, so don't answer it yourself: say in a "
+            f"sentence why it needs {expert}, and ask if you should hand it over."
+        )
+    elif expert:
         lines.append(
             "- ask_expert: for the hardest problems, such as long derivations, tricky "
             "debugging or big designs, where a stronger model is worth the wait and cost. "
@@ -477,6 +490,11 @@ def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
         f"yours, so own them; but never claim to be human, to have a body you don't have, or "
         f"to have done things you can't.]"
     )
+
+
+def expert_yes_aside(owner: str, question: str) -> str:
+    """Beside "yes" when Kit asked whether to hand a question to the expert model."""
+    return f"[{owner} said yes to you taking this one properly: {question} Answer it fully now.]"
 
 
 def wrong_fact_aside(owner: str, checked: str = "") -> str:

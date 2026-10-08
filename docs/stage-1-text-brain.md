@@ -166,6 +166,7 @@ How much stays local is `routing.mode`:
 | `local-heavy` | everything it can | only what it can't do well |
 | `balanced` (default) | small talk and quick commands | real questions, work, anything current |
 | `cloud-first` | nothing, unless the cloud is down | everything |
+| `cloud-only` | nothing, unless the cloud is down | everything: the chat model (Haiku) takes everyday messages, goodbyes included, and hands real work to the work model |
 
 ```
 kit config set routing.mode cloud-first
@@ -176,6 +177,11 @@ Gemini", "ask the cloud", which all mean the work model), or "think hard" for
 the expert. If the cloud can't be reached, or there's no key, or the budget is
 used up, the local model answers instead and says why
 (`routing.fallback_to_local`).
+
+When the work model decides a question needs the expert, Kit asks first ("that
+needs Opus, shall I ask it?") and only a yes sends it
+(`routing.confirm_expert`). "Think hard" still goes straight to the expert.
+Change the chat model with `kit models chat <name>`.
 
 To compare models on real questions before switching, ask them the same ten
 questions side by side. This spends real money, roughly 20 cents to a dollar a

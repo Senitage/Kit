@@ -195,10 +195,12 @@ def check_cloud(
     api_key: Callable[[str], str | None],
     make_client: ClientFactory = make_anthropic_client,
 ) -> list[CheckResult]:
-    """One result per model the work and expert roles use. Claude keys are tried
+    """One result per model the roles use (chat only in cloud-only). Claude keys are tried
     with a free model lookup; no tokens are spent. Other keys are only looked for."""
     results = []
-    for name in dict.fromkeys([settings.routing.work, settings.routing.expert]):
+    routing = settings.routing
+    chat = [routing.chat] if routing.mode == "cloud-only" else []
+    for name in dict.fromkeys([*chat, routing.work, routing.expert]):
         profile, label = settings.models[name], f"cloud: {name}"
         if profile.provider == "ollama":
             results.append(CheckResult(label, Status.PASS, f"{profile.model} runs locally"))

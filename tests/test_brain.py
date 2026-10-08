@@ -342,12 +342,74 @@ def test_cloud_detail_is_shown_and_indexed(memory):
 def test_work_model_can_ask_the_expert(memory):
     first = reply("That one's for Opus.", action="ask_expert", text="Derive it")
     claude = FakeAnthropic(answer=[first, "Here's the derivation."])
-    s = settings_with(routing={"mode": "cloud-first"})
+    s = settings_with(routing={"mode": "cloud-first", "confirm_expert": False})
     brain, _, _ = make(memory, settings=s, claude=claude)
     events = collect(brain.chat("Derive the Bond equation"))
     assert [c["model"] for c in claude.calls] == ["claude-sonnet-5-5", "claude-opus-5-5"]
     assert next(e for e in events if e["type"] == "handing_off")["to"] == "Opus"
     assert "ask_expert" not in claude.calls[1]["system"][0]["text"]
+
+
+def test_the_expert_waits_for_a_yes(memory):
+    first = reply("That needs Opus. Shall I ask it?", action="ask_expert", text="Derive it")
+    claude = FakeAnthropic(answer=[first, "Here's the derivation."])
+    s = settings_with(routing={"mode": "cloud-first"})
+    brain, _, _ = make(memory, settings=s, claude=claude)
+    events = collect(brain.chat("Derive the Bond equation"))
+    assert [c["model"] for c in claude.calls] == ["claude-sonnet-5-5"]
+    assert "only if Dan says yes" in claude.calls[0]["system"][0]["text"]
+    assert not any(e["type"] == "handing_off" for e in events)
+    assert next(e for e in events if e["type"] == "notice")["message"] == "Say yes to ask Opus."
+    collect(brain.chat("yes please"))
+    assert [c["model"] for c in claude.calls][-1] == "claude-opus-5-5"
+    assert "Derive it" in claude.calls[-1]["messages"][-1]["content"]
+
+
+def test_a_no_leaves_the_expert_out(memory):
+    first = reply("That needs Opus. Shall I ask it?", action="ask_expert", text="Derive it")
+    claude = FakeAnthropic(answer=[first])
+    brain, _, _ = make(
+        memory, settings=settings_with(routing={"mode": "cloud-first"}), claude=claude
+    )
+    collect(brain.chat("Derive the Bond equation"))
+    events = collect(brain.chat("no"))
+    assert len(claude.calls) == 1
+    assert events[-1]["reply"]["segments"][0]["say"] == "Okay, I'll leave it there."
+
+
+def test_think_hard_skips_the_question(memory):
+    claude = FakeAnthropic(answer=["Here's the derivation."])
+    brain, _, _ = make(
+        memory, settings=settings_with(routing={"mode": "cloud-first"}), claude=claude
+    )
+    collect(brain.chat("Think hard: derive the Bond equation"))
+    assert [c["model"] for c in claude.calls] == ["claude-opus-5-5"]
+
+
+def test_cloud_only_chats_with_the_chat_model(memory):
+    brain, model, claude = make(memory, settings=settings_with(routing={"mode": "cloud-only"}))
+    collect(brain.chat("Morning"))
+    assert model.calls == [] and [c["model"] for c in claude.calls] == ["claude-haiku-5-5"]
+    system = claude.calls[0]["system"][0]["text"]
+    assert "ask_cloud" in system and "ask_expert" not in system
+
+
+def test_cloud_only_hands_work_to_the_work_model(memory):
+    first = reply("Let me check with Sonnet.", action="ask_cloud", text="Write the function")
+    claude = FakeAnthropic(answer=[first, "Here's the function."])
+    s = settings_with(routing={"mode": "cloud-only"})
+    brain, model, _ = make(memory, settings=s, claude=claude)
+    events = collect(brain.chat("Write the pump flag function"))
+    assert [c["model"] for c in claude.calls] == ["claude-haiku-5-5", "claude-sonnet-5-5"]
+    assert next(e for e in events if e["type"] == "handing_off")["to"] == "Sonnet"
+    assert "ask_expert" in claude.calls[1]["system"][0]["text"] and model.calls == []
+
+
+def test_cloud_only_says_goodbye_in_the_cloud(memory):
+    brain, model, claude = make(memory, settings=settings_with(routing={"mode": "cloud-only"}))
+    events = collect(brain.chat("Night Kit, off to bed"))
+    assert model.calls == [] and [c["model"] for c in claude.calls] == ["claude-haiku-5-5"]
+    assert not any("asking" in e.get("text", "") for e in events if e["type"] == "say")
 
 
 def test_a_local_profile_can_do_the_work(memory):
@@ -368,6 +430,9 @@ def test_routing_phrases():
     assert route("morning", s) == ("local", False)
     cloud_first = Settings.model_validate({"routing": {"mode": "cloud-first"}})
     assert route("morning", cloud_first) == ("work", False)
+    cloud_only = Settings.model_validate({"routing": {"mode": "cloud-only"}})
+    assert route("morning", cloud_only) == ("chat", False)
+    assert route("keep it local please", cloud_only) == ("local", True)
 
 
 ONE_PASS = {"ollama": {"speak_pass": False}}

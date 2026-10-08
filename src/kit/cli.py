@@ -133,9 +133,10 @@ def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
         print(f"{args.role} now uses {args.name}; Kit uses it from the next message")
         return 0
     s = store.current()
-    roles = {s.routing.work: "work", s.routing.expert: "expert"}
-    if s.routing.work == s.routing.expert:
-        roles[s.routing.work] = "work, expert"
+    roles: dict[str, list[str]] = {}
+    in_use = (["chat"] if s.routing.mode == "cloud-only" else []) + ["work", "expert"]
+    for role in in_use:
+        roles.setdefault(getattr(s.routing, role), []).append(role)
     print(f"routing: {s.routing.mode}   local model: {s.ollama.model}")
     print(f"cloud budget: ${s.cloud.monthly_cap_usd:.2f} a month\n")
     print(
@@ -146,10 +147,10 @@ def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
         price = f"{m.input_usd_per_mtok:g}/{m.output_usd_per_mtok:g}"
         search = f"${m.search_usd_per_k:g}" if m.web_search else "off"
         print(
-            f"  {name:<14} {roles.get(name, ''):<13} {m.provider:<10} {m.model:<20}"
+            f"  {name:<14} {', '.join(roles.get(name, [])):<13} {m.provider:<10} {m.model:<20}"
             f" {m.effort:<7} {price:<15} {search}"
         )
-    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-first")
+    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-only")
     return 0
 
 
@@ -1035,7 +1036,9 @@ def main(argv: list[str] | None = None) -> int:
     csub.add_parser("check", help="check the settings file is valid")
 
     models = sub.add_parser("models", help="see the models Kit uses, or switch one")
-    models.add_argument("role", nargs="?", choices=["work", "expert"], help="role to switch")
+    models.add_argument(
+        "role", nargs="?", choices=["chat", "work", "expert"], help="role to switch"
+    )
     models.add_argument("name", nargs="?", help="model profile to use for it")
 
     weather = sub.add_parser("weather", help="show the forecast Kit sees")
