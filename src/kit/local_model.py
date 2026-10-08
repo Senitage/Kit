@@ -45,11 +45,18 @@ class LocalModel(Protocol):
 
 
 def lively(s: OllamaSettings, plain: bool = True) -> dict:
-    """Sampling for Kit's own words and thoughts: livelier than his JSON decisions.
-    The repeat penalty is for plain text only; in JSON it would fight the format."""
-    options = {"temperature": s.speak_temperature, "min_p": s.min_p}
+    """Sampling for Kit's own words and thoughts: livelier than his JSON decisions,
+    with top_k and top_p as Gemma's makers suggest. The repeat penalty is for plain
+    text only; in JSON it would fight the format."""
+    options = {
+        "temperature": s.speak_temperature,
+        "min_p": s.min_p,
+        "top_k": s.top_k,
+        "top_p": s.top_p,
+    }
     if plain:
         options["repeat_penalty"] = s.repeat_penalty
+        options["repeat_last_n"] = s.repeat_last_n
     return options
 
 

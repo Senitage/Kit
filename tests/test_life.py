@@ -509,13 +509,15 @@ def test_a_chat_that_has_wound_down_and_coming_back_are_worth_a_thought():
     run(life, pc, clock, 11, snap())
     kind, line = life.think_now()
     assert kind == "chat_ended" and line.startswith("You and Dan were chatting until")
+    # Gone long enough to doze, not long enough for a hello (that's a homecoming).
     life, pc, clock = setup(sleep_after_minutes=10)
     pc.update(snap(idle=601))
     life.on_report()
-    clock.now += timedelta(minutes=40)
+    clock.now += timedelta(minutes=15)
     pc.update(snap(idle=2))
     life.on_report()
-    assert life.think_now() == ("back", "Dan just came back to the PC after 40 minutes away.")
+    assert life.think_now() == ("back", "Dan just came back to the PC after 15 minutes away.")
+    assert life.homecoming is None
 
 
 def test_a_pressing_want_makes_him_pipe_up():

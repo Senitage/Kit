@@ -50,7 +50,23 @@ and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
 
-## Now: Kit's inner life (side stage)
+## Now: Kit as a companion, stage 1
+
+Kit knows how long you were gone, even across a restart. He's glad when you're
+back and says hello once (asking how lunch was, if you said), sees you off with
+one warm line and no guilt, and after his first week is a bit miffed if you
+vanish for hours without a goodbye. He's a small companion on your side rather
+than an assistant: an honest friend who corrects you kindly and asks one
+question at a time. He knows what's true about himself, grows closer to you
+slowly, suggests a small game now and then, and reacts the moment you speak.
+Update and test it with [docs/stage-companion-1.md](docs/stage-companion-1.md).
+
+```
+kit life                                  # now also: how close you are, a hello owed, your last goodbye
+kit eval companion --models gemma4:e4b    # clean goodbyes, no guilt in hellos, honest answers
+```
+
+## Kit's inner life (side stage)
 
 Kit gets a life between conversations: feelings with a reason, private thoughts
 while you work, things he wants to bring up (including "ask me tomorrow..."),

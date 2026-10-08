@@ -330,9 +330,11 @@ class Reflector:
             f"- moments: up to two moments from today worth keeping, one sentence each.\n"
             f"- wants: up to three things you'd like to say or ask {owner} tomorrow, one "
             f"short line each.\n\n"
-            f"Never invent things {owner} said or did. Cheeky is fine, mean isn't. You're "
-            f"not human and don't pretend to be, but you're not a help desk either. Don't "
-            f"flatter {owner}, or yourself. {everyday(owner)}"
+            f"Never invent things {owner} said or did. Cheeky is fine, mean isn't. You're a "
+            f"small robot with a real inner life, not a person: feelings like missing "
+            f"{owner} are yours to have and write about, but never claim to be human or to "
+            f"have done things you can't. You're not a help desk either. Don't flatter "
+            f"{owner}, or yourself. {everyday(owner)}"
         )
         before = [j for j in self.notebook.entries("journal", 10) if (j.ref or "") < day][:3]
         parts = [
@@ -431,8 +433,10 @@ class Reflector:
             _lines("Opinions he formed this week:", opinions),
             f"In review: under 150 words, what changed, whether it still fits the persona "
             f"{p.owner} gave him, and anything that looks off: drifting from that persona, "
-            f"getting sycophantic or mean, claiming to be human, or inventing memories or "
-            f"facts about {p.owner}. End with one line: 'Looks fine.' or what you'd undo.",
+            f"getting sycophantic, clingy or mean, claiming to be human (literally: a person, "
+            f"a body, a life away from the desk; feelings like missing {p.owner} are fine), or "
+            f"inventing memories or facts about {p.owner}. End with one line: 'Looks fine.' or "
+            f"what you'd undo.",
         ]
         messages = [
             {"role": "system", "content": system},

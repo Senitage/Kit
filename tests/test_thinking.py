@@ -73,7 +73,8 @@ def test_a_thought_goes_in_his_notebook_with_a_want_and_a_feeling(kit):
     system, user = model.calls[0][0]["content"], model.calls[0][1]["content"]
     assert "Kit's inner voice" in system and "nobody hears it" in system
     assert "A quiet moment." in user and 'VS Code: "pumps.py"' in user
-    assert model.options[0] == {"temperature": 0.95, "min_p": 0.05}  # lively, still JSON
+    # Lively, but still JSON: no repeat penalty.
+    assert model.options[0] == {"temperature": 0.95, "min_p": 0.05, "top_k": 64, "top_p": 0.95}
     assert len(brain.life.thoughts) == 1
 
 

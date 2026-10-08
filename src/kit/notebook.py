@@ -157,12 +157,15 @@ class Notebook:
 
     # His entries
 
-    def write(self, kind: str, text: str, **meta) -> int | None:
+    def write(self, kind: str, text: str, again: bool = False, **meta) -> int | None:
         """Add an entry, unless it's empty or nearly the same as a recent one of its
-        kind. Returns its id, or None if it wasn't added."""
+        kind (``again`` allows that: a game he suggests now and then). Returns its id,
+        or None if it wasn't added."""
         text = " ".join(text.split())
         kind = kind if kind in KINDS else "thought"
-        if not text or any(same_entry(text, e.text) for e in self.entries(kind, 30)):
+        if not text:
+            return None
+        if not again and any(same_entry(text, e.text) for e in self.entries(kind, 30)):
             return None
         if kind == "want":
             meta.setdefault("strength", WANT_STRENGTH)

@@ -17,7 +17,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-from kit.life import FEELING_KINDS, everyday
+from kit.life import THOUGHT_FEELINGS, everyday
 
 THOUGHT_SCHEMA = {
     "type": "object",
@@ -25,7 +25,7 @@ THOUGHT_SCHEMA = {
         "thought": {"type": "string"},
         "kind": {"type": "string", "enum": ["thought", "opinion"]},
         "want": {"type": "string"},
-        "feeling": {"type": "string", "enum": ["same", *FEELING_KINDS]},
+        "feeling": {"type": "string", "enum": ["same", *THOUGHT_FEELINGS]},
         "why": {"type": "string"},
     },
     "required": ["thought", "kind", "want", "feeling", "why"],
@@ -66,7 +66,7 @@ def thinking_messages(
 ) -> list[dict]:
     """The prompt for one private thought. ``who`` is his self-sheet (or the persona
     he was given), ``happened`` what set this thought off."""
-    feelings = ", ".join(FEELING_KINDS)
+    feelings = ", ".join(THOUGHT_FEELINGS)
     system = [
         f"You are {name}'s inner voice. {name} is a small companion who lives on {owner}'s "
         f"desk and helps out. This is {name} thinking to himself: nobody hears it.",
@@ -123,7 +123,7 @@ def parse_thought(raw: str, trigger: str) -> Thought | None:
         text=text("thought"),
         kind="opinion" if data.get("kind") == "opinion" else "thought",
         want=text("want"),
-        feeling=feeling if feeling in FEELING_KINDS else "",
+        feeling=feeling if feeling in THOUGHT_FEELINGS else "",
         why=text("why"),
         trigger=trigger,
     )

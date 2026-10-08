@@ -396,6 +396,14 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
     for want in state.get("later", [])[:3]:
         print(f"later:    {want['text']} (from {want['after'][:16].replace('T', ' ')})")
     print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
+    if state.get("closeness"):
+        print(f"you two:  {state['closeness']}")
+    if state.get("away_since"):
+        print(f"away:     since {state['away_since'][11:16]} (as far as Kit can tell)")
+    if state.get("hello_owed"):
+        print(f"hello:    owed ({state['hello_owed']}), said at the next chance")
+    if state.get("goodbye"):
+        print(f'goodbye:  "{state["goodbye"]}" (he\'ll ask how it went)')
     print(f"last pipe-up: {state['last_piped_up'] or 'not yet'}")
     if "thoughts_this_hour" in state:
         print(
@@ -750,9 +758,25 @@ async def _eval_routing(paths: KitPaths) -> int:
 
 async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, prompts, show):
     """One model's turn at the voice eval, in a scratch memory that's deleted after."""
+    from kit.evals import run_voice_eval
+
+    return await _local_run(
+        paths,
+        client,
+        settings,
+        lambda brain, name: run_voice_eval(brain, name, prompts, on_line=show),
+    )
+
+
+async def _local_run(
+    paths: KitPaths, client: httpx.AsyncClient, settings: Settings, run, clock=None
+):
+    """``run(brain, model name)`` for one local model, with Kit seeded the same way
+    every time (``seed_voice``), in a scratch memory that's deleted after. ``clock``
+    sets the time Kit thinks it is."""
     from kit.brain import Brain
     from kit.cloud import Cloud
-    from kit.evals import run_voice_eval, seed_voice
+    from kit.evals import seed_voice
     from kit.local_model import LocalModelError, OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
@@ -767,7 +791,7 @@ async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
         return None
     scratch = paths.state_dir / "voice-eval"
     shutil.rmtree(scratch, ignore_errors=True)
-    memory = Memory(scratch / "memory.db")
+    memory = Memory(scratch / "memory.db", clock) if clock else Memory(scratch / "memory.db")
     try:
         # No cloud, no web and words-only recall: the local model alone, as on the desk.
         cloud = Cloud(memory, lambda provider: None, {})
@@ -775,7 +799,7 @@ async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
             lambda: settings, memory, model, cloud, Recall(memory, None, lambda: settings)
         )
         seed_voice(brain)
-        return await run_voice_eval(brain, name, prompts, on_line=show)
+        return await run(brain, name)
     finally:
         memory.close()
         shutil.rmtree(scratch, ignore_errors=True)
@@ -802,15 +826,7 @@ async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int 
     reports = []
     async with httpx.AsyncClient() as client:
         for name in names:
-            settings = base.model_copy(
-                update={
-                    "ollama": base.ollama.model_copy(
-                        update={"model": name, "speak_pass": not one_pass}
-                    ),
-                    "routing": base.routing.model_copy(update={"mode": "local-heavy"}),
-                    "life": base.life.model_copy(update={"reflect_with": "off"}),
-                }
-            )
+            settings = _eval_settings(base, name, one_pass)
             report = await _voice_run(paths, client, settings, prompts, show)
             if report is not None:
                 reports.append(report)
@@ -825,6 +841,57 @@ async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int 
     print(f"\nevery line, side by side: {out}")
     print("pick one with: kit config set ollama.model <name>")
     return 0 if all(r.answered == len(r.spoken) for r in reports) else 1
+
+
+def _eval_settings(base: Settings, name: str, one_pass: bool = False) -> Settings:
+    """Settings for a local-model eval: that model, local-heavy, no nightly reflection."""
+    return base.model_copy(
+        update={
+            "ollama": base.ollama.model_copy(update={"model": name, "speak_pass": not one_pass}),
+            "routing": base.routing.model_copy(update={"mode": "local-heavy"}),
+            "life": base.life.model_copy(update={"reflect_with": "off"}),
+        }
+    )
+
+
+async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
+    """Goodbyes, hellos, wrong facts and news through each local model: does he act
+    like a good companion? Written side by side to read."""
+    from datetime import datetime
+
+    from kit.evals import companion_clock, companion_report, run_companion_eval
+
+    paths.ensure()
+    base = SettingsStore(paths).current()
+    names = names or [base.ollama.model]
+
+    def show(line):
+        mark = "ok  " if line.passed else "FAIL"
+        print(f"{mark} {line.kind:<9} {line.prompt[:30]:<30}  {(line.text or line.why)[:80]}")
+
+    reports = []
+    async with httpx.AsyncClient() as client:
+        for name in names:
+            settings = _eval_settings(base, name)
+            report = await _local_run(
+                paths,
+                client,
+                settings,
+                lambda brain, n: run_companion_eval(brain, n, show),
+                companion_clock(),
+            )
+            if report is not None:
+                reports.append(report)
+            print()
+    if not reports:
+        return 1
+    out = paths.state_dir / "evals" / f"companion-{datetime.now():%Y%m%d-%H%M%S}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(companion_report(reports), encoding="utf-8")
+    for report in reports:
+        print(f"- {report.summary()}".replace("**", ""))
+    print(f"\nevery line, side by side: {out}")
+    return 0 if all(r.passed == len(r.lines) for r in reports) else 1
 
 
 def _parse_link(text: str) -> dict:
@@ -915,7 +982,7 @@ def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="kit", description="Kit, your personal assistant.")
+    parser = argparse.ArgumentParser(prog="kit", description="Kit, your desk companion.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("paths", help="show where Kit keeps its files")
     sub.add_parser("init", help="create Kit's data folder and a starter settings file")
@@ -1009,22 +1076,22 @@ def main(argv: list[str] | None = None) -> int:
 
     ev = sub.add_parser(
         "eval",
-        help="test the local model's replies, memory recall, routing or voice, or compare "
-        "cloud models",
+        help="test the local model's replies, memory recall, routing, voice or how good a "
+        "companion he is, or compare cloud models",
     )
     ev.add_argument(
         "which",
         nargs="?",
         default="replies",
-        choices=["replies", "memory", "routing", "compare", "voice"],
+        choices=["replies", "memory", "routing", "compare", "voice", "companion"],
     )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
         "--models",
         nargs="+",
         default=[],
-        help="compare: model profiles, e.g. sonnet gpt-sol; voice: local models, e.g. "
-        "qwen3:8b gemma4:e4b (default: the one in use)",
+        help="compare: model profiles, e.g. sonnet gpt-sol; voice and companion: local "
+        "models, e.g. qwen3:8b gemma4:e4b (default: the one in use)",
     )
     ev.add_argument(
         "--one-pass", action="store_true", help="voice: answer in one JSON pass, as in stage 1"
@@ -1065,6 +1132,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_eval_memory(paths))
         if args.which == "voice":
             return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
+        if args.which == "companion":
+            return asyncio.run(_eval_companion(paths, args.models))
         if args.which == "compare":
             if not args.models:
                 print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")
