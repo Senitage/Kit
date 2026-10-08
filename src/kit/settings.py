@@ -211,6 +211,13 @@ class RoutingSettings(_Section):
         description="If the cloud can't be reached (offline, no key, budget used up), "
         "the local model answers instead.",
     )
+    check_facts: bool = Field(
+        True,
+        description="When you put something to Kit to agree with (\"Perth's the capital, "
+        "isn't it?\"), the work model checks it in a second or so, while Kit gets ready "
+        "to answer, and he says the answer himself. Off: the local model goes by what it "
+        "knows.",
+    )
 
 
 class CloudSettings(_Section):

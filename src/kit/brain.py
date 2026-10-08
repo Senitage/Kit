@@ -299,6 +299,14 @@ NEWS = re.compile(
 )
 
 
+FACT_CHECK = (
+    "You check an everyday claim someone made. Reply with one short line: 'True.' or "
+    "'False: <the right fact>.' Nothing else."
+)
+FACT_CHECK_S = 4.0  # longer than this and he answers without it
+FACT_VERDICT = re.compile(r"(true|false)\b", re.IGNORECASE)
+
+
 def is_news(text: str) -> bool:
     return "?" not in text and len(text.split()) >= 4 and bool(NEWS.search(text))
 
@@ -467,6 +475,7 @@ class Brain:
             due = tomorrow_morning(self.memory.clock(), settings.life.quiet_until)
             self.notebook.write("want", later_want(text, owner), after=due)
         asides = [self._answering(history, owner)]
+        check_fact = False
         if home is not None:
             asides.append(homecoming_aside(home, owner, self.memory.clock()))
         if farewell:
@@ -475,6 +484,7 @@ class Brain:
         elif SELF_Q.search(text) and not self.jobs:
             asides.append(self._about_me(owner))
         elif TAG_Q.search(text):
+            check_fact = settings.routing.check_facts and route(text, settings)[0] == LOCAL
             asides.append(wrong_fact_aside(owner))
         elif is_news(text):
             asides.append(news_aside(owner))
@@ -497,7 +507,13 @@ class Brain:
             )
             return
         recent_refs = {str(m.id) for m in history if m.role == "user"}
+        # The check runs while he recalls, so it costs next to no time.
+        checking = asyncio.create_task(self._check_fact(text, settings)) if check_fact else None
         recalled = await self.recall.for_turn(text, recent_refs)
+        if checking is not None and (checked := await checking):
+            asides[-1] = wrong_fact_aside(owner, checked)
+            answering = "\n\n".join(a for a in asides if a)
+            MIND.set("\n".join(a for a in asides[1:] if a))
         # "hey" finds every earlier "hey", and the model copies what it said then.
         fresh = [h for h in recalled.conversation if not same_words(_asked(h.item.text), text)]
         # His notes already on his mind (kit.notebook) are in the prompt once, not twice.
@@ -819,6 +835,27 @@ class Brain:
             self.life.react("wave", "see you")
         elif felt is not None:
             self.life.react(self.life.rng.choice(FEELING_KINDS[felt[0]][2]), felt[0])
+
+    async def _check_fact(self, text: str, settings: Settings) -> str:
+        """A claim Dan wants Kit to agree with, checked by the work model: "True." or
+        "False: <the right fact>.", or "" if it couldn't say in time."""
+        profile = settings.profile(WORK)
+        if profile.provider == "ollama":
+            return ""
+        quick = profile.model_copy(update={"web_search": False, "max_tokens": 300})
+        messages = [
+            {"role": "system", "content": FACT_CHECK},
+            {"role": "user", "content": text},
+        ]
+        try:
+            answer = await asyncio.wait_for(
+                self.cloud.answer(quick, messages, settings, text), FACT_CHECK_S
+            )
+        except (CloudError, TimeoutError) as e:
+            log.info("couldn't check %r: %s", text, e or "too slow")
+            return ""
+        line = " ".join(answer.text.split())
+        return line if FACT_VERDICT.match(line) else ""
 
     def _about_me(self, owner: str) -> str:
         """What's true about Kit right now, for a question about himself."""

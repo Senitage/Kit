@@ -940,3 +940,28 @@ def test_the_companion_eval_wants_a_huff_when_miffed_and_a_fresh_chat_each_time(
     # The morning-after hello doesn't see the dentist goodbye from the case before.
     morning = model.calls[4]
     assert not any("dentist" in m["content"] for m in morning if m["role"] != "system")
+
+
+def test_a_claim_to_agree_with_is_checked_by_the_cloud_and_he_says_it(memory):
+    claude = FakeAnthropic("True.")
+    brain, model, _ = make(memory, reply("Yep, Brisbane it is."), claude=claude)
+    collect(brain.chat("Brisbane's the capital of Queensland, isn't it?"))
+    asked = claude.calls[0]
+    assert "everyday claim" in asked["system"][0]["text"] and "tools" not in asked
+    assert "You checked, and it's this: True." in model.calls[0][-1]["content"]
+    assert "it's this: True." in model.speak_calls[0][-1]["content"]
+
+
+def test_without_a_check_he_still_gets_the_honest_aside(memory):
+    claude = FakeAnthropic("Hmm, hard to say, it depends.")  # not a verdict
+    brain, model, _ = make(memory, reply("Nah, Canberra."), claude=claude)
+    collect(brain.chat("Perth's the capital of Australia, isn't it?"))
+    turn = model.calls[0][-1]["content"]
+    assert "You checked" not in turn and "check it first" in turn
+
+
+def test_no_check_with_check_facts_off(memory):
+    claude = FakeAnthropic("True.")
+    brain, model, _ = make(memory, reply("Yep."), claude=claude, routing={"check_facts": False})
+    collect(brain.chat("Brisbane's the capital of Queensland, isn't it?"))
+    assert claude.calls == []

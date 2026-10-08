@@ -38,6 +38,9 @@ work = "sonnet"
 expert = "opus"
 # If the cloud can't be reached, the local model answers instead.
 fallback_to_local = true
+# "Perth's the capital, isn't it?": the work model checks it quickly and Kit
+# says the answer himself, rather than the local model going by what it knows.
+check_facts = true
 
 [cloud]
 # Kit stops using cloud models once this month's spend reaches the cap.

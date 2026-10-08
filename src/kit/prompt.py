@@ -456,8 +456,16 @@ def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
     )
 
 
-def wrong_fact_aside(owner: str) -> str:
-    """Beside "..., isn't it?": an honest friend doesn't just agree."""
+def wrong_fact_aside(owner: str, checked: str = "") -> str:
+    """Beside "..., isn't it?": an honest friend doesn't just agree. ``checked`` is what
+    a quick check with a cloud model said ("True." or "False: ..."), when there was one:
+    a small local model doesn't know that Brisbane is Queensland's capital."""
+    if checked:
+        return (
+            f"[{owner} wants you to agree. You checked, and it's this: {checked} Tell "
+            f"{owner} so in your own words: agree if it's true, and if it's wrong, say so "
+            f"kindly with the right answer. Don't change the subject.]"
+        )
     return (
         f"[{owner} wants you to agree, but check it first. If it's true, say yes. If any "
         f"of it is wrong, even technically, say so kindly and give the right answer in plain "
