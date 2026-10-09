@@ -52,7 +52,7 @@ expert = "opus"
 confirm_expert = true
 # If the cloud can't be reached, the local model answers instead.
 fallback_to_local = true
-# "Perth's the capital, isn't it?": the work model checks it quickly and Kit
+# "Sydney's the capital, isn't it?": the work model checks it quickly and Kit
 # says the answer himself, rather than the local model going by what it knows.
 check_facts = true
 # Who does Kit's own background work: his private thoughts, his pipe-ups and
@@ -126,9 +126,9 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # [persona]
 # name = "Kit"
 # owner = "Dan"
-# location = "Perth, WA"       # city, state: web searches look near here
+# location = "Richmond, NSW"   # city, state: web searches look near here
 # country = "AU"
-# timezone = "Australia/Perth"
+# timezone = "Australia/Sydney"
 # traits = ["curious", "dry sense of humour", "loyal and practical"]
 #
 # [[persona.examples]]

@@ -132,7 +132,7 @@ class Weather:
         )
 
     async def find(self, place: str, country: str = "") -> Place:
-        """Where ``place`` is. "Perth, WA" is looked up as Perth, preferring a match
+        """Where ``place`` is. "Richmond, NSW" is looked up as Richmond, preferring a match
         whose state starts with WA's letters, within ``country`` if given."""
         key = (place.strip().lower(), country.upper())
         if key in self._places:
