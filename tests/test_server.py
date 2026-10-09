@@ -54,6 +54,15 @@ def test_chat_streams_ndjson(setup):
     assert [m["role"] for m in history] == ["user", "kit"]
 
 
+def test_the_log_says_how_long_a_reply_took(setup, caplog):
+    client, _, _ = setup
+    with caplog.at_level("INFO", logger="kit.server"):
+        client.post("/api/chat", json={"text": "hi"}, headers=AUTH)
+    said = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn:")]
+    assert any(m.startswith("turn: first words") for m in said)
+    assert any(m.startswith("turn: reply done") for m in said)
+
+
 def test_settings_change_and_undo(setup):
     client, _, model = setup
     r = client.patch(

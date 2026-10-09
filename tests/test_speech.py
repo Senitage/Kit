@@ -53,20 +53,30 @@ def test_sentences_come_out_as_soon_as_they_end():
 
 
 def test_abbreviations_and_decimals_dont_end_a_sentence():
-    said = stream(SentenceSplitter(), "Check the duty, e.g. at 3.5 bar. Then the cyclone.")
-    assert said == ["Check the duty, e.g. at 3.5 bar.", "Then the cyclone."]
+    said = stream(SentenceSplitter(), "Right. Check the duty, e.g. at 3.5 bar. Then the cyclone.")
+    assert said == ["Right.", "Check the duty, e.g. at 3.5 bar.", "Then the cyclone."]
 
 
 def test_a_long_first_sentence_is_cut_at_a_comma_so_he_starts_sooner():
     text = "Well, I had a look at the pump curves you sent over, and the duty point sits high."
     said = stream(SentenceSplitter(), text)
     assert said == [
-        "Well, I had a look at the pump curves you sent over,",
-        "and the duty point sits high.",
+        "Well,",
+        "I had a look at the pump curves you sent over, and the duty point sits high.",
     ]
     # Only the first: later long sentences stay whole.
     later = stream(SentenceSplitter(), "Hi. " + text)
     assert later == ["Hi.", text]
+
+
+def test_a_first_sentence_with_no_comma_is_cut_before_an_and():
+    text = "I had a look at the photos from the weekend and the dog looks pretty happy."
+    assert stream(SentenceSplitter(), text) == [
+        "I had a look at the photos from the weekend",
+        "and the dog looks pretty happy.",
+    ]
+    short = "That sounds like a good plan to me."
+    assert stream(SentenceSplitter(), short) == [short]
 
 
 def test_blank_lines_and_spaces_never_become_pieces():

@@ -12,6 +12,7 @@ import contextlib
 import json
 import logging
 import secrets
+import time
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Annotated
@@ -36,6 +37,18 @@ from kit.speech.service import SpeechError, SpeechService
 from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
+
+
+class _Turn:
+    """When the latest chat message came in, so the log can say how long Kit took to
+    start writing, finish, and make his first sound."""
+
+    def __init__(self) -> None:
+        self.started = 0.0
+
+    def since(self) -> float:
+        return time.monotonic() - self.started if self.started else 0.0
+
 
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
@@ -307,10 +320,19 @@ def create_app(
             raise _settings_error(e) from e
         return {"settings": settings.model_dump(mode="json"), "problem": store.problem}
 
+    turn = _Turn()  # when Dan's latest message came in, for the timing lines in the log
+
     @app.post("/api/chat", dependencies=auth)
     async def chat(body: ChatIn) -> StreamingResponse:
         async def events() -> AsyncIterator[str]:
+            turn.started = time.monotonic()
+            first_words = True
             async for event in brain.chat(body.text, body.channel):
+                if first_words and event.get("type") == "say" and event.get("text"):
+                    first_words = False
+                    log.info("turn: first words %.2f s after the message", turn.since())
+                elif event.get("type") == "reply":
+                    log.info("turn: reply done %.2f s after the message", turn.since())
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -613,6 +635,13 @@ def create_app(
             )
         except SpeechError as e:
             raise HTTPException(503, str(e)) from e
+        if body.first:
+            log.info(
+                "turn: first sound made in %.2f s (%.1f s of speech), %.2f s after the message",
+                spoken.synth_ms / 1000,
+                spoken.audio_ms / 1000,
+                turn.since(),
+            )
         return Response(
             spoken.wav,
             media_type="audio/wav",

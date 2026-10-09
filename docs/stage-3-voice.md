@@ -26,10 +26,14 @@ word, speech to text) is the next part of stage 3.
   environments. Switching engines stops the old program, which frees the graphics
   card memory it held.
 - **Sentence by sentence.** The brain now sends Kit's mood before his words. The
-  desk app cuts the words into sentences as they stream in (a long first sentence
-  is cut at its first comma), asks the server for each one, and plays it while the
-  next is being made. So Kit starts talking about one sentence after the brain
-  does, not after the whole reply.
+  desk app cuts the words into sentences as they stream in, asks the server for
+  each one, and plays it while the next is being made. The first sentence is cut
+  short where it can be, at its first comma ("Yeah, ...") or before an "and" or
+  "but", because Chatterbox makes a whole piece before any of it plays. So Kit
+  starts talking a few words after the brain does, not after the whole reply.
+- **Timing in the log.** Each reply leaves three lines in the server log
+  (`journalctl -u kit`): when his first words came, when the reply was done, and
+  how long his first sound took to make, all counted from Dan's message.
 - **His last sentence doesn't wait.** The brain says `spoken` as soon as Kit's
   words are complete (a blank line, or three sentences), while the local model is
   still writing any detail for the screen. His voice used to wait about two
