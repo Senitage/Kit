@@ -50,7 +50,25 @@ and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
 
-## Now: Kit as a companion, stage 2
+## Now: Kit as a companion, stage 3
+
+A life of his own, and feeling it. While you're away he keeps himself busy
+(watching the weather, rereading his journal, thinking about the cat) and
+tells you truthfully what he got up to. He knows Friday arvo from Monday
+morning and the WA public holidays, reads "not stressed, footy's on late" the
+right way (and, once `kit eval mood` passes on your own lines, reads your mood
+by meaning), can feel two things at once, gets tired, sticks to his views, and
+looks before he pipes up. On a really bad night he drops the cheek and stays.
+Each change is a setting, off until you turn it on (the bad-night care is on).
+Update and test it with
+[docs/stage-companion-3.md](docs/stage-companion-3.md).
+
+```
+kit life         # now also: where he is and what he's doing, energy, dials
+kit eval mood    # does reading your mood by meaning beat the words?
+```
+
+## Kit as a companion, stage 2
 
 He follows your life. Mention something coming up ("dentist Thursday arvo") and
 he asks how it went once it's over; ask him to check in after your 2 pm and he

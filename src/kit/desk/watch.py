@@ -189,7 +189,25 @@ def build_snapshot(
             f["site"] = tab["site"]
             if not tab["title"]:
                 f["title"] = ""
+    if config.share_playing:
+        snap["now_playing"] = now_playing(snap["windows"], (snap.get("browser") or {}).get("tabs"))
     return snap
+
+
+PLAYER_IDLE = {"", "spotify", "spotify premium", "spotify free"}
+SITE_SUFFIX = re.compile(r"\s+[-|\u2013]\s+(YouTube|YouTube Music|Spotify|SoundCloud)\s*$", re.I)
+
+
+def now_playing(windows: list[dict], tabs: list[dict] | None = None) -> str:
+    """What's playing, from titles already cleared for sending: Spotify's window
+    ("Artist - Song") or a browser tab making sound. "" if nothing is."""
+    for w in windows:
+        if w.get("app") == "Spotify" and w.get("title", "").strip().lower() not in PLAYER_IDLE:
+            return w["title"].strip()[:300]
+    for t in tabs or []:
+        if t.get("audible") and t.get("title"):
+            return SITE_SUFFIX.sub("", t["title"]).strip()[:300]
+    return ""
 
 
 class Reporter:

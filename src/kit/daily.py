@@ -200,8 +200,7 @@ class Daily:
 
     def _low(self) -> bool:
         """Dan's had bad news or a rough day: no questions or nudges just now."""
-        felt = self.life.feeling_now()
-        return felt is not None and felt.name in ("sad", "worried", "sympathetic", "hurt")
+        return self.life.bad_night() or self.life.feels("sad", "worried", "sympathetic", "hurt")
 
     def _sleep(self, now: datetime) -> bool:
         life = self.settings().life

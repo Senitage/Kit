@@ -386,9 +386,17 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
             return 1
     state = r.json()
     print(f"mood:     {state['mood']}")
+    if state.get("presence") and state["presence"] != "here":
+        doing = f", {state['doing']}" if state.get("doing") else ""
+        print(f"where:    {state['presence']}{doing}")
     felt = state.get("feeling")
     if felt:
         print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")
+    also = state.get("also_feeling")
+    if also:
+        print(f"also:     {also['name']}, because {also['why']}")
+    if state.get("bad_night"):
+        print("care:     you're having a rough time, so no cheek for now")
     print("drives:   " + ", ".join(f"{k} {v}" for k, v in state["drives"].items()))
     if state.get("thinking"):
         print(f"thinking: {state['thinking']}")
@@ -408,6 +416,15 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
         print(f"hello:    owed ({state['hello_owed']}), said at the next chance")
     if state.get("goodbye"):
         print(f'goodbye:  "{state["goodbye"]}" (he\'ll ask how it went)')
+    if state.get("did_today"):
+        print("on his own today: " + "; ".join(state["did_today"]))
+    if state.get("dials"):
+        d = state["dials"]
+        print(f"dials:    lively {d['arousal']}, happy {d['valence']}")
+    if state.get("taken_up"):
+        print("taken up: " + ", ".join(f"{k} {v}" for k, v in state["taken_up"].items()))
+    if state.get("mood_reading"):
+        print(f"reads you by: {state['mood_reading']}")
     print(f"last pipe-up: {state['last_piped_up'] or 'not yet'}")
     if "thoughts_this_hour" in state:
         print(
@@ -868,6 +885,103 @@ def _eval_settings(base: Settings, name: str, one_pass: bool = False) -> Setting
     )
 
 
+async def _eval_mood(paths: KitPaths) -> int:
+    """Calibrate reading Dan's mood by meaning (``life.read_mood``): Dan's labelled
+    lines (companion-lines.toml in Kit's config folder) read by the model that would
+    read them in chat, against the word rules. Reading by meaning switches on only
+    once it beats them on at least 40 lines; the result is kept in Kit's memory."""
+    import json
+    from datetime import datetime
+
+    from kit.brain import CHAT, MOOD_CALIBRATION, own_role
+    from kit.evals import (
+        MOOD_LINES_FILE,
+        MOOD_LINES_NEEDED,
+        load_mood_lines,
+        mood_starter,
+        run_mood_eval,
+    )
+    from kit.local_model import OllamaModel
+    from kit.memory import Memory
+    from kit.prompt import mood_lines
+    from kit.reply import mood_read, plan_schema
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    settings = store.current()
+    own = paths.config_dir / MOOD_LINES_FILE
+    if not own.exists():
+        own.write_text(mood_starter(), encoding="utf-8")
+        print(f"started {own} with a few generic lines: add your own, the way you talk")
+    lines = load_mood_lines(own)
+    owner = settings.persona.owner
+    system = "\n".join(
+        [
+            f"You read how {owner} seems from one message they sent.",
+            *mood_lines(owner),
+            "Answer only with JSON: emotion, gesture, dan_mood, about, for_whom, expected, "
+            'and action {"kind": "none"}.',
+        ]
+    )
+
+    def messages(text: str) -> list[dict]:
+        return [{"role": "system", "content": system}, {"role": "user", "content": text}]
+
+    memory = Memory(paths.state_dir / "memory.db")
+    try:
+        async with httpx.AsyncClient() as client:
+            role = own_role(settings)
+            plain = None
+            if role == CHAT:
+                cloud = make_cloud(paths, memory, client)
+                profile = settings.profile(CHAT).model_copy(update={"web_search": False})
+                reader = profile.name
+
+                async def read(text: str):
+                    answer = await cloud.answer(profile, messages(text), settings, "mood eval")
+                    return mood_read(answer.text)
+
+            else:
+                model = OllamaModel(lambda: settings.ollama, client)
+                reader = settings.ollama.model
+
+                async def read(text: str):
+                    return mood_read(await model.complete(messages(text), plan_schema(True)))
+
+                async def plain(text: str):
+                    await model.complete(messages(text), plan_schema(False))
+
+            print(f"reading {len(lines)} lines with {reader}...")
+
+            def show(line) -> None:
+                mark = "ok  " if line.meaning_right else "MISS"
+                words = "ok" if line.words_right else "miss"
+                print(
+                    f"{mark} {line.seconds:4.1f}s  {line.text[:52]:52}  wanted {line.label}, "
+                    f"meaning {line.meaning}, words {line.words} ({words})"
+                )
+
+            report = await run_mood_eval(lines, read, plain, owner, show)
+        result = report.as_dict(datetime.now(), reader)
+        memory.set_self_value(MOOD_CALIBRATION, json.dumps(result))
+    finally:
+        memory.close()
+    print()
+    print(f"right by meaning: {report.meaning}/{len(report.lines)}")
+    print(f"right by words:   {report.words}/{len(report.lines)}")
+    if report.seconds() is not None:
+        print(f"reading took:     median {report.seconds():.2f}s a line")
+    if report.added_seconds() is not None:
+        print(f"adds to a plan:   median {report.added_seconds():+.2f}s before he starts talking")
+    if len(report.lines) < MOOD_LINES_NEEDED:
+        print(f"add more lines to {own}: {MOOD_LINES_NEEDED} are needed, there are {len(lines)}")
+    if report.passed:
+        print("passed: with life.read_mood = meaning, Kit now reads you by meaning")
+    else:
+        print("not passed: Kit keeps reading your words, whatever life.read_mood says")
+    return 0 if report.passed else 1
+
+
 async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
     """Goodbyes, hellos, wrong facts and news through each local model: does he act
     like a good companion? Written side by side to read."""
@@ -1092,14 +1206,14 @@ def main(argv: list[str] | None = None) -> int:
 
     ev = sub.add_parser(
         "eval",
-        help="test the local model's replies, memory recall, routing, voice or how good a "
-        "companion he is, or compare cloud models",
+        help="test the local model's replies, memory recall, routing, voice, how good a "
+        "companion he is or how well he reads your mood, or compare cloud models",
     )
     ev.add_argument(
         "which",
         nargs="?",
         default="replies",
-        choices=["replies", "memory", "routing", "compare", "voice", "companion"],
+        choices=["replies", "memory", "routing", "compare", "voice", "companion", "mood"],
     )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
@@ -1150,6 +1264,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
         if args.which == "companion":
             return asyncio.run(_eval_companion(paths, args.models))
+        if args.which == "mood":
+            return asyncio.run(_eval_mood(paths))
         if args.which == "compare":
             if not args.models:
                 print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")

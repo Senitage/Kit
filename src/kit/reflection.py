@@ -41,7 +41,7 @@ from datetime import date, timedelta
 
 from kit.cloud import Cloud, CloudError
 from kit.knowledge import Item
-from kit.life import alike, cheek_style, everyday, parse_time, quoted, same_words
+from kit.life import alike, and_list, cheek_style, everyday, parse_time, quoted, same_words
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import DAYS, FACTS, Memory
 from kit.notebook import Notebook, basis, morning
@@ -348,6 +348,24 @@ class Reflector:
             log.warning("Kit gave up on %s after %d tries", job, MAX_TRIES)
         return tries[job] >= MAX_TRIES
 
+    def _alone_day(self, day: str, owner: str, noted: list[Item], quirks: list[str]) -> Reflection:
+        """A day without a word from Dan, only his own thoughts: one line in his
+        journal, written here, with no model (and no cloud spend). His self-sheet
+        stays as it is: there was nobody to learn from."""
+        did: list[str] = []
+        for entry in noted:
+            doing = str(entry.meta.get("doing") or "")
+            if doing and doing not in did:
+                did.append(doing)
+        line = f"Didn't see {owner} today."
+        if did:
+            line += f" On my own I was {and_list(did[:4])}."
+        else:
+            line += " Just me and my thoughts on the desk."
+        private = any(e.meta.get("private") for e in noted)
+        self.notebook.write_journal(day, line, private=private)
+        return Reflection(day, journal=line, quirks=quirks, by="no model: a day on his own")
+
     async def reflect_day(self, day: str) -> Reflection | None:
         """Look back on ``day``: journal, self-sheet, quirks, opinions, moments and
         tomorrow's wants. None if no model could do it (try again later)."""
@@ -359,6 +377,8 @@ class Reflector:
         quirks = self.notebook.quirks()
         if not said and not noted:
             return Reflection(day, quirks=quirks)  # a day he wasn't part of
+        if not said and all(e.meta.get("trigger") == "alone" for e in noted):
+            return self._alone_day(day, owner, noted, quirks)
         summary = next((i.text for i in self.memory.index.items(DAYS) if i.ref == day), "")
         held = len(shown := self.memory.shared(said)) < len(said)
         cloud = settings.life.reflect_with == "cloud"

@@ -145,3 +145,13 @@ now_days = 14                # "how you've been lately" memories fade after this
 # bedtime = "22:30"
 # desk_hours = 3.0          # at the desk this long without a break: the outside nudge
 # work_triggers = false     # curious about work apps, sites and builds on screen
+# alone_thoughts_per_hour = 0  # away life: he entertains himself while you're out and
+#                           # thinks about it this often (local model only); 1 is plenty
+# week_thoughts = false     # Monday, Friday and Saturday mornings, WA public holidays
+# read_mood = "words"       # words, or meaning (after a passed `kit eval mood`)
+# mixed_feelings = false    # two feelings at once
+# bad_night = true          # a really bad time: no cheek, he stays, mentions Lifeline once
+# energy_need = false       # chats, cloud jobs and late nights tire him; sleep restores
+# opinions = 0              # standing opinions he keeps in mind when he talks (0 to 2)
+# dials = false             # liveliness and happiness dials that the face shows
+# pipe_up_bar = 0.0         # score a pipe-up first and keep quiet below this (0.5)
