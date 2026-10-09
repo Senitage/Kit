@@ -60,8 +60,32 @@ begin
   Result := ExpandConstant('{param:update|0}') = '1';
 end;
 
+procedure StopKit;
+var
+  Code: Integer;
+begin
+  { Kit's 3D face runs in Qt's web helper (QtWebEngineProcess.exe), which has no
+    window, so Windows can't ask it to close and setup stops at "close these
+    programs". Stop Kit and its helpers first, only those running from Kit's folder. }
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'Get-Process Kit,QtWebEngineProcess -ErrorAction SilentlyContinue | ' +
+    'Where-Object { $_.Path -like ''' + ExpandConstant('{app}') + '\*'' } | ' +
+    'Stop-Process -Force -ErrorAction SilentlyContinue"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(500);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopKit;
+  Result := '';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    StopKit;
   { Remove start-at-logon whether the installer or the app's settings turned it on.
     Kit's settings and token in %APPDATA%\Kit Desk are kept, so a reinstall
     reconnects without asking again. }
