@@ -96,10 +96,33 @@ def memory_brain(paths):
         {"memory": {"min_similarity": 0.3}, "persona": {"location": HOME, "country": "AU"}}
     )
 
-    def make(*outputs):
-        model = FakeModel(*outputs)
+    def make(*outputs, model=FakeModel):
+        model = model(*outputs)
         recall = Recall(memory, FakeEmbedder(), lambda: s)
         return Brain(lambda: s, memory, model, make_cloud(memory, FakeAnthropic()), recall)
 
     yield make
     memory.close()
+
+
+def test_a_forecast_that_lands_while_he_answers_is_still_shown(memory_brain):
+    from fakes import FakeModel
+    from kit.weather import Today
+
+    class SlowWeather(FakeWeather):
+        async def today(self, place, country="", ahead=0):
+            await asyncio.sleep(0.05)  # done while he's answering, not before
+            return Today(place, 17.0, "partly cloudy", 21.0, 9.0, 10)
+
+    class SlowModel(FakeModel):
+        async def stream(self, *args, **kwargs):
+            await asyncio.sleep(0.2)
+            async for part in super().stream(*args, **kwargs):
+                yield part
+
+    brain = memory_brain(reply("Partly cloudy, about 17."), model=SlowModel)
+    brain.weather = SlowWeather()
+    events = collect(brain.chat("What's the weather like today?"))
+    kinds = [e["type"] for e in events]
+    assert kinds.count("show") == 1 and kinds.index("show") > kinds.index("reply")
+    assert next(e for e in events if e["type"] == "show")["show"]["text"] == "17°"

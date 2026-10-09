@@ -718,7 +718,8 @@ class Brain:
             asides[0] = ""  # he piped up about something Dan kept local
             answering = "\n\n".join(a for a in asides if a)
         await asyncio.sleep(0)  # the time and date are ready at once; the weather may be
-        if showing.done():
+        shown = showing.done()
+        if shown:
             self._emit_show(showing, emit)
         emotion, reply_id = "", None
         async for event in self._converse(
@@ -738,8 +739,9 @@ class Brain:
                     event = {**event, "question": text}
             emit(self._track(event, said))
 
-        if not showing.done():
-            await asyncio.wait({showing}, timeout=SHOW_WAIT_S)
+        if not shown:  # still looking it up when he started, maybe done since
+            if not showing.done():
+                await asyncio.wait({showing}, timeout=SHOW_WAIT_S)
             self._emit_show(showing, emit)
         read = READ.get()
         from_read = feeling_from_read(read, text, owner) if read else None
