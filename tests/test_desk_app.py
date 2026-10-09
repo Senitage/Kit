@@ -1,5 +1,6 @@
 """The desk app's windows, run without a screen. Needs the desk extra."""
 
+import gc
 import os
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", reason="desk extra (PySide6) not installed")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPointF, Qt  # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -19,6 +20,19 @@ from kit.desk.config import DeskConfig, save_token  # noqa: E402
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def tidy_qt():
+    """Free each test's windows when it ends. Left to Python's garbage collector, a
+    finished test's Qt objects can be deleted in the middle of a later test's event
+    loop, which crashes Qt on Windows."""
+    yield
+    gc.collect()
+    app = QApplication.instance()
+    if app is not None:
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
 
 
 @pytest.fixture
