@@ -7,16 +7,43 @@ on-screen helper and later gets a body: a desk robot arm.
 Kit is built in tested stages. The plan and each stage's test checklist are in
 the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91).
 
+## Where Kit is up to (9 October 2026)
+
+| Part | State | Pull requests |
+| --- | --- | --- |
+| Stage 0: setup and `kit check` | Passed | #1 |
+| Stage 1: text brain and memory | Passed | #2 |
+| Stage 2: desk app and Glow face | Passed, redesign and self-updates merged | #3, #4, #5 |
+| Inner life: feelings, notebook, nightly reflection | Merged | #6 |
+| Notes in the NAS vault, only when asked | Merged | #7, #8, #10 |
+| Companion stage 1: he knows you were gone | Merged | #12 |
+| Companion stage 2: he follows your life | Merged | #13, #14 |
+| Cloud-only routing (Haiku chats, Sonnet works, ask before Opus) | Merged | #15 |
+| Cloud spend per day and model | Merged | #19 |
+| Companion stage 3: a life of his own, and feeling it | Merged | #17 |
+| His thoughts and pipe-ups can go to the cloud too | Merged | #21 |
+| Character sheets for his face (Retro first), 2D or 3D per app | Merged | #20 |
+| Desk app: words under his face, face shows, a Mood page | Built, test build in use | #18 (draft) |
+| Stage 3 part 1: Kit's voice | Built and being tested, not merged | #9 (draft) |
+| Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
+
+Next up: companion stages 4 and 5, then land the voice (#9) and vision (#11),
+then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
+Claude Code bridge). The full list and the decisions still open are at the top
+of the roadmap.
+
 ## Stage 1: text brain
 
 Kit chats by text in a browser or terminal. It recalls what's relevant from
 everything it has learned, by words and by meaning, and keeps its facts tidy
 as things change ([how memory works](docs/memory.md)). A register of things
 (people, vehicles, places, projects, equipment) tells it where each one lives:
-which NAS folder, Obsidian note, home_app record or Home Assistant area. Small talk stays on the
-local model; real questions go to a cloud model (Claude, GPT or Gemini, your
-choice) with web search, within a monthly budget. How much stays local is a
-setting, and Kit keeps chatting locally while a slow cloud answer works. It has settings and memory pages with history and undo. Set it up and test it with
+which NAS folder, Obsidian note, home_app record or Home Assistant area. Real
+questions go to a cloud model (Claude, GPT or Gemini, your choice) with web
+search, within a monthly budget. How much stays local is a setting
+(`routing.mode`): `balanced` keeps small talk on the local model, and
+`cloud-only` has a cheap chat model (Haiku) answer everything, hand real work
+to Sonnet and ask before calling Opus. It has settings and memory pages with history and undo. Set it up and test it with
 [docs/stage-1-text-brain.md](docs/stage-1-text-brain.md). Ideas waiting for a later stage are in
 [docs/improvements.md](docs/improvements.md).
 
@@ -50,7 +77,57 @@ and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
 
-## Now: Kit's inner life (side stage)
+## Kit as a companion, stage 3
+
+A life of his own, and feeling it. While you're away he keeps himself busy
+(watching the weather, rereading his journal, thinking about the cat) and
+tells you truthfully what he got up to. He knows Friday arvo from Monday
+morning and the WA public holidays, reads "not stressed, footy's on late" the
+right way (and, once `kit eval mood` passes on your own lines, reads your mood
+by meaning), can feel two things at once, gets tired, sticks to his views, and
+looks before he pipes up. On a really bad night he drops the cheek and stays.
+Each change is a setting, off until you turn it on (the bad-night care is on).
+Update and test it with
+[docs/stage-companion-3.md](docs/stage-companion-3.md).
+
+```
+kit life         # now also: where he is and what he's doing, energy, dials
+kit eval mood    # does reading your mood by meaning beat the words?
+```
+
+## Kit as a companion, stage 2
+
+He follows your life. Mention something coming up ("dentist Thursday arvo") and
+he asks how it went once it's over; ask him to check in after your 2 pm and he
+does. A new chat picks up one thing from the last, Monday brings "how was the
+weekend?", and each night he writes what's going on with you so he never asks
+what he already knows. He gets to know you a question a day, nudges you to bed
+or outside once a day, keeps running jokes, and Claude steps in for the moments
+that matter. Update and test it with
+[docs/stage-companion-2.md](docs/stage-companion-2.md).
+
+```
+kit life             # now also: what he'll ask about and when
+kit life notebook    # what's going on with you, threads, running jokes
+```
+
+## Kit as a companion, stage 1
+
+Kit knows how long you were gone, even across a restart. He's glad when you're
+back and says hello once (asking how lunch was, if you said), sees you off with
+one warm line and no guilt, and after his first week is a bit miffed if you
+vanish for hours without a goodbye. He's a small companion on your side rather
+than an assistant: an honest friend who corrects you kindly and asks one
+question at a time. He knows what's true about himself, grows closer to you
+slowly, suggests a small game now and then, and reacts the moment you speak.
+Update and test it with [docs/stage-companion-1.md](docs/stage-companion-1.md).
+
+```
+kit life                                  # now also: how close you are, a hello owed, your last goodbye
+kit eval companion --models gemma4:e4b    # clean goodbyes, no guilt in hellos, honest answers
+```
+
+## Kit's inner life (side stage)
 
 Kit gets a life between conversations: feelings with a reason, private thoughts
 while you work, things he wants to bring up (including "ask me tomorrow..."),

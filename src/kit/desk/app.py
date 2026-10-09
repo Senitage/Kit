@@ -63,7 +63,8 @@ from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
 from kit.desk.window import ConnectionForm, KitWindow, in_background
-from kit.face import Face
+from kit.face import Face, character
+from kit.face.character import CharacterError
 
 log = logging.getLogger("kit.desk")
 
@@ -77,6 +78,7 @@ LOOK_FIELDS = ("theme", "accent", "eye_colour", "face_size", "font_pt", "speech_
 UPDATE_FIELDS = ("check_updates", "update_repo")
 # What Kit's state reads as on the face while he works.
 FACE_STATES = {
+    "listening": "listening",
     "thinking": "thinking",
     "remembering": "thinking",
     "looking at your PC": "working",
@@ -89,6 +91,21 @@ def extension_folder() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent / "chrome-extension"
     return Path(__file__).parent / "browser_extension"
+
+
+def load_character(client: BrainClient) -> bool:
+    """Draw Kit from the brain's character sheet, so he looks and moves the same here
+    as in home_app and on his robot screens, and a redesign needs no reinstall.
+    Keeps the sheet built into this app if the brain is older or its sheet is broken."""
+    try:
+        character.use(character.from_sheet(client.face()))
+    except BrainError as e:
+        log.info("kept the built-in face: %s", e)
+        return False
+    except CharacterError as e:
+        log.warning("the brain's character sheet is broken, kept the built-in face: %s", e)
+        return False
+    return True
 
 
 def face_icon(offline: bool = False, size: int = 64, eye: str | None = None) -> QIcon:
@@ -261,7 +278,10 @@ class DeskApp(QObject):
         self.token = load_token()
         self.update_token = load_token(name=UPDATE_TOKEN_FILE)
         self.client: BrainClient | None = None
+        self._face_from: tuple | None = None  # (brain, character) whose sheet is in use
         self.online: bool | None = None
+        self._doing = ""  # what Kit's doing on his own, shown in his bubble
+        self._quiet = ""  # why he's keeping quiet, shown in the tray's tooltip
         self._stop = threading.Event()
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
@@ -345,6 +365,10 @@ class DeskApp(QObject):
         self.eyes_action.setChecked(True)  # the brain says otherwise once it's reached
         self.eyes_action.toggled.connect(self.set_eyes)
         menu.addAction(self.eyes_action)
+        self.playing_action = QAction("Share what's playing", menu, checkable=True)
+        self.playing_action.setChecked(self.config.share_playing)
+        self.playing_action.toggled.connect(self.set_sharing_playing)
+        menu.addAction(self.playing_action)
         menu.addSeparator()
         menu.addAction("What Kit remembers...", lambda: self.open_window("Memory"))
         menu.addAction("Settings...", lambda: self.open_window("Kit's settings"))
@@ -455,6 +479,16 @@ class DeskApp(QObject):
             "Eyes open: I can see the desk again."
             if on
             else "Righto, eyes shut: the camera's off.",
+            face_icon(),
+            2500,
+        )
+
+    def set_sharing_playing(self, on: bool) -> None:
+        self.config.share_playing = on
+        self.config.save()
+        self.tray.showMessage(
+            "Kit",
+            "I'll keep an ear on what's playing." if on else "Okay, I won't listen in.",
             face_icon(),
             2500,
         )
@@ -634,6 +668,12 @@ class DeskApp(QObject):
                 self._signals.eyes.emit(not status.get("eyes_paused", False))
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
+                return
+            # Fetch his character sheet on connecting and whenever face.character changes.
+            key = (client, status.get("face"))
+            if key != self._face_from:
+                self._face_from = key
+                load_character(client)
 
         threading.Thread(target=work, name="kit-health", daemon=True).start()
 
@@ -645,6 +685,8 @@ class DeskApp(QObject):
                 log.info("brain %s: %s", "online" if online else "offline", detail)
         self.online = online
         tip = "Kit" if online else f"Kit is offline: {detail}"
+        if online and self._quiet:
+            tip += f"\nQuiet: {self._quiet}"
         if self.reporter.error and online:
             tip += f"\nCan't send what you're working on: {self.reporter.error}"
         self.tray.setToolTip(tip[:120])
@@ -700,6 +742,18 @@ class DeskApp(QObject):
         elif event.get("type") == "look":  # Kit's eyes saw where you are: Glow looks at you
             if not self.alive.asleep:
                 face.look_at(float(event.get("x", 0)), float(event.get("y", 0)), time.monotonic())
+        elif event.get("type") == "react":  # a reaction plays even mid-conversation
+            if not self.alive.asleep:
+                face.play(event.get("gesture", "perk_up"), time.monotonic())
+        elif event.get("type") == "doing":  # what he's up to while you're out
+            self._doing = str(event.get("what") or "")
+            self._show_doing()
+        elif event.get("type") == "dials":
+            face.set_dials(float(event.get("arousal", 0.5)), float(event.get("valence", 0.0)))
+        elif event.get("type") == "quiet":  # why he's keeping quiet, in the tray's tooltip
+            self._quiet = str(event.get("because") or "")
+            if self.online:
+                self._show_online(True, "online")
         elif event.get("type") == "pipe_up":
             reply = event.get("reply") or {}
             if self.alive.asleep:
@@ -709,6 +763,14 @@ class DeskApp(QObject):
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))
                 self.tray.showMessage("Kit", said, face_icon(), 8000)
+
+    def _show_doing(self) -> None:
+        """What Kit's doing on his own ("watching the rain...") in his bubble, while
+        the chat's closed and he isn't saying anything."""
+        if self._busy() or self.chat.isVisible() or not self.config.speech_bubble:
+            return
+        self.bubble.enabled = True
+        self.bubble.setText(f"{self._doing}..." if self._doing else "")
 
     def _busy(self) -> bool:
         return self.chat._in_flight > 0 or self.face.face.state in (
@@ -734,6 +796,8 @@ class DeskApp(QObject):
         if state in FACE_STATES:
             if state != "speaking":  # speaking is set by the performer, word by word
                 self.face.face.set_state(FACE_STATES[state])
+        elif state == "heard":  # a little nod as a message goes, before he thinks
+            self.face.face.play("nod", time.monotonic())
         elif state == "error":
             self.face.face.play("shrug", time.monotonic())
         elif state.startswith("asking"):

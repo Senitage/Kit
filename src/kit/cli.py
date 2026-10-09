@@ -17,7 +17,13 @@ from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
-from kit.settings import Settings, SettingsError, load_settings, settings_to_toml
+from kit.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    local_settings,
+    settings_to_toml,
+)
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
@@ -136,9 +142,10 @@ def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
         print(f"{args.role} now uses {args.name}; Kit uses it from the next message")
         return 0
     s = store.current()
-    roles = {s.routing.work: "work", s.routing.expert: "expert"}
-    if s.routing.work == s.routing.expert:
-        roles[s.routing.work] = "work, expert"
+    roles: dict[str, list[str]] = {}
+    in_use = (["chat"] if s.routing.mode == "cloud-only" else []) + ["work", "expert"]
+    for role in in_use:
+        roles.setdefault(getattr(s.routing, role), []).append(role)
     print(f"routing: {s.routing.mode}   local model: {s.ollama.model}")
     print(f"cloud budget: ${s.cloud.monthly_cap_usd:.2f} a month\n")
     print(
@@ -149,10 +156,10 @@ def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
         price = f"{m.input_usd_per_mtok:g}/{m.output_usd_per_mtok:g}"
         search = f"${m.search_usd_per_k:g}" if m.web_search else "off"
         print(
-            f"  {name:<14} {roles.get(name, ''):<13} {m.provider:<10} {m.model:<20}"
+            f"  {name:<14} {', '.join(roles.get(name, [])):<13} {m.provider:<10} {m.model:<20}"
             f" {m.effort:<7} {price:<15} {search}"
         )
-    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-first")
+    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-only")
     return 0
 
 
@@ -226,7 +233,7 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     paths.ensure()
     store = SettingsStore(paths)
     memory = Memory(paths.state_dir / "memory.db")
-    model = OllamaModel(lambda: store.current().ollama, client)
+    model = OllamaModel(lambda: local_settings(store.current()), client)
     cloud = make_cloud(paths, memory, client)
     recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
     weather = Weather(client)
@@ -388,9 +395,17 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
             return 1
     state = r.json()
     print(f"mood:     {state['mood']}")
+    if state.get("presence") and state["presence"] != "here":
+        doing = f", {state['doing']}" if state.get("doing") else ""
+        print(f"where:    {state['presence']}{doing}")
     felt = state.get("feeling")
     if felt:
         print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")
+    also = state.get("also_feeling")
+    if also:
+        print(f"also:     {also['name']}, because {also['why']}")
+    if state.get("bad_night"):
+        print("care:     you're having a rough time, so no cheek for now")
     print("drives:   " + ", ".join(f"{k} {v}" for k, v in state["drives"].items()))
     if state.get("thinking"):
         print(f"thinking: {state['thinking']}")
@@ -398,7 +413,27 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
         print(f"wants to: {want}")
     for want in state.get("later", [])[:3]:
         print(f"later:    {want['text']} (from {want['after'][:16].replace('T', ' ')})")
+    for thread in state.get("threads", [])[:3]:
+        when = "now" if thread["due"] else f"from {thread['after'][:16].replace('T', ' ')}"
+        print(f"follows:  {thread['text']} (asks how it went {when})")
     print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
+    if state.get("closeness"):
+        print(f"you two:  {state['closeness']}")
+    if state.get("away_since") and state.get("presence") != "here":
+        print(f"away:     since {state['away_since'][11:16]} (as far as Kit can tell)")
+    if state.get("hello_owed"):
+        print(f"hello:    owed ({state['hello_owed']}), said at the next chance")
+    if state.get("goodbye"):
+        print(f'goodbye:  "{state["goodbye"]}" (he\'ll ask how it went)')
+    if state.get("did_today"):
+        print("on his own today: " + "; ".join(state["did_today"]))
+    if state.get("dials"):
+        d = state["dials"]
+        print(f"dials:    lively {d['arousal']}, happy {d['valence']}")
+    if state.get("taken_up"):
+        print("taken up: " + ", ".join(f"{k} {v}" for k, v in state["taken_up"].items()))
+    if state.get("mood_reading"):
+        print(f"reads you by: {state['mood_reading']}")
     print(f"last pipe-up: {state['last_piped_up'] or 'not yet'}")
     if "thoughts_this_hour" in state:
         print(
@@ -447,7 +482,12 @@ def _print_notebook(book: dict) -> None:
         latest = book["reviews"][0]
         print(f"\nLatest weekly review ({latest['day']}):\n  {latest['text']}")
     print("\nQuirks: " + ("; ".join(book.get("quirks", [])) or "(none)"))
+    dan = book.get("dan")
+    if dan:
+        print(f"\nWhat's going on with you ({dan['day']}):\n  {dan['text']}")
     for title, key in [
+        ("Things he'll ask about", "threads"),
+        ("Running jokes", "bits"),
         ("Wants to bring up", "wants"),
         ("Thoughts", "thoughts"),
         ("Opinions", "opinions"),
@@ -458,7 +498,9 @@ def _print_notebook(book: dict) -> None:
         if entries:
             print(f"\n{title}:")
             for e in entries[:8]:
-                said = "  (said)" if e.get("meta", {}).get("said") else ""
+                meta = e.get("meta", {})
+                said = f"  (you said: {meta['outcome']})" if meta.get("outcome") else ""
+                said = said or ("  (said)" if meta.get("said") else "")
                 print(f"{e['id']:>6}  {e['day']}  {e['text']}{said}")
     print("\nForget an entry on the memory page (Kit's notebook tab).")
 
@@ -583,7 +625,7 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
 
     paths.ensure()
-    if args.action in ("summarise", "remember", "search", "reindex"):
+    if args.action in ("summarise", "remember", "search", "reindex", "tidy"):
         return asyncio.run(_memory_async(paths, args))
     memory = Memory(paths.state_dir / "memory.db")
     code = 0
@@ -663,6 +705,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                     )
                     text = " / ".join(h.item.text.splitlines())[:110]
                     print(f"{h.item.id:>5}  {h.item.day}  {h.item.source:<12} {how:<14} {text}")
+            elif args.action == "tidy":
+                return await _tidy(paths, store, memory, brain, args.apply)
             elif args.action == "reindex":
                 done = await brain.recall.index_pending(limit=1_000_000)
                 problem = brain.recall.embed_problem
@@ -670,6 +714,49 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                 return 1 if problem else 0
         finally:
             memory.close()
+    return 0
+
+
+async def _tidy(paths: KitPaths, store, memory, brain, apply: bool) -> int:
+    """Sort what Kit already knows: each fact to the kind that fits, logs of what was
+    asked dropped (or kept as the lasting fact they show). Shows the plan; ``apply``
+    carries it out after a backup."""
+    from kit.learning import apply_tidy, plan_tidy
+
+    settings = store.current()
+    facts = memory.facts()
+    if not facts:
+        print("nothing remembered yet")
+        return 0
+    ask = brain.learner.ask if settings.memory.day_pass == "work" else None
+    who = settings.profile("work").name if ask else settings.ollama.model
+    print(f"sorting {len(facts)} facts with {who}...")
+    p = settings.persona
+    plans = await plan_tidy(facts, p.owner, p.name, brain.model, ask)
+    changes = [t for t in plans if t.changes]
+    for t in changes:
+        if not t.keep:
+            print(f"drop   [{t.item.kind}] {t.item.text}")
+        else:
+            move = f"[{t.item.kind} -> {t.kind}]" if t.kind != t.item.kind else f"[{t.kind}]"
+            print(f"keep   {move} {t.text or t.item.text}")
+            if t.text:
+                print(f"       was: {t.item.text}")
+    dropped = sum(not t.keep for t in changes)
+    print(
+        f"\n{len(changes) - dropped} to move or reword, {dropped} to drop, "
+        f"{len(plans) - len(changes)} fine as they are"
+    )
+    if not changes:
+        return 0
+    if not apply:
+        print("Nothing changed yet: `kit memory tidy --apply` does it, after a backup.")
+        return 0
+    backup = memory.backup(paths.backups_dir, settings.memory.backups_keep)
+    changed, gone = apply_tidy(memory, changes)
+    await brain.recall.index_pending()
+    print(f"backed up to {backup}; moved or reworded {changed}, dropped {gone}")
+    print("A moved fact keeps its old version in its history on the memory page.")
     return 0
 
 
@@ -758,7 +845,7 @@ async def _eval_memory(paths: KitPaths) -> int:
     memory = Memory(scratch / "memory.db")
     try:
         async with httpx.AsyncClient() as client:
-            model = OllamaModel(lambda: store.current().ollama, client)
+            model = OllamaModel(lambda: local_settings(store.current()), client)
             recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
             print("teaching Kit 13 facts, some repeated or changed...")
             report = await run_memory_eval(memory, Learner(memory, recall, model), recall)
@@ -858,9 +945,25 @@ async def _eval_routing(paths: KitPaths) -> int:
 
 async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, prompts, show):
     """One model's turn at the voice eval, in a scratch memory that's deleted after."""
+    from kit.evals import run_voice_eval
+
+    return await _local_run(
+        paths,
+        client,
+        settings,
+        lambda brain, name: run_voice_eval(brain, name, prompts, on_line=show),
+    )
+
+
+async def _local_run(
+    paths: KitPaths, client: httpx.AsyncClient, settings: Settings, run, clock=None
+):
+    """``run(brain, model name)`` for one local model, with Kit seeded the same way
+    every time (``seed_voice``), in a scratch memory that's deleted after. ``clock``
+    sets the time Kit thinks it is."""
     from kit.brain import Brain
     from kit.cloud import Cloud
-    from kit.evals import run_voice_eval, seed_voice
+    from kit.evals import seed_voice
     from kit.local_model import LocalModelError, OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
@@ -875,7 +978,7 @@ async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
         return None
     scratch = paths.state_dir / "voice-eval"
     shutil.rmtree(scratch, ignore_errors=True)
-    memory = Memory(scratch / "memory.db")
+    memory = Memory(scratch / "memory.db", clock) if clock else Memory(scratch / "memory.db")
     try:
         # No cloud, no web and words-only recall: the local model alone, as on the desk.
         cloud = Cloud(memory, lambda provider: None, {})
@@ -883,7 +986,7 @@ async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Setti
             lambda: settings, memory, model, cloud, Recall(memory, None, lambda: settings)
         )
         seed_voice(brain)
-        return await run_voice_eval(brain, name, prompts, on_line=show)
+        return await run(brain, name)
     finally:
         memory.close()
         shutil.rmtree(scratch, ignore_errors=True)
@@ -910,15 +1013,7 @@ async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int 
     reports = []
     async with httpx.AsyncClient() as client:
         for name in names:
-            settings = base.model_copy(
-                update={
-                    "ollama": base.ollama.model_copy(
-                        update={"model": name, "speak_pass": not one_pass}
-                    ),
-                    "routing": base.routing.model_copy(update={"mode": "local-heavy"}),
-                    "life": base.life.model_copy(update={"reflect_with": "off"}),
-                }
-            )
+            settings = _eval_settings(base, name, one_pass)
             report = await _voice_run(paths, client, settings, prompts, show)
             if report is not None:
                 reports.append(report)
@@ -933,6 +1028,157 @@ async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int 
     print(f"\nevery line, side by side: {out}")
     print("pick one with: kit config set ollama.model <name>")
     return 0 if all(r.answered == len(r.spoken) for r in reports) else 1
+
+
+def _eval_settings(base: Settings, name: str, one_pass: bool = False) -> Settings:
+    """Settings for a local-model eval: that model, local-heavy (no key moments for the
+    work model either), no nightly reflection."""
+    return base.model_copy(
+        update={
+            "ollama": base.ollama.model_copy(update={"model": name, "speak_pass": not one_pass}),
+            "routing": base.routing.model_copy(
+                update={"mode": "local-heavy", "key_moments": False}
+            ),
+            "life": base.life.model_copy(update={"reflect_with": "off"}),
+        }
+    )
+
+
+async def _eval_mood(paths: KitPaths) -> int:
+    """Calibrate reading Dan's mood by meaning (``life.read_mood``): Dan's labelled
+    lines (companion-lines.toml in Kit's config folder) read by the model that would
+    read them in chat, against the word rules. Reading by meaning switches on only
+    once it beats them on at least 40 lines; the result is kept in Kit's memory."""
+    import json
+    from datetime import datetime
+
+    from kit.brain import CHAT, MOOD_CALIBRATION, own_role
+    from kit.evals import (
+        MOOD_LINES_FILE,
+        MOOD_LINES_NEEDED,
+        load_mood_lines,
+        mood_starter,
+        run_mood_eval,
+    )
+    from kit.local_model import OllamaModel
+    from kit.memory import Memory
+    from kit.prompt import mood_lines
+    from kit.reply import mood_read, plan_schema
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    settings = store.current()
+    own = paths.config_dir / MOOD_LINES_FILE
+    if not own.exists():
+        own.write_text(mood_starter(), encoding="utf-8")
+        print(f"started {own} with a few generic lines: add your own, the way you talk")
+    lines = load_mood_lines(own)
+    owner = settings.persona.owner
+    system = "\n".join(
+        [
+            f"You read how {owner} seems from one message they sent.",
+            *mood_lines(owner),
+            "Answer only with JSON: emotion, gesture, dan_mood, about, for_whom, expected, "
+            'and action {"kind": "none"}.',
+        ]
+    )
+
+    def messages(text: str) -> list[dict]:
+        return [{"role": "system", "content": system}, {"role": "user", "content": text}]
+
+    memory = Memory(paths.state_dir / "memory.db")
+    try:
+        async with httpx.AsyncClient() as client:
+            role = own_role(settings)
+            plain = None
+            if role == CHAT:
+                cloud = make_cloud(paths, memory, client)
+                profile = settings.profile(CHAT).model_copy(update={"web_search": False})
+                reader = profile.name
+
+                async def read(text: str):
+                    answer = await cloud.answer(profile, messages(text), settings, "mood eval")
+                    return mood_read(answer.text)
+
+            else:
+                model = OllamaModel(lambda: settings.ollama, client)
+                reader = settings.ollama.model
+
+                async def read(text: str):
+                    return mood_read(await model.complete(messages(text), plan_schema(True)))
+
+                async def plain(text: str):
+                    await model.complete(messages(text), plan_schema(False))
+
+            print(f"reading {len(lines)} lines with {reader}...")
+
+            def show(line) -> None:
+                mark = "ok  " if line.meaning_right else "MISS"
+                words = "ok" if line.words_right else "miss"
+                print(
+                    f"{mark} {line.seconds:4.1f}s  {line.text[:52]:52}  wanted {line.label}, "
+                    f"meaning {line.meaning}, words {line.words} ({words})"
+                )
+
+            report = await run_mood_eval(lines, read, plain, owner, show)
+        result = report.as_dict(datetime.now(), reader)
+        memory.set_self_value(MOOD_CALIBRATION, json.dumps(result))
+    finally:
+        memory.close()
+    print()
+    print(f"right by meaning: {report.meaning}/{len(report.lines)}")
+    print(f"right by words:   {report.words}/{len(report.lines)}")
+    if report.seconds() is not None:
+        print(f"reading took:     median {report.seconds():.2f}s a line")
+    if report.added_seconds() is not None:
+        print(f"adds to a plan:   median {report.added_seconds():+.2f}s before he starts talking")
+    if len(report.lines) < MOOD_LINES_NEEDED:
+        print(f"add more lines to {own}: {MOOD_LINES_NEEDED} are needed, there are {len(lines)}")
+    if report.passed:
+        print("passed: with life.read_mood = meaning, Kit now reads you by meaning")
+    else:
+        print("not passed: Kit keeps reading your words, whatever life.read_mood says")
+    return 0 if report.passed else 1
+
+
+async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
+    """Goodbyes, hellos, wrong facts and news through each local model: does he act
+    like a good companion? Written side by side to read."""
+    from datetime import datetime
+
+    from kit.evals import companion_clock, companion_report, run_companion_eval
+
+    paths.ensure()
+    base = SettingsStore(paths).current()
+    names = names or [base.ollama.model]
+
+    def show(line):
+        mark = "ok  " if line.passed else "FAIL"
+        print(f"{mark} {line.kind:<9} {line.prompt[:30]:<30}  {(line.text or line.why)[:80]}")
+
+    reports = []
+    async with httpx.AsyncClient() as client:
+        for name in names:
+            settings = _eval_settings(base, name)
+            report = await _local_run(
+                paths,
+                client,
+                settings,
+                lambda brain, n: run_companion_eval(brain, n, show),
+                companion_clock(),
+            )
+            if report is not None:
+                reports.append(report)
+            print()
+    if not reports:
+        return 1
+    out = paths.state_dir / "evals" / f"companion-{datetime.now():%Y%m%d-%H%M%S}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(companion_report(reports), encoding="utf-8")
+    for report in reports:
+        print(f"- {report.summary()}".replace("**", ""))
+    print(f"\nevery line, side by side: {out}")
+    return 0 if all(r.passed == len(r.lines) for r in reports) else 1
 
 
 def _parse_link(text: str) -> dict:
@@ -1023,7 +1269,7 @@ def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="kit", description="Kit, your personal assistant.")
+    parser = argparse.ArgumentParser(prog="kit", description="Kit, your desk companion.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("paths", help="show where Kit keeps its files")
     sub.add_parser("init", help="create Kit's data folder and a starter settings file")
@@ -1063,7 +1309,9 @@ def main(argv: list[str] | None = None) -> int:
     csub.add_parser("check", help="check the settings file is valid")
 
     models = sub.add_parser("models", help="see the models Kit uses, or switch one")
-    models.add_argument("role", nargs="?", choices=["work", "expert"], help="role to switch")
+    models.add_argument(
+        "role", nargs="?", choices=["chat", "work", "expert"], help="role to switch"
+    )
     models.add_argument("name", nargs="?", help="model profile to use for it")
 
     weather = sub.add_parser("weather", help="show the forecast Kit sees")
@@ -1086,6 +1334,10 @@ def main(argv: list[str] | None = None) -> int:
         msub.add_parser(name, help=text).add_argument("id", type=int)
     msub.add_parser("days", help="list day summaries")
     msub.add_parser("summarise", help="summarise finished days now")
+    mtidy = msub.add_parser(
+        "tidy", help="sort what Kit knows into the right kinds and drop logs of chats"
+    )
+    mtidy.add_argument("--apply", action="store_true", help="do it (after a backup)")
     msub.add_parser("reindex", help="build any missing meaning vectors now")
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
@@ -1136,22 +1388,22 @@ def main(argv: list[str] | None = None) -> int:
 
     ev = sub.add_parser(
         "eval",
-        help="test the local model's replies, memory recall, routing or voice, or compare "
-        "cloud models",
+        help="test the local model's replies, memory recall, routing, voice, how good a "
+        "companion he is or how well he reads your mood, or compare cloud models",
     )
     ev.add_argument(
         "which",
         nargs="?",
         default="replies",
-        choices=["replies", "memory", "routing", "compare", "voice"],
+        choices=["replies", "memory", "routing", "compare", "voice", "companion", "mood"],
     )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
         "--models",
         nargs="+",
         default=[],
-        help="compare: model profiles, e.g. sonnet gpt-sol; voice: local models, e.g. "
-        "qwen3:8b gemma4:e4b (default: the one in use)",
+        help="compare: model profiles, e.g. sonnet gpt-sol; voice and companion: local "
+        "models, e.g. qwen3:8b gemma4:e4b (default: the one in use)",
     )
     ev.add_argument(
         "--one-pass", action="store_true", help="voice: answer in one JSON pass, as in stage 1"
@@ -1194,6 +1446,10 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_eval_memory(paths))
         if args.which == "voice":
             return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
+        if args.which == "companion":
+            return asyncio.run(_eval_companion(paths, args.models))
+        if args.which == "mood":
+            return asyncio.run(_eval_mood(paths))
         if args.which == "compare":
             if not args.models:
                 print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")

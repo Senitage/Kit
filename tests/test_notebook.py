@@ -9,11 +9,11 @@ from fakes import Clock
 from kit.life import QUIRK_POOL, WORK_QUIRKS
 from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
-    ASK_LATER,
     EVERYDAY_KEY,
     FOR_LATER,
     Notebook,
     as_aim,
+    asks_later,
     later_want,
     same_entry,
     tomorrow_morning,
@@ -123,9 +123,14 @@ def test_a_want_for_tomorrow_waits_till_the_morning(book, clock):
 def test_tomorrow_is_after_he_has_slept():
     assert tomorrow_morning(datetime(2026, 10, 7, 15, 0), "07:00") == "2026-10-08T07:00:00"
     assert tomorrow_morning(datetime(2026, 10, 8, 0, 30), "07:00") == "2026-10-08T07:00:00"
-    assert ASK_LATER.search("Ask me tomorrow how the shutdown went.")
-    assert ASK_LATER.search("Tomorrow morning, remind me to ring Steve.")
-    assert not ASK_LATER.search("Ask me anything. I'll know tomorrow.")
+    now = datetime(2026, 10, 7, 15, 0)
+    assert asks_later("Ask me tomorrow how the shutdown went.", now, "07:00") == datetime(
+        2026, 10, 8, 7, 0
+    )
+    assert asks_later("Tomorrow morning, remind me to ring Steve.", now, "07:00") == datetime(
+        2026, 10, 8, 7, 0
+    )
+    assert asks_later("Ask me anything. I'll know tomorrow.", now, "07:00") is None
     assert FOR_LATER.search("Tomorrow: ask Dan how the shutdown went.")
 
 

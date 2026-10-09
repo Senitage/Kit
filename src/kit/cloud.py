@@ -4,6 +4,10 @@ Each provider has an adapter that turns Kit's chat messages (a system prompt
 then alternating turns) into one request and returns the text and token
 counts. ``Cloud`` picks the adapter for a model profile, keeps to the monthly
 budget, and logs what every call cost, so swapping models is a settings change.
+
+As the budget runs low, calls give way in a set order (``SKIP_ORDER``): evals
+first, then fact checks and key moments, then chat, so Kit's nightly reflection
+always has the last of it.
 """
 
 from __future__ import annotations
@@ -20,6 +24,11 @@ from kit.prompt import TURN_PART
 from kit.settings import ModelProfile, PersonaSettings, Settings
 
 CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
+# Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
+# sooner than the one before, so evals can never use up the nightly reflection's share.
+# His background thoughts and pipe-ups ("life") go first, with evals: the local model can
+# have them.
+SKIP_ORDER = {"reflect": 0, "chat": 1, "moment": 2, "check": 2, "eval": 3, "life": 3}
 
 
 class CloudError(Exception):
@@ -131,6 +140,10 @@ def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 ANTHROPIC_SEARCH_TOOL = "web_search_20260209"
 ANTHROPIC_FETCH_TOOL = "web_fetch_20260209"
+# Haiku doesn't take the newer search tools (which filter results as they come
+# in) or the server-side fallback, so it gets the basic tools and no fallback.
+BASIC_SEARCH_TOOL = "web_search_20250305"
+BASIC_FETCH_TOOL = "web_fetch_20250910"
 MAX_SEARCHES = 5
 MAX_FETCHES = 3
 MAX_FETCH_TOKENS = 20_000  # a page is cut to this much text
@@ -156,7 +169,9 @@ class AnthropicProvider:
         where: Where | None = None,
     ) -> Completion:
         client = self.make_client(key)
-        tools = anthropic_web_tools(where) if profile.web_search else []
+        haiku = profile.model.startswith("claude-haiku")
+        tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
+        fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
@@ -168,8 +183,7 @@ class AnthropicProvider:
                     system=system_blocks(system),
                     messages=messages,
                     output_config={"effort": profile.effort},
-                    fallbacks="default",
-                    betas=[FALLBACK_BETA],
+                    **fallback,
                     **({"tools": tools} if tools else {}),
                 )
                 _add_anthropic_usage(usage, response.usage)
@@ -202,16 +216,17 @@ class AnthropicProvider:
         )
 
 
-def anthropic_web_tools(where: Where | None) -> list[dict]:
+def anthropic_web_tools(where: Where | None, basic: bool = False) -> list[dict]:
     """Claude's web search, which finds pages, and web fetch, which opens one (say
     the weather service's page for the owner's city) so the answer isn't from an
-    old search snippet."""
-    search = {"type": ANTHROPIC_SEARCH_TOOL, "name": "web_search", "max_uses": MAX_SEARCHES}
+    old search snippet. ``basic``: the older versions, for models without the new."""
+    search_tool = BASIC_SEARCH_TOOL if basic else ANTHROPIC_SEARCH_TOOL
+    search = {"type": search_tool, "name": "web_search", "max_uses": MAX_SEARCHES}
     near = where.approximate() if where else None
     if near:
         search["user_location"] = near
     fetch = {
-        "type": ANTHROPIC_FETCH_TOOL,
+        "type": BASIC_FETCH_TOOL if basic else ANTHROPIC_FETCH_TOOL,
         "name": "web_fetch",
         "max_uses": MAX_FETCHES,
         "max_content_tokens": MAX_FETCH_TOKENS,
@@ -419,17 +434,21 @@ class Cloud:
         settings: Settings,
         question: str = "",
         on_step: Step | None = None,
+        priority: str = "chat",
     ) -> CloudAnswer:
         """``question`` is what Dan asked, for the spend log. ``on_step`` hears about
-        progress (web searches so far) while the model is still working."""
+        progress (web searches so far) while the model is still working. ``priority``
+        is the call's place in ``SKIP_ORDER``."""
         provider = self.providers.get(profile.provider)
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
         spent = self.memory.month_spend()
         cap = settings.cloud.monthly_cap_usd
-        if spent >= cap:
+        kept = settings.cloud.reserve_usd * SKIP_ORDER.get(priority, 1)
+        if spent >= cap - kept:
+            saving = f", keeping the last ${kept:.2f} for my nightly reflection" if kept else ""
             raise CloudError(
-                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}). "
+                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}{saving}). "
                 "You can raise cloud.monthly_cap_usd in my settings."
             )
         key = self.api_key(profile.provider)

@@ -64,6 +64,49 @@ GESTURES: dict[str, str] = {
     "look_up": "trying to remember something",
 }
 
+# How Dan seems, read from his message by the model answering it (``life.read_mood``
+# meaning): kit.life.feeling_from_read turns it into what Kit feels.
+MOOD_FIELDS: dict[str, dict[str, str]] = {
+    "dan_mood": {
+        "fine": "nothing much either way",
+        "happy": "in a good mood",
+        "excited": "excited or keen",
+        "proud": "pleased with something they did",
+        "grateful": "thankful",
+        "tired": "tired or worn out",
+        "flat": "low or flat",
+        "stressed": "stressed or under pressure",
+        "worried": "worried about something",
+        "sad": "sad, or had bad news",
+        "angry": "annoyed or angry",
+        "awful": "having a really bad time",
+    },
+    "about": {
+        "kit": "you",
+        "them": "themselves or their day",
+        "someone": "someone else",
+        "work": "work",
+        "everyday": "everyday things",
+        "nothing": "nothing in particular",
+    },
+    "for_whom": {
+        "kit": "aimed at you (praise, thanks, a dig)",
+        "them": "about how they feel themselves",
+        "someone": "about someone else",
+        "no_one": "not aimed at anyone",
+    },
+    "expected": {
+        "better": "it went better than they hoped",
+        "worse": "it went worse than they hoped",
+        "as_hoped": "it went as they hoped",
+        "not_said": "doesn't say",
+    },
+}
+DanMood = Literal[tuple(MOOD_FIELDS["dan_mood"])]  # type: ignore[valid-type]
+About = Literal[tuple(MOOD_FIELDS["about"])]  # type: ignore[valid-type]
+ForWhom = Literal[tuple(MOOD_FIELDS["for_whom"])]  # type: ignore[valid-type]
+Expected = Literal[tuple(MOOD_FIELDS["expected"])]  # type: ignore[valid-type]
+
 FactKind = Literal[tuple(FACT_KINDS)]  # type: ignore[valid-type]
 Emotion = Literal[tuple(EMOTIONS)]  # type: ignore[valid-type]
 Gesture = Literal[tuple(GESTURES)]  # type: ignore[valid-type]
@@ -169,25 +212,53 @@ class Plan(BaseModel):
         return cls(emotion="neutral", gesture="none", action=Action(kind="none"))
 
 
-def plan_schema() -> dict:
-    return inline_refs(Plan.model_json_schema())
+class ReadingPlan(BaseModel):
+    """A plan that also reads how Dan seems (``life.read_mood`` meaning). The reading
+    comes before the action, so stopping early at a "none" action keeps it."""
+
+    model_config = ConfigDict(extra="forbid")
+    emotion: Emotion
+    gesture: Gesture = Field(description="The gesture that goes with what you'll say.")
+    dan_mood: DanMood
+    about: About
+    for_whom: ForWhom
+    expected: Expected
+    action: Action
+
+
+def plan_schema(read: bool = False) -> dict:
+    return inline_refs((ReadingPlan if read else Plan).model_json_schema())
 
 
 def parse_plan(text: str) -> Plan:
     try:
-        return Plan.model_validate_json(text)
-    except ValidationError as e:
-        raise ReplyError(f"not a valid plan: {e.errors()[0]['msg']}: {text[:200]!r}") from e
+        data = json.loads(text)
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k not in MOOD_FIELDS}
+        return Plan.model_validate(data)
+    except (ValueError, ValidationError) as e:
+        raise ReplyError(f"not a valid plan: {text[:200]!r}") from e
+
+
+def mood_read(text: str) -> dict[str, str] | None:
+    """How Dan seems, from a plan or a cloud reply's JSON: its dan_mood, about,
+    for_whom and expected, or None if there's no reading in it."""
+    found = {k: v for k, v in _MOOD_FIELD.findall(text) if v in MOOD_FIELDS[k]}
+    return found if "dan_mood" in found else None
 
 
 _PLAN_FIELD = re.compile(r'"(emotion|gesture|kind)"\s*:\s*"([a-z_]+)"')
+_MOOD_FIELD = re.compile(r'"(dan_mood|about|for_whom|expected)"\s*:\s*"([a-z_]+)"')
 
 
-def early_plan(text: str) -> Plan | None:
+def early_plan(text: str, read: bool = False) -> Plan | None:
     """The plan from the start of its JSON, once it's plain the action is "none": the
-    rest of the action would only be empty fields, so Kit can start talking now."""
+    rest of the action would only be empty fields, so Kit can start talking now.
+    With ``read``, the reading of Dan comes first, so it's in by then."""
     found = dict(_PLAN_FIELD.findall(text))
     if found.get("kind") != "none" or "emotion" not in found or "gesture" not in found:
+        return None
+    if read and mood_read(text) is None:
         return None
     try:
         return Plan(emotion=found["emotion"], gesture=found["gesture"], action=Action(kind="none"))

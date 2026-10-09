@@ -4,20 +4,44 @@ Every turn, the message is used to search memory (facts, past days, old
 conversation, the register of things and Kit's own notebook) by words and by
 meaning, and the best matches go into the prompt with their dates. If the
 embedding model is down, recall falls back to words only rather than failing.
+
+Among facts and days that are relevant, the ones that matter more to Dan's life
+and the ones recalled lately come first (``weight``), the way a person's
+memory works; a floor keeps an old, small fact from ever dropping out of reach.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from kit.embed import Embedder, EmbedError
 from kit.knowledge import Hit, Item
-from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
+from kit.life import parse_time
+from kit.memory import CONVERSATION, DAYS, FACTS, IMPORTANCE, KEEP_LOCAL, SELF, Memory
 from kit.settings import Settings
 from kit.things import THINGS, Register, Thing
 
 EMBED_BATCH = 32
+RECENCY_DAYS = 30  # a memory last recalled this long ago counts half as fresh
+
+
+def weight(item: Item, now: datetime, floor: float) -> float:
+    """How much a relevant memory counts, ``floor`` to 1: half how much it matters to
+    Dan's life (its importance; pinned is 1), half how lately it was recalled (or
+    learned). ``floor`` 1 weighs them all the same."""
+    if floor >= 1:
+        return 1.0
+    importance = item.meta.get("importance", IMPORTANCE.get(item.kind, 0.5))
+    importance = 1.0 if item.pinned else float(importance)
+    try:
+        last = parse_time(str(item.meta.get("last_recalled") or item.created), now)
+        days = max(0.0, (now - last).total_seconds() / 86400)
+    except ValueError:
+        days = 0.0
+    fresh = 0.5 ** (days / RECENCY_DAYS)
+    return floor + (1 - floor) * (min(1.0, max(0.0, importance)) + fresh) / 2
 
 
 @dataclass
@@ -34,6 +58,22 @@ class Recalled:
             | {h.item.id for h in self.memories + self.conversation + self.own}
             | {t.id for t in self.things}
         )
+
+    def for_cloud(self) -> Recalled:
+        """What a cloud model may see: nothing Dan kept local, and nothing Kit kept
+        from it (kit.memory.KEEP_LOCAL)."""
+        return Recalled(
+            [i for i in self.pinned if not private(i)],
+            [h for h in self.memories if not private(h.item)],
+            [h for h in self.conversation if not private(h.item)],
+            self.things,
+            [h for h in self.own if not private(h.item)],
+        )
+
+
+def private(item: Item) -> bool:
+    """Kept from something Dan kept local, or the exchange itself."""
+    return bool(item.meta.get("private")) or bool(KEEP_LOCAL.search(item.text))
 
 
 class Recall:
@@ -79,7 +119,13 @@ class Recall:
         s = self.settings().memory
         pinned = self.memory.pinned_facts()
         memories = await self.search(
-            text, [FACTS, DAYS], s.relevant_memories, exclude={i.id for i in pinned}
+            text, [FACTS, DAYS], s.relevant_memories * 2, exclude={i.id for i in pinned}
+        )
+        memories = self.weighed(memories)[: s.relevant_memories]
+        now = self.memory.clock()
+        self.memory.index.update_meta(
+            [h.item.id for h in memories if h.item.source == FACTS],
+            {"last_recalled": now.isoformat(timespec="seconds")},
         )
         conversation = []
         if s.conversation_snippets:
@@ -90,6 +136,12 @@ class Recall:
             ]
         own = await self.search(text, [SELF], s.own_memories) if s.own_memories else []
         return Recalled(pinned, memories, conversation, await self.things_for(text), own)
+
+    def weighed(self, hits: list[Hit]) -> list[Hit]:
+        """Relevant memories, the ones that matter more and were recalled lately
+        first (``weight``)."""
+        now, floor = self.memory.clock(), self.settings().memory.weight_floor
+        return sorted(hits, key=lambda h: h.score * weight(h.item, now, floor), reverse=True)
 
     async def closeness(self, text: str, others: list[str]) -> float | None:
         """How close ``text`` is in meaning to the closest of ``others`` (cosine,

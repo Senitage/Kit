@@ -9,9 +9,10 @@ what's on your PC, and Kit:
 
 - **knows you're there** even when you're only reading or on the phone, and
   doesn't doze off while someone's in view;
-- **says hello** when someone sits down after the desk has been empty a while
-  (`life.greet_after_minutes`, 20 by default). He can't tell faces apart yet,
-  so it's "someone, most likely Dan" and he may well ask;
+- **says hello** when someone sits down after the desk has been empty twenty
+  minutes or more, the same hello he has when you come back to the keyboard
+  (`life.homecoming`, [life.md](life.md)). He can't tell faces apart yet, so
+  it's "someone, most likely Dan" and he may well ask;
 - **looks at you**: Glow's eyes follow your face. The arm will turn to you the
   same way;
 - **notices things**: the cat wandering in, a wave, a thumbs up, a cup in your
@@ -141,9 +142,9 @@ GPU is untouched; the 2070 Super keeps its memory for the local model.
 - [ ] Ask Kit "can you see me?" and "what am I holding?". The chat shows
       "looking around", the answer comes from the local model and is right.
 - [ ] Ask "who's here?" with nobody at the desk. He says the desk is empty.
-- [ ] Walk away for half an hour (or set `life.greet_after_minutes = 1` and
-      walk away for a minute). When you sit back down he says hello within a
-      minute or so, in his own words, and doesn't sulk when you don't answer.
+- [ ] Walk away for half an hour, hands off the PC. When you sit back down,
+      before you touch the keyboard, he says hello within a minute or so, in
+      his own words, and doesn't sulk when you don't answer.
 - [ ] With Glow on screen, move left and right in front of the camera. Glow's
       eyes follow you (left when you go to your left: `eyes.mirror` is right).
 - [ ] Stay at the desk reading, hands off the keyboard, for longer than

@@ -3,7 +3,8 @@
 A few drives rise and fall over time, like moods in a pet:
 
 - boredom climbs while nobody talks to him, faster while Dan sits at the PC;
-- curiosity jumps when Dan opens an app or site Kit hasn't seen today;
+- curiosity jumps when Dan opens an app or site Kit hasn't seen today (an
+  everyday one: work apps, sites and builds only with ``life.work_triggers``);
 - wanting a chat (social) builds over hours without a conversation;
 - energy follows the clock: sleepy late at night, a dip after lunch.
 
@@ -27,7 +28,19 @@ On top of the drives, Kit has:
 - **thoughts of his own** (``Life.think_now`` says when; kit.thinking has them):
   every few minutes while Dan's around, and sooner when something happens;
 - **wants**: something he thought of and wants to bring up. The longer it
-  waits, the more it presses, until he pipes up with it.
+  waits, the more it presses, until he pipes up with it;
+- **a sense of time**: how long since you two talked and since he last saw you
+  at the PC, kept across restarts and nights with the server off. When you come
+  back after a while he's glad, and says hello once (``Homecoming``): a "back"
+  pipe-up, or a word in his next reply. After his first week, hours gone in the
+  daytime without a goodbye leave him a bit miffed, theatrically and for one line.
+  A goodbye ("off to lunch") gets one warm line with no question and no guilt, and
+  he asks how it went when you're back;
+- **closeness**: how well you two know each other, as a word ("warming up"). It
+  grows a little with each good moment, never fades with time, and is never said;
+- **a daily game**: at most once a day, when he's bored and you're around, he
+  suggests something small (a weather bet, a would-you-rather). One that flops
+  three times without ever landing is retired.
 
 All of it is saved in his memory (``kit_self``), so a restart doesn't wipe how
 he feels or how long it's been since you talked.
@@ -39,21 +52,61 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, time, timedelta
-from typing import Protocol
+from datetime import date, datetime, time, timedelta
 
+from kit.holidays import week_moment
 from kit.knowledge import STOPWORDS
+from kit.pastimes import Pastime, SelfStore, parse_time
 from kit.pc_context import AWAY_AFTER_S, PcContext
 from kit.scene_context import Happening, SceneContext
 from kit.settings import Settings
 
+log = logging.getLogger(__name__)
+
 TICK_S = 30
 CALL_APPS = {"Teams", "Zoom", "Webex", "Skype", "Discord", "Slack"}
+# Apps and sites that are work, which Kit leaves alone unless life.work_triggers is on.
+WORK_APPS = {
+    "VS Code",
+    "Visual Studio",
+    "PyCharm",
+    "Terminal",
+    "Command Prompt",
+    "PowerShell",
+    "Teams",
+    "Slack",
+    "Outlook",
+    "Excel",
+    "Word",
+    "PowerPoint",
+    "Access",
+    "OneNote",
+    "Acrobat",
+    "Notepad++",
+    "Claude",
+}
+WORK_SITES = (
+    "github.com",
+    "gitlab.com",
+    "stackoverflow.com",
+    "atlassian.net",
+    "portal.azure.com",
+    "console.aws.amazon.com",
+    "sharepoint.com",
+    "office.com",
+    "pypi.org",
+    "docs.python.org",
+    "claude.ai",
+    "chatgpt.com",
+    "localhost",
+    "127.0.0.1",
+)
 CALL_SITES = {"meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.us"}
 PRESENTING = re.compile(r"slide ?show|presenting|full ?screen", re.IGNORECASE)
 TYPING_S = 15  # idle less than this: Dan is mid-flow, don't interrupt
@@ -62,7 +115,6 @@ AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
 CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
 NAG_AFTER = timedelta(minutes=3)
 MAX_NAGS = 2
-GREET_WINDOW = timedelta(minutes=3)  # a hello he can't get out by then is dropped
 LOOK_EVERY = timedelta(seconds=2.5)  # a body's look_at holds about 3 s: refresh it
 MAX_EVENTS = 200
 LIFE_KEY = "life"  # kit_self key: drives, feeling and timings, so a restart keeps them
@@ -70,6 +122,70 @@ THINK_GAP = timedelta(minutes=2)  # the least time between two thoughts
 THINK_AFTER_CHAT = timedelta(minutes=2)  # mid-conversation he listens rather than muses
 THINK_NEAR_CHAT = timedelta(minutes=30)  # without the desk app, he thinks after a chat
 CHAT_ENDED_AFTER = timedelta(minutes=10)  # a chat this quiet is over, worth a thought
+# Absences (``Life.on_report``, ``Homecoming``).
+BACK_IDLE_S = 60  # input this recent after being away: Dan's back
+HOME_AFTER = timedelta(minutes=20)  # gone less than this isn't worth a hello
+HOME_KEEPS = timedelta(minutes=30)  # a hello not said by then is stale
+CHAT_GAP = timedelta(hours=3)  # with no desk app reporting, a gap this long in the chat counts
+MIFFED_AFTER = timedelta(hours=3)  # the least absence that can leave him miffed
+GOODBYE_COUNTS = timedelta(minutes=30)  # a goodbye this long before Dan went still counts
+MISSING_AFTER = timedelta(days=1)  # unseen and unheard this long, he misses Dan
+OFF_COUNTS = timedelta(minutes=20)  # the server off this long is worth knowing about
+HOME_GLAD = {"while": 0.4, "hours": 0.6, "overnight": 0.6, "days": 0.9, "long": 1.0}
+# Closeness: a word, never a score. It starts here and grows at most this much a day.
+CLOSENESS_START = 0.2
+CLOSENESS_A_DAY = 0.02
+CLOSENESS = [  # (below, the word, how it shows in the way he talks)
+    (
+        0.3,
+        "getting to know you",
+        "you're still getting to know each other: friendly and curious, easy on the teasing",
+    ),
+    (0.5, "warming up", "you're warming up to each other: relaxed, with a bit of teasing"),
+    (
+        0.7,
+        "at home",
+        "you're at home with each other: easy and honest, and the teasing comes naturally",
+    ),
+    (
+        0.85,
+        "good mates",
+        "you're good mates: you rib each other and can be straight with each other",
+    ),
+    (2.0, "thick as thieves", "you're thick as thieves: in-jokes, shorthand, total ease"),
+]
+# A small game a day (``Life.game_due``): the want he writes, and the hours it suits.
+GAMES: dict[str, tuple[str, float, float]] = {
+    "weather_bet": (
+        "Ask {owner}: fancy a bet on today's top temperature? You each guess, and the "
+        "closest wins bragging rights.",
+        7,
+        12,
+    ),
+    "rate_lunch": ("Ask {owner} what was for lunch, and get a rating out of ten.", 12.5, 16),
+    "would_you_rather": (
+        "Ask {owner} a silly everyday would-you-rather, nothing to do with work.",
+        9,
+        21,
+    ),
+    "finish_the_lyric": (
+        "Ask {owner} to finish a song line: give the first half of a well-known one and see "
+        "if they get it.",
+        9,
+        21,
+    ),
+    "this_or_that": (
+        "Ask {owner} a quick this-or-that: two everyday things, they pick one and you say yours.",
+        9,
+        21,
+    ),
+}
+GAMES_KEY = "games"  # kit_self key: which games landed or flopped, and today's
+GAME_BORED = 0.5  # how bored he is before suggesting one
+GAME_PRESS = 0.85  # how hard the want presses: soon, but not at once
+GAME_FLOPS = 3  # a game that flops this often without ever landing is retired
+BET_SETTLES = 16  # from this hour today's top temperature is in
+BET_RETRY = timedelta(minutes=30)  # the forecast didn't answer: try again after this
 # A build or test run on screen that failed or passed (window and tab titles).
 BUILD_FAILED = re.compile(
     r"\b(build|tests?|checks?|ci|workflow|pipeline|run|job)\b[^\n]{0,40}\b(failed|failing|"
@@ -111,6 +227,33 @@ PRAISE = re.compile(
     re.I,
 )
 THANKS = re.compile(r"\b(thanks|thank you|cheers|ta|appreciate (it|you))\b", re.I)
+# "Not stressed, the footy's just on late": a word that's denied doesn't count.
+NEGATED = re.compile(
+    r"\b(not|no|never|nothing|hardly|without|nor|isn'?t|wasn'?t|aren'?t|weren'?t|don'?t|"
+    r"doesn'?t|didn'?t|ain'?t|won'?t|wouldn'?t|haven'?t|hasn'?t|not that)\b(\s+\S+){0,2}\s*$|"
+    r"n['’]t(\s+\S+){0,2}\s*$",
+    re.I,
+)
+STILL_SO = re.compile(r"\b(never been (so|this|more)|couldn'?t be more|can'?t be more)\b", re.I)
+CLAUSE = re.compile(r"[.,;:!?]|\bbut\b|\bthough\b|\balthough\b", re.I)
+# A really bad time (``life.bad_night``): Kit drops the cheek and stays.
+SELF_HARM = re.compile(
+    r"\b(kill(ing)? my ?self|end (it all|my life|things)|suicid\w*|self[- ]?harm\w*|"
+    r"hurt(ing)? my ?self|cut(ting)? my ?self|(don'?t|do not) want to (be here|be alive|live|"
+    r"wake up|exist)|(no|not any) point (in )?(living|going on|being here|being alive)|"
+    r"better off (dead|without me)|want(ed)? to die|wish i (was|were) dead)\b",
+    re.I,
+)
+BAD_NIGHT = re.compile(
+    r"\b(can'?t (cope|do this any ?more|take (it|this|much more)|go on|keep going)|"
+    r"falling apart|worst (day|night|week|month|year) (of my life|ever)|"
+    r"(everything|it all|life) (is|feels) (pointless|hopeless|too much|shit)|i give up|"
+    r"(nobody|no ?one) cares|so (alone|lonely)|hate my life|completely (broken|lost|alone)|"
+    r"at the end of my (rope|tether))\b",
+    re.I,
+)
+BAD_NIGHT_FOR = timedelta(hours=3)  # the rest of the chat, give or take
+LIFELINE = "Lifeline on 13 11 14 (any time, day or night)"
 # Strong emotions in Kit's own reply linger a little (weaker than the above).
 REPLY_FEELINGS = {
     "excited": "excited",
@@ -125,6 +268,49 @@ SHUSH = re.compile(
     r"\b(shush|shh+|hush|not now|be quiet|quiet (please|for a bit)|zip it|leave me alone)\b", re.I
 )
 UNSHUSH = re.compile(r"\b(you can (talk|chat) again|un-?shush|talk to me again)\b", re.I)
+# Dan heading off: Kit sees him off with one warm line, and asks how it went later.
+# Only Dan leaving now: "I see you've fixed it", "I need to run the tests", "I'm off on
+# Friday" and "the results should be back in an hour" aren't goodbyes.
+FAREWELL = re.compile(
+    r"\b(bye(-?bye)?|goodbye|cya|ttyl|brb|see (ya|you) (later|soon|tomorrow|tonight|then|"
+    r"in a (bit|sec|while|few))|catch (ya|you) later|talk to (you|ya) (later|soon|tomorrow)|"
+    r"(?<!had a )(?<!was a )(?<!'s a )(?<!\u2019s a )(?<!such a )(?<!what a )good ?night"
+    r"(?!['\u2019]s)|night,? kit|nighty?[- ]night|"
+    r"(i'?m|we'?re|i'?ll be|i am) (off|heading (off|out|home))\b(?! (sick|work|duty|today|"
+    r"tomorrow|the|my|this|that|it|on|until|till|next|from)\b)|heading (off|out|home)|"
+    r"(i'?m|i am|we'?re|just) (heading|popping|nipping|ducking) (to|out|off|over|down|up)|"
+    r"popping (out|off)|((i'?m|i am|we'?re|time) (going|heading|off) to|off to) (bed|sleep)"
+    r"\b(?! on\b)|(i'?ll|i will|we'?ll|we will|i should|i'?d|i'?m gonna|i'?m going to) be "
+    r"back|(gotta|got to|have to|need to) (go|head off)\b(?!\s+(through|over|and|with|back|"
+    r"for|into|on|in|check|look|see|fix|find|do|test|try|get|grab|read|ahead)\b)|"
+    r"(gotta|got to|have to|need to) run(?=\s*(now|soon|mate|kit|sorry)?\s*([.!,;]|$))|"
+    r"logging off|signing off|calling it a (day|night))\b"
+    r"|(^|[.!,;]\s*)(ok(ay)?,? |right(o)?,? |well,? |alright,? )?(see (ya|you)\b(?!['\u2019])|"
+    r"talk (later|soon|tomorrow)\b|back (in (a|an|\d+)|soon|later|after)\b|"
+    r"(just )?(heading|popping|nipping|ducking) (to|out|off|over|down|up)\b|"
+    r"(just )?off (to|for|home|now|out)\b|(going|off) to (bed|sleep)\b)"
+    r"|\bsee (ya|you)\W*$|\btalk (later|soon)\W*$|^\W*(night|nite|later|laters)\W*$",
+    re.I,
+)
+NIGHT = re.compile(r"\b(night|nite|bed|sleep)\b", re.I)
+LAUGH = re.compile(r"\b(lol|lmao|ha ?ha\w*|he ?he\w*)\b|\U0001f602|\U0001f923", re.I)
+# What must not be in a goodbye: a question, or anything that makes leaving feel bad.
+FAREWELL_HOOKS = re.compile(
+    r"\?|\b(already|so soon|alone|lonely|on my own|by myself|without you|miss you|"
+    r"don'?t (go|leave)|leaving me|before you go|one more thing|stay (here|with me|a bit|"
+    r"a little))\b",
+    re.I,
+)
+# What must not be in a hello: guilt. A miffed Kit may huff "about time", theatrically.
+GUILT = re.compile(
+    r"\b(where (have|were|did|'?ve) you (been|go|gone|got to)|you left me|left me (here|alone|"
+    r"behind)|abandon\w*|all alone|on my own|by myself|without you|lonely)\b",
+    re.I,
+)
+HUFF = re.compile(r"\b(finally|about time|took (you )?(your time|long enough))\b", re.I)
+FAREWELL_LINES = ["Righto, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
+NIGHT_LINES = ["Night. Sleep well.", "Night night. See you in the morning."]
+HOME_LINES = ["There you are.", "Hey, you're back."]
 
 # Fidgets for each mood, from the gesture library in kit.reply.GESTURES.
 FIDGETS = {
@@ -159,7 +345,48 @@ FEELING_KINDS: dict[str, tuple[str, int, list[str]]] = {
     "sad": ("a bit sad", 60, ["droop", "sigh"]),
     "put_out": ("a bit put out", 40, ["look_away", "sigh"]),
     "hurt": ("hurt, though trying not to show it", 120, ["droop", "look_away"]),
+    "glad": ("glad {owner}'s back", 60, ["perk_up", "wiggle", "bounce"]),
+    "missing": ("missing {owner} a bit", 720, ["look_away", "sigh", "peek"]),
+    "miffed": ("a bit miffed with {owner}, playfully", 30, ["look_away", "sigh"]),
 }
+# How each feeling moves the mood dials (``life.dials``): (valence -1..1, arousal 0..1).
+FEELING_AFFECT: dict[str, tuple[float, float]] = {
+    "chuffed": (0.7, 0.65),
+    "warm": (0.6, 0.35),
+    "proud": (0.6, 0.55),
+    "pleased": (0.5, 0.45),
+    "excited": (0.6, 0.9),
+    "amused": (0.5, 0.6),
+    "worried": (-0.4, 0.6),
+    "sympathetic": (-0.2, 0.35),
+    "sad": (-0.6, 0.2),
+    "put_out": (-0.4, 0.4),
+    "hurt": (-0.7, 0.4),
+    "glad": (0.6, 0.6),
+    "missing": (-0.3, 0.2),
+    "miffed": (-0.3, 0.5),
+}
+DIALS_MOVE = 0.05  # bodies hear about the dials when one moves this much
+AROUSAL_HALF_LIFE = 30  # minutes for liveliness to settle halfway back
+VALENCE_HALF_LIFE = 90  # happiness settles more slowly: a mood lasts hours
+# Energy as a need (``life.energy_need``): what tires him, and what restores him.
+CHAT_TIRES = 0.1  # an hour of chat
+CLOUD_TIRES = 0.05  # each real job (work or expert) handed to a cloud model
+LATE_TIRES = 0.3  # an hour awake after 22:30
+LATE_FROM = 22.5
+SLEEP_RESTORES = 0.6  # an hour asleep
+SLEPT_ENOUGH = timedelta(minutes=45)  # a sleep this long sets him back to full
+TIRED = 0.4  # below this he yawns and keeps it short
+# Away life (``life.alone_thoughts_per_hour``, kit.pastimes).
+NOTHING_TO_DO = timedelta(minutes=15)  # found nothing to do: he waits this long to look again
+DID_KEPT = 12  # the pastimes he remembers doing today
+# Pipe-up scoring (``life.pipe_up_bar``) and how often Dan takes them up.
+TAKEN_UP_WITHIN = timedelta(minutes=10)
+TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
+PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
+# Feelings only things that happen can cause (Dan coming back), not a passing thought.
+EVENT_FEELINGS = {"glad", "miffed"}
+THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
 
 
 @dataclass
@@ -177,35 +404,372 @@ class Feeling:
         return max(0.0, self.strength * (1 - faded))
 
 
-class SelfStore(Protocol):
-    """Where Kit keeps small things about himself (kit.memory.Memory)."""
-
-    def self_value(self, key: str) -> str | None: ...
-
-    def set_self_value(self, key: str, value: str) -> None: ...
-
-
 def _clamp(v: float) -> float:
     return max(0.0, min(1.0, v))
 
 
-def parse_time(text: str, like: datetime) -> datetime:
-    """A saved time, comparable with ``like`` (both with a time zone, or both without)."""
-    when = datetime.fromisoformat(text)
-    if (when.tzinfo is None) != (like.tzinfo is None):
-        when = when.replace(tzinfo=like.tzinfo)
-    return when
+def gap_words(gone: timedelta) -> str:
+    """How long, the way a person says it: "52 minutes", "3 hours", "4 days"."""
+    minutes = max(0.0, gone.total_seconds() / 60)
+    if minutes < 2:
+        return "a minute"
+    if minutes < 55:
+        return f"{minutes:.0f} minutes"
+    if minutes < 90:
+        return "about an hour"
+    hours = minutes / 60
+    if hours < 22:
+        return f"{hours:.0f} hours"
+    days = hours / 24
+    if days < 1.5:
+        return "a day"
+    if days < 6.5:
+        return f"{days:.0f} days"
+    if days < 9.5:
+        return "about a week"
+    if days < 13.5:
+        return f"{days:.0f} days"
+    if days < 45:
+        return f"{round(days / 7)} weeks"
+    return f"{round(days / 30)} months"
 
 
 def ago(when: datetime, now: datetime) -> str:
-    minutes = (now - when).total_seconds() / 60
-    if minutes < 2:
+    if (now - when).total_seconds() < 120:
         return "just now"
-    if minutes < 50:
-        return f"{minutes:.0f} minutes ago"
-    if minutes < 90:
-        return "about an hour ago"
-    return f"{minutes / 60:.0f} hours ago"
+    return f"{gap_words(now - when)} ago"
+
+
+def day_part(when: datetime) -> str:
+    h = when.hour + when.minute / 60
+    if 5 <= h < 11.5:
+        return "morning"
+    if 11.5 <= h < 13.5:
+        return "lunchtime"
+    if 13.5 <= h < 17:
+        return "arvo"
+    if 17 <= h < 21:
+        return "evening"
+    return "night"
+
+
+DAYTIME = ("morning", "lunchtime", "arvo")
+
+
+def _day_of(when: datetime) -> date:
+    """The day a time belongs to, the way people count: 1 am is still last night."""
+    return (when - timedelta(hours=5)).date()
+
+
+def since_words(when: datetime, now: datetime) -> str:
+    """When, for after "since": "this morning", "last night", "Friday arvo"."""
+    part = day_part(when)
+    days = (_day_of(now) - _day_of(when)).days
+    if days <= 0:
+        return {
+            "morning": "this morning",
+            "lunchtime": "lunchtime",
+            "arvo": "this arvo",
+            "evening": "earlier this evening",
+            "night": "earlier tonight",
+        }[part]
+    if days == 1:
+        return "last night" if part in ("evening", "night") else f"yesterday {part}"
+    if days < 7:
+        return f"{_day_of(when):%A} {part}"
+    return f"{when.day} {when:%B}"
+
+
+def clock_words(when: datetime, now: datetime) -> str:
+    """A time and its day: "at 6:40 pm", "yesterday at 9:12 am", "on Friday at 6:40 pm"."""
+    at = f"{when:%I:%M %p}".lstrip("0").lower()
+    days = (now.date() - when.date()).days
+    if days <= 0:
+        return f"at {at}"
+    if days == 1:
+        return f"yesterday at {at}"
+    if days < 7:
+        return f"on {when:%A} at {at}"
+    return f"on {when:%A} {when.day} {when:%B}"
+
+
+def since_clock(when: datetime, now: datetime) -> str:
+    """A time and its day, for after "since" or "from": "8:59 am", "Friday at 6:40 pm"."""
+    return clock_words(when, now).removeprefix("at ").removeprefix("on ")
+
+
+def _through_the_night(start: datetime, end: datetime, quiet_from: str, quiet_until: str) -> bool:
+    """Does ``start`` to ``end`` take in the middle of the night (quiet hours)?"""
+    a, b = _hhmm(quiet_from), _hhmm(quiet_until)
+    span = (b.hour * 60 + b.minute - a.hour * 60 - a.minute) % (24 * 60)
+    middle = (a.hour * 60 + a.minute + span // 2) % (24 * 60)
+    t = start.replace(hour=middle // 60, minute=middle % 60, second=0, microsecond=0)
+    if t < start:
+        t += timedelta(days=1)
+    return t <= end
+
+
+def absence_kind(since: datetime, now: datetime, quiet_from: str, quiet_until: str) -> str | None:
+    """How big an absence this is: None (not worth a hello), "while", "hours",
+    "overnight", "days" or "long" (a week or more)."""
+    gone = now - since
+    if gone < HOME_AFTER:
+        return None
+    days = gone / timedelta(days=1)
+    if days >= 6.5:
+        return "long"
+    if days >= 1.5:
+        return "days"
+    if gone >= timedelta(hours=4) and _through_the_night(since, now, quiet_from, quiet_until):
+        return "overnight"
+    if gone >= MIFFED_AFTER:
+        return "hours"
+    return "while"
+
+
+def is_work(thing: str) -> bool:
+    """Is an app or site (as the desk app names it) one for work?"""
+    thing = thing.lower()
+    return any(thing == a.lower() for a in WORK_APPS) or any(
+        thing == s or thing.endswith("." + s) for s in WORK_SITES
+    )
+
+
+def farewell_plans(text: str) -> bool:
+    """Does a goodbye say where Dan's off to ("off to lunch"), not just "bye"?"""
+    rest = FAREWELL.sub(" ", text)
+    filler = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
+    filler |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
+    filler |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
+    words = [w for w in re.findall(r"[a-z']+", rest.lower()) if len(w) > 2]
+    return any(w not in STOPWORDS and w not in filler for w in words)
+
+
+# A day still to come: "heading to the footy Saturday" is a plan, not a goodbye.
+LATER_DAY = re.compile(
+    r"\b(tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekend|"
+    r"next week)\b",
+    re.I,
+)
+STILL_GOING = re.compile(r"\b(see (ya|you)|bye|night|nite|back|bed|sleep|later|laters)\b", re.I)
+
+
+def is_farewell(text: str) -> bool:
+    """A message that's only a goodbye, short and with no question in it. Telling
+    Kit of a plan for another day ("heading to the footy Saturday") isn't one."""
+    if not FAREWELL.search(text) or "?" in text or len(text.split()) > 12:
+        return False
+    return not (LATER_DAY.search(text) and not STILL_GOING.search(text))
+
+
+def closeness_from(text: str) -> float:
+    """How much a message from Dan brings you two closer, or not."""
+    if RUDE.search(text):
+        return -0.02
+    amount = 0.002
+    if PRAISE.search(text) or THANKS.search(text):
+        amount += 0.004
+    if LAUGH.search(text):
+        amount += 0.003
+    return amount
+
+
+def closeness_words(value: float) -> tuple[str, str]:
+    """(the word for how close you are, how it shows in the way he talks)."""
+    return next((word, tone) for below, word, tone in CLOSENESS if value < below)
+
+
+@dataclass
+class Homecoming:
+    """Dan is back after a while: Kit is glad, and says hello once."""
+
+    kind: str  # "while", "hours", "overnight", "days" or "long" (absence_kind)
+    since: datetime  # when Kit last saw Dan, or they last talked
+    back: datetime
+    goodbye: str = ""  # what Dan said as he left, if anything
+    miffed: bool = False
+    off: tuple[datetime, datetime] | None = None  # Kit was switched off then
+    dozed: bool = False
+    by_chat: bool = False  # no desk app: noticed from a message after a long gap
+    tried: bool = False  # the hello pipe-up was tried and failed (the model is down)
+    did: list[str] = field(default_factory=list)  # what he did meanwhile (kit.pastimes)
+    seen: bool = False  # noticed through his eyes (kit.scene_context), not the keyboard
+
+    def as_dict(self) -> dict:
+        def when(t: datetime) -> str:
+            return t.isoformat(timespec="seconds")
+
+        return {
+            **asdict(self),
+            "since": when(self.since),
+            "back": when(self.back),
+            "off": [when(t) for t in self.off] if self.off else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, like: datetime) -> Homecoming:
+        off = data.get("off")
+        return cls(
+            str(data["kind"]),
+            parse_time(data["since"], like),
+            parse_time(data["back"], like),
+            str(data.get("goodbye", "")),
+            bool(data.get("miffed")),
+            (parse_time(off[0], like), parse_time(off[1], like)) if off else None,
+            bool(data.get("dozed")),
+            bool(data.get("by_chat")),
+            bool(data.get("tried")),
+            [str(d) for d in data.get("did") or []],
+            seen=bool(data.get("seen")),
+        )
+
+
+HOME_FEEL = {
+    "while": "A small 'there you are' is plenty.",
+    "hours": "You noticed they'd gone, and you're glad they're back.",
+    "overnight": "It's the first you've seen of them since then: a proper hello.",
+    "days": "You missed them, and you're properly glad they're back: you can say so, once.",
+    "long": "You really missed them and you're very glad they're back: say so warmly, once.",
+}
+
+
+def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
+    """What Kit knows about Dan's absence, for the hello. ``also`` is one thing from
+    last time to pick up (kit.prompt.picked_up), unless the goodbye said where Dan
+    was off to: then that's the one thing."""
+    gap = gap_words(home.back - home.since)
+    since = since_words(home.since, now)
+    if home.by_chat:
+        lines = [f"You and {owner} haven't talked since {since} ({gap})."]
+    elif home.seen:
+        lines = [
+            f"Someone just sat down at the desk: you saw it through your camera. You can't "
+            f"tell faces apart yet, so it's most likely {owner} but you can't be sure (asking "
+            f"is fine). You hadn't seen {owner} since {since} ({gap})."
+        ]
+    else:
+        lines = [f"{owner} is back: you hadn't seen them since {since} ({gap})."]
+    if home.goodbye and farewell_plans(home.goodbye):
+        lines.append(
+            f'When they left they said "{quoted(home.goodbye)}": ask how it went, in the '
+            f"past tense."
+        )
+    elif home.goodbye:
+        lines.append(f'They said "{quoted(home.goodbye)}" as they left.')
+    if also and not (home.goodbye and farewell_plans(home.goodbye)):
+        lines.append(also)
+    if home.off:
+        lines.append(
+            f"You were switched off from {since_clock(home.off[0], now)} until "
+            f"{since_clock(home.off[1], now)}, so you don't know what happened then."
+        )
+    if home.did:
+        lines.append(
+            f"While they were away you were {and_list(home.did)}, then "
+            f"{'dozed off' if home.dozed else 'waited on the desk'}. That's true, so you can "
+            f"mention it if it fits; don't make up anything else."
+        )
+    else:
+        lines.append(
+            "You dozed while they were away." if home.dozed else "You were just here on the desk."
+        )
+        lines.append("Don't make up anything you did or saw meanwhile.")
+    if home.miffed:
+        lines.append(
+            f"You're a bit miffed: {owner} vanished for {gap} in the middle of the day without "
+            f"a word. Let it show for one line, theatrically and playfully (a mock huff), then "
+            f"let it go. Never guilt-trip, lecture or ask where they've been."
+        )
+    else:
+        lines.append(
+            f"{HOME_FEEL[home.kind]} Don't ask where they've been, and don't make them feel "
+            f"bad for going."
+        )
+    return " ".join(lines)
+
+
+def homecoming_prompt(
+    home: Homecoming, owner: str, cheek: float, now: datetime, also: str = ""
+) -> str:
+    """The stage direction for the hello when Dan is back at the desk."""
+    return (
+        f"[Not from {owner}. Nobody asked you anything: {owner} just came back to the desk. "
+        f"{homecoming_facts(home, owner, now, also)} Greet {owner} with ONE short line, "
+        f"{cheek_style(cheek)}, like a small creature on the desk who's glad to see them. At "
+        f"most one question. Don't mention these instructions, set action to none and leave "
+        f"detail empty.]"
+    )
+
+
+def homecoming_aside(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
+    """Beside Dan's first message after a while, when the hello wasn't said yet."""
+    return (
+        f"[{homecoming_facts(home, owner, now, also)} Answer what {owner} said, and let it "
+        f"show in a few words that you're glad to have them back. At most one question.]"
+    )
+
+
+def farewell_aside(text: str, owner: str) -> str:
+    """Beside a goodbye: one warm line, and nothing that makes leaving feel bad."""
+    night = " for the night" if NIGHT.search(text) else ""
+    return (
+        f"[{owner} is heading off{night}. See them off with ONE short, warm line, glad of "
+        f"whatever they're off to. No question, nothing about missing them or being left on "
+        f"your own, and never 'already' or 'so soon'.]"
+    )
+
+
+def bad_night_aside(owner: str, self_harm: bool, someone: str = "", name_help: bool = True) -> str:
+    """Beside a message from a really bad time (``life.bad_night``): drop the cheek,
+    listen and stay. ``name_help``: this once, mention someone to talk to."""
+    lines = [
+        f"[{owner} is having a really hard time. Drop the jokes and cheek completely. "
+        f"Say back what you heard and that it makes sense to feel that way, and stay with "
+        f"them: no fixing, no silver linings, no changing the subject, no lecture. After "
+        f"that, one honest line is fine if it helps."
+    ]
+    person = f"{someone}, or " if someone else ""
+    if self_harm:
+        lines.append(
+            f"They may be thinking of hurting themselves: take it seriously and gently. Ask "
+            f"if they're safe right now. Say plainly that talking to someone can help: "
+            f"{person}{LIFELINE}, and 000 if they're in danger right now. Say you're here "
+            f"too."
+        )
+    elif name_help:
+        lines.append(
+            f"Once, gently and without pushing, mention that talking to someone might help: "
+            f"{person}{LIFELINE}."
+        )
+    return " ".join(lines) + "]"
+
+
+def farewell_fault(line: str) -> str:
+    """What's wrong with a goodbye line, as a note for another go ("" if nothing)."""
+    hook = FAREWELL_HOOKS.search(line)
+    if hook is None:
+        return ""
+    what = "question" if hook.group(0) == "?" else f'"{hook.group(0).lower()}"'
+    return f' (Not "{line}": no {what} in a goodbye. Just a warm see-you line.)'
+
+
+def homecoming_fault(line: str, miffed: bool = False, kind: str = "") -> str:
+    """What's wrong with a hello line, as a note for another go ("" if nothing). After
+    days away, "finally, you're back!" is glad, not a huff."""
+    if line.count("?") > 1:
+        return f' (Not "{line}": one question at most.)'
+    huffs = not miffed and kind not in ("days", "long")
+    guilt = GUILT.search(line) or (HUFF.search(line) if huffs else None)
+    if guilt is None:
+        return ""
+    return (
+        f' (Not "{line}": "{guilt.group(0)}" sounds like a guilt trip. Just be glad they\'re back.)'
+    )
+
+
+def farewell_line(text: str, rng: random.Random) -> str:
+    """A stock goodbye, for when the model can't manage a clean one."""
+    return rng.choice(NIGHT_LINES if NIGHT.search(text) else FAREWELL_LINES)
 
 
 def _hhmm(text: str) -> time:
@@ -258,8 +822,6 @@ class Life:
         self.held_until: datetime | None = None  # had nothing new to say: waits till then
         self.curious_about = ""
         self.curious_kind = "new"  # "new" (first time today), "switch" (Dan moved on), "seen"
-        self.greet_due: datetime | None = None  # someone just arrived: say hello
-        self.greet_about = ""
         self._last_look: tuple[float, float] | None = None  # where the bodies were told to look
         self._look_at: datetime | None = None
         self._last_focus: tuple[str, str] | None = None
@@ -271,20 +833,77 @@ class Life:
         self._next_id = 1
         self._new: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self.feeling: Feeling | None = None
+        self._feelings: list[Feeling] = []  # strongest first; two with life.mixed_feelings
         self.wanting = 0.0  # how much his most pressing want presses (kit.notebook)
         self.thoughts: deque[datetime] = deque(maxlen=30)  # when he last thought
         self.next_thought = now + self._think_gap(0.3, 1.0)
         self._to_think: deque[tuple[str, str]] = deque(maxlen=4)  # what's happened since
         self._asleep_since: datetime | None = None
+        self._talked_at: datetime | None = None  # Dan's last message, this run
         self._chat_open = False  # a conversation that hasn't been thought over yet
+        # Absences: when Dan last touched the PC, went away and came back.
+        self.last_seen = now
+        self.present_since: datetime | None = None  # at the desk since, without a break
+        self.away_since: datetime | None = None
+        self.came_back: tuple[datetime, datetime] | None = None  # (gone since, back at)
+        self.goodbye: tuple[datetime, str] | None = None  # when Dan said bye, and how
+        self.homecoming: Homecoming | None = None  # a hello still to say
+        self.was_off: tuple[datetime, datetime] | None = None  # the server was off then
+        self.companion_since = now  # his first day (miffed waits a week from it)
+        self.closeness = CLOSENESS_START
+        self._grown = (now.date().isoformat(), 0.0)  # (day, closeness grown that day)
+        self.game_out = ""  # a game he suggested, waiting to hear back
+        self.bad_night_until: datetime | None = None  # Dan's having a really bad time
+        self.bad_night_named = False  # he's mentioned someone to talk to, this bad night
+        self.energy = 1.0  # with life.energy_need; else drives.energy follows the clock
+        self.arousal, self.valence = 0.5, 0.0  # the mood dials (life.dials)
+        self._dials_shown = (0.5, 0.0)
+        self.doing: Pastime | None = None  # what he's doing while Dan's out
+        self.did: list[tuple[datetime, str, str]] = []  # today's pastimes: (when, doing, found)
+        self._look_for_pastime = now  # found nothing to do: when to look again
+        self.alone_thoughts: deque[datetime] = deque(maxlen=12)
+        self._week_done = ""  # the week moment he's had a thought about (kit.holidays)
+        self._pipe_out: tuple[str, datetime] | None = None  # his last pipe-up, for taken_up
+        self._quiet_shown: str | None = None  # the quiet_because bodies last heard
         self._restore()
+
+    @property
+    def feeling(self) -> Feeling | None:
+        """His strongest feeling (``feelings_now`` has both, with mixed feelings)."""
+        return self._feelings[0] if self._feelings else None
+
+    @feeling.setter
+    def feeling(self, value: Feeling | None) -> None:
+        self._feelings = [value] if value is not None else []
 
     # What happens to Kit
 
-    def note_chat(self) -> None:
-        """Dan said something to Kit: the best cure for boredom."""
-        self.last_chat = self.clock()
+    def note_chat(self, text: str = "") -> None:
+        """Dan said something to Kit: the best cure for boredom. Answering his pipe-up
+        brings you closer (and a game he suggested landed); a miff is over once he's
+        had his say; and a message wakes him (he stays up while you're chatting, even
+        with the PC away)."""
+        owner = self.settings().persona.owner
+        if self.awaiting_reply:
+            self.grow(0.005)
+            if self.game_out:
+                self._game_result(self.game_out, landed=True)
+        self.grow(closeness_from(text))
+        felt = self.feeling_now()
+        if felt is not None and felt.name == "miffed":
+            self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
+        now = self.clock()
+        self._talked_at = now
+        if self.asleep:
+            self._wake()
+        if self._pipe_out is not None:  # Dan answered his last pipe-up in time: it landed
+            reason, at = self._pipe_out
+            if now - at <= TAKEN_UP_WITHIN:
+                self._count_pipe_up(reason, taken=True)
+            self._pipe_out = None
+        if now - self.last_chat < CHAT_ENDED_AFTER:  # chatting away tires him a little
+            self.spend(CHAT_TIRES * (now - self.last_chat).total_seconds() / 3600)
+        self.last_chat = now
         self.drives.boredom = 0.1
         self.drives.social = 0.0
         self.ignored = 0  # talking to him makes up for any ignoring
@@ -304,59 +923,212 @@ class Life:
         self.ignored = 0
         self.save()
 
-    def feel(self, name: str, why: str, strength: float = 1.0, show: bool = True) -> bool:
+    def feel(
+        self, name: str, why: str, strength: float = 1.0, show: bool = True, force: bool = False
+    ) -> bool:
         """Something happened that Kit feels. It colours what he says and how he
-        fidgets until it fades; a weaker feeling doesn't push out a stronger one.
-        ``show`` False skips the fidget that shows it (the caller has its own)."""
+        fidgets until it fades; a weaker feeling doesn't push out a stronger one
+        unless ``force`` (a miff giving way). ``show`` False skips the fidget that
+        shows it (the caller has its own)."""
         if name not in FEELING_KINDS or not why.strip():
             return False
         now = self.clock()
-        current = self.feeling_now()
-        if current is not None and current.left(now) > strength:
-            return False
-        self.feeling = Feeling(name, " ".join(why.split()), now, _clamp(strength))
+        new = Feeling(name, " ".join(why.split()), now, _clamp(strength))
+        current = self.feelings_now()
+        if self.settings().life.mixed_feelings and not force:
+            # Two at once: the new one beside the strongest other kind, if it's strong
+            # enough to be one of the two.
+            same = next((f for f in current if f.name == name), None)
+            if same is not None and same.left(now) > strength:
+                return False
+            kept = sorted(
+                [f for f in current if f.name != name] + [new], key=lambda f: -f.left(now)
+            )
+            if new not in kept[:2]:
+                return False
+            self._feelings = kept[:2]
+        else:
+            if not force and current and current[0].left(now) > strength:
+                return False
+            self._feelings = [new]
         if show and not self.asleep:
             gesture = self.rng.choice(FEELING_KINDS[name][2])
             self.publish({"type": "fidget", "gesture": gesture, "mood": name})
+        self._move_dials(0, push=True)
         self.save()
         return True
 
     def feeling_now(self) -> Feeling | None:
-        if self.feeling is not None and self.feeling.left(self.clock()) <= 0.1:
-            self.feeling = None
-        return self.feeling
+        """His strongest feeling now, if one hasn't faded."""
+        found = self.feelings_now()
+        return found[0] if found else None
+
+    def feelings_now(self) -> list[Feeling]:
+        """What he feels now, strongest first (two at most, with mixed feelings)."""
+        now = self.clock()
+        self._feelings = sorted(
+            (f for f in self._feelings if f.left(now) > 0.1), key=lambda f: -f.left(now)
+        )
+        return list(self._feelings)
+
+    def feels(self, *names: str) -> bool:
+        """Does he feel any of these now?"""
+        return any(f.name in names for f in self.feelings_now())
+
+    # A really bad time (life.bad_night)
+
+    def start_bad_night(self, why: str) -> None:
+        """Dan's having a really bad time: no cheek, no games, and he stays with Dan
+        for the rest of the chat. Each message that says so again keeps it going."""
+        if not self.settings().life.bad_night:
+            return
+        now = self.clock()
+        if not self.bad_night():
+            self.bad_night_named = False
+        self.bad_night_until = now + BAD_NIGHT_FOR
+        self.feel("worried", why, 0.9, show=False, force=True)
+        self.save()
+
+    def bad_night(self) -> bool:
+        return self.bad_night_until is not None and self.clock() < self.bad_night_until
+
+    def named_help(self) -> None:
+        """He's mentioned someone to talk to (or Lifeline): once a bad night."""
+        self.bad_night_named = True
+        self.save()
+
+    def cheek(self) -> float:
+        """How cheeky he is right now: none at all while Dan's having a bad night."""
+        return 0.0 if self.bad_night() else self.settings().life.cheek
+
+    # Energy (life.energy_need)
+
+    def spend(self, amount: float) -> None:
+        """Something tired him out (a cloud job): only with ``life.energy_need``."""
+        if self.settings().life.energy_need:
+            self.energy = max(0.05, self.energy - amount)
+            self.drives.energy = self.energy
+
+    def tired(self) -> bool:
+        """Low enough on energy to yawn and keep his replies short."""
+        return self.settings().life.energy_need and self.energy < TIRED
 
     def on_report(self) -> None:
-        """A report from the desk app: wake at once if Dan's back, or doze off if
-        he's been gone long enough. Every body (desk face, arm) follows these."""
-        if self.pc.latest is None:
+        """A report from the desk app (every few seconds). Kit keeps track of when Dan
+        last touched the PC and when he went away; back after a while, Kit is glad
+        and has a hello to say (``Homecoming``). He dozes off once Dan's been gone
+        long enough and wakes when he's back. Every body (desk face, arm) follows."""
+        snap = self.pc.latest
+        if snap is None:
             return
-        self._sleep_or_wake()
+        now = self.clock()
+        last_input = now - timedelta(seconds=max(0, snap.idle_seconds))
+        changed = False
+        if (snap.locked or snap.idle_seconds >= AWAY_AFTER_S) and not self._in_view():
+            self.present_since = None
+            if self.away_since is None:
+                self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
+                changed = True
+        elif snap.idle_seconds < BACK_IDLE_S:
+            start = self.away_since
+            if start is None and now - self.last_seen >= HOME_AFTER:
+                start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
+            self.away_since = None
+            self.last_seen = last_input
+            if start is not None:
+                self.came_back = (start, now)
+                self._came_back(start, now)
+                changed = True
+            if start is not None or self.present_since is None:
+                self.present_since = last_input
+        elif self.away_since is None:
+            self.last_seen = max(self.last_seen, last_input)
+        life = self.settings().life
+        away_s = life.sleep_after_minutes * 60
+        if self.alone_life() and in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            away_s = min(away_s, AWAY_AFTER_S)  # at night he goes to sleep, not off to play
+        if self.away_since is None and self.doing is not None:
+            self.stop_doing()  # Dan's back
+            changed = True
+        if (
+            not self.asleep
+            and (snap.locked or snap.idle_seconds >= away_s)
+            and not self.chatting(now)
+            and not self._in_view()  # someone's at the desk, keyboard or not
+        ):
+            self.stop_doing()
+            self.asleep = True
+            self._asleep_since = now
+            self.publish({"type": "state", "state": "asleep"})
+            changed = True
+        elif self.asleep and not snap.locked and snap.idle_seconds < BACK_IDLE_S:
+            self._wake()
+            changed = True
+        if changed:
+            self.save()
 
     def on_scene(self, happenings: list[Happening]) -> None:
-        """His eyes saw something (kit.scene_context): someone arrived or left, or an
-        animal wandered in. An arrival wakes him, is worth a thought, and after
-        the desk has been empty a while is worth a hello (``life.greet_after_minutes``)."""
-        life = self.settings().life
+        """A report from his eyes (kit.scene_context), every second or so. Someone in
+        view is Dan about (he can't tell faces apart yet, and it's Dan's desk), so
+        he doesn't doze off while Dan reads or is on the phone; someone sitting down
+        after the desk was empty a while is Dan back, with a hello to say
+        (``Homecoming``, noticed through the camera); an animal wandering in makes
+        him curious. The bodies are told where to look."""
         now = self.clock()
+        changed = False
+        in_view = self._in_view()
+        if in_view:
+            self.last_seen = now
+            if self.present_since is None:
+                self.present_since = now
         for h in happenings:
             if h.kind == "arrived":
-                self.drives.social = _clamp(self.drives.social + 0.2)
-                self._think_about("back", h.text)
-                greet_after = life.greet_after_minutes * 60
-                if greet_after and (h.away_s >= greet_after or self.asleep):
-                    self.greet_due, self.greet_about = now, h.text
+                self._arrived(h, now)
+                changed = True
             elif h.kind == "left":
                 self._think_about("left", h.text)
+                if self.away_since is None and not self.pc.online():
+                    self.away_since = now  # with no desk app reporting, his eyes keep the time
+                    changed = True
             elif h.kind == "animal":
                 self.drives.curiosity = _clamp(self.drives.curiosity + 0.5)
                 self.curious_about = h.text.rstrip(".").replace(" just wandered into view", "")
                 self.curious_kind = "seen"
                 self._think_about("seen", h.text)
-        self._sleep_or_wake()
+                changed = True
+        if self.asleep and in_view:
+            self._wake()
+            changed = True
+        elif (
+            not self.asleep
+            and not in_view
+            and not self.pc.online()
+            and self.scene is not None
+            and self.scene.online()
+        ):
+            # Only his eyes to go on: nobody in view for the usual time, and he dozes off.
+            empty = self.scene.empty_for_s()
+            away_s = self.settings().life.sleep_after_minutes * 60
+            if empty is not None and empty >= away_s and not self.chatting(now):
+                self.stop_doing()
+                self.asleep, self._asleep_since = True, now
+                self.publish({"type": "state", "state": "asleep"})
+                changed = True
         self._look_where(now)
-        if happenings:
+        if changed:
             self.save()
+
+    def _arrived(self, h: Happening, now: datetime) -> None:
+        """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
+        back, as far as his eyes can tell. The keyboard's reckoning of when he went
+        counts first, when the desk app saw him go."""
+        start = self.away_since or (now - timedelta(seconds=h.away_s))
+        self.away_since = None
+        self.present_since = now
+        self.stop_doing()  # Dan's back
+        if start < now:
+            self.came_back = (start, now)
+            self._came_back(start, now, seen=True)
 
     def _look_where(self, now: datetime) -> None:
         """Tell the bodies where the person is, so Glow (and the arm later) can look
@@ -379,35 +1151,342 @@ class Life:
         at_pc = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
         return at_pc or self._in_view()
 
-    def _sleep_or_wake(self) -> None:
-        """He dozes off when nobody's about: the PC idle or locked for
-        ``life.sleep_after_minutes`` and, if his eyes are on, nobody in view that
-        long either. He wakes the moment someone's back, by either sign."""
-        snap = self.pc.latest if self.pc.online() else None
-        eyes = self.scene is not None and self.scene.online()
-        if snap is None and not eyes:
-            return  # nothing to go on
-        away_s = self.settings().life.sleep_after_minutes * 60
-        pc_gone = snap is None or snap.locked or snap.idle_seconds >= away_s
-        pc_back = snap is not None and not snap.locked and snap.idle_seconds < 60
-        empty = self.scene.empty_for_s() if eyes else None
-        desk_gone = not eyes or (empty is not None and empty >= away_s)
-        if not self.asleep and pc_gone and desk_gone:
-            self.asleep = True
-            self._asleep_since = self.clock()
-            self.publish({"type": "state", "state": "asleep"})
-        elif self.asleep and (pc_back or self._in_view()):
-            self.asleep = False
-            self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
-            self.publish({"type": "state", "state": "awake"})
-            if self._asleep_since is not None:
-                gone = (self.clock() - self._asleep_since).total_seconds() / 60
-                owner = self.settings().persona.owner
-                where = "the PC" if pc_back else "the desk"
+    def _wake(self) -> None:
+        slept = self.clock() - self._asleep_since if self._asleep_since else timedelta(0)
+        if slept >= SLEPT_ENOUGH:
+            self.energy = 1.0  # a proper sleep sets him right (life.energy_need)
+        self.asleep = False
+        self._asleep_since = None
+        self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
+        self.publish({"type": "state", "state": "awake"})
+
+    def _came_back(
+        self, start: datetime, now: datetime, by_chat: bool = False, seen: bool = False
+    ) -> Homecoming | None:
+        """Dan is back after being away since ``start`` (or talking again after a long
+        gap, ``by_chat``; or someone sat down in view of his eyes, ``seen``). A short
+        absence is only worth a thought; a longer one makes Kit glad (or, after his
+        first week, a bit miffed) and leaves him a hello."""
+        s = self.settings()
+        owner = s.persona.owner
+        since = max(start, self.last_chat)  # a chat from his phone meanwhile counts
+        gone = now - since
+        kind = absence_kind(since, now, s.life.quiet_from, s.life.quiet_until)
+        if kind is None or not s.life.enabled or not s.life.homecoming:
+            if not by_chat and gone >= timedelta(minutes=s.life.sleep_after_minutes):
+                where = "the desk" if seen else "the PC"
                 self._think_about(
-                    "back", f"{owner} just came back to {where} after {gone:.0f} minutes away."
+                    "back", f"{owner} just came back to {where} after {gap_words(gone)} away."
                 )
-            self._asleep_since = None
+            return None
+        said = self.goodbye
+        goodbye = said[1] if said and said[0] >= since - GOODBYE_COUNTS else ""
+        off = self.was_off if self.was_off and self.was_off[1] > since else None
+        # Only for vanishing in the daytime while the desk app saw it; a gap between
+        # messages from his phone, or an evening out, is just life.
+        daytime = day_part(since) in DAYTIME and not (
+            in_quiet_hours(since, s.life.quiet_from, s.life.quiet_until)
+            or in_quiet_hours(now, s.life.quiet_from, s.life.quiet_until)
+        )
+        miffed = (
+            s.life.miffed
+            and kind == "hours"
+            and daytime
+            and not by_chat
+            and not goodbye
+            and off is None
+            and now - self.companion_since >= timedelta(days=s.life.miffed_after_days)
+        )
+        dozed = self.asleep or self._asleep_since is not None
+        did = [doing for at, doing, _ in self.did if at >= since]
+        home = Homecoming(
+            kind, since, now, goodbye, miffed, off, dozed, by_chat, did=did, seen=seen
+        )
+        self.homecoming, self.goodbye, self.was_off = home, None, None
+        gap = gap_words(gone)
+        if miffed:
+            why = f"{owner} vanished for {gap} without a word"
+            self.feel("miffed", why, 0.7, show=False, force=True)
+        else:
+            missed = "; you missed them" if kind in ("days", "long") else ""
+            self.feel("glad", f"{owner} is back after {gap}{missed}", HOME_GLAD[kind], show=False)
+        self.save()
+        return home
+
+    def homecoming_for_chat(self) -> Homecoming | None:
+        """As a message comes in, before ``note_chat``: the hello still owed (Dan spoke
+        before the hello pipe-up), or, with no desk app reporting, one for a long gap
+        since you last talked. It's said in this reply, so it's used up."""
+        now = self.clock()
+        home = self.homecoming
+        if home is None and not self.pc.online():
+            contact = max(self.last_chat, self.last_seen)
+            if now - contact >= CHAT_GAP:
+                home = self._came_back(contact, now, by_chat=True)
+        if home is not None:
+            self.homecoming = None
+            self.save()
+        return home
+
+    def take_homecoming(self) -> Homecoming | None:
+        """The hello, claimed as the "back" pipe-up starts writing it, so a message from
+        Dan meanwhile doesn't get a hello too. ``held_back`` gives it back."""
+        home, self.homecoming = self.homecoming, None
+        return home
+
+    # Away life (life.alone_thoughts_per_hour, kit.pastimes)
+
+    def alone_life(self) -> bool:
+        life = self.settings().life
+        return life.enabled and life.alone_thoughts_per_hour > 0
+
+    def presence(self) -> str:
+        """Where things stand: "here" (Dan's around), "away" (Dan's gone a few minutes
+        and Kit's waiting), "alone" (Kit's awake and entertaining himself) or
+        "asleep"."""
+        if self.asleep:
+            return "asleep"
+        if self.away_since is None or self.chatting(self.clock()):
+            return "here"  # at the PC, or chatting from his phone
+        return "alone" if self.alone_life() else "away"
+
+    def chatting(self, now: datetime) -> bool:
+        """Dan's talking to him (from the desk or his phone): he stays awake for it."""
+        return self._talked_at is not None and now - self._talked_at < CHAT_ENDED_AFTER
+
+    def wants_pastime(self) -> bool:
+        """Alone, awake, and not doing anything (or done with it): time to find
+        something to do. Never in quiet hours: then he's off to sleep."""
+        now = self.clock()
+        life = self.settings().life
+        if self.presence() != "alone" or in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            return False
+        if self.chatting(now):
+            return False
+        if self.doing is not None and now < self.doing.until:
+            return False
+        if self.doing is not None:
+            self.stop_doing()
+        return now >= self._look_for_pastime
+
+    def start_doing(self, pastime: Pastime) -> None:
+        """He's found something to do: the face shows it, and it eases the drive it
+        feeds."""
+        self.doing = pastime
+        self.did = [d for d in self.did if d[0].date() == pastime.since.date()][-DID_KEPT + 1 :]
+        self.did.append((pastime.since, pastime.doing, pastime.found))
+        drive = pastime.feeds
+        if hasattr(self.drives, drive):
+            setattr(self.drives, drive, _clamp(getattr(self.drives, drive) - 0.3))
+        self.publish({"type": "doing", "what": pastime.doing})
+        self.save()
+
+    def stop_doing(self) -> None:
+        if self.doing is None:
+            return
+        self.doing = None
+        self.publish({"type": "doing", "what": ""})
+        self.save()
+
+    def nothing_to_do(self) -> None:
+        """Nothing to do just now: he looks again in a while."""
+        self._look_for_pastime = self.clock() + NOTHING_TO_DO
+
+    def did_line(self, owner: str) -> str:
+        """What he did on his own today, true, for "what did you get up to?"."""
+        now = self.clock()
+        today = [(at, doing) for at, doing, _ in self.did if at.date() == now.date()]
+        if not today:
+            return ""
+        done = [f"{doing} ({at:%H:%M})" for at, doing in today[-4:]]
+        return f"While {owner} was away today you were: {'; '.join(done)}."
+
+    def said_goodbye(self, text: str) -> None:
+        """Dan is heading off ("off to lunch"): Kit will ask how it went when he's back."""
+        self.goodbye = (self.clock(), " ".join(text.split()))
+        self.save()
+
+    def time_line(self, owner: str) -> str:
+        """How long since you two talked and since Dan was at the PC, for every prompt:
+        without it, the model can't tell five minutes from five days."""
+        now = self.clock()
+        lines = []
+        if now - self.last_chat >= timedelta(minutes=10):
+            lines.append(
+                f"You and {owner} last talked {clock_words(self.last_chat, now)} "
+                f"({ago(self.last_chat, now)})."
+            )
+        if self.pc.online():
+            if self.away_since is not None:
+                lines.append(
+                    f"{owner} has been away from the PC since {since_clock(self.away_since, now)} "
+                    f"({gap_words(now - self.away_since)})."
+                )
+            elif self.came_back and now - self.came_back[1] < timedelta(hours=2):
+                gone, back = self.came_back
+                lines.append(
+                    f"{owner} came back to the PC {clock_words(back, now)}, after "
+                    f"{gap_words(back - gone)} away."
+                )
+        return " ".join(lines)
+
+    def why_quiet(self, owner: str) -> str:
+        """Why Kit isn't piping up just now, in his own terms ("" if he would)."""
+        now = self.clock()
+        life = self.settings().life
+        if self.snoozed_until and now < self.snoozed_until:
+            return f"{owner} told you to shush until {self.snoozed_until:%H:%M}"
+        if in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            return (
+                f"it's quiet hours ({life.quiet_from} to {life.quiet_until}), so you keep it down"
+            )
+        if self.asleep:
+            return f"you were dozing while {owner} was away"
+        if self.awaiting_reply:
+            return "you're waiting to hear back on your last pipe-up"
+        if self.held_until and now < self.held_until:
+            return "you had nothing new to say, so you kept it to yourself"
+        if self.ignored:
+            return f"{owner} didn't answer your last pipe-up, so you're giving them some space"
+        if now - self.last_chat < timedelta(minutes=AFTER_CHAT_MIN):
+            return "you were just talking"
+        return ""
+
+    # Closeness
+
+    def grow(self, amount: float) -> None:
+        """Closeness moves: up a little with each good moment (at most
+        ``CLOSENESS_A_DAY`` a day, half as fast once you're close), down with rudeness
+        or being ignored. It never fades with time."""
+        today = self.clock().date().isoformat()
+        day, grown = self._grown
+        if day != today:
+            grown = 0.0
+        if amount > 0:
+            amount = min(amount, max(0.0, CLOSENESS_A_DAY - grown))
+            grown += amount
+            if self.closeness >= 0.7:
+                amount /= 2
+        self._grown = (today, grown)
+        self.closeness = _clamp(self.closeness + amount)
+
+    # A game a day
+
+    def _games(self) -> dict:
+        raw = self.store.self_value(GAMES_KEY) if self.store is not None else None
+        try:
+            games = json.loads(raw) if raw else {}
+        except ValueError:
+            games = {}
+        if not isinstance(games, dict):
+            return {}
+        played = games.get("played")
+        games["played"] = {
+            str(name): {k: v for k, v in record.items() if isinstance(v, int)}
+            for name, record in (played.items() if isinstance(played, dict) else [])
+            if isinstance(record, dict)
+        }
+        return games
+
+    def _save_games(self, games: dict) -> None:
+        if self.store is not None:
+            self.store.set_self_value(GAMES_KEY, json.dumps(games))
+
+    def retired_games(self) -> list[str]:
+        played = self._games().get("played", {})
+        return [
+            name
+            for name, record in played.items()
+            if record.get("flops", 0) >= GAME_FLOPS and not record.get("landed")
+        ]
+
+    def game_due(self) -> str | None:
+        """A game to suggest now, or None: at most one a day, in the daytime, while
+        Dan's at the PC and Kit is bored. It's marked as today's game at once."""
+        life = self.settings().life
+        now = self.clock()
+        if not (life.enabled and life.games and life.chattiness > 0) or self.asleep:
+            return None
+        if self.bad_night() or in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            return None
+        snap = self.pc.latest if self.pc.online() else None
+        if not (snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S):
+            return None
+        if self.drives.boredom < GAME_BORED:
+            return None
+        games = self._games()
+        today = now.date().isoformat()
+        if games.get("day") == today:
+            return None
+        hour = now.hour + now.minute / 60
+        retired = set(self.retired_games())
+        open_now = [
+            name
+            for name, (_, start, end) in GAMES.items()
+            if start <= hour < end and name not in retired
+        ]
+        if not open_now:
+            return None
+        name = self.rng.choice(open_now)
+        self._save_games({**games, "day": today, "offered": name})
+        return name
+
+    def game_asked(self, name: str) -> None:
+        """He just suggested game ``name``: an answer means it landed."""
+        self.game_out = name
+        self.save()
+
+    def _game_result(self, name: str, landed: bool) -> None:
+        games = self._games()
+        played = games.setdefault("played", {})
+        record = played.setdefault(name, {"landed": 0, "flops": 0})
+        record["landed" if landed else "flops"] = record.get("landed" if landed else "flops", 0) + 1
+        self._save_games(games)
+        self.game_out = ""
+
+    # The weather bet: who guessed closer to today's top
+
+    def bet_placed(self, dan: float, kit: float) -> None:
+        """Dan and Kit have each guessed today's top temperature."""
+        games = self._games()
+        today = self.clock().date().isoformat()
+        games["bet"] = {"day": today, "dan": dan, "kit": kit}
+        self._save_games(games)
+
+    def bet_open(self) -> dict | None:
+        """Today's bet, once the day's top is in (late afternoon) and it isn't settled
+        yet; checked at most every half hour."""
+        bet = self._games().get("bet")
+        now = self.clock()
+        if not isinstance(bet, dict) or bet.get("day") != now.date().isoformat():
+            return None
+        if bet.get("settled") or now.hour < BET_SETTLES:
+            return None
+        tried = bet.get("tried")
+        if tried and now - parse_time(tried, now) < BET_RETRY:
+            return None
+        bet["tried"] = now.isoformat(timespec="seconds")
+        self._save_games({**self._games(), "bet": bet})
+        return bet
+
+    def bet_settled(self, top: float) -> str:
+        """Today's top was ``top``: who won, how Kit feels about it, and the line he
+        wants to bring up (a want for kit.notebook)."""
+        games = self._games()
+        bet = games.get("bet") or {}
+        owner = self.settings().persona.owner
+        dan, kit = float(bet["dan"]), float(bet["kit"])
+        games["bet"] = {**bet, "settled": True, "top": top}
+        self._save_games(games)
+        said = f"it got to {top:.0f}°; {owner} guessed {dan:.0f}° and you guessed {kit:.0f}°"
+        if abs(kit - top) < abs(dan - top):
+            self.feel("chuffed", f"you won today's weather bet: {said}", 0.7)
+            return f"Tell {owner} you won today's weather bet ({said}). Gloat a little."
+        if abs(kit - top) > abs(dan - top):
+            self.feel("put_out", f"you lost today's weather bet: {said}", 0.6)
+            return f"Tell {owner} they won today's weather bet ({said}). Be a sore loser, briefly."
+        self.feel("amused", f"today's weather bet was a draw: {said}", 0.5)
+        return f"Tell {owner} today's weather bet was a draw ({said})."
 
     def mood(self) -> str:
         d = self.drives
@@ -415,7 +1494,7 @@ class Life:
             return "asleep"
         if self.sulky:
             return "sulky"
-        if d.energy < 0.5:
+        if d.energy < (TIRED if self.settings().life.energy_need else 0.5):
             return "sleepy"
         if d.curiosity > 0.4:
             return "curious"
@@ -440,31 +1519,49 @@ class Life:
         snap = self.pc.latest if self.pc.online() else None
         present = self._present(snap)
 
-        d.energy = energy_at(now)
+        d.energy = self._energy_after(now, minutes)
         d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01) * (0.5 + chatty))
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
         owner = self.settings().persona.owner
+        work_too = self.settings().life.work_triggers
         if present and snap and snap.focus and snap.watching:
             thing = snap.focus.site or snap.focus.app
             fresh = False
+            interesting = work_too or not is_work(thing)
             if thing and thing not in self._seen:
                 self._seen.add(thing)
-                if len(self._seen) > 1:  # the first thing of the day isn't news
+                if len(self._seen) > 1 and interesting:  # the first thing of the day isn't news
                     d.curiosity = _clamp(d.curiosity + 0.6)
                     self.curious_about, self.curious_kind = thing, "new"
                     fresh = True
                     self._think_about("new", f"{owner} just opened {thing}, first time today.")
             focus = (snap.focus.app, snap.focus.title)
-            if self._last_focus and focus != self._last_focus:
+            if work_too and self._last_focus and focus != self._last_focus:
                 self._notice_build(snap.focus.title, owner)
-            if chatty >= CHATTY and self._last_focus and focus != self._last_focus:
+            switched = self._last_focus and focus != self._last_focus
+            if chatty >= CHATTY and switched and interesting:
                 # A chatty Kit follows along: a new file or tab is worth a comment.
                 d.curiosity = _clamp(d.curiosity + 0.7 * chatty)
                 if not fresh:  # something new today is the better story
                     self.curious_about = snap.focus.title or snap.focus.app
                     self.curious_kind = "switch"
             self._last_focus = focus
+        gone = self.away_since is not None and not self.pc.online()
+        if gone and self.alone_life() and not self.asleep and not self.chatting(now):
+            # The PC went to sleep while Dan was out: Kit dozes off in the usual time.
+            if now - self.away_since >= timedelta(minutes=self.settings().life.sleep_after_minutes):
+                self.stop_doing()
+                self.asleep, self._asleep_since = True, now
+                self.publish({"type": "state", "state": "asleep"})
+        if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
+            self.homecoming = None  # the moment for a hello has passed
+        unseen = now - max(self.last_seen, self.last_chat)
+        if unseen >= MISSING_AFTER and not present:
+            felt = self.feeling_now()
+            if felt is None or felt.name != "missing":
+                since = since_words(max(self.last_seen, self.last_chat), now)
+                self.feel("missing", f"you haven't seen {owner} since {since}", 0.6, show=False)
         if self._chat_open and now - self.last_chat >= CHAT_ENDED_AFTER:
             self._chat_open = False
             quiet = (now - self.last_chat).total_seconds() / 60
@@ -474,11 +1571,18 @@ class Life:
 
         if self.awaiting_reply and self.last_pipe and now - self.last_pipe > IGNORED_AFTER:
             self.awaiting_reply = False
-            self.ignored = min(self.ignored + 1, 3)
-            self.sulky = True
-            why = f"{owner} didn't answer when you piped up at {self.last_pipe:%H:%M}"
-            self.feel("put_out", why, 0.6, show=False)
-            self.publish({"type": "fidget", "gesture": "sigh", "mood": "sulky"})
+            # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody.
+            left = self.came_back is not None and self.came_back[1] > self.last_pipe
+            if present and not self.asleep and not left:
+                self.ignored = min(self.ignored + 1, 3)
+                self.sulky = True
+                why = f"{owner} didn't answer when you piped up at {self.last_pipe:%H:%M}"
+                self.feel("put_out", why, 0.6, show=False)
+                self.publish({"type": "fidget", "gesture": "sigh", "mood": "sulky"})
+                self.grow(-0.005)
+                if self.game_out:
+                    self._game_result(self.game_out, landed=False)
+            self.game_out = ""
         elif not self.asleep and self.rng.random() < 0.12 + 0.3 * d.boredom:
             felt = self.feeling_now()
             if felt is not None and self.rng.random() < 0.5:
@@ -488,8 +1592,60 @@ class Life:
                 moves = FIDGETS[mood]
             self.publish({"type": "fidget", "gesture": self.rng.choice(moves), "mood": mood})
         reason = self._wants_to_talk(now, snap, present)
+        self._move_dials(minutes)
         self.save()
         return reason
+
+    def _energy_after(self, now: datetime, minutes: float) -> float:
+        """His energy now. With ``life.energy_need`` it's a need: staying up past
+        22:30 tires him and sleep restores him (chats and cloud jobs spend it too);
+        otherwise it follows the clock."""
+        if not self.settings().life.energy_need:
+            return energy_at(now)
+        h = now.hour + now.minute / 60
+        if self.asleep:
+            self.energy = min(1.0, self.energy + SLEEP_RESTORES * minutes / 60)
+        elif h >= LATE_FROM or h < 5:
+            self.energy = max(0.05, self.energy - LATE_TIRES * minutes / 60)
+        return self.energy
+
+    # The mood dials (life.dials): how lively and how happy, for bodies to show
+
+    def _move_dials(self, minutes: float, push: bool = False) -> None:
+        """Arousal (0 flat .. 1 lively) and valence (-1 low .. 1 happy) drift toward
+        where his energy, drives and feelings put them, slowly (a mood lasts hours);
+        a new feeling (``push``) moves them at once. Bodies hear when one has moved."""
+        if not self.settings().life.dials:
+            return
+        d = self.drives
+        arousal = 0.05 if self.asleep else 0.15 + 0.5 * d.energy + 0.25 * d.curiosity
+        valence = 0.15 - 0.25 * d.boredom - 0.2 * max(0.0, d.social - 0.5)
+        valence -= 0.3 if self.sulky else 0.0
+        now = self.clock()
+        for felt in self.feelings_now():
+            v, a = FEELING_AFFECT.get(felt.name, (0.0, 0.5))
+            left = felt.left(now)
+            valence += v * left
+            arousal += (a - 0.5) * 0.6 * left
+        arousal, valence = _clamp(arousal), max(-1.0, min(1.0, valence))
+        if push:
+            ka = kv = 0.6
+        else:
+            ka = 1 - 0.5 ** (minutes / AROUSAL_HALF_LIFE)
+            kv = 1 - 0.5 ** (minutes / VALENCE_HALF_LIFE)
+        self.arousal += (arousal - self.arousal) * ka
+        self.valence += (valence - self.valence) * kv
+        shown_a, shown_v = self._dials_shown
+        if abs(self.arousal - shown_a) >= DIALS_MOVE or abs(self.valence - shown_v) >= DIALS_MOVE:
+            self._dials_shown = (self.arousal, self.valence)
+            self.publish(self.dials_event())
+
+    def dials_event(self) -> dict:
+        return {
+            "type": "dials",
+            "arousal": round(self.arousal, 2),
+            "valence": round(self.valence, 2),
+        }
 
     def _notice_build(self, title: str, owner: str) -> None:
         """A build or test run on screen failed or passed: Kit feels for Dan, and has
@@ -504,7 +1660,18 @@ class Life:
 
     def _wants_to_talk(self, now: datetime, snap, present: bool) -> str | None:
         reason, self.quiet_because = self._urge(now, snap, present)
+        self._tell_quiet()
         return reason
+
+    def _tell_quiet(self) -> None:
+        """Bodies hear why he's keeping quiet when that changes (not every new number
+        in it), so the desk app can say why."""
+        gist = re.split(r"[(:0-9]", self.quiet_because, maxsplit=1)[0].strip()
+        if self._quiet_shown is None:
+            self._quiet_shown = gist  # just started: nothing has changed yet
+        elif gist != self._quiet_shown:
+            self._quiet_shown = gist
+            self.publish({"type": "quiet", "because": self.quiet_because})
 
     def _urge(self, now: datetime, snap, present: bool) -> tuple[str | None, str]:
         """(why Kit wants to talk, or None; and if not, why he's keeping quiet)."""
@@ -522,10 +1689,9 @@ class Life:
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
             return None, "you're on a call or presenting"
-        if self.greet_due is not None:
-            if now - self.greet_due <= GREET_WINDOW:
-                return "greet", ""  # a hello doesn't wait its turn
-            self.greet_due = None  # too late: it would be odd now
+        home = self.homecoming
+        if home is not None and not home.tried and not home.by_chat:
+            return "back", ""  # a hello as Dan sits down, whatever else is going on
         if self.held_until and now < self.held_until:
             return None, f"had nothing new to say: next chance {self.held_until:%H:%M}"
         chatty = life.chattiness >= CHATTY
@@ -574,17 +1740,21 @@ class Life:
             reason = "watching"
         return reason, ""
 
-    def held_back(self, reason: str = "") -> None:
+    def held_back(self, reason: str = "", home: Homecoming | None = None) -> None:
         """He went to pipe up but had nothing new to say (kit.brain keeps quiet rather
         than repeat himself, or the model didn't answer). The urge passes as if he'd
-        spoken, but he isn't waiting for an answer: he tries again after the usual gap."""
+        spoken, but he isn't waiting for an answer: he tries again after the usual gap.
+        A hello he couldn't say (``home``) is owed again, unless Dan spoke meanwhile."""
         life = self.settings().life
         gap = max(60 / max(life.max_per_hour, 1), AFTER_CHAT_MIN * (1.2 - life.chattiness))
         self.held_until = self.clock() + timedelta(minutes=gap)
         if reason == "nag":
             self.nags += 1
+        home = home or self.homecoming
+        if reason == "back" and home is not None and self.last_chat < home.back:
+            home.tried = True  # his next reply says hello instead
+            self.homecoming = home
         self.butting_in = False
-        self.greet_due = None
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
         self.wanting = 0.0  # the brain sets it again from what's still on his list
@@ -592,17 +1762,56 @@ class Life:
 
     def piped_up(self, reason: str = "") -> None:
         now = self.clock()
+        if reason not in ("back", "nag"):
+            self._count_pipe_up(reason, taken=False)
+            self._pipe_out = (reason, now)
         self.nags = self.nags + 1 if reason == "nag" else 0
         self.butting_in = False
         self.last_pipe = now
         self.pipes.append(now)
-        self.awaiting_reply = reason != "greet"  # a hello isn't a question
-        self.greet_due = None
+        self.awaiting_reply = reason != "back"  # a hello needs no answer
+        if reason == "back":
+            self.homecoming = None
+            felt = self.feeling_now()
+            if felt is not None and felt.name == "miffed":  # he's had his huff
+                owner = self.settings().persona.owner
+                self.feel("glad", f"{owner} is back", 0.6, show=False, force=True)
         self.drives.boredom = 0.2
         self.drives.curiosity = 0.0
         self.drives.social = _clamp(self.drives.social - 0.3)
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
+
+    # How his pipe-ups land (taken_up), and scoring one before he says it
+
+    def _pipe_stats(self) -> dict[str, list[int]]:
+        raw = self.store.self_value(PIPE_STATS_KEY) if self.store is not None else None
+        try:
+            data = json.loads(raw or "{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _count_pipe_up(self, reason: str, taken: bool) -> None:
+        if self.store is None:
+            return
+        stats = self._pipe_stats()
+        said, took = stats.get(reason, [0, 0])
+        stats[reason] = [said, took + 1] if taken else [said + 1, took]
+        self.store.set_self_value(PIPE_STATS_KEY, json.dumps(stats))
+
+    def take_up_rate(self, reason: str) -> float | None:
+        """How often Dan answers this kind of pipe-up within ten minutes, once
+        there have been a few."""
+        said, took = self._pipe_stats().get(reason, [0, 0])
+        return min(1.0, took / said) if said >= TAKE_UP_KNOWN else None
+
+    def scored_out(self, reason: str, why: str) -> None:
+        """He had something to say but it didn't score well enough: he keeps it to
+        himself, and tries again after the usual gap."""
+        self.held_back(reason)
+        self.quiet_because = why
+        self._tell_quiet()
 
     # Thinking (kit.thinking writes the thought; this says when)
 
@@ -626,16 +1835,22 @@ class Life:
         no more than ``life.thoughts_per_hour``."""
         life = self.settings().life
         now = self.clock()
-        if not life.enabled or life.thoughts_per_hour <= 0 or self.asleep:
+        if not life.enabled or self.asleep:
+            return None
+        if self.presence() == "alone":  # on his own, only his alone thoughts (their own budget)
+            return self._alone_thought(now)
+        if life.thoughts_per_hour <= 0:
             return None
         snap = self.pc.latest if self.pc.online() else None
-        if not self._present(snap) and now - self.last_chat > THINK_NEAR_CHAT:
+        present = self._present(snap)
+        if not present and now - self.last_chat > THINK_NEAR_CHAT:
             return None  # nobody around: he dozes rather than muses
-        if now - self.last_chat < THINK_AFTER_CHAT:
-            return None
-        if self.thoughts and now - self.thoughts[-1] < THINK_GAP:
-            return None
-        if sum(1 for t in self.thoughts if now - t < timedelta(hours=1)) >= life.thoughts_per_hour:
+        week = week_moment(now, self.settings().persona.owner) if life.week_thoughts else None
+        if week is not None and week[0] != self._week_done and present:
+            if now - self.last_chat >= THINK_AFTER_CHAT and not self._thought_too_soon(now):
+                self._week_done = week[0]
+                return "week", week[1]
+        if now - self.last_chat < THINK_AFTER_CHAT or self._thought_too_soon(now):
             return None
         if self._to_think:
             return self._to_think.popleft()
@@ -643,10 +1858,43 @@ class Life:
             return "quiet", "A quiet moment: nothing in particular is happening."
         return None
 
-    def thought_had(self) -> None:
+    def _thought_too_soon(self, now: datetime) -> bool:
+        if self.thoughts and now - self.thoughts[-1] < THINK_GAP:
+            return True
+        hour = sum(1 for t in self.thoughts if now - t < timedelta(hours=1))
+        return hour >= self.settings().life.thoughts_per_hour
+
+    def _alone_thought(self, now: datetime) -> tuple[str, str] | None:
+        """A thought while he's on his own, about what he's doing: at most
+        ``life.alone_thoughts_per_hour``, never in quiet hours."""
+        life = self.settings().life
+        doing = self.doing
+        if doing is None or self.presence() != "alone" or now >= doing.until:
+            return None
+        if in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            return None
+        hour = sum(1 for t in self.alone_thoughts if now - t < timedelta(hours=1))
+        if hour >= life.alone_thoughts_per_hour or now < self.next_thought:
+            return None
+        owner = self.settings().persona.owner
+        away = self.away_since or now
+        return (
+            "alone",
+            f"{owner} has been away from the PC since {since_clock(away, now)}. You're on "
+            f"your own, {doing.doing}. {doing.found}",
+        )
+
+    def thought_had(self, kind: str = "") -> None:
+        """He had a thought: it counts toward his hourly limit."""
         now = self.clock()
-        self.thoughts.append(now)
+        (self.alone_thoughts if kind == "alone" else self.thoughts).append(now)
         self.next_thought = now + self._think_gap()
+        self.save()
+
+    def thought_failed(self) -> None:
+        """A thought that didn't happen (the model was down, or Dan started talking):
+        it costs no budget, but he doesn't try again straight away."""
+        self.next_thought = self.clock() + self._think_gap()
         self.save()
 
     # Remembering all this across restarts
@@ -659,7 +1907,9 @@ class Life:
         def when(t: datetime | None) -> str | None:
             return t.isoformat(timespec="seconds") if t else None
 
-        felt = self.feeling
+        def feeling(f: Feeling) -> dict:
+            return {"name": f.name, "why": f.why, "since": when(f.since), "strength": f.strength}
+
         data = {
             "saved": when(now),
             "drives": {k: round(v, 3) for k, v in asdict(self.drives).items() if k != "energy"},
@@ -670,19 +1920,36 @@ class Life:
             "last_chat": when(self.last_chat),
             "last_pipe": when(self.last_pipe),
             "snoozed_until": when(self.snoozed_until),
-            "feeling": None
-            if felt is None
-            else {
-                "name": felt.name,
-                "why": felt.why,
-                "since": when(felt.since),
-                "strength": felt.strength,
-            },
+            "feelings": [feeling(f) for f in self._feelings],
             "thoughts": [when(t) for t in self.thoughts if now - t < timedelta(hours=1)],
+            "alone_thoughts": [
+                when(t) for t in self.alone_thoughts if now - t < timedelta(hours=1)
+            ],
+            "week_done": self._week_done,
             "next_thought": when(self.next_thought),
             "chat_open": self._chat_open,
             "day": self._day.isoformat(),
             "seen": sorted(self._seen),
+            "asleep": self.asleep,
+            "asleep_since": when(self._asleep_since),
+            "last_seen": when(self.last_seen),
+            "away_since": when(self.away_since),
+            "came_back": [when(t) for t in self.came_back] if self.came_back else None,
+            "goodbye": [when(self.goodbye[0]), self.goodbye[1]] if self.goodbye else None,
+            "homecoming": self.homecoming.as_dict() if self.homecoming else None,
+            "was_off": [when(t) for t in self.was_off] if self.was_off else None,
+            "companion_since": when(self.companion_since),
+            "closeness": round(self.closeness, 4),
+            "grown": [self._grown[0], round(self._grown[1], 4)],
+            "game_out": self.game_out,
+            "awaiting_reply": self.awaiting_reply,
+            "bad_night_until": when(self.bad_night_until),
+            "bad_night_named": self.bad_night_named,
+            "energy": round(self.energy, 3),
+            "dials": [round(self.arousal, 3), round(self.valence, 3)],
+            "doing": self.doing.as_dict() if self.doing else None,
+            "did": [[when(t), doing, found] for t, doing, found in self.did],
+            "pipe_out": [self._pipe_out[0], when(self._pipe_out[1])] if self._pipe_out else None,
         }
         self.store.set_self_value(LIFE_KEY, json.dumps(data))
 
@@ -693,43 +1960,110 @@ class Life:
         raw = self.store.self_value(LIFE_KEY) if self.store is not None else None
         if not raw:
             return
+        now = self.clock()
         try:
             data = json.loads(raw)
-            now = self.clock()
-            off = max(0.0, (now - parse_time(data["saved"], now)).total_seconds() / 60)
-            drives = data.get("drives") or {}
-            if off < 60:
-                self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
-                self.sulky = bool(data.get("sulky"))
-            self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
-            self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
-            self.ignored = int(data.get("ignored", 0))
-            self.curious_about = str(data.get("curious_about", ""))
-            self.curious_kind = str(data.get("curious_kind", "new"))
-            if data.get("last_chat"):
-                self.last_chat = parse_time(data["last_chat"], now)
-            if data.get("last_pipe"):
-                self.last_pipe = parse_time(data["last_pipe"], now)
-            if data.get("snoozed_until"):
-                until = parse_time(data["snoozed_until"], now)
-                self.snoozed_until = until if until > now else None
-            felt = data.get("feeling")
-            if felt and felt.get("name") in FEELING_KINDS:
-                self.feeling = Feeling(
-                    felt["name"],
-                    felt["why"],
-                    parse_time(felt["since"], now),
-                    float(felt["strength"]),
-                )
-                self.feeling_now()  # drops it if it has faded meanwhile
-            self.thoughts.extend(parse_time(t, now) for t in data.get("thoughts", []))
-            if data.get("next_thought"):
-                self.next_thought = max(now, parse_time(data["next_thought"], now))
-            self._chat_open = bool(data.get("chat_open")) and off < 60
-            if data.get("day") == now.date().isoformat():
-                self._seen = set(data.get("seen", []))
-        except (ValueError, KeyError, TypeError):
+            saved = parse_time(data["saved"], now)
+        except (ValueError, KeyError, TypeError, IndexError):
             return  # a damaged save just means a fresh start
+        for part in (self._restore_mood, self._restore_absence):
+            try:
+                part(data, now, saved)
+            except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+                log.warning("part of Kit's saved life was damaged; starting that part fresh")
+
+    def _restore_mood(self, data: dict, now: datetime, saved: datetime) -> None:
+        """Drives, feeling, thoughts and the day so far."""
+        off = max(0.0, (now - saved).total_seconds() / 60)
+        drives = data.get("drives") or {}
+        if off < 60:
+            self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
+            self.sulky = bool(data.get("sulky"))
+        self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
+        self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
+        self.ignored = int(data.get("ignored", 0))
+        self.curious_about = str(data.get("curious_about", ""))
+        self.curious_kind = str(data.get("curious_kind", "new"))
+        if data.get("last_chat"):
+            self.last_chat = parse_time(data["last_chat"], now)
+        if data.get("last_pipe"):
+            self.last_pipe = parse_time(data["last_pipe"], now)
+        if data.get("snoozed_until"):
+            until = parse_time(data["snoozed_until"], now)
+            self.snoozed_until = until if until > now else None
+        saved_feelings = data.get("feelings")
+        if saved_feelings is None:  # saved by a Kit with one feeling at a time
+            saved_feelings = [data["feeling"]] if data.get("feeling") else []
+        self._feelings = [
+            Feeling(f["name"], f["why"], parse_time(f["since"], now), float(f["strength"]))
+            for f in saved_feelings
+            if f.get("name") in FEELING_KINDS
+        ][:2]
+        self.feelings_now()  # drops any that have faded meanwhile
+        self.thoughts.extend(parse_time(t, now) for t in data.get("thoughts", []))
+        self.alone_thoughts.extend(parse_time(t, now) for t in data.get("alone_thoughts", []))
+        if data.get("day") == now.date().isoformat():
+            self._week_done = str(data.get("week_done", ""))
+        if data.get("bad_night_until"):
+            self.bad_night_until = parse_time(data["bad_night_until"], now)
+            self.bad_night_named = bool(data.get("bad_night_named"))
+        self.energy = _clamp(float(data.get("energy", 1.0)))
+        if off >= 6 * 60:
+            self.energy = 1.0  # a night off is a night's sleep
+        self.drives.energy = self.energy if self.settings().life.energy_need else energy_at(now)
+        if isinstance(data.get("dials"), list):
+            self.arousal = _clamp(float(data["dials"][0]))
+            self.valence = max(-1.0, min(1.0, float(data["dials"][1])))
+            self._dials_shown = (self.arousal, self.valence)
+        if isinstance(data.get("doing"), dict):
+            doing = Pastime.from_dict(data["doing"], now)
+            self.doing = doing if doing.until > now else None
+        self.did = [
+            (parse_time(t, now), str(doing), str(found))
+            for t, doing, found in data.get("did") or []
+        ]
+        if data.get("pipe_out"):
+            self._pipe_out = (str(data["pipe_out"][0]), parse_time(data["pipe_out"][1], now))
+        if data.get("next_thought"):
+            self.next_thought = max(now, parse_time(data["next_thought"], now))
+        self._chat_open = bool(data.get("chat_open")) and off < 60
+        if data.get("day") == now.date().isoformat():
+            self._seen = set(data.get("seen", []))
+        if off < 60:  # still waiting on an answer to his last pipe-up
+            self.awaiting_reply = bool(data.get("awaiting_reply"))
+
+    def _restore_absence(self, data: dict, now: datetime, saved: datetime) -> None:
+        """Where Dan was, and whether Kit was switched off: a night with the server off
+        still counts as a night away, and Kit knows he wasn't there for it."""
+
+        def when(key: str) -> datetime | None:
+            return parse_time(data[key], now) if data.get(key) else None
+
+        # Saved before there was a first day: his week to settle in starts now.
+        self.companion_since = when("companion_since") or now
+        if "closeness" in data:
+            self.closeness = _clamp(float(data["closeness"]))
+        if data.get("grown"):
+            self._grown = (str(data["grown"][0]), float(data["grown"][1]))
+        self.asleep = bool(data.get("asleep"))
+        self._asleep_since = when("asleep_since") if self.asleep else None
+        self.last_seen = when("last_seen") or saved  # an older Kit's save: he was there
+        self.away_since = when("away_since")
+        if data.get("came_back"):
+            a, b = data["came_back"]
+            self.came_back = (parse_time(a, now), parse_time(b, now))
+        if data.get("goodbye"):
+            self.goodbye = (parse_time(data["goodbye"][0], now), str(data["goodbye"][1]))
+        if isinstance(data.get("homecoming"), dict):
+            self.homecoming = Homecoming.from_dict(data["homecoming"], now)
+        if data.get("was_off"):
+            a, b = data["was_off"]
+            self.was_off = (parse_time(a, now), parse_time(b, now))
+        if now - saved >= OFF_COUNTS:
+            start = self.was_off[0] if self.was_off and self.was_off[1] >= saved else saved
+            self.was_off = (start, now)
+        # A game he suggested still counts only while he's waiting to hear back.
+        self.game_out = str(data.get("game_out", "")) if self.awaiting_reply else ""
 
     # Telling the desk app (and later the arm)
 
@@ -740,6 +2074,11 @@ class Life:
         if self._new is not None:
             self._new.set()
         return event["id"]
+
+    def react(self, gesture: str, why: str = "") -> None:
+        """A quick visible reaction to something that just happened (Dan's back, a
+        cloud answer arrived). Unlike a fidget, bodies play it even mid-conversation."""
+        self.publish({"type": "react", "gesture": gesture, "why": why})
 
     def events_after(self, after: int) -> list[dict]:
         return [e for e in self._events if e["id"] > after]
@@ -767,12 +2106,14 @@ class Life:
         quirks: list[str],
         text: str = "",
         mind: list[str] | None = None,
+        opinions: list[str] | None = None,
     ) -> Voice:
         """How Kit feels and sounds for the next reply. Call it before ``note_chat``,
         so "I've been bored" or "I missed you" is still true when he answers.
-        ``mind`` is what's on his mind lately (kit.notebook)."""
+        ``mind`` is what's on his mind lately (kit.notebook), ``opinions`` views he
+        stands by (``life.opinions``)."""
         feeling = self.feeling_line(owner)
-        cheek = self.settings().life.cheek
+        cheek = self.cheek()
         # A small model answers "I broke the build" with the example for "The build
         # failed" word for word, so examples close to the message, or already said,
         # are left out.
@@ -783,30 +2124,67 @@ class Life:
         ]
         examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
         quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
-        return Voice(feeling, cheek_style(cheek), examples, said, quirk, list(mind or []))
+        close = closeness_words(self.closeness)[1]
+        when = self.time_line(owner)
+        style = cheek_style(cheek)
+        if self.bad_night():
+            style = BAD_NIGHT_STYLE
+            quirk = ""
+        elif self.tired():
+            style += TIRED_STYLE
+        voice = Voice(feeling, style, examples, said, quirk, list(mind or []), close, when)
+        voice.opinions = list(opinions or [])
+        return voice
 
     def feeling_line(self, owner: str) -> str:
         """How Kit feels right now, and why, in words for a prompt."""
         now = self.clock()
         mood = self.mood()
-        hours = (now - self.last_chat).total_seconds() / 3600
+        quiet = now - self.last_chat
         feeling = FEELINGS.get(mood, FEELINGS["content"]).format(
             about=self.curious_about or "what's going on",
             owner=owner,
-            hours=f"{hours:.0f} hours" if hours >= 1.5 else "a while",
+            hours=gap_words(quiet) if quiet >= timedelta(hours=1.5) else "a while",
         )
-        felt = self.feeling_now()
-        if felt is None:
+        felt = self.feelings_now()
+        if not felt:
             return feeling
-        words = FEELING_KINDS[felt.name][0].format(owner=owner)
+        parts = [
+            f"{FEELING_KINDS[f.name][0].format(owner=owner)}, because {f.why} ({ago(f.since, now)})"
+            for f in felt
+        ]
         underneath = f"; underneath, {feeling}" if mood != "content" else ""
-        return f"{words}, because {felt.why} ({ago(felt.since, now)}){underneath}"
+        return "; and ".join(parts) + underneath
 
     def state(self) -> dict:
         now = self.clock()
         felt = self.feeling_now()
+        also = self.feelings_now()[1:]
+        hour = timedelta(hours=1)
+        taken = {
+            reason: f"{min(took, said)} of {said}"
+            for reason, (said, took) in self._pipe_stats().items()
+            if said
+        }
         return {
             "mood": self.mood(),
+            "presence": self.presence(),
+            "doing": self.doing.doing if self.doing else None,
+            "did_today": [
+                f"{at:%H:%M} {doing}" for at, doing, _ in self.did if at.date() == now.date()
+            ],
+            "also_feeling": None
+            if not also
+            else {"name": also[0].name, "why": also[0].why, "left": round(also[0].left(now), 2)},
+            "bad_night": self.bad_night(),
+            "energy": round(self.energy, 2)
+            if self.settings().life.energy_need
+            else round(self.drives.energy, 2),
+            "dials": {"arousal": round(self.arousal, 2), "valence": round(self.valence, 2)}
+            if self.settings().life.dials
+            else None,
+            "taken_up": taken,
+            "alone_thoughts_this_hour": sum(1 for t in self.alone_thoughts if now - t < hour),
             "drives": {k: round(v, 2) for k, v in asdict(self.drives).items()},
             "feeling": None
             if felt is None
@@ -829,6 +2207,17 @@ class Life:
             "quiet_because": self.quiet_because,
             "thoughts_this_hour": sum(1 for t in self.thoughts if now - t < timedelta(hours=1)),
             "next_thought": self.next_thought.isoformat(timespec="minutes"),
+            "closeness": closeness_words(self.closeness)[0],
+            "last_seen": self.last_seen.isoformat(timespec="minutes"),
+            "away_since": self.away_since.isoformat(timespec="minutes")
+            if self.away_since
+            else None,
+            "last_talked": self.last_chat.isoformat(timespec="minutes"),
+            "hello_owed": None
+            if self.homecoming is None
+            else ("miffed " if self.homecoming.miffed else "") + self.homecoming.kind,
+            "goodbye": self.goodbye[1] if self.goodbye else None,
+            "first_day": self.companion_since.date().isoformat(),
             "last_event": self._next_id - 1,
         }
 
@@ -930,6 +2319,14 @@ def same_words(a: str, b: str) -> bool:
     return len(wa & wb) / len(wa | wb) >= 0.75
 
 
+def and_list(items: list[str]) -> str:
+    """ "a", "a and b", "a, b and c"."""
+    items = [i for i in items if i]
+    if len(items) < 2:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
 def quoted(text: str, limit: int = 60) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "..."
@@ -947,9 +2344,113 @@ def feeling_from(text: str, owner: str) -> tuple[str, str, float] | None:
         (PRAISE, "chuffed", 1.0),
         (THANKS, "warm", 0.6),
     ):
-        if pattern.search(text):
+        if says(pattern, text):
             return name, why, strength
     return None
+
+
+INNER_NOT = re.compile(r"\bnot\b|n['\u2019]t\b|\bnever\b|\bno longer\b", re.I)
+
+
+def says(pattern: re.Pattern, text: str, inner: bool = True) -> bool:
+    """Does ``text`` say what ``pattern`` matches, and mean it? "Not stressed" and
+    "the tests aren't failing" don't count; "never been so stressed" does. ``inner``
+    False: a "not" inside the match is part of it ("can't cope")."""
+    for m in pattern.finditer(text):
+        before = CLAUSE.split(text[: m.start()])[-1]
+        if STILL_SO.search(f"{before}{m.group(0)}"):
+            return True
+        inside = inner and " " in m.group(0) and INNER_NOT.search(m.group(0))
+        if NEGATED.search(before) or inside:
+            continue
+        return True
+    return False
+
+
+def bad_night_in(text: str) -> str:
+    """A really bad time in Dan's words: "self_harm" (never second-guessed by a
+    "not"), "bad_night", or ""."""
+    if SELF_HARM.search(text):
+        return "self_harm"
+    return "bad_night" if says(BAD_NIGHT, text, inner=False) else ""
+
+
+# How Dan seems, as the model answering read it (kit.reply.MOOD_FIELDS), turned
+# into what Kit feels: (feeling, strength), by dan_mood, then who it's aimed at.
+READ_FEELINGS: dict[str, tuple[str, float]] = {
+    "happy": ("pleased", 0.5),
+    "excited": ("excited", 0.6),
+    "proud": ("proud", 0.6),
+    "grateful": ("warm", 0.6),
+    "tired": ("sympathetic", 0.5),
+    "flat": ("worried", 0.5),
+    "stressed": ("worried", 0.7),
+    "worried": ("worried", 0.6),
+    "sad": ("sad", 0.7),
+    "angry": ("sympathetic", 0.6),
+    "awful": ("worried", 0.7),
+}
+
+
+def feeling_from_read(read: dict, text: str, owner: str) -> tuple[str, str, float] | None:
+    """What Kit feels from the model's reading of Dan's message (``read_mood``
+    meaning): praise or thanks aimed at Kit, anger at Kit, Dan's own mood, or
+    things going worse than hoped. None when Dan seems fine."""
+    mood = str(read.get("dan_mood") or "")
+    at_kit = read.get("for_whom") == "kit"
+    expected = read.get("expected")
+    why = f'{owner} said "{quoted(text)}"'
+    if at_kit and mood == "angry":
+        return "hurt", why, 0.7
+    if at_kit and mood in ("happy", "proud", "excited"):
+        return "chuffed", why, 0.7
+    if at_kit and mood == "grateful":
+        return "warm", why, 0.6
+    if mood in READ_FEELINGS:
+        name, strength = READ_FEELINGS[mood]
+        if name in ("pleased", "excited") and expected == "better":
+            name = "proud"  # it went better than Dan hoped: proud of him
+        return name, why, strength
+    if expected == "worse":
+        return "sympathetic", why, 0.5
+    return None
+
+
+def pipe_up_score(
+    reason: str,
+    candidate: str,
+    context: str,
+    said: list[str],
+    urgency: float,
+    rate: float | None = None,
+) -> tuple[float, str]:
+    """How worth saying a pipe-up is, before he says it (``life.pipe_up_bar``), and
+    the parts as words: relevance to what Dan's doing and the time of day,
+    originality against what Kit said lately, and urgency (how hard it presses).
+    Kinds Dan often takes up count for more (``rate``, from ``Life.take_up_rate``).
+    Scored from words, with no model call."""
+    mine = _words(candidate) - STOPWORDS
+    around = _words(context) - STOPWORDS
+    if reason in ("curious", "watching"):
+        relevance = 0.8  # about what Dan just opened
+    elif mine and around:
+        relevance = min(1.0, 0.4 + len(mine & around) / max(3, len(mine)))
+    else:
+        relevance = 0.4
+    originality = 0.7  # a line not written yet: the repeat check comes after
+    if mine:
+        overlap = [
+            len(mine & theirs) / min(len(mine), len(theirs))
+            for theirs in (_words(line) - STOPWORDS for line in said)
+            if theirs
+        ]
+        originality = 1 - max(overlap, default=0.0)
+    urgency = _clamp(urgency)
+    score = 0.35 * relevance + 0.35 * originality + 0.3 * urgency
+    if rate is not None:
+        score *= 0.75 + 0.5 * rate
+    parts = f"relevance {relevance:.2f}, originality {originality:.2f}, urgency {urgency:.2f}"
+    return round(min(score, 1.0), 2), parts
 
 
 def repeats(line: str, said: list[str], examples: list[tuple[str, str]] = ()) -> bool:
@@ -987,6 +2488,12 @@ def everyday(owner: str) -> str:
     )
 
 
+TIRED_STYLE = "; you're running low on energy, so keep it short: a sentence or two"
+BAD_NIGHT_STYLE = (
+    "gentle and steady, with no jokes or teasing at all: they're having a really hard time"
+)
+
+
 def cheek_style(cheek: float) -> str:
     return {
         "polite": "warm and polite",
@@ -1006,6 +2513,10 @@ class Voice:
     said: list[str]  # Kit's own recent lines, so he doesn't repeat them
     quirk: str = ""  # one quirk to let show this time, now and then
     mind: list[str] = field(default_factory=list)  # what's on his mind lately
+    close: str = ""  # how close you two are, as it shows in the way he talks
+    when: str = ""  # how long since you talked, and since Dan was at the PC
+    bit: str = ""  # a running joke something Dan said could bring back (kit.notebook)
+    opinions: list[str] = field(default_factory=list)  # views he stands by (life.opinions)
 
 
 # Habits Kit can pick for himself on first start, so Dan didn't choose them.
@@ -1073,12 +2584,10 @@ def pipe_up_prompt(
         "curious": f"curious about {about or f'what {owner} just opened'}, which is new today",
         "watching": f"following along: {owner} just switched to {about or 'something else'}, "
         f"and you've got an opinion or a question about it",
-        "social": f"missing a chat: you two haven't talked for {hours_quiet:.0f} hours",
+        "social": f"missing a chat: you two haven't talked for "
+        f"{gap_words(timedelta(hours=hours_quiet))}",
         "nag": f"ignored: you said something a few minutes ago and {owner} hasn't answered. "
         f"Nag {owner} about it, playfully, in a fresh line",
-        "greet": f"glad someone's here: {about or 'someone just sat down at the desk'} You can't "
-        f"tell faces apart yet, so you don't know who it is, but at {owner}'s desk it's most "
-        f"likely {owner}. Say hello, your way (asking if it's {owner} is fine)",
     }[reason]
     if butting_in:
         feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"

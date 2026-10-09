@@ -349,19 +349,29 @@ def saw(life, scene, rep):
     life.on_scene(scene.update(rep))
 
 
-def test_someone_sitting_down_after_a_while_gets_a_hello():
+def keep(life, scene, clock, seconds, rep, step=10):
+    """The eyes reporting steadily for a while, each report reaching his life."""
+    for _ in range(int(seconds // step)):
+        clock.now += timedelta(seconds=step)
+        saw(life, scene, rep)
+
+
+def test_someone_sitting_down_after_a_while_is_a_homecoming():
     life, pc, scene, clock = setup()
     saw(life, scene, report(0))
     clock.now += timedelta(minutes=25)
     saw(life, scene, report(1))
-    assert life.greet_due == clock.now and "after 25 min" in life.greet_about
-    assert life.tick() == "greet"
-    life.piped_up("greet")
-    assert not life.awaiting_reply and life.greet_due is None  # a hello isn't a question
-    assert life.tick() != "greet"
+    home = life.homecoming
+    assert home is not None and home.seen and home.kind == "while"
+    assert home.since == clock.now - timedelta(minutes=25) and home.back == clock.now
+    assert life.came_back == (home.since, clock.now) and life.away_since is None
+    assert life.tick() == "back"
+    life.piped_up("back")
+    assert not life.awaiting_reply and life.homecoming is None  # a hello isn't a question
+    assert life.tick() != "back"
 
 
-def test_a_hello_beats_the_usual_manners_but_not_quiet_hours_or_snooze():
+def test_the_hello_beats_the_usual_manners_but_not_quiet_hours_or_snooze():
     life, pc, scene, clock = setup(max_per_hour=2)
     life.pipes.extend([clock.now] * 2)  # already piped up twice this hour
     life.last_pipe = clock.now
@@ -369,38 +379,58 @@ def test_a_hello_beats_the_usual_manners_but_not_quiet_hours_or_snooze():
     saw(life, scene, report(0))
     clock.now += timedelta(minutes=30)
     saw(life, scene, report(1))
-    assert life.tick() == "greet"
+    assert life.tick() == "back"
     life.snooze(60)
     assert life.tick() is None
     life, pc, scene, clock = setup("2026-10-06T23:00:00")
     saw(life, scene, report(0))
     clock.now += timedelta(minutes=30)
     saw(life, scene, report(1))
+    assert life.homecoming is not None
     assert life.tick() is None and "quiet hours" in life.quiet_because
 
 
-def test_a_hello_not_said_in_time_is_dropped_and_short_absences_earn_none():
+def test_a_hello_not_said_in_time_is_dropped_and_short_absences_earn_a_thought():
     life, pc, scene, clock = setup()
     saw(life, scene, report(0))
     clock.now += timedelta(minutes=30)
     saw(life, scene, report(1))
-    clock.now += timedelta(minutes=4)
-    saw(life, scene, report(1))
-    assert life.tick() != "greet" and life.greet_due is None
+    assert life.homecoming is not None
+    keep(life, scene, clock, 31 * 60, report(1))  # he never got the chance: too late now
+    assert life.tick() != "back" and life.homecoming is None
     life, pc, scene, clock = setup()
     saw(life, scene, report(0))
-    clock.now += timedelta(minutes=5)
-    social = life.drives.social
+    clock.now += timedelta(minutes=12)
     saw(life, scene, report(1))
-    assert life.greet_due is None and life.drives.social > social
-    assert ("back", "Someone just sat down at the desk after 5 min with nobody there.") in list(
-        life._to_think
-    )
-    life, pc, scene, clock = setup(greet_after_minutes=0)
+    assert life.homecoming is None
+    assert ("back", "Dan just came back to the desk after 12 minutes away.") in list(life._to_think)
+    life, pc, scene, clock = setup(homecoming=False)
     saw(life, scene, report(0))
     clock.now += timedelta(hours=2)
     saw(life, scene, report(1))
-    assert life.greet_due is None
+    assert life.homecoming is None
+    assert ("back", "Dan just came back to the desk after 2 hours away.") in list(life._to_think)
+
+
+def test_the_keyboard_and_the_camera_agree_on_one_hello():
+    life, pc, scene, clock = setup()
+    pc.update(snap(idle=5))
+    life.on_report()
+    saw(life, scene, report(1))
+    clock.now += timedelta(minutes=40)
+    pc.update(snap(idle=2400))  # the desk app saw him go...
+    life.on_report()
+    saw(life, scene, report(0))
+    assert life.away_since == clock.now - timedelta(minutes=40)
+    clock.now += timedelta(minutes=5)
+    saw(life, scene, report(1))  # ...and his eyes see him sit down, before he touches a key
+    home = life.homecoming
+    assert home is not None and home.seen and home.since == clock.now - timedelta(minutes=45)
+    assert life.away_since is None
+    life.piped_up("back")
+    pc.update(snap(idle=3))  # now the keyboard: no second hello
+    life.on_report()
+    assert life.homecoming is None and life.away_since is None
 
 
 def test_eyes_alone_make_him_present_and_let_him_doze_and_wake():
@@ -478,12 +508,12 @@ def test_the_hello_is_a_pipe_up_in_kits_words(paths):
     brain.life.last_chat = memory.clock.now - timedelta(hours=2)
     collect_tick(brain)
     prompt = brain.model.calls[0][-1]["content"]
-    assert "glad someone's here: Someone just sat down at the desk after 30 min" in prompt
-    assert "most likely Dan" in prompt
+    assert "Someone just sat down at the desk: you saw it through your camera" in prompt
+    assert "most likely Dan" in prompt and "hadn't seen Dan since" in prompt
     assert "Through the desk camera: one person" in brain.model.calls[0][0]["content"]
     events = brain.life.events_after(0)
     pipe = [e for e in events if e["type"] == "pipe_up"]
-    assert pipe and pipe[0]["reason"] == "greet"
+    assert pipe and pipe[0]["reason"] == "back"
     assert [m.text for m in memory.recent(2)][-1] == "Morning! That you, Dan?"
     memory.close()
 
