@@ -153,6 +153,10 @@ def window_style(p: Palette, font_pt: float = 10.5) -> str:
         padding: 14px 12px 10px 12px; background: {p.panel}; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 4px;
         color: {p.muted}; }}
+    QFrame#section {{ border: 1px solid {p.line}; border-radius: 14px; background: {p.panel}; }}
+    QToolButton#sectionHead {{ border: none; background: transparent; color: {p.text};
+        font-weight: 600; padding: 10px 12px; text-align: left; }}
+    QToolButton#sectionHead:hover {{ color: {p.accent}; }}
     QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px;
         border: 1px solid {p.line}; background: {p.bg}; }}
     QCheckBox::indicator:checked {{ background: {p.accent}; border-color: {p.accent}; }}

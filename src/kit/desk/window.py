@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -42,9 +41,11 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -477,6 +478,78 @@ def read_control(kind: str, widget: QWidget):
     return text
 
 
+class SettingsSection(QFrame):
+    """One section of Kit's settings that folds away: click its name to open it."""
+
+    def __init__(self, title: str, is_open: bool = False) -> None:
+        super().__init__()
+        self.setObjectName("section")
+        self.title = title
+        self.head = QToolButton()
+        self.head.setObjectName("sectionHead")
+        self.head.setText(title)
+        self.head.setCheckable(True)
+        self.head.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.head.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.head.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.head.toggled.connect(self._show_body)
+        self.body = QWidget()
+        self.form = QFormLayout(self.body)
+        self.form.setContentsMargins(14, 0, 14, 12)
+        self.words: list[tuple[str, list[int]]] = []  # each field's searchable text, rows
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.head)
+        layout.addWidget(self.body)
+        self.is_open = is_open
+        self.head.setChecked(is_open)
+        self._show_body(is_open)
+
+    def add(self, key: str, control: QWidget, description: str = "") -> None:
+        label = QLabel(key.replace("_", " "))
+        label.setToolTip(description)
+        control.setToolTip(description)
+        rows = [self.form.rowCount()]
+        self.form.addRow(label, control)
+        if description:
+            rows.append(self.form.rowCount())
+            self.form.addRow("", _label(description, "help"))
+        self.words.append((f"{key} {key.replace('_', ' ')} {description}".lower(), rows))
+
+    def _show_body(self, on: bool) -> None:
+        self.head.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+        self.body.setVisible(on)
+
+    def search(self, words: list[str]) -> bool:
+        """Show only the fields matching every word (all of them if the section's name
+        matches), opened up; no words puts it back as Dan left it. Returns whether
+        anything matched."""
+        if not words:
+            for _, rows in self.words:
+                for row in rows:
+                    self.form.setRowVisible(row, True)
+            self.head.blockSignals(True)
+            self.head.setChecked(self.is_open)
+            self.head.blockSignals(False)
+            self._show_body(self.is_open)
+            self.show()
+            return True
+        whole = all(w in self.title.lower() for w in words)
+        found = False
+        for text, rows in self.words:
+            hit = whole or all(w in text for w in words)
+            found = found or hit
+            for row in rows:
+                self.form.setRowVisible(row, hit)
+        self.setVisible(found)
+        self.head.blockSignals(True)
+        self.head.setChecked(found)
+        self.head.blockSignals(False)
+        self._show_body(found)
+        return found
+
+
 class BrainSettingsPage(QWidget):
     def __init__(self, client: Callable[[], BrainClient | None], brain_url: Callable[[], str]):
         super().__init__()
@@ -492,7 +565,18 @@ class BrainSettingsPage(QWidget):
         self.problem = _label("", "error")
         self.problem.hide()
         layout.addWidget(self.problem)
+        self.find = QLineEdit()
+        self.find.setPlaceholderText("Search settings (voice, cap, character...)")
+        self.find.setClearButtonEnabled(True)
+        self.find.textChanged.connect(self.search)
+        layout.addWidget(self.find)
+        self.nothing = _label("No setting matches that.", "muted")
+        self.nothing.hide()
+        layout.addWidget(self.nothing)
+        self.groups: list[SettingsSection] = []
+        self._opened: set[str] = set()  # sections Dan opened, kept across a reload
         self.sections = QVBoxLayout()
+        self.sections.setSpacing(8)
         layout.addLayout(self.sections)
         layout.addStretch(1)
         row = QHBoxLayout()
@@ -539,6 +623,7 @@ class BrainSettingsPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         self.fields = []
+        self.groups = []
         for section, ref in self.schema.get("properties", {}).items():
             sec = self._resolve(ref)
             extra = sec.get("additionalProperties")
@@ -550,22 +635,32 @@ class BrainSettingsPage(QWidget):
             if sec.get("type") != "object" or not sec.get("properties"):
                 continue
             self._group(section, section, None, sec, settings.get(section) or {})
+        self.search(self.find.text())
 
     def _group(self, title: str, section: str, entry: str | None, sec: dict, values: dict):
-        box = QGroupBox(title.replace("_", " "))
-        form = QFormLayout(box)
+        title = title.replace("_", " ")
+        box = SettingsSection(title.capitalize(), title in self._opened)
+        box.head.toggled.connect(lambda on, t=title, b=box: self._toggled(t, b, on))
         for key, raw in sec.get("properties", {}).items():
             prop = self._resolve(raw)
             kind = kind_of(prop)
             control = make_control(kind, prop, values.get(key))
-            control.setToolTip(prop.get("description", ""))
-            label = QLabel(key.replace("_", " "))
-            label.setToolTip(prop.get("description", ""))
-            form.addRow(label, control)
-            if prop.get("description"):
-                form.addRow("", _label(prop["description"], "help"))
+            box.add(key, control, prop.get("description", ""))
             self.fields.append((section, entry, key, kind, control))
+        self.groups.append(box)
         self.sections.addWidget(box)
+
+    def _toggled(self, title: str, box: SettingsSection, on: bool) -> None:
+        if self.find.text().strip():
+            return  # opened by a search, not by Dan
+        box.is_open = on
+        (self._opened.add if on else self._opened.discard)(title)
+
+    def search(self, text: str) -> None:
+        """Narrow the sections to the settings matching what Dan typed."""
+        words = text.lower().split()
+        found = [box.search(words) for box in self.groups]
+        self.nothing.setVisible(bool(words) and self.groups != [] and not any(found))
 
     def patch(self) -> dict:
         patch: dict = {}

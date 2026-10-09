@@ -420,6 +420,29 @@ def test_kits_settings_page_round_trips_the_brains_settings(qapp, sync_window, t
     win.close()
 
 
+def test_kits_settings_fold_away_and_search(qapp, sync_window, tmp_path):
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    win.show()
+    win.show_page("Kit's settings")
+    page = win.brain_settings
+    assert page.groups and not any(box.body.isVisibleTo(page) for box in page.groups)
+    brain_box = next(box for box in page.groups if box.title == "Brain")
+    brain_box.head.click()  # Dan opens one
+    assert brain_box.body.isVisibleTo(page)
+    page.find.setText("history messages")
+    shown = [box for box in page.groups if box.isVisibleTo(page)]
+    assert shown == [brain_box] and brain_box.body.isVisibleTo(page)
+    page.find.setText("no such setting anywhere")
+    assert page.nothing.isVisibleTo(page) and not any(b.isVisibleTo(page) for b in page.groups)
+    page.find.clear()  # back as Dan left them: only Brain open
+    assert all(box.isVisibleTo(page) for box in page.groups)
+    assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
+    page.save()  # a reload keeps it open
+    assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
+    win.close()
+
+
 def test_settings_controls_read_back_what_they_show(qapp, sync_window):
     w = sync_window
     for prop, value in [
