@@ -688,6 +688,12 @@ class FaceSettings(_Section):
         description="When you ask about the weather, a dry day this hot or hotter (°C) "
         "shows as a hot day on his face: the sun beating down and him sweating.",
     )
+    pack_folder: str = Field(
+        "",
+        description="A folder holding a 3D face pack (face.json and the .glb) to use for a "
+        "3D character instead of the one built into Kit, e.g. the pack folder your Blender "
+        "project writes. Each rebuild shows on the desk within seconds. Empty: built in.",
+    )
 
 
 class MemorySettings(_Section):

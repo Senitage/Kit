@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  body.stage { background: var(--stage, #10151c); }
+  #kit { position: fixed; inset: 0; }
+  #kit canvas { display: block; width: 100%; height: 100%; }
+  #msg { position: fixed; inset: auto 0 8px; text-align: center; font: 12px system-ui, sans-serif;
+         color: #8c96a0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="kit" aria-label="Kit" role="img"></div>
+<p id="msg"></p>
+<!-- three.js r147 (MIT), vendored so the page works without the internet -->
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/RoomEnvironment.js"></script>
+<script src="vendor/CopyShader.js"></script>
+<script src="vendor/LuminosityHighPassShader.js"></script>
+<script src="vendor/GammaCorrectionShader.js"></script>
+<script src="vendor/EffectComposer.js"></script>
+<script src="vendor/RenderPass.js"></script>
+<script src="vendor/ShaderPass.js"></script>
+<script src="vendor/MaskPass.js"></script>
+<script src="vendor/UnrealBloomPass.js"></script>
+<script src="kit3d.js"></script>
+</body>
+</html>
