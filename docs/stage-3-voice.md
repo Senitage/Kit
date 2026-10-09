@@ -97,6 +97,45 @@ word, speech to text) is the next part of stage 3.
    kit speech on
    ```
 
+## Changing his voice
+
+Chatterbox copies whatever voice is in its reference clip; it has no list of
+voices of its own. Any clear recording of one person talking, 6 to 20 seconds
+long, with no music or background noise, works as a `.wav`.
+
+1. Copy the clip into `<data>/state/speech/` under its own name, so the old one
+   stays. From WSL, Windows' C: drive is `/mnt/c`, for example
+   `cp /mnt/c/Users/<you>/Downloads/new_voice.wav <data>/state/speech/`.
+2. Point the engine at it: `kit config set speech.engines.chatterbox-turbo.reference new_voice.wav`.
+   A name on its own is looked for in `<data>/state/speech/`; a full path works too.
+   Kit restarts the engine itself when this changes.
+3. Listen: `kit speech say "Hey, how do I sound now?"`.
+
+To keep several voices to flip between, give each its own profile, then switch
+with `kit speech use`:
+
+```
+kit config set speech.engines.voice2.kind chatterbox-turbo
+kit config set speech.engines.voice2.python ~/kit-voice/.venv/bin/python
+kit config set speech.engines.voice2.reference new_voice.wav
+kit speech use voice2
+```
+
+## Moving Kit to another machine
+
+What lives where:
+
+- **Kit's code and its own Python** (the repo and its `.venv`): reinstall from git.
+- **Kit's data folder** (`kit paths`): settings, memory and the voice clips under
+  `state/speech/`. Copy it across whole.
+- **The Chatterbox Python** (`~/kit-voice/.venv` here): not part of Kit, so it
+  doesn't move with the data folder. Make a fresh one as in step 3 above, then
+  point `speech.engines.<name>.python` at it again for every Chatterbox profile.
+- **Kokoro and Piper model files** sit in `<data>/state/speech/models`, so they
+  come with the data folder; reinstall `kokoro-onnx` or `piper-tts` into Kit's Python.
+
+Then `kit speech use <name>`, `kit speech on`, and `kit speech say` to check.
+
 ## Commands
 
 - `kit speech`: the engines, which one is in use, and whether speech is on.
