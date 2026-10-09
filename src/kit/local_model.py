@@ -80,7 +80,7 @@ class OllamaModel:
             "messages": messages,
             "stream": True,
             "think": s.think,
-            "keep_alive": "30m",
+            "keep_alive": s.keep_alive,
             "options": {"temperature": s.temperature, "num_ctx": s.num_ctx, **(options or {})},
         }
         if schema is not None:

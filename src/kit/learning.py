@@ -126,10 +126,10 @@ def relation_change(fact: str, candidates: list, owner: str) -> tuple[object, st
     return None
 
 
-def asking(cloud, settings, role: str = "work") -> AskJson:
+def asking(cloud, settings, role: str = "work", priority: str = "reflect") -> AskJson:
     """An ``AskJson`` for the cloud model ``role`` points at (without web search), logged
-    as spend at the nightly priority. None comes back when it can't help, or when that
-    role is a local profile, so the local model steps in."""
+    as spend at ``priority`` (the nightly one by default). None comes back when it can't
+    help, or when that role is a local profile, so the local model steps in."""
     from kit.cloud import CloudError
     from kit.reflection import json_with
 
@@ -149,7 +149,7 @@ def asking(cloud, settings, role: str = "work") -> AskJson:
         ]
         quiet = profile.model_copy(update={"web_search": False})
         try:
-            answer = await cloud.answer(quiet, shaped, s, question, priority="reflect")
+            answer = await cloud.answer(quiet, shaped, s, question, priority=priority)
         except CloudError as e:
             log.warning(
                 "%s couldn't help with %s (%s); the local model will", profile.name, question, e

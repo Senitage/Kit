@@ -65,7 +65,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
-from kit.cloud import Cloud, CloudError
+from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
 from kit.knowledge import Item
 from kit.learning import Learner, asking, relations_in, said_so
@@ -183,9 +183,9 @@ from kit.reply import (
     spoken_reply,
     without_plans,
 )
-from kit.settings import Settings
+from kit.settings import Settings, cloud_background
 from kit.things import THINGS, Register, named_in
-from kit.thinking import THOUGHT_SCHEMA, Thought, parse_thought, thinking_messages
+from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
 
@@ -509,6 +509,9 @@ class Brain:
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self.learner = Learner(memory, recall, model, asking(cloud, settings))
+        # His thoughts in the cloud (routing.background chat): the chat model, giving way
+        # first as the month's budget runs low.
+        self._ask_life = asking(cloud, settings, CHAT, priority="life")
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
@@ -757,7 +760,9 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, whole
             )
         for fact in learn:
-            learned = await self.learner.learn(fact, "person", owner, private=keep_local)
+            learned = await self.learner.learn(
+                fact, "person", owner, private=keep_local, cloud=cloud_background(settings)
+            )
             emit(
                 {
                     "type": "remembered",
@@ -1101,10 +1106,16 @@ class Brain:
                 *history_messages(history, "desk", plain=settings.ollama.speak_pass),
                 {"role": "user", "content": prompt},
             ]
-            hello = []
+            hello: list[Event] | None = None
             if home is not None and self._key_hello(home, settings):
-                hello = await self._cloud_hello(home, prompt, history, recalled, settings)
-            replies = _replay(hello) if hello else self._local_reply(messages, PIPE_UP, hold=True)
+                hello = await self._cloud_hello(home, prompt, history, recalled, settings) or None
+            private = share is not None and bool(share.meta.get("private"))
+            if hello is None and self._life_in_cloud(settings) and not private:
+                hello = await self._cloud_pipe_up(prompt, history, recalled, settings)
+            if hello is not None:
+                replies = _replay(hello)
+            else:
+                replies = self._local_reply(messages, PIPE_UP, hold=True)
             async for event in replies:
                 if event["type"] == "reply":
                     event = {**self._track(event, said), "piped_up": reason}
@@ -1177,27 +1188,76 @@ class Brain:
         """The hello written by the work model, as Kit, and checked like any hello. []
         if it can't be (offline, budget kept for the nightly reflection, a guilt trip):
         then the local model says hello."""
-        profile = settings.profile(WORK).model_copy(update={"web_search": False})
+        try:
+            reply, answer = await self._cloud_line(
+                prompt, history, recalled, settings, WORK, "a hello", "moment"
+            )
+        except CloudError as e:
+            log.info("the hello is the local model's: %s", e)
+            return []
+        fault = homecoming_fault(reply.text, home.miffed, home.kind)
+        if not reply.text or fault:
+            log.info("the work model's hello %r didn't pass: %s", reply.text, fault)
+            return []
+        return self._said_by_cloud(reply, answer)
+
+    async def _cloud_pipe_up(
+        self, prompt: str, history: list[Message], recalled: Recalled, settings: Settings
+    ) -> list[Event] | None:
+        """A pipe-up written by the chat model (``routing.background`` chat), held and
+        checked like the local model's: a line he's said lately, or one the turn's
+        ``LINT`` fails, gets two more goes; then the stock line, or he keeps quiet.
+        None when the cloud can't answer and the local model should
+        (``routing.fallback_to_local``)."""
+        voice, lint = VOICE.get(), LINT.get()
+        retry, again = "", ""
+        for _ in range(HELD_TRIES):
+            try:
+                reply, answer = await self._cloud_line(
+                    prompt + retry, history, recalled, settings, CHAT, "a pipe-up", "life"
+                )
+            except CloudError as e:
+                log.info("the pipe-up is the local model's: %s", e)
+                return None if settings.routing.fallback_to_local else []
+            fault = lint.check(reply.text) if lint is not None and reply.text else ""
+            again = (
+                "" if fault or (lint and not lint.repeats) else self._repeated(reply.text, voice)
+            )
+            if reply.text and not fault and not again:
+                return self._said_by_cloud(reply, answer)
+            retry = fault or (not_again(again) if again else "")
+        if lint is not None and lint.fallback:
+            log.info("said a stock line: no clean pipe-up in %d goes", HELD_TRIES)
+            return self._said_by_cloud(Reply.plain(lint.fallback), answer)
+        log.info("kept quiet rather than say %r again", again)
+        return [{"type": "kept_quiet", "repeated": again}]
+
+    async def _cloud_line(
+        self,
+        prompt: str,
+        history: list[Message],
+        recalled: Recalled,
+        settings: Settings,
+        role: str,
+        what: str,
+        priority: str,
+    ) -> tuple[Reply, CloudAnswer]:
+        """One line of Kit's own (a hello, a pipe-up) from the cloud model ``role``, shown
+        only what Dan hasn't kept local. Raises CloudError if it can't be had."""
+        profile = settings.profile(role).model_copy(update={"web_search": False})
         seen = self.memory.shared(history)
-        system = self._system(settings, recalled.for_cloud(), WORK, False, history=seen)
+        system = self._system(settings, recalled.for_cloud(), role, False, history=seen)
         messages = [
             {"role": "system", "content": system},
             *history_messages(seen, "desk"),
             {"role": "user", "content": prompt},
         ]
-        try:
-            answer = await self.cloud.answer(
-                profile, messages, settings, "a hello", priority="moment"
-            )
-        except CloudError as e:
-            log.info("the hello is the local model's: %s", e)
-            return []
+        answer = await self.cloud.answer(profile, messages, settings, what, priority=priority)
         reply = parse_cloud_reply(answer.text)
-        reply = reply.model_copy(update={"detail": "", "action": Action(kind="none")})
-        fault = homecoming_fault(reply.text, home.miffed, home.kind)
-        if not reply.text or fault:
-            log.info("the work model's hello %r didn't pass: %s", reply.text, fault)
-            return []
+        return reply.model_copy(update={"detail": "", "action": Action(kind="none")}), answer
+
+    def _said_by_cloud(self, reply: Reply, answer: CloudAnswer) -> list[Event]:
+        """A line of his own from a cloud model, kept and told as a pipe-up."""
         message_id = self._remember_reply(reply, PIPE_UP)
         return [
             {"type": "say", "text": reply.text, "source": "cloud"},
@@ -1210,6 +1270,10 @@ class Brain:
                 "cost_usd": round(answer.cost_usd, 4),
             },
         ]
+
+    def _life_in_cloud(self, settings: Settings) -> bool:
+        """His thoughts and pipe-ups go to the chat model (``routing.background``)."""
+        return cloud_background(settings) and settings.profile(CHAT).provider != "ollama"
 
     def _hello_lint(self, home: Homecoming) -> Lint:
         """A hello is checked for guilt ("where have you been?"), not for being said
@@ -1483,8 +1547,16 @@ class Brain:
                 said_today,
                 stances=settings.life.opinions > 0,
             )
-            options = lively(settings.ollama, plain=False)
-            raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
+            raw = None
+            if self._life_in_cloud(settings) and not private:
+                data = await self._ask_life(messages, THOUGHT_SCHEMA, THOUGHT_SHAPE, "a thought")
+                if data is None and not settings.routing.fallback_to_local:
+                    self.life.thought_failed()
+                    return None
+                raw = json.dumps(data) if data is not None else None
+            if raw is None:
+                options = lively(settings.ollama, plain=False)
+                raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
         except LocalModelError as e:
             log.warning("Kit couldn't think just now: %s", e)
             self.life.thought_failed()  # costs no budget, but no hammering a model that's down
@@ -1860,7 +1932,11 @@ class Brain:
         elif kind == "remember" and fact:
             private = bool(KEEP_LOCAL.search(text))
             learned = await self.learner.learn(
-                fact, reply.action.category, settings.persona.owner, private=private
+                fact,
+                reply.action.category,
+                settings.persona.owner,
+                private=private,
+                cloud=cloud_background(settings),
             )
             yield {
                 "type": "remembered",

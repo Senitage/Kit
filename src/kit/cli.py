@@ -16,7 +16,13 @@ from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
-from kit.settings import Settings, SettingsError, load_settings, settings_to_toml
+from kit.settings import (
+    Settings,
+    SettingsError,
+    load_settings,
+    local_settings,
+    settings_to_toml,
+)
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
@@ -224,7 +230,7 @@ def _runtime(paths: KitPaths, client: httpx.AsyncClient):
     paths.ensure()
     store = SettingsStore(paths)
     memory = Memory(paths.state_dir / "memory.db")
-    model = OllamaModel(lambda: store.current().ollama, client)
+    model = OllamaModel(lambda: local_settings(store.current()), client)
     cloud = make_cloud(paths, memory, client)
     recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
     weather = Weather(client)
@@ -731,7 +737,7 @@ async def _eval_memory(paths: KitPaths) -> int:
     memory = Memory(scratch / "memory.db")
     try:
         async with httpx.AsyncClient() as client:
-            model = OllamaModel(lambda: store.current().ollama, client)
+            model = OllamaModel(lambda: local_settings(store.current()), client)
             recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
             print("teaching Kit 13 facts, some repeated or changed...")
             report = await run_memory_eval(memory, Learner(memory, recall, model), recall)
