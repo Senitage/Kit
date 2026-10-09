@@ -126,6 +126,20 @@ is to you when you say it ("Emma's my cousin", "my partner's name is Sarah",
 "the cat's called Milo"), and the end-of-day pass, which writes the day's
 summary and learns its lasting facts.
 
+A fact is something lasting about your life: who you are, the people and pets
+in it, what you like, what you're working on, where things are kept, what's
+coming up. A log of the chat ("Dan asked about pump cavitation") isn't one,
+nor is a quiz answer or the weather; a question that shows something lasting
+("you're weighing up a used 3090") is kept as that. Every model that saves a
+fact is told this, and what each kind is for, so the cat goes with people and
+your hobbies with you rather than under "other".
+
+The end-of-day pass runs after midnight. By default (`memory.day_pass =
+work`) the work model (Sonnet) reads the day, picks its facts and compares
+each with what Kit knows, for a few cents a night; the local model steps in if
+the cloud can't. A day with anything you kept local is read at home, always.
+`memory.day_pass = local` keeps the whole pass on the local model.
+
 Who someone is to you is always an update: "Emma's my cousin" when Kit had
 "Emma, Dan's sister, celebrates her birthday on the 14th of March" becomes
 "Emma, Dan's cousin, celebrates her birthday on the 14th of March", keeping the
@@ -148,6 +162,12 @@ at home from any of these. The local model still sees all of it.
 - The memory page (`/memory`) and `kit memory ...` show everything Kit knows,
   grouped by kind, with search, edit, pin, history and forget. Forgetting
   removes a fact and all its earlier versions.
+- `kit memory tidy` sorts what Kit already knows by the same rules: each fact
+  to the kind that fits, logs of chats and trivia dropped, a log that shows
+  something lasting reworded as that. It shows the plan first; `kit memory
+  tidy --apply` does it after a backup. A moved fact keeps its old version in
+  its history, pinned facts are never dropped, and private facts are only
+  ever read by the local model.
 - The memory page and `kit things ...` show the register, with links,
   suggestions to confirm or reject, other names, history and forget.
 - The memory page's **Kit's notebook** tab (and `kit life notebook`) shows

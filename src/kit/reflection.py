@@ -41,10 +41,10 @@ from datetime import date, timedelta
 
 from kit.cloud import Cloud, CloudError
 from kit.knowledge import Item
-from kit.life import alike, cheek_style, everyday, parse_time, quoted, same_words
+from kit.life import alike, and_list, cheek_style, everyday, parse_time, quoted, same_words
 from kit.local_model import LocalModel, LocalModelError
 from kit.memory import DAYS, FACTS, Memory
-from kit.notebook import Notebook, basis, morning
+from kit.notebook import Notebook, basis, morning, same_entry
 from kit.settings import Settings
 from kit.when import date_in, follow_up, on_day
 
@@ -348,6 +348,24 @@ class Reflector:
             log.warning("Kit gave up on %s after %d tries", job, MAX_TRIES)
         return tries[job] >= MAX_TRIES
 
+    def _alone_day(self, day: str, owner: str, noted: list[Item], quirks: list[str]) -> Reflection:
+        """A day without a word from Dan, only his own thoughts: one line in his
+        journal, written here, with no model (and no cloud spend). His self-sheet
+        stays as it is: there was nobody to learn from."""
+        did: list[str] = []
+        for entry in noted:
+            doing = str(entry.meta.get("doing") or "")
+            if doing and doing not in did:
+                did.append(doing)
+        line = f"Didn't see {owner} today."
+        if did:
+            line += f" On my own I was {and_list(did[:4])}."
+        else:
+            line += " Just me and my thoughts on the desk."
+        private = any(e.meta.get("private") for e in noted)
+        self.notebook.write_journal(day, line, private=private)
+        return Reflection(day, journal=line, quirks=quirks, by="no model: a day on his own")
+
     async def reflect_day(self, day: str) -> Reflection | None:
         """Look back on ``day``: journal, self-sheet, quirks, opinions, moments and
         tomorrow's wants. None if no model could do it (try again later)."""
@@ -359,6 +377,8 @@ class Reflector:
         quirks = self.notebook.quirks()
         if not said and not noted:
             return Reflection(day, quirks=quirks)  # a day he wasn't part of
+        if not said and all(e.meta.get("trigger") == "alone" for e in noted):
+            return self._alone_day(day, owner, noted, quirks)
         summary = next((i.text for i in self.memory.index.items(DAYS) if i.ref == day), "")
         held = len(shown := self.memory.shared(said)) < len(said)
         cloud = settings.life.reflect_with == "cloud"
@@ -377,6 +397,16 @@ class Reflector:
             f"bring it in line with that description: drop what no longer fits."
             if sheet is not None and sheet.meta.get("basis") != basis(p)
             else ""
+        )
+        stances = settings.life.opinions > 0
+        opinions_line = (
+            f"- opinions: up to three stances you hold, one plain sentence each: a view on "
+            f"a topic (food, footy, the weather, music, how things ought to be) that you'd "
+            f'argue for, like "Winter\'s the best time of year." Never a remark about '
+            f"{owner} or what's on the screen, a joke or a question. None is fine.\n"
+            if stances
+            else "- opinions: up to three views you formed today, one sentence each. Only "
+            "real ones.\n"
         )
         system = (
             f"You are {name}, a small AI companion who lives on {owner}'s desk: a face on "
@@ -398,8 +428,7 @@ class Reflector:
             f"{owner} enjoys. Change at most one, and only for a reason: one has fallen flat "
             f"for days running (your journal says how they've landed), or a new habit "
             f"showed up today.\n"
-            f"- opinions: up to three views you formed today, one sentence each. Only real "
-            f"ones.\n"
+            f"{opinions_line}"
             f"- moments: up to two moments from today worth keeping, one sentence each.\n"
             f"- wants: up to three things you'd like to say or ask {owner} tomorrow, one "
             f"short line each.\n"
@@ -527,8 +556,20 @@ class Reflector:
             ("want", "wants", 3),
         ):
             due = {"after": tomorrow} if kind == "want" else {}  # not before the morning
+            stance = kind == "opinion" and settings.life.opinions > 0
+            if stance:
+                due = {"stance": True}  # a view he stands by, chosen with a day's hindsight
+                held = [
+                    e.text for e in self.notebook.entries("opinion", 30) if e.meta.get("stance")
+                ]
             for text in (data.get(key) or [])[:most]:
-                if isinstance(text, str) and self.notebook.write(kind, text, day=day, by=by, **due):
+                if not isinstance(text, str):
+                    continue
+                if stance and any(same_entry(text, h) for h in held):
+                    continue  # he holds it already
+                # A stance is kept in the reflection's words even if a thought today said
+                # much the same: the thought may be a remark, the stance is the view.
+                if self.notebook.write(kind, text, again=stance, day=day, by=by, **due):
                     done.added.append(f"{kind}: {' '.join(text.split())}")
         self.notebook.tidy()
         return done

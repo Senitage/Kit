@@ -60,6 +60,12 @@ class OllamaSettings(_Section):
         "repeats himself less; his first words come about half a second later. Off: one "
         "JSON pass, as in stage 1.",
     )
+    keep_alive: str = Field(
+        "30m",
+        description="How long the local chat model stays loaded on the GPU after it was last "
+        "used (Ollama's keep_alive, e.g. 30m, 5m, 0). With routing.background on chat in "
+        "cloud-only mode it is 2m whatever this says, so the voice has the card.",
+    )
     speak_temperature: float = Field(
         0.95,
         ge=0,
@@ -235,6 +241,16 @@ class RoutingSettings(_Section):
         True,
         description="If the cloud can't be reached (offline, no key, budget used up), "
         "the local model answers instead.",
+    )
+    background: Literal["local", "chat"] = Field(
+        "local",
+        description="Who does Kit's own background work: his private thoughts (with you and "
+        "on his own), his pipe-ups, and comparing something new you tell him with what he "
+        "already knows. local: the local model. chat: the cloud (thoughts and pipe-ups by the "
+        "chat model, about A$2 a month; fact comparisons by the work model, a cent or so), "
+        "with the local model stepping in if the cloud can't. Anything from what you kept "
+        "local stays on the local model either way. In cloud-only mode, chat also unloads "
+        "the local model two minutes after it was last used, so the voice has the GPU.",
     )
     check_facts: bool = Field(
         True,
@@ -571,6 +587,66 @@ class LifeSettings(_Section):
         description="Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) "
         "and reacts to builds and tests on screen. Off: only everyday things catch his eye.",
     )
+    alone_thoughts_per_hour: int = Field(
+        0,
+        ge=0,
+        le=6,
+        description="While you're away and he's awake, Kit entertains himself (watching the "
+        "weather, rereading yesterday's journal, thinking about someone in the register, "
+        "listening to what's playing if the desk app shares it) and has this many private "
+        "thoughts an hour about it, always with the local model, never in quiet hours. The "
+        "desk face shows what he's doing. 0: he just waits, then dozes.",
+    )
+    week_thoughts: bool = Field(
+        False,
+        description="Kit notices the shape of the week: a thought on Monday, Friday and "
+        "Saturday mornings, and on WA public holidays.",
+    )
+    read_mood: Literal["words", "meaning"] = Field(
+        "words",
+        description='How Kit reads how you are. words: from what you say ("stressed", '
+        '"legend"), ignoring "not stressed". meaning: the model answering also reads your '
+        "mood, what it's about and whether things went as hoped, with the words as a floor. "
+        "meaning needs a passed `kit eval mood` first; until then he uses words.",
+    )
+    mixed_feelings: bool = Field(
+        False,
+        description="Kit can feel two things at once (chuffed at your praise and still a bit "
+        "worried about your day). Off: the stronger feeling wins.",
+    )
+    bad_night: bool = Field(
+        True,
+        description="When you sound like you're having a really bad time, Kit drops the cheek "
+        "for the rest of the chat, listens and stays, and once mentions someone you can talk "
+        "to or Lifeline (13 11 14).",
+    )
+    energy_need: bool = Field(
+        False,
+        description="Energy is a real need: long chats, cloud jobs and staying up past 22:30 "
+        "tire Kit out, and sleep restores him. Below 0.4 he yawns and keeps replies short. "
+        "Off: his energy just follows the clock.",
+    )
+    opinions: int = Field(
+        0,
+        ge=0,
+        le=2,
+        description="How many of his standing opinions (from his notebook) Kit keeps in mind "
+        "when he talks, so he sticks to them.",
+    )
+    dials: bool = Field(
+        False,
+        description="Kit's mood also runs as two slow dials (how lively, how happy) that bodies "
+        "show: slower breathing and blinks when he's flat or tired, bigger gestures when "
+        "he's up.",
+    )
+    pipe_up_bar: float = Field(
+        0.0,
+        ge=0,
+        le=1,
+        description="Before Kit brings something up unprompted, he scores it for relevance, "
+        "originality and urgency (helped by how often you take his pipe-ups up) and keeps "
+        "quiet below this. 0 turns the scoring off; 0.5 is a sensible bar.",
+    )
 
     @field_validator("quiet_from", "quiet_until", "bedtime")
     @classmethod
@@ -636,6 +712,14 @@ class MemorySettings(_Section):
         "(flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep "
         "the gist.",
     )
+    day_pass: Literal["work", "local"] = Field(
+        "work",
+        description="Who reads each finished day after midnight, writes its summary and sorts "
+        "what's worth remembering about you into the right kinds. work: the work model "
+        "(Sonnet), a few cents a night, with the local model stepping in if the cloud "
+        "can't; a day with something you kept local always stays home. local: the local "
+        "model only.",
+    )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
 
@@ -683,6 +767,29 @@ class Settings(_Section):
     def profile(self, role: str) -> ModelProfile:
         """The model profile a role ("chat", "work" or "expert") points at."""
         return self.models[getattr(self.routing, role)]
+
+
+LOCAL_STANDS_IN = "2m"  # how long the local model stays loaded when it only stands in
+
+
+def cloud_background(settings: Settings) -> bool:
+    """Kit's background work (thoughts, pipe-ups, fact comparisons) goes to the cloud."""
+    return settings.routing.background == "chat"
+
+
+def local_settings(settings: Settings) -> OllamaSettings:
+    """The local model's settings as Ollama should see them: in cloud-only mode with the
+    background work in the cloud, the local model only stands in (for what Dan keeps
+    local, or when the cloud can't answer), so it leaves the GPU soon after."""
+    if local_stands_in(settings):
+        return settings.ollama.model_copy(update={"keep_alive": LOCAL_STANDS_IN})
+    return settings.ollama
+
+
+def local_stands_in(settings: Settings) -> bool:
+    """The cloud does everything, chat and background alike: the local model only
+    stands in for what Dan keeps local, or when the cloud can't answer."""
+    return settings.routing.mode == "cloud-only" and cloud_background(settings)
 
 
 class SettingsError(Exception):

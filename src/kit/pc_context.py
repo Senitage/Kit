@@ -95,6 +95,8 @@ class Snapshot(BaseModel):
     windows: list[Window] = Field(default_factory=list, max_length=200)
     system: System | None = None
     browser: Browser | None = None
+    # What's playing (a song, a video), only when the tray's "Share what's playing" is on.
+    now_playing: str = Field("", max_length=300)
 
 
 @dataclass

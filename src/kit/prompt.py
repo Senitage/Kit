@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.life import everyday, gap_words
-from kit.memory import DAYS, Message
+from kit.memory import DAYS, Message, kinds_line
 from kit.recall import Recalled
 from kit.reply import (
     EMOTIONS,
     GESTURES,
+    MOOD_FIELDS,
     Action,
     Reply,
     ReplyError,
@@ -109,6 +110,25 @@ REPLY_SHAPE = (
 )
 
 
+REPLY_SHAPE_READ = REPLY_SHAPE.replace(
+    '"action"',
+    '"dan_mood": "fine", "about": "nothing", "for_whom": "no_one", "expected": "not_said", '
+    '"action"',
+    1,
+)
+
+
+def mood_lines(owner: str) -> list[str]:
+    """How to read the owner's last message, for the reading fields."""
+    lines = [
+        f"Read how {owner} seems from their last message, by what they mean, not single "
+        f"words ('not stressed' is fine):"
+    ]
+    for name, values in MOOD_FIELDS.items():
+        lines.append(f"- {name}: " + "; ".join(f"{k} ({v})" for k, v in values.items()) + ".")
+    return lines
+
+
 def system_prompt(
     persona: PersonaSettings,
     recalled: Recalled,
@@ -134,6 +154,7 @@ def system_prompt(
     traits: bool = True,
     two_pass: bool = False,
     dan: str = "",
+    read_mood: bool = False,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "chat", "work" or
     "expert" (a cloud model). ``helper`` and ``expert`` name the models a question can
@@ -147,7 +168,8 @@ def system_prompt(
     local model gives a plan first and its words after (kit.reply.Plan). ``notes``
     says Kit has a notes vault to read and write (kit.notes); ``note_names`` are
     its notes, newest first. ``dan`` is what's going on with Dan lately, as Kit
-    wrote it last night (kit.notebook)."""
+    wrote it last night (kit.notebook). ``read_mood``: the plan (or a cloud model's
+    JSON) also reads how Dan seems (kit.reply.MOOD_FIELDS)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
     lines = [
@@ -214,20 +236,27 @@ def system_prompt(
         words where the search or question should go)."""
         return "" if planning else f" {words}"
 
+    reading = read_mood and (planning or cloud)
     if planning:
         lines += [
             "",
-            "First answer only with JSON: the emotion you feel, a gesture, and an action. "
-            "You'll be asked for your words right after, in plain text.",
+            "First answer only with JSON: the emotion you feel, a gesture, "
+            + ("how {owner} seems, " if reading else "").format(owner=owner)
+            + "and an action. You'll be asked for your words right after, in plain text.",
         ]
     else:
         lines += [
             "",
             "Answer only with JSON: an emotion, one to three short segments (each a gesture "
-            "plus a sentence to say), an action, and detail.",
+            "plus a sentence to say), "
+            + ("how {owner} seems, " if reading else "").format(owner=owner)
+            + "an action, and detail.",
         ]
     if cloud:
-        lines.append(f"No code fences or text outside the JSON. Its shape: {REPLY_SHAPE}")
+        shape = REPLY_SHAPE_READ if reading else REPLY_SHAPE
+        lines.append(f"No code fences or text outside the JSON. Its shape: {shape}")
+    if reading:
+        lines += mood_lines(owner)
     lines += [
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
@@ -251,8 +280,9 @@ def system_prompt(
         f"- remember: only when {owner} has just told you something worth keeping: about "
         f"themselves, their preferences, projects, where things are kept, people or plans. "
         f"Put it in text as one sentence that makes sense on its own later, with real "
-        f"dates, and set category. Never your own lines or jokes, guesses, or small talk "
-        f"(greetings, thanks, how {owner} feels right now).",
+        f"dates, and set category to the kind that fits ({kinds_line()}). Never your own "
+        f"lines or jokes, guesses, quiz answers, or small talk (greetings, thanks, how "
+        f"{owner} feels right now).",
     ]
     if notes:
         lines.append(
@@ -364,6 +394,11 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
     ]
     if voice.close:
         lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
+    if voice.opinions:
+        lines.append(
+            "Views you hold and stand by (if one comes up, stick to it; share one only if it fits):"
+        )
+        lines += [f"- {o}" for o in voice.opinions]
     if brief:
         return lines
     if voice.bit:

@@ -41,7 +41,7 @@ NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes
 
 class ChatIn(BaseModel):
     text: str
-    # Where Dan is talking from (kit.channels): desk, voice, phone, web or terminal.
+    # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
 
 
@@ -396,6 +396,7 @@ def create_app(
             ],
             "quirks": brain.quirks,
             "games_retired": brain.life.retired_games(),
+            "mood_reading": brain.mood_reading(),
             "settings": s.model_dump(),
         }
 
@@ -501,11 +502,20 @@ def create_app(
         return brain.life.state()
 
     @app.get("/api/spend", dependencies=auth)
-    def spend() -> dict:
+    def spend(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
         return {
             "month_usd": round(memory.month_spend(), 4),
             "cap_usd": store.current().cloud.monthly_cap_usd,
-            "log": [s.__dict__ for s in memory.spend_log()],
+            "log": [s.__dict__ for s in memory.spend_log(limit)],
+        }
+
+    @app.get("/api/spend/summary", dependencies=auth)
+    def spend_summary(days: Annotated[int, Query(ge=1, le=366)] = 30) -> dict:
+        """Cloud spend per day and per model, for a chart (the home_app Kit page)."""
+        return {
+            **memory.spend_summary(days),
+            "month_usd": round(memory.month_spend(), 4),
+            "cap_usd": store.current().cloud.monthly_cap_usd,
         }
 
     return app
@@ -538,18 +548,29 @@ async def life_tick(brain: Brain) -> None:
     """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
     thought of his own. Neither happens while he's answering something. Once a day
     he may think of a small game to suggest, a getting-to-know-you question, or a
-    nudge toward bed or outside (``Brain.offer_wants``)."""
+    nudge toward bed or outside (``Brain.offer_wants``). While Dan's out he finds
+    something to do (``Brain.start_pastime``), and late in the afternoon he settles
+    any weather bet."""
     brain.offer_wants()
+    await brain.free_gpu()
     brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()
+    await brain.settle_bet()
+    await brain.start_pastime()
     if brain.jobs or brain.talking():
         return
     if reason is not None:
         await pipe_up_now(brain, reason)
         return
     trigger = brain.life.think_now()
-    if trigger is not None:
+    if trigger is None:
+        return
+    if trigger[0] != "alone":
         await brain.think(trigger)
+        return
+    # A thought on his own runs as its own task, so a message from Dan stops it.
+    brain._musing = asyncio.create_task(brain.think(trigger))
+    await asyncio.wait({brain._musing})
 
 
 async def pipe_up_now(brain: Brain, reason: str) -> dict | None:

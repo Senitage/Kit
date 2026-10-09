@@ -54,16 +54,23 @@ CONVERSATION = "conversation"
 SELF = "self"  # Kit's own notebook: what he thinks, wants and keeps (kit.notebook)
 SHEET = "self-sheet"  # who Kit thinks he is, and reviews of it: always in mind, never recalled
 FACT_KINDS = {
-    "about": "who the owner is: work, background, health, habits",
+    "about": "who the owner is: work, background, health, habits, hobbies",
     "preference": "likes, dislikes and how they want things done",
     "project": "something they're working on, its state and decisions",
     "place": "where something is kept: folders, files, apps, sites",
-    "person": "someone in their life and how they relate",
+    "person": "someone in their life, or a pet, and how they relate",
     "plan": "something coming up or intended, with dates",
     "now": "how they've been or what's going on lately (flat out, crook, a visitor "
     "staying): fades after two weeks",
     "other": "anything else worth keeping",
 }
+
+
+def kinds_line() -> str:
+    """The kinds of fact and what each is for, for a prompt."""
+    return "; ".join(f"{k}: {v}" for k, v in FACT_KINDS.items())
+
+
 # How much each kind of fact matters to Dan's life, 0 to 1, unless the nightly summary
 # says (kit.learning). It weighs recall a little (kit.recall).
 IMPORTANCE = {
@@ -433,6 +440,48 @@ class Memory:
             (limit,),
         ).fetchall()
         return [Spend(*row) for row in rows]
+
+    @_locked
+    def spend_summary(self, days: int = 30) -> dict:
+        """Cloud spend over the last ``days`` days (today included): a row per day
+        with each model's cost, and each model's totals, for charts and tables."""
+        today = self.clock().date()
+        first = today - timedelta(days=days - 1)
+        rows = self.db.execute(
+            "SELECT substr(at, 1, 10), model, COUNT(*), SUM(input_tokens), SUM(output_tokens),"
+            " SUM(cost_usd) FROM spend WHERE at >= ? GROUP BY 1, 2 ORDER BY 1",
+            (first.isoformat(),),
+        ).fetchall()
+        by_day = {(first + timedelta(days=i)).isoformat(): {} for i in range(days)}
+        models: dict[str, dict] = {}
+        for day, model, calls, tokens_in, tokens_out, cost in rows:
+            if day not in by_day:
+                continue
+            by_day[day][model] = round(cost, 6)
+            m = models.setdefault(
+                model,
+                {
+                    "model": model,
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                },
+            )
+            m["calls"] += calls
+            m["input_tokens"] += tokens_in
+            m["output_tokens"] += tokens_out
+            m["cost_usd"] += cost
+        for m in models.values():
+            m["cost_usd"] = round(m["cost_usd"], 6)
+        return {
+            "days": [
+                {"date": day, "cost_usd": round(sum(costs.values()), 6), "by_model": costs}
+                for day, costs in by_day.items()
+            ],
+            "models": sorted(models.values(), key=lambda m: -m["cost_usd"]),
+            "total_usd": round(sum(m["cost_usd"] for m in models.values()), 6),
+        }
 
     # Backups
 

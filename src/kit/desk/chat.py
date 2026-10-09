@@ -461,6 +461,7 @@ class ChatWindow(QWidget):
         self._stick = True  # sending always brings the newest message into view
         self._add(Line("you", text))
         self._in_flight += 1
+        self.state.emit("heard")  # a nod as it goes, then he thinks
         self._set_state("thinking")
         client = self.client
         if client is None:

@@ -19,10 +19,15 @@ the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee
 | Companion stage 1: he knows you were gone | Merged | #12 |
 | Companion stage 2: he follows your life | Merged | #13, #14 |
 | Cloud-only routing (Haiku chats, Sonnet works, ask before Opus) | Merged | #15 |
+| Cloud spend per day and model | Merged | #19 |
+| Companion stage 3: a life of his own, and feeling it | Merged | #17 |
+| His thoughts and pipe-ups can go to the cloud too | Merged | #21 |
+| Character sheets for his face (Retro first), 2D or 3D per app | Merged | #20 |
+| Desk app: words under his face, face shows, a Mood page | Built, test build in use | #18 (draft) |
 | Stage 3 part 1: Kit's voice | Built and being tested, not merged | #9 (draft) |
 | Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
 
-Next up: companion stages 3 to 5, then land the voice (#9) and vision (#11),
+Next up: companion stages 4 and 5, then land the voice (#9) and vision (#11),
 then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
 Claude Code bridge). The full list and the decisions still open are at the top
 of the roadmap.
@@ -71,6 +76,24 @@ extension adds the open tabs and the site you're on. Install
 and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
+
+## Kit as a companion, stage 3
+
+A life of his own, and feeling it. While you're away he keeps himself busy
+(watching the weather, rereading his journal, thinking about the cat) and
+tells you truthfully what he got up to. He knows Friday arvo from Monday
+morning and the WA public holidays, reads "not stressed, footy's on late" the
+right way (and, once `kit eval mood` passes on your own lines, reads your mood
+by meaning), can feel two things at once, gets tired, sticks to his views, and
+looks before he pipes up. On a really bad night he drops the cheek and stays.
+Each change is a setting, off until you turn it on (the bad-night care is on).
+Update and test it with
+[docs/stage-companion-3.md](docs/stage-companion-3.md).
+
+```
+kit life         # now also: where he is and what he's doing, energy, dials
+kit eval mood    # does reading your mood by meaning beat the words?
+```
 
 ## Kit as a companion, stage 2
 

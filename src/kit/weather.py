@@ -64,6 +64,18 @@ class Place:
     longitude: float
 
 
+@dataclass
+class Today:
+    """Today's weather in numbers, for Kit's own use (a pastime, the weather bet)."""
+
+    place: str
+    now_c: float | None
+    sky: str
+    top_c: float | None
+    low_c: float | None
+    rain_chance: int | None
+
+
 class Weather:
     def __init__(self, client: httpx.AsyncClient) -> None:
         self.client = client
@@ -88,6 +100,36 @@ class Weather:
             },
         )
         return describe(where.name, data)
+
+    async def today(self, place: str, country: str = "") -> Today:
+        """Today's weather as numbers: now, the sky, and the top and low."""
+        where = await self.find(place, country)
+        data = await self._get(
+            FORECAST_URL,
+            {
+                "latitude": where.latitude,
+                "longitude": where.longitude,
+                "timezone": "auto",
+                "forecast_days": 1,
+                "current": "temperature_2m,weather_code",
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            },
+        )
+        cur = data.get("current") or {}
+        daily = data.get("daily") or {}
+
+        def first(key: str):
+            values = daily.get(key) or [None]
+            return values[0]
+
+        return Today(
+            where.name,
+            cur.get("temperature_2m"),
+            _sky(cur.get("weather_code")),
+            first("temperature_2m_max"),
+            first("temperature_2m_min"),
+            first("precipitation_probability_max"),
+        )
 
     async def find(self, place: str, country: str = "") -> Place:
         """Where ``place`` is. "Perth, WA" is looked up as Perth, preferring a match

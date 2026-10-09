@@ -55,6 +55,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import itertools
+import json
 import logging
 import re
 import time
@@ -64,11 +65,12 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from kit.channels import channel_line, known
-from kit.cloud import Cloud, CloudError
+from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
 from kit.knowledge import Item
-from kit.learning import Learner, relations_in, said_so
+from kit.learning import Learner, asking, relations_in, said_so
 from kit.life import (
+    CLOUD_TIRES,
     FAREWELL,
     FEELING_KINDS,
     GAME_PRESS,
@@ -81,11 +83,15 @@ from kit.life import (
     Homecoming,
     Life,
     Voice,
+    bad_night_aside,
+    bad_night_in,
     cheek_style,
+    day_part,
     farewell_aside,
     farewell_fault,
     farewell_line,
     feeling_from,
+    feeling_from_read,
     homecoming_aside,
     homecoming_facts,
     homecoming_fault,
@@ -93,6 +99,7 @@ from kit.life import (
     is_farewell,
     parse_time,
     pipe_up_prompt,
+    pipe_up_score,
     quoted,
     repeats,
     same_words,
@@ -132,6 +139,7 @@ from kit.notes import (
     request,
     title_for,
 )
+from kit.pastimes import Pastime, Pastimes, Readers, weather_doing
 from kit.pc_context import PcContext
 from kit.prompt import (
     IN_WORDS,
@@ -163,6 +171,7 @@ from kit.reply import (
     SayExtractor,
     SpokenStream,
     early_plan,
+    mood_read,
     parse_cloud_reply,
     parse_plan,
     parse_reply,
@@ -174,13 +183,49 @@ from kit.reply import (
     spoken_reply,
     without_plans,
 )
-from kit.settings import Settings
+from kit.settings import Settings, cloud_background, local_stands_in
 from kit.things import THINGS, Register, named_in
-from kit.thinking import THOUGHT_SCHEMA, Thought, parse_thought, thinking_messages
+from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
 
 log = logging.getLogger(__name__)
+
+
+MUSING = re.compile(
+    r"^\W*(i wonder|wonder|maybe|perhaps|what if|i'?m not sure|not sure|could it be|"
+    r"is|are|does|do|can|could|would|should|will)\b",
+    re.I,
+)
+
+
+SENTENCES = re.compile(r"(?<=[.!?…])\s+|\.{3}\s*|…\s*|\s+-\s+|\s*[;:]\s+")
+
+
+ABOUT_HIM = re.compile(r"\b(he|he's|him|his)\b", re.I)
+
+
+def a_view(text: str, owner: str = "") -> bool:
+    """An opinion he can stand by: statements only, with no question or passing musing
+    in it anywhere ("Is that AI thing actually smarter than me?", "... Wonder if he'll
+    ever stop"), and on a topic, not a remark about ``owner``."""
+    text = text.strip()
+    if len(text.split()) < 4 or "?" in text:
+        return False
+    if owner and (ABOUT_HIM.search(text) or re.search(rf"\b{re.escape(owner)}\b", text, re.I)):
+        return False
+    return not any(MUSING.search(part) for part in SENTENCES.split(text) if part.strip())
+
+
+def temperatures(text: str) -> list[float]:
+    """Plausible temperatures in ``text``, in order ("I reckon 31, you?")."""
+    found = []
+    for m in TEMPERATURE.finditer(text):
+        value = float(m.group(1))
+        if -10 <= value <= 55:
+            found.append(value)
+    return found
+
 
 Event = dict
 LOCAL, CHAT, WORK, EXPERT = "local", "chat", "work", "expert"
@@ -217,7 +262,19 @@ MIND: contextvars.ContextVar[str] = contextvars.ContextVar("mind", default="")
 # What a cloud answer this turn is for, so a low budget skips the least needed first
 # (kit.cloud.SKIP_ORDER): "moment" for a key moment (bad news) the work model answers.
 PRIORITY: contextvars.ContextVar[str] = contextvars.ContextVar("priority", default="chat")
+# How Dan seems, as the model answering this turn read it (``life.read_mood`` meaning).
+READ: contextvars.ContextVar[dict | None] = contextvars.ContextVar("read", default=None)
+READ_ON: contextvars.ContextVar[bool] = contextvars.ContextVar("read_on", default=False)
+MOOD_CALIBRATION = "mood_calibration"  # kit_self: the last `kit eval mood` (kit.evals)
+CLOSE = re.compile(
+    r"\b(partner|wife|husband|girlfriend|boyfriend|fianc\w*|mum|mom|dad|mother|father|"
+    r"brother|sister|best mate|mate|best friend|friend)\b",
+    re.I,
+)
+# A temperature in a weather bet: "I reckon 31", "28 degrees". Not a time ("2 pm").
+TEMPERATURE = re.compile(r"(?<![\d:.])(-?\d{1,2}(?:\.\d)?)(?!\s*(?:pm|am|:|%|\d))", re.I)
 SAID_SHOWN = 6  # Kit's own recent lines shown so he doesn't repeat them
+OPINION_STANDS = timedelta(days=1)  # an opinion held this long is one he stands by
 SAID_CHARS = 160
 # A new chat (or a hello) this long after the last talk picks up one thing from it.
 OPENER_GAP = timedelta(hours=1)
@@ -313,7 +370,9 @@ SELF_Q = re.compile(
     r"\bwhat can you (see|hear|sense)\b(?!\s+(about|with|in|on|from|there)\b)|"
     r"\bcan you (see|hear) me\b|\bhow (do|are) you feel(ing)?\b(?!\s+(about|with|in|on)\b)|"
     r"\bwhat('?s| is) it like (being|to be) you|"
-    r"\bwhat (do|did) you (do|get up to)\b[^.?!]*\b(while|when) i\b",
+    r"\bwhat (do|did) you (do|get up to)\b[^.?!]*\b(while|when) i\b|"
+    r"\bwhat (did|have) you (been )?(do|doing|get up to|getting up to|been up to)\b"
+    r"(\s+(today|this (morning|arvo|afternoon)|while i was (out|away|gone)))?\s*\??\s*$",
     re.IGNORECASE,
 )
 # "Perth's the capital, isn't it?": Dan wants Kit to agree, and might be wrong.
@@ -449,7 +508,11 @@ class Brain:
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
-        self.learner = Learner(memory, recall, model)
+        self.learner = Learner(memory, recall, model, asking(cloud, settings))
+        # His thoughts in the cloud (routing.background chat): the chat model, giving way
+        # first as the month's budget runs low.
+        self._ask_life = asking(cloud, settings, CHAT, priority="life")
+        self._local_freed = False  # the local model was taken off the GPU for the voice
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
@@ -464,6 +527,9 @@ class Brain:
         # answer is kept with it: how the dentist went, or the cat's name.
         self._asked: tuple[int, int] | None = None
         self._bit_out: tuple[int, datetime] | None = None  # a running joke he just used
+        readers = Readers(self._read_weather, self._read_journal, self._read_thing, self._music)
+        self.pastimes = Pastimes(readers, memory.clock, memory, self.life.rng)
+        self._musing: asyncio.Task | None = None  # a thought while alone; a chat stops it
 
     @property
     def quirks(self) -> list[str]:
@@ -481,6 +547,8 @@ class Brain:
         text = text.strip()
         if not text:
             return
+        if self._musing is not None and not self._musing.done():
+            self._musing.cancel()  # Dan's here: his thought can wait
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
@@ -512,7 +580,14 @@ class Brain:
         user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         owner = settings.persona.owner
         now = self.memory.clock()
+        game = self.life.game_out  # a game he suggested, which this may answer
+        READ.set(None)
+        READ_ON.set(self._reading_mood(settings))
+        night = bad_night_in(text) if settings.life.bad_night else ""
         felt = feeling_from(text, owner)
+        if night:  # a really bad time: worried for Dan, whatever the words matched
+            felt = ("worried", f'{owner} said "{quoted(text)}"', 0.9)
+            self.life.start_bad_night(felt[1])
         if felt is not None:
             self.life.feel(*felt, show=False)
         home = self.life.homecoming_for_chat()  # a hello he still owes Dan
@@ -560,6 +635,11 @@ class Brain:
         expert_ask, declined = self._answer_expert_offer(text)
         if expert_ask:
             asides.append(expert_yes_aside(owner, expert_ask))
+        if self.life.bad_night():  # no cheek, he stays; once, someone to talk to
+            name_help = not self.life.bad_night_named
+            asides.append(bad_night_aside(owner, night == "self_harm", self._someone(), name_help))
+            if name_help or night == "self_harm":
+                self.life.named_help()
         answering = "\n\n".join(a for a in asides if a)
         MIND.set("\n".join(a for a in asides[1:] if a))  # not the pipe-up he's answered
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
@@ -655,11 +735,21 @@ class Brain:
                     event = {**event, "question": text}
             emit(self._track(event, said))
 
-        if emotion in REPLY_FEELINGS and felt is None:
+        read = READ.get()
+        from_read = feeling_from_read(read, text, owner) if read else None
+        if from_read is not None:  # the model's reading takes over from the words
+            other = felt is not None and felt[0] != from_read[0]
+            self.life.feel(*from_read, show=False, force=other)
+        if read and read.get("dan_mood") == "awful" and settings.life.bad_night:
+            self.life.start_bad_night(f'{owner} said "{quoted(text)}"')
+        if emotion in REPLY_FEELINGS and felt is None and from_read is None:
             # How he felt answering lingers a little: "sad" about Dan's news stays.
             self.life.feel(REPLY_FEELINGS[emotion], f'{owner} said "{quoted(text)}"', 0.4)
         if said:
             whole = " ".join(said)
+            if game == "weather_bet":
+                pipe_up = before[-1].text if before and before[-1].role != "user" else ""
+                self._place_bet(text, f"{pipe_up} {whole}")
             if picked is not None:  # the thread the new chat picked up: asked, once
                 self.notebook.mark_said(picked.id)
                 self._asked_in([picked.id], reply_id)
@@ -671,7 +761,9 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, whole
             )
         for fact in learn:
-            learned = await self.learner.learn(fact, "person", owner, private=keep_local)
+            learned = await self.learner.learn(
+                fact, "person", owner, private=keep_local, cloud=cloud_background(settings)
+            )
             emit(
                 {
                     "type": "remembered",
@@ -974,6 +1066,14 @@ class Brain:
         if share is not None and share.kind in ASKING:
             aim, about = aim_of(share, owner, self.memory.clock())  # "tell Dan", not read out
         now = self.memory.clock()
+        bar = settings.life.pipe_up_bar
+        if bar > 0 and home is None and reason != "nag":
+            score, parts = self._pipe_up_score(reason, about, history, now)
+            if score < bar:
+                why = f"had something to say, but it scored {score:.2f} of {bar:.2f} ({parts})"
+                log.info("Kit kept a pipe-up to himself: %s", why)
+                self.life.scored_out(reason, why)
+                return
         also, picked = "", None
         if home is not None and settings.life.chat_opener:
             also, picked = self._pick_up(history, now, owner)
@@ -990,12 +1090,12 @@ class Brain:
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             if home is not None:
-                prompt = homecoming_prompt(home, owner, settings.life.cheek, now, also)
+                prompt = homecoming_prompt(home, owner, self.life.cheek(), now, also)
             else:
                 prompt = pipe_up_prompt(
                     reason,
                     owner,
-                    settings.life.cheek,
+                    self.life.cheek(),
                     self.life.curious_about,
                     quiet_h,
                     self.life.butting_in,
@@ -1007,10 +1107,16 @@ class Brain:
                 *history_messages(history, "desk", plain=settings.ollama.speak_pass),
                 {"role": "user", "content": prompt},
             ]
-            hello = []
+            hello: list[Event] | None = None
             if home is not None and self._key_hello(home, settings):
-                hello = await self._cloud_hello(home, prompt, history, recalled, settings)
-            replies = _replay(hello) if hello else self._local_reply(messages, PIPE_UP, hold=True)
+                hello = await self._cloud_hello(home, prompt, history, recalled, settings) or None
+            private = share is not None and bool(share.meta.get("private"))
+            if hello is None and self._life_in_cloud(settings) and not private:
+                hello = await self._cloud_pipe_up(prompt, history, recalled, settings)
+            if hello is not None:
+                replies = _replay(hello)
+            else:
+                replies = self._local_reply(messages, PIPE_UP, hold=True)
             async for event in replies:
                 if event["type"] == "reply":
                     event = {**self._track(event, said), "piped_up": reason}
@@ -1025,7 +1131,7 @@ class Brain:
         if not said:
             self.life.held_back(reason, home)
             if kept_quiet:  # he was about to say something, and thought better of it
-                self.life.publish({"type": "fidget", "gesture": "look_away", "mood": "thinking"})
+                self.life.react("look_away", "thought better of it")
             return
         if share is not None:
             self.notebook.mark_said(share.id)
@@ -1042,6 +1148,27 @@ class Brain:
         self._pipe_up = (message_id, why) if message_id is not None else None
         self.life.piped_up(reason)
         self.life.wanting = self.notebook.pressing()
+
+    def _pipe_up_score(
+        self, reason: str, about: str, history: list[Message], now: datetime
+    ) -> tuple[float, str]:
+        """How worth saying this pipe-up is (``life.pipe_up_bar``): its subject
+        against what Dan's doing, the time and what's been said lately."""
+        owner = self.settings().persona.owner
+        context = " ".join(
+            [self.pc.now_line(owner), *(m.text for m in history[-4:]), day_part(now), f"{now:%A}"]
+        )
+        said = [without_plans(m.text) for m in history if m.role != "user"][-SAID_SHOWN:]
+        d = self.life.drives
+        urgency = {
+            "want": self.life.wanting,
+            "bored": d.boredom,
+            "social": d.social,
+            "curious": d.curiosity,
+            "watching": d.curiosity,
+        }.get(reason, 0.5)
+        rate = self.life.take_up_rate(reason)
+        return pipe_up_score(reason, about, context, said, urgency, rate)
 
     def _key_hello(self, home: Homecoming, settings: Settings) -> bool:
         """A hello after a night or days away is a key moment, for the work model
@@ -1062,27 +1189,76 @@ class Brain:
         """The hello written by the work model, as Kit, and checked like any hello. []
         if it can't be (offline, budget kept for the nightly reflection, a guilt trip):
         then the local model says hello."""
-        profile = settings.profile(WORK).model_copy(update={"web_search": False})
+        try:
+            reply, answer = await self._cloud_line(
+                prompt, history, recalled, settings, WORK, "a hello", "moment"
+            )
+        except CloudError as e:
+            log.info("the hello is the local model's: %s", e)
+            return []
+        fault = homecoming_fault(reply.text, home.miffed, home.kind)
+        if not reply.text or fault:
+            log.info("the work model's hello %r didn't pass: %s", reply.text, fault)
+            return []
+        return self._said_by_cloud(reply, answer)
+
+    async def _cloud_pipe_up(
+        self, prompt: str, history: list[Message], recalled: Recalled, settings: Settings
+    ) -> list[Event] | None:
+        """A pipe-up written by the chat model (``routing.background`` chat), held and
+        checked like the local model's: a line he's said lately, or one the turn's
+        ``LINT`` fails, gets two more goes; then the stock line, or he keeps quiet.
+        None when the cloud can't answer and the local model should
+        (``routing.fallback_to_local``)."""
+        voice, lint = VOICE.get(), LINT.get()
+        retry, again = "", ""
+        for _ in range(HELD_TRIES):
+            try:
+                reply, answer = await self._cloud_line(
+                    prompt + retry, history, recalled, settings, CHAT, "a pipe-up", "life"
+                )
+            except CloudError as e:
+                log.info("the pipe-up is the local model's: %s", e)
+                return None if settings.routing.fallback_to_local else []
+            fault = lint.check(reply.text) if lint is not None and reply.text else ""
+            again = (
+                "" if fault or (lint and not lint.repeats) else self._repeated(reply.text, voice)
+            )
+            if reply.text and not fault and not again:
+                return self._said_by_cloud(reply, answer)
+            retry = fault or (not_again(again) if again else "")
+        if lint is not None and lint.fallback:
+            log.info("said a stock line: no clean pipe-up in %d goes", HELD_TRIES)
+            return self._said_by_cloud(Reply.plain(lint.fallback), answer)
+        log.info("kept quiet rather than say %r again", again)
+        return [{"type": "kept_quiet", "repeated": again}]
+
+    async def _cloud_line(
+        self,
+        prompt: str,
+        history: list[Message],
+        recalled: Recalled,
+        settings: Settings,
+        role: str,
+        what: str,
+        priority: str,
+    ) -> tuple[Reply, CloudAnswer]:
+        """One line of Kit's own (a hello, a pipe-up) from the cloud model ``role``, shown
+        only what Dan hasn't kept local. Raises CloudError if it can't be had."""
+        profile = settings.profile(role).model_copy(update={"web_search": False})
         seen = self.memory.shared(history)
-        system = self._system(settings, recalled.for_cloud(), WORK, False, history=seen)
+        system = self._system(settings, recalled.for_cloud(), role, False, history=seen)
         messages = [
             {"role": "system", "content": system},
             *history_messages(seen, "desk"),
             {"role": "user", "content": prompt},
         ]
-        try:
-            answer = await self.cloud.answer(
-                profile, messages, settings, "a hello", priority="moment"
-            )
-        except CloudError as e:
-            log.info("the hello is the local model's: %s", e)
-            return []
+        answer = await self.cloud.answer(profile, messages, settings, what, priority=priority)
         reply = parse_cloud_reply(answer.text)
-        reply = reply.model_copy(update={"detail": "", "action": Action(kind="none")})
-        fault = homecoming_fault(reply.text, home.miffed, home.kind)
-        if not reply.text or fault:
-            log.info("the work model's hello %r didn't pass: %s", reply.text, fault)
-            return []
+        return reply.model_copy(update={"detail": "", "action": Action(kind="none")}), answer
+
+    def _said_by_cloud(self, reply: Reply, answer: CloudAnswer) -> list[Event]:
+        """A line of his own from a cloud model, kept and told as a pipe-up."""
         message_id = self._remember_reply(reply, PIPE_UP)
         return [
             {"type": "say", "text": reply.text, "source": "cloud"},
@@ -1095,6 +1271,28 @@ class Brain:
                 "cost_usd": round(answer.cost_usd, 4),
             },
         ]
+
+    async def free_gpu(self) -> None:
+        """Once the local model only stands in (``kit.settings.local_stands_in``), take it
+        off the GPU at once: switching over sends it nothing more, so without this it
+        would stay loaded till its old keep_alive ran out. When it's used again, its
+        short keep_alive sees it off by itself."""
+        if not local_stands_in(self.settings()):
+            self._local_freed = False
+            return
+        if self._local_freed:
+            return
+        try:
+            await self.model.unload()
+        except LocalModelError as e:
+            log.info("couldn't take the local model off the GPU: %s", e)
+            return
+        self._local_freed = True
+        log.info("the local model is off the GPU; the cloud does Kit's background work")
+
+    def _life_in_cloud(self, settings: Settings) -> bool:
+        """His thoughts and pipe-ups go to the chat model (``routing.background``)."""
+        return cloud_background(settings) and settings.profile(CHAT).provider != "ollama"
 
     def _hello_lint(self, home: Homecoming) -> Lint:
         """A hello is checked for guilt ("where have you been?"), not for being said
@@ -1127,6 +1325,132 @@ class Brain:
         text = GAMES[name][0].format(owner=self.settings().persona.owner)
         added = self.notebook.write("want", text, again=True, game=name, strength=GAME_PRESS)
         return added is not None
+
+    # His life while Dan's out (kit.pastimes), and the weather bet
+
+    async def start_pastime(self) -> Pastime | None:
+        """Alone and awake with nothing to do: he finds something (``Life.wants_pastime``)."""
+        if not self.life.wants_pastime():
+            return None
+        d = self.life.drives
+        drives = {"boredom": d.boredom, "curiosity": d.curiosity, "social": d.social}
+        pastime = await self.pastimes.pick(drives, self.life.away_since or self.memory.clock())
+        if self.life.presence() != "alone":
+            return None  # Dan came back (or he dozed off) while he looked
+        if pastime is None:
+            self.life.nothing_to_do()
+            return None
+        self.life.start_doing(pastime)
+        return pastime
+
+    async def _read_weather(self) -> tuple[str, str] | None:
+        if self.weather is None:
+            return None
+        persona = self.settings().persona
+        try:
+            today = await self.weather.today(persona.location, persona.country)
+        except WeatherError as e:
+            log.info("no weather to watch: %s", e)
+            return None
+        if today.now_c is None:
+            return None
+        top = f"; today's top is {today.top_c:.0f}°C" if today.top_c is not None else ""
+        rain = f", {today.rain_chance}% chance of rain" if today.rain_chance is not None else ""
+        return (
+            weather_doing(today.sky),
+            f"Outside in {today.place} it's {today.now_c:.0f}°C and {today.sky}{top}{rain}.",
+        )
+
+    def _read_journal(self) -> tuple[str, str] | None:
+        yesterday = (self.memory.clock().date() - timedelta(days=1)).isoformat()
+        entry = self.notebook.journal(yesterday)
+        if entry is None:
+            return None
+        return (
+            "reading yesterday's journal",
+            f'Your journal from yesterday says: "{quoted(entry.text, 300)}"',
+        )
+
+    def _read_thing(self, rng) -> tuple[str, str] | None:
+        """Someone or something everyday from the register (never work projects)."""
+        things = [
+            t
+            for t in self.register.all()
+            if t.kind in ("person", "pet", "vehicle", "place") and not t.suggested
+        ]
+        if not things:
+            return None
+        thing = rng.choice(things)
+        about = f" {thing.about}" if thing.about else ""
+        return (
+            f"thinking about {thing.name}",
+            f"From your register of things: {thing.name} ({thing.kind}).{about}",
+        )
+
+    def _music(self) -> tuple[str, str] | None:
+        """What the PC is playing, only when the desk app's tray switch shares it."""
+        snap = self.pc.latest if self.pc.online() else None
+        playing = snap.now_playing.strip() if snap else ""
+        if not playing:
+            return None
+        owner = self.settings().persona.owner
+        return f"listening to {quoted(playing, 40)}", f"{owner}'s PC is playing {playing}."
+
+    def _place_bet(self, dan_said: str, kit_said: str) -> None:
+        """Dan answered the weather bet: his guess, and Kit's (from his pipe-up or this
+        reply), for settling it this afternoon."""
+        dans = temperatures(dan_said)
+        if not dans:
+            return
+        kits = [t for t in temperatures(kit_said) if t != dans[0]]
+        if kits:
+            self.life.bet_placed(dans[0], kits[-1])
+
+    async def settle_bet(self) -> str | None:
+        """Late afternoon: today's top is in, so who won the weather bet? He feels it
+        (put out if he lost) and wants to tell Dan. Returns what he'll say."""
+        bet = self.life.bet_open()
+        if bet is None or self.weather is None:
+            return None
+        persona = self.settings().persona
+        try:
+            today = await self.weather.today(persona.location, persona.country)
+        except WeatherError as e:
+            log.info("can't settle the weather bet yet: %s", e)
+            return None
+        if today.top_c is None:
+            return None
+        line = self.life.bet_settled(float(today.top_c))
+        self.notebook.write("want", line, again=True, strength=GAME_PRESS)
+        self.life.wanting = self.notebook.pressing()
+        return line
+
+    # How Dan is (life.read_mood, life.bad_night)
+
+    def _reading_mood(self, settings: Settings) -> bool:
+        """Read Dan's mood from meaning: only once ``kit eval mood`` has passed."""
+        if settings.life.read_mood != "meaning":
+            return False
+        try:
+            calibration = json.loads(self.memory.self_value(MOOD_CALIBRATION) or "{}")
+        except ValueError:
+            return False
+        return isinstance(calibration, dict) and bool(calibration.get("passed"))
+
+    def mood_reading(self) -> str:
+        """How he reads Dan's mood just now, in words for ``kit life``."""
+        if self.settings().life.read_mood != "meaning":
+            return "your words"
+        if self._reading_mood(self.settings()):
+            return "meaning (calibrated)"
+        return "your words (meaning is on, but `kit eval mood` hasn't passed yet)"
+
+    def _someone(self) -> str:
+        """Someone real and close that Dan could talk to, from the register."""
+        for thing in self.register.all():
+            if thing.kind == "person" and not thing.suggested and CLOSE.search(thing.about):
+                return thing.name
+        return ""
 
     def _react(
         self, felt: tuple[str, str, float] | None, home: Homecoming | None, farewell: bool
@@ -1180,6 +1504,9 @@ class Brain:
             )
         senses += f" You can't see or hear {owner}: you have no camera or microphone yet."
         feeling = self.life.feeling_line(owner)
+        did = self.life.did_line(owner)
+        if did:
+            senses += f" {did} That's all true; don't add to it."
         return about_yourself(owner, feeling, self.life.why_quiet(owner), senses)
 
     def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
@@ -1237,18 +1564,32 @@ class Brain:
                 self.notebook.mind(owner, 5),
                 remembered,
                 said_today,
+                stances=settings.life.opinions > 0,
             )
-            options = lively(settings.ollama, plain=False)
-            raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
+            raw = None
+            if self._life_in_cloud(settings) and not private:
+                data = await self._ask_life(messages, THOUGHT_SCHEMA, THOUGHT_SHAPE, "a thought")
+                if data is None and not settings.routing.fallback_to_local:
+                    self.life.thought_failed()
+                    return None
+                raw = json.dumps(data) if data is not None else None
+            if raw is None:
+                options = lively(settings.ollama, plain=False)
+                raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
         except LocalModelError as e:
             log.warning("Kit couldn't think just now: %s", e)
+            self.life.thought_failed()  # costs no budget, but no hammering a model that's down
             return None
-        finally:
-            self.life.thought_had()  # tried, at least: no hammering a model that's down
+        except asyncio.CancelledError:
+            self.life.thought_failed()  # Dan started talking: the thought can wait
+            raise
+        self.life.thought_had(kind)
         thought = parse_thought(raw, kind)
         if thought is None:
             return None
         keep = {"private": True} if private else {}
+        if kind == "alone" and self.life.doing is not None:
+            keep["doing"] = self.life.doing.doing
         if thought.text and self.notebook.write(thought.kind, thought.text, trigger=kind, **keep):
             self.life.publish({"type": "fidget", "gesture": "look_up", "mood": "thinking"})
         if thought.want:
@@ -1290,7 +1631,27 @@ class Brain:
         said = [line for line in said if line][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
         mind = self.notebook.mind(persona.owner)
-        return self.life.voice(persona.owner, own, said, self.quirks, text, mind)
+        opinions = self._opinions(settings)
+        return self.life.voice(persona.owner, own, said, self.quirks, text, mind, opinions)
+
+    def _opinions(self, settings: Settings, shared: bool = False) -> list[str]:
+        """His standing opinions (``life.opinions``): stances he's held at least a day,
+        newest first. Only ones the nightly reflection chose as stances count (the
+        local model can't be trusted to tell a stance from a remark mid-thought), never
+        remarks about Dan. ``shared``: none formed from what Dan kept local."""
+        want = settings.life.opinions
+        if want <= 0:
+            return []
+        now = self.memory.clock()
+        held = [
+            e
+            for e in self.notebook.entries("opinion", 30)
+            if now - parse_time(e.created, now) >= OPINION_STANDS
+            and not (shared and e.meta.get("private"))
+            and e.meta.get("stance")
+            and a_view(e.text, settings.persona.owner)
+        ]
+        return [e.text for e in held[:want]]
 
     def _say_locally(self, reply: Reply) -> list[Event]:
         message_id = self._remember_reply(reply, LOCAL)
@@ -1426,7 +1787,10 @@ class Brain:
         if role != LOCAL and voice is not None:
             said = [without_plans(m.text)[:SAID_CHARS] for m in history or [] if m.role != "user"]
             mind = self.notebook.mind(settings.persona.owner, shared=True)
-            voice = replace(voice, said=[x for x in said if x][-SAID_SHOWN:], mind=mind)
+            opinions = self._opinions(settings, shared=True)
+            voice = replace(
+                voice, said=[x for x in said if x][-SAID_SHOWN:], mind=mind, opinions=opinions
+            )
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
         sheet = self.notebook.sheet()
         if role == LOCAL:
@@ -1465,6 +1829,7 @@ class Brain:
             traits=sheet is None or sheet.meta.get("basis") != basis(settings.persona),
             two_pass=role == LOCAL and settings.ollama.speak_pass,
             dan=self._about_dan(role),
+            read_mood=READ_ON.get(),
         )
 
     def _about_dan(self, role: str) -> str:
@@ -1586,7 +1951,11 @@ class Brain:
         elif kind == "remember" and fact:
             private = bool(KEEP_LOCAL.search(text))
             learned = await self.learner.learn(
-                fact, reply.action.category, settings.persona.owner, private=private
+                fact,
+                reply.action.category,
+                settings.persona.owner,
+                private=private,
+                cloud=cloud_background(settings),
             )
             yield {
                 "type": "remembered",
@@ -1689,6 +2058,10 @@ class Brain:
             profile, messages, settings, question, on_step, priority=PRIORITY.get()
         )
         self.life.react("perk_up", "the answer came back")
+        if role != CHAT:  # a real job tires him; an everyday answer doesn't
+            self.life.spend(CLOUD_TIRES)
+        if READ_ON.get() and READ.get() is None:
+            READ.set(mood_read(answer.text))
         reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"
@@ -1729,13 +2102,18 @@ class Brain:
         """The first pass: how Kit feels, a gesture and an action. Reading stops as soon
         as it's plain the action is "none" (the rest would be empty fields), so he
         starts talking sooner."""
-        raw = ""
-        async with aclosing(self.model.stream(messages, plan_schema())) as pieces:
+        raw, early = "", None
+        read = READ_ON.get()
+        async with aclosing(self.model.stream(messages, plan_schema(read))) as pieces:
             async for piece in pieces:
                 raw += piece
-                early = early_plan(raw)
+                early = early_plan(raw, read)
                 if early is not None:
-                    return early
+                    break
+        if read:
+            READ.set(mood_read(raw))
+        if early is not None:
+            return early
         try:
             return parse_plan(raw)
         except ReplyError:
@@ -1951,9 +2329,11 @@ class Brain:
     async def summarise_past_days(self) -> list[str]:
         """Summarise each finished day and learn its facts. Returns the days done."""
         done = []
-        persona = self.settings().persona
+        settings = self.settings()
+        persona = settings.persona
+        cloud = settings.memory.day_pass == "work"
         for day in self.memory.days_to_summarise():
-            if not await self.learner.summarise_day(day, persona.owner, persona.name):
+            if not await self.learner.summarise_day(day, persona.owner, persona.name, cloud):
                 break
             done.append(day)
         return done

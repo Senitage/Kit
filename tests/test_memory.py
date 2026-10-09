@@ -148,3 +148,18 @@ def test_new_chat_hides_earlier_turns_but_keeps_the_log(memory):
     memory.add_message("user", "Morning")
     assert [m.text for m in memory.recent(10)] == ["Morning"]
     assert len(memory.messages_on(memory.today())) == 3
+
+
+def test_spend_summary_by_day_and_model(memory, clock):
+    memory.record_spend("claude-sonnet-5-5", 1000, 200, 0.02, "q")
+    memory.record_spend("claude-haiku-5-5", 500, 100, 0.001, "q")
+    clock.now += timedelta(days=2)
+    memory.record_spend("claude-sonnet-5-5", 3000, 400, 0.05, "q")
+    s = memory.spend_summary(7)
+    assert len(s["days"]) == 7 and s["days"][-1]["date"] == clock.now.date().isoformat()
+    assert s["days"][-1]["by_model"] == {"claude-sonnet-5-5": 0.05}
+    assert s["days"][-3]["cost_usd"] == pytest.approx(0.021)
+    assert [m["model"] for m in s["models"]] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert s["models"][0]["calls"] == 2 and s["models"][0]["input_tokens"] == 4000
+    assert s["total_usd"] == pytest.approx(0.071)
+    assert memory.spend_summary(1)["total_usd"] == pytest.approx(0.05)

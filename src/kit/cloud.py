@@ -26,7 +26,9 @@ from kit.settings import ModelProfile, PersonaSettings, Settings
 CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
 # Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
 # sooner than the one before, so evals can never use up the nightly reflection's share.
-SKIP_ORDER = {"reflect": 0, "chat": 1, "moment": 2, "check": 2, "eval": 3}
+# His background thoughts and pipe-ups ("life") go first, with evals: the local model can
+# have them.
+SKIP_ORDER = {"reflect": 0, "chat": 1, "moment": 2, "check": 2, "eval": 3, "life": 3}
 
 
 class CloudError(Exception):
