@@ -9,6 +9,8 @@
      kit.play('nod')           one of Kit's gestures (kit.reply), or a clip name
      kit.setState('sleeping')  idle, sleeping, listening, thinking, speaking, working, offline
      kit.lookAt(x, y)          look toward a point, -1..1 each way, y down
+     kit.setDials(a, v)        the mood dials: arousal 0..1 (livelier moves and
+                               blinks), valence -1..1 (more or less blush)
      kit.show({...})           a show from the brain (kit.shows): weather, time, date,
                                or any show in the pack by name ({kind: 'dream'})
    Asleep, he shows the pack's sleep show and now and then drifts into its dream.
@@ -44,6 +46,7 @@
   var want = { emotion: 'neutral', state: 'idle', look: null, show: null };
   try { Object.assign(want, JSON.parse(sessionStorage.getItem('kit-face') || '{}')); } catch (e) {}
   var queue = [];
+  var dials = { arousal: 0.5, valence: 0 };  // as Glow's rig reads them (kit.face.rig)
   var ready = false;
   function remember() {
     try { sessionStorage.setItem('kit-face', JSON.stringify({ emotion: want.emotion, state: want.state })); } catch (e) {}
@@ -59,6 +62,10 @@
       remember();
     },
     lookAt: function (x, y) { want.look = { x: +x || 0, y: +y || 0, until: now() + 3 }; },
+    setDials: function (arousal, valence) {
+      dials.arousal = Math.max(0, Math.min(1, +arousal || 0));
+      dials.valence = Math.max(-1, Math.min(1, +valence || 0));
+    },
     show: function (what) { if (ready) startShow(what); else queue.push(['show', what]); },
     info: null,
     ready: false,  // true once Kit's model is on screen (the desk app shows Glow until then)
@@ -376,11 +383,12 @@
         for (name in pulse.face) if (name in cur) target[name] = Math.max(target[name], pulse.face[name] * amt);
       }
     }
+    if ('blush' in cur) target.blush = Math.max(0, Math.min(1, (target.blush || 0) + 0.15 * dials.valence));
     if (st === 'listening') { target.size_up = Math.min(1, (target.size_up || 0) + 0.2); target.brow_up = Math.min(1, (target.brow_up || 0) + 0.2); }
     if (asleep && !modeShow) { target.close_L = 0.92; target.close_R = 0.92; target.mouth_flat = 0.6; }
     nextBlink -= dt;
     if (!asleep && st !== 'offline' && nextBlink <= 0) {
-      blinkT = 0.16; nextBlink = (tuning.blink_every_seconds || 4) * (0.6 + Math.random() * 0.8);
+      blinkT = 0.16; nextBlink = (tuning.blink_every_seconds || 4) * (1 + (0.5 - dials.arousal) * 0.6) * (0.6 + Math.random() * 0.8);
     }
     if (blinkT > 0) {
       blinkT -= dt;
@@ -424,7 +432,7 @@
     if (bloom) bloom.strength = 0.2 + glow * 0.2;
 
     // body: the baked move plus live idle motion scaled by energy and mood
-    mixer.timeScale = tuning.move_speed || 1; mixer.update(dt); propMixer.update(dt);
+    mixer.timeScale = (tuning.move_speed || 1) * (0.85 + 0.3 * dials.arousal); mixer.update(dt); propMixer.update(dt);
     // props pop in for the show playing (or the sleep and dream shows) and out after
     var out = (show && showProps[show.kind]) || (mode && showProps[mode]) || [];
     Object.keys(props).forEach(function (name) {
