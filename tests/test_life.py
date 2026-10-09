@@ -112,6 +112,19 @@ def test_something_new_makes_him_curious():
     assert life.curious_about == "youtube.com" and life.mood() == "curious"
 
 
+def test_his_resting_face_follows_his_mood_and_feelings_and_bodies_hear_of_it():
+    life, pc, clock = setup()
+    run(life, pc, clock, 1, snap())
+    assert life.face() == "happy" and life.state()["face"] == "happy"
+    run(life, pc, clock, 1, snap(app="Chrome", site="youtube.com", title="lofi"))
+    assert life.mood() == "curious" and life.face() == "curious"
+    moods = [e for e in life.events_after(0) if e["type"] == "mood"]
+    assert moods[-1] == {**moods[-1], "mood": "curious", "face": "curious"}
+    life.feel("worried", "Dan sounded flat")  # a feeling shows over the mood
+    assert life.face() == "concerned"
+    assert [e for e in life.events_after(0) if e["type"] == "mood"][-1]["face"] == "concerned"
+
+
 def test_clock_helpers():
     assert in_quiet_hours(Clock("2026-10-06T23:30:00")(), "22:00", "07:00")
     assert in_quiet_hours(Clock("2026-10-06T06:59:00")(), "22:00", "07:00")
@@ -550,16 +563,3 @@ def test_a_pressing_want_makes_him_pipe_up():
     assert life.tick() == "want"
     life.piped_up("want")
     assert life.wanting == 0.0
-
-
-def test_his_resting_face_follows_his_mood_and_feelings_and_bodies_hear_of_it():
-    life, pc, clock = setup()
-    run(life, pc, clock, 1, snap())
-    assert life.face() == "happy" and life.state()["face"] == "happy"
-    run(life, pc, clock, 1, snap(app="Chrome", site="youtube.com", title="lofi"))
-    assert life.mood() == "curious" and life.face() == "curious"
-    moods = [e for e in life.events_after(0) if e["type"] == "mood"]
-    assert moods[-1] == {**moods[-1], "mood": "curious", "face": "curious"}
-    life.feel("worried", "Dan sounded flat")  # a feeling shows over the mood
-    assert life.face() == "concerned"
-    assert [e for e in life.events_after(0) if e["type"] == "mood"][-1]["face"] == "concerned"
