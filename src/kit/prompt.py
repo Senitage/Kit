@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.life import everyday, gap_words
-from kit.memory import DAYS, Message
+from kit.memory import DAYS, Message, kinds_line
 from kit.recall import Recalled
 from kit.reply import (
     EMOTIONS,
@@ -280,8 +280,9 @@ def system_prompt(
         f"- remember: only when {owner} has just told you something worth keeping: about "
         f"themselves, their preferences, projects, where things are kept, people or plans. "
         f"Put it in text as one sentence that makes sense on its own later, with real "
-        f"dates, and set category. Never your own lines or jokes, guesses, or small talk "
-        f"(greetings, thanks, how {owner} feels right now).",
+        f"dates, and set category to the kind that fits ({kinds_line()}). Never your own "
+        f"lines or jokes, guesses, quiz answers, or small talk (greetings, thanks, how "
+        f"{owner} feels right now).",
     ]
     if notes:
         lines.append(

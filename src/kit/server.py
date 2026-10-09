@@ -568,6 +568,7 @@ async def life_tick(brain: Brain) -> None:
     something to do (``Brain.start_pastime``), and late in the afternoon he settles
     any weather bet."""
     brain.offer_wants()
+    await brain.free_gpu()
     brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()
     await brain.settle_bet()

@@ -93,6 +93,11 @@ class FakeModel:
     async def complete(self, messages, schema, model=None, options=None):
         return "".join([p async for p in self.stream(messages, schema, model, options)])
 
+    async def unload(self):
+        self.unloads = getattr(self, "unloads", 0) + 1
+        if self.error:
+            raise LocalModelError(self.error)
+
 
 class FakeMessages:
     def __init__(self, owner):
