@@ -17,12 +17,13 @@ from importlib import resources
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
 from kit.face import character as characters
+from kit.face import serve as face_files
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
@@ -164,6 +165,66 @@ def create_app(
         """The character sheet Kit is set to (face.character), so every app that draws
         him draws the same Kit."""
         return characters.preset(store.current().face.character).sheet
+
+    # Kit's 3D face page and its files. No token: it's a cartoon face, and the desk
+    # app, home_app and robots open it as a plain page (kit.face.serve).
+    def _face_file(data: bytes, name: str, cache: bool = False) -> Response:
+        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache"}
+        return Response(data, media_type=face_files.content_type(name), headers=headers)
+
+    @app.get("/face/")
+    def face_page() -> Response:
+        return _face_file(face_files.page_file("index.html"), "index.html")
+
+    @app.get("/face/{name}")
+    def face_page_file(name: str) -> Response:
+        try:
+            return _face_file(face_files.page_file(name), name)
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+
+    @app.get("/face/vendor/{name}")
+    def face_vendor(name: str) -> Response:
+        try:
+            return _face_file(face_files.vendor_file(name), name, cache=True)
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+
+    def _face_character(character: str) -> str:
+        return character if character in characters.presets() else store.current().face.character
+
+    @app.get("/face/api/info")
+    def face_info(
+        app_name: Annotated[str, Query(alias="app")] = "desk", character: str = ""
+    ) -> dict:
+        s = store.current()
+        name = _face_character(character)
+        return face_files.info(name, app_name, s.face.pack_folder or None)
+
+    @app.get("/face/api/version")
+    def face_version(
+        app_name: Annotated[str, Query(alias="app")] = "desk", character: str = ""
+    ) -> dict:
+        s = store.current()
+        name = _face_character(character)
+        return {
+            "character": name,
+            "version": face_files.version(name, app_name, s.face.pack_folder or None),
+        }
+
+    @app.get("/face/model/{character}/{file}")
+    def face_model(
+        character: str, file: str, app_name: Annotated[str, Query(alias="app")] = "desk"
+    ) -> Response:
+        if character not in characters.presets():
+            raise HTTPException(404, "no such character")
+        try:
+            data = face_files.asset(
+                character, file, app_name, store.current().face.pack_folder or None
+            )
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+        return _face_file(data, file)
 
     @app.get("/api/face/presets", dependencies=auth)
     def face_presets() -> dict:

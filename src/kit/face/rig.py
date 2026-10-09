@@ -191,6 +191,17 @@ class Face:
     def gesture(self) -> str | None:
         return self._clip[0] if self._clip else None
 
+    @property
+    def clip(self) -> tuple[str, float] | None:
+        """The gesture playing and when it started, so a copy of the face (the 3D
+        page) can tell a new one from the same one still playing."""
+        return self._clip
+
+    @property
+    def looking(self) -> tuple[float, float, float] | None:
+        """Where ``look_at`` last pointed him (x, y, until), or None."""
+        return self._look
+
     # ---- the frame loop ----
 
     def tick(self, now: float) -> FaceFrame:

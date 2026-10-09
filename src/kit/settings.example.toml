@@ -172,3 +172,5 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # character = "retro"       # which character Kit is (src/kit/face/characters); retro is
 #                           # the original glowing pill eyes, so switching back is easy
 # hot_c = 35.0              # a dry day this hot (°C) shows as a hot day when you ask the weather
+# pack_folder = ""          # a 3D face pack folder (face.json + .glb) to use instead of
+#                           # the built-in one, e.g. your Blender project's pack folder
