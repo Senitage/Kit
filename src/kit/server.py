@@ -41,7 +41,7 @@ NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes
 
 class ChatIn(BaseModel):
     text: str
-    # Where Dan is talking from (kit.channels): desk, voice, phone, web or terminal.
+    # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
 
 
@@ -502,11 +502,20 @@ def create_app(
         return brain.life.state()
 
     @app.get("/api/spend", dependencies=auth)
-    def spend() -> dict:
+    def spend(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
         return {
             "month_usd": round(memory.month_spend(), 4),
             "cap_usd": store.current().cloud.monthly_cap_usd,
-            "log": [s.__dict__ for s in memory.spend_log()],
+            "log": [s.__dict__ for s in memory.spend_log(limit)],
+        }
+
+    @app.get("/api/spend/summary", dependencies=auth)
+    def spend_summary(days: Annotated[int, Query(ge=1, le=366)] = 30) -> dict:
+        """Cloud spend per day and per model, for a chart (the home_app Kit page)."""
+        return {
+            **memory.spend_summary(days),
+            "month_usd": round(memory.month_spend(), 4),
+            "cap_usd": store.current().cloud.monthly_cap_usd,
         }
 
     return app
