@@ -643,7 +643,8 @@ def test_a_message_wakes_him_even_with_the_pc_away_and_he_stays_up_to_chat():
     life.note_chat("you awake?")
     assert not life.asleep
     seen = walk_away(life, pc, clock, 5, idle=15 * 60)  # still away from the PC, chatting by phone
-    assert "asleep" not in seen and not life.wants_pastime()
+    assert set(seen) == {"here"} and not life.wants_pastime()
+    assert life.state()["presence"] == "here"
     walk_away(life, pc, clock, 10, idle=20 * 60)  # the chat's over
     assert life.presence() == "asleep"
 
@@ -658,6 +659,12 @@ def test_a_view_is_a_statement_not_a_musing():
     assert not a_view("I wonder whether the cat likes me")
     assert not a_view("Maybe the weather will turn")
     assert not a_view("Too hot.")
+    assert not a_view(
+        "Wonder if he'll ever stop using it… He needs to stop treating me like a search engine."
+    )
+    assert not a_view("Dan's on that AI thing again. Wonder if he'll ever stop using it.")
+    assert not a_view("He loves that ute... maybe too much, honestly")
+    assert a_view("Dan works too hard. He should take Friday off.")
 
 
 def test_musings_arent_held_as_opinions(kit):

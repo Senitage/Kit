@@ -199,11 +199,17 @@ MUSING = re.compile(
 )
 
 
+SENTENCES = re.compile(r"(?<=[.!?…])\s+|\.{3}\s*|…\s*|\s+-\s+|\s*[;:]\s+")
+
+
 def a_view(text: str) -> bool:
-    """An opinion he can stand by: a statement, not a question or a passing musing
-    ("Is that AI thing actually smarter than me?")."""
+    """An opinion he can stand by: statements only, with no question or passing musing
+    in it anywhere ("Is that AI thing actually smarter than me?", "... Wonder if he'll
+    ever stop")."""
     text = text.strip()
-    return len(text.split()) >= 4 and "?" not in text and not MUSING.search(text)
+    if len(text.split()) < 4 or "?" in text:
+        return False
+    return not any(MUSING.search(part) for part in SENTENCES.split(text) if part.strip())
 
 
 def temperatures(text: str) -> list[float]:

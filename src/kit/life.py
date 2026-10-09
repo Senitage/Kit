@@ -1143,8 +1143,8 @@ class Life:
         "asleep"."""
         if self.asleep:
             return "asleep"
-        if self.away_since is None:
-            return "here"
+        if self.away_since is None or self.chatting(self.clock()):
+            return "here"  # at the PC, or chatting from his phone
         return "alone" if self.alone_life() else "away"
 
     def chatting(self, now: datetime) -> bool:
