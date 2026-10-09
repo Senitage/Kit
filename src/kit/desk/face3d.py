@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QWidget
 
 from kit.face import Face
@@ -99,7 +101,13 @@ class _NoPaint(QObject):
 
 
 class Face3D:
-    """The face page laid over a Glow ``FaceWidget``. ``detach`` puts Glow back."""
+    """The face page laid over a Glow ``FaceWidget``. ``detach`` puts Glow back.
+
+    Glow keeps drawing until the page says Kit's model is on screen, and again
+    whenever the page is loading or can't reach the brain, so he never blinks out.
+    While the 3D face covers it, Glow's own 60 fps repaint stops: on Windows each
+    repaint of the see-through window re-composites the web view and makes it
+    flash. The face's rig still ticks here, so moods, gestures and gaze carry on."""
 
     def __init__(self, widget: QWidget, brain_url: str) -> None:
         from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -111,6 +119,7 @@ class Face3D:
         self.view.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.view.page().setBackgroundColor(Qt.GlobalColor.transparent)
+        self.view.loadStarted.connect(self._loading)
         self.view.loadFinished.connect(self._loaded)
         self.view.setGeometry(widget.rect())
         self._no_paint = _NoPaint(widget)
@@ -121,34 +130,77 @@ class Face3D:
             widget.play_show = self.show  # the brain's shows play on the 3D face
         self._timer = QTimer(widget)
         self._timer.timeout.connect(self._step)
-        self._ready = False
+        self._ready = False  # the page has loaded
+        self.covering = False  # Kit's model is drawn, so Glow is stopped
+        self._steps = 0
+        self.loads = 0  # page loads, for the log: a page reloading over and over shows here
         self.view.load(QUrl(self.url))
         self.view.show()
+        self._timer.start(STEP_MS)
+
+    def _loading(self) -> None:
+        self._ready = False
+        self._cover(False)
 
     def _loaded(self, ok: bool) -> None:
-        self._ready = ok
+        self.loads += 1
         if not ok:
             log.warning("couldn't load Kit's 3D face from %s; showing Glow", self.url)
-            self.widget.removeEventFilter(self._no_paint)
-            self.view.hide()
             return
+        if self.loads > 1:
+            log.info("Kit's 3D face reloaded (%d loads)", self.loads)
         # the page's input widget only exists once it's loaded
         proxy = self.view.focusProxy()
         if proxy is not None:
             proxy.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.widget.installEventFilter(self._no_paint)
-        self.view.show()
+            # lets a see-through web view sit over a see-through window (Qt's advice
+            # for QQuickWidget, which draws the page)
+            proxy.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
+        self._ready = True
         self.mirror.reset()  # a reload starts the page afresh
-        self._step()
-        self._timer.start(STEP_MS)
+
+    def _cover(self, on: bool) -> None:
+        """Hand the window to the 3D face (stop Glow) or back to Glow."""
+        if on == self.covering:
+            return
+        self.covering = on
+        glow_timer = getattr(self.widget, "_timer", None)
+        if on:
+            self.widget.installEventFilter(self._no_paint)
+            if glow_timer is not None:
+                glow_timer.stop()
+        else:
+            self.widget.removeEventFilter(self._no_paint)
+            if glow_timer is not None:
+                glow_timer.start(16)
         self.widget.update()
 
+    def _drawn(self, drawn) -> None:
+        self._cover(bool(drawn) and self._ready)
+
     def _step(self) -> None:
+        if self.covering:
+            self._tick_face()
         if not self._ready:
             return
         calls = self.mirror.calls()
         if calls:
             self.run("".join(calls))
+        self._steps += 1
+        if self._steps % 10 == 1:  # twice a second: is Kit's model on screen?
+            self.view.page().runJavaScript("!!(window.kit && window.kit.ready)", 0, self._drawn)
+
+    def _tick_face(self) -> None:
+        """What Glow's timer does while it's stopped: follow the mouse and tick the rig."""
+        now = time.monotonic()
+        w = self.widget
+        pos = QCursor.pos()
+        if getattr(w, "follow_mouse", True) and pos != getattr(w, "_cursor", None):
+            w._cursor = pos
+            centre = w.mapToGlobal(w.rect().center())
+            reach = max(w.width(), 300)
+            w.face.look_at((pos.x() - centre.x()) / reach, (pos.y() - centre.y()) / reach, now)
+        w.face.tick(now)
 
     def run(self, js: str) -> None:
         self.view.page().runJavaScript(f"window.kit && (function(){{{js}}})();")
@@ -164,7 +216,7 @@ class Face3D:
 
     def detach(self) -> None:
         self._timer.stop()
-        self.widget.removeEventFilter(self._no_paint)
+        self._cover(False)
         self.widget.removeEventFilter(self._resize)
         if self._play_show is not None:
             self.widget.play_show = self._play_show

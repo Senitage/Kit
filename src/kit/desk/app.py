@@ -696,6 +696,8 @@ class DeskApp(QObject):
             self.window.mood.face.eye = QColor(self.config.eye_colour)
             self.window.pc.saved.connect(self.save_pc)
             self.window.look.changed.connect(self.set_look)
+            self.window.character_changed.connect(self.check_health)
+            self._use_look()
             self.window.updates.settings_changed.connect(self._update_settings)
             self.window.updates.install.connect(self.install_update)
         if not self.window.isVisible():
@@ -841,6 +843,8 @@ class DeskApp(QObject):
         look = character.current().look("desk", ("glow", "model"))
         url = self.client.url if self.client is not None else None
         self._face3d = face3d.sync(self.face, url, look, self._face3d)
+        if self.window is not None:
+            self.window.use_look(url, look)
 
     def _show_online(self, online: bool, detail: str) -> None:
         if online != self.online:
