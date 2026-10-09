@@ -56,24 +56,69 @@ a broken sheet, and a broken sheet is never used.
 ### A 3D look
 
 A 3D Kit is a glTF model (one `.glb` file, exported from Blender) with a head
-bone the gestures move, bounce and turn, and morph targets (Blender's shape
-keys) for his face that the poses drive:
+node his moves turn and bounce, shape keys for his face, and a face pack
+(`face.json`) that says what each mood looks like (a mix of shape keys, a glow
+colour, how lively he is, a move), what the weather shows bring (props with
+looping animations for rain, storm, sun, wind, fog and a hot day), and how fast it all blends. The model
+and pack sit in a folder named after the character next to its sheet:
 
 ```json
 "kit3d": {
   "style": "model",
-  "file": "kit.glb",
+  "file": "kit_face.glb",
+  "pack": "face.json",
   "fallback": "glow",
   "head_bone": "head",
-  "morphs": {"open": "EyesOpen", "squint": "Squint", "tilt": "LidAngle", "blush": "Blush"}
+  "gestures": {"nod": {"clip": "nod"}, "wink": {"clip": "idle", "face": {"close_R": 1}}}
 }
 ```
 
-`morphs` maps the pose knobs to the model's morph target names. `fallback`
-names a 2D look for anything that can't draw 3D (the ESP32 screens, or an app
-before its 3D painter exists); it's what such an app gets if `use` picks the
-3D look. No app draws 3D yet: adding `"desk": "kit3d"` today shows the
-fallback until the desk app's 3D painter lands.
+`gestures` maps each of Kit's gestures to one of the model's animation clips,
+plus an optional face pulse (shape keys eased in and out over the clip), so a
+wink or a laugh shows on his face as well as in his moves. `fallback` names a
+2D look for anything that can't draw 3D (the ESP32 screens, or an app without
+the 3D page); it's what such an app gets if `use` picks the 3D look.
+
+`kit3d` is the 3D character from Dan's Blender project ("Kit's 3D face in
+Blender" thread). It uses the 3D look on the desk and in home_app and Glow on
+a robot screen. Retro stays the default; set `face.character = "kit3d"` to
+switch.
+
+### The 3D face page (no new desk app per face)
+
+Apps don't draw the 3D face themselves. The brain serves a face page at
+`/face/` (three.js, vendored in `src/kit/web/face/vendor` so it works offline)
+along with the character's model and pack (`kit.face.serve`). The desk app
+lays that page, see-through, over its Glow window (`kit.desk.face3d`) and
+copies the face's emotion, state, gestures, gaze and shows to it through the
+page's `kit` API:
+
+```js
+kit.setEmotion("happy"); kit.play("laugh"); kit.setState("listening");
+kit.lookAt(0.4, -0.2); kit.show({kind: "weather", text: "18°", sky: "storm"});
+```
+
+A weather show's `sky` (from `kit.shows`) picks the pack's show of the same
+name: `storm`, `rain`, `wind`, `fog` and `hot`, with `sun` and `part_cloud`
+bringing `sunny`. A pack without that show uses the nearest one it has (hot
+falls back to sunny) or just shows the temperature.
+
+The page asks the brain for a version every few seconds and reloads (keeping
+his mood) when it changes: a new page, a different character, or a changed
+model or pack. So a new model, retuned moods or a fix to how he moves reach
+the desk as soon as the brain has them, with no new desk app. Clicks and drags
+still go to the Glow window underneath, and if the desk app has no web engine
+or the page can't load, Glow stays.
+
+`face.pack_folder` points the brain at a pack folder outside Kit, such as the
+`pack` folder the Blender project writes (from WSL, something like
+`/mnt/c/Users/<you>/Documents/Blender/Kit/Kit_3D_Face/pack`).
+Each rebuild then shows on the desk within seconds. Copy a finished pack into
+`src/kit/face/characters/kit3d/` to ship it.
+
+Open `http://<brain>:8600/face/?character=kit3d&bg=%2310151c` in a browser to
+see the page on its own; add `&bloom=1` for the glow effect (off over a
+see-through window, where it would darken the edges).
 
 Blinks, eye darts, breathing, the reading sweep while working and the talking
 pulse are reflexes and stay in the rig's code. A new eye *shape* (not just new

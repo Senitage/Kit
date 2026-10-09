@@ -1,0 +1,353 @@
+{
+  "name": "Kit 3D",
+  "style": "model",
+  "version": "20261009120826",
+  "model": "kit_face.glb",
+  "tuning": {
+    "mood_blend_seconds": 0.35,
+    "energy": 1.0,
+    "move_speed": 1.0,
+    "blink_every_seconds": 4.0,
+    "glow": 1.6,
+    "glow_follows_mood": true,
+    "move_on_mood_change": true
+  },
+  "moods": {
+    "neutral": {
+      "shape_keys": {},
+      "glow_colour": "#4dffc0",
+      "energy": 0.45,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "happy": {
+      "shape_keys": {
+        "squint_L": 1,
+        "squint_R": 1,
+        "mouth_open": 1,
+        "blush": 0.8
+      },
+      "glow_colour": "#6dffb0",
+      "energy": 0.8,
+      "lean_degrees": 0,
+      "move": "bounce"
+    },
+    "curious": {
+      "shape_keys": {
+        "brow_up": 0.6,
+        "size_up": 0.3,
+        "mouth_o": 0.5,
+        "look_right": 0.3
+      },
+      "glow_colour": "#5ef0ff",
+      "energy": 0.6,
+      "lean_degrees": 10,
+      "move": "tilt"
+    },
+    "thinking": {
+      "shape_keys": {
+        "look_up": 0.7,
+        "look_left": 0.4,
+        "mouth_flat": 1,
+        "brow_angry": 0.2
+      },
+      "glow_colour": "#6fb8ff",
+      "energy": 0.3,
+      "lean_degrees": -8,
+      "move": "look_around"
+    },
+    "surprised": {
+      "shape_keys": {
+        "size_up": 1,
+        "brow_up": 1,
+        "mouth_o": 1
+      },
+      "glow_colour": "#c6ffff",
+      "energy": 0.9,
+      "lean_degrees": 0,
+      "move": "jolt"
+    },
+    "concerned": {
+      "shape_keys": {
+        "tilt_out": 0.7,
+        "brow_sad": 1,
+        "mouth_frown": 0.6
+      },
+      "glow_colour": "#8fd0ff",
+      "energy": 0.3,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "playful": {
+      "shape_keys": {
+        "squint_L": 1,
+        "mouth_open": 1,
+        "blush": 1,
+        "look_right": 0.3
+      },
+      "glow_colour": "#7dffd8",
+      "energy": 1.0,
+      "lean_degrees": 8,
+      "move": "dance"
+    },
+    "tired": {
+      "shape_keys": {
+        "close_L": 0.7,
+        "close_R": 0.7,
+        "mouth_flat": 1,
+        "size_down": 0.3
+      },
+      "glow_colour": "#3f9a85",
+      "energy": 0.1,
+      "lean_degrees": -4,
+      "move": null
+    },
+    "proud": {
+      "shape_keys": {
+        "squint_L": 0.6,
+        "squint_R": 0.6,
+        "mouth_open": 0.5,
+        "brow_up": 0.3,
+        "look_up": 0.2
+      },
+      "glow_colour": "#ffe07a",
+      "energy": 0.5,
+      "lean_degrees": -6,
+      "move": "nod"
+    },
+    "excited": {
+      "shape_keys": {
+        "size_up": 0.8,
+        "brow_up": 0.8,
+        "mouth_open": 1,
+        "blush": 1
+      },
+      "glow_colour": "#ffd45c",
+      "energy": 1.0,
+      "lean_degrees": 0,
+      "move": "hops"
+    },
+    "sad": {
+      "shape_keys": {
+        "tilt_out": 1,
+        "brow_sad": 1,
+        "mouth_frown": 1,
+        "look_down": 0.5,
+        "blush": 0.4
+      },
+      "glow_colour": "#6a9cff",
+      "energy": 0.1,
+      "lean_degrees": 0,
+      "move": "slump"
+    },
+    "confused": {
+      "shape_keys": {
+        "close_R": 0.35,
+        "brow_up": 0.5,
+        "brow_angry": 0.3,
+        "mouth_frown": 0.4,
+        "look_left": 0.2
+      },
+      "glow_colour": "#b9a0ff",
+      "energy": 0.4,
+      "lean_degrees": 12,
+      "move": "dizzy"
+    },
+    "shy": {
+      "shape_keys": {
+        "look_down": 0.6,
+        "look_left": 0.4,
+        "blush": 1,
+        "mouth_flat": 0.5,
+        "size_down": 0.2
+      },
+      "glow_colour": "#ffb0c8",
+      "energy": 0.3,
+      "lean_degrees": -8,
+      "move": "peek"
+    },
+    "grumpy": {
+      "shape_keys": {
+        "tilt_in": 1,
+        "brow_angry": 1,
+        "mouth_frown": 0.8
+      },
+      "glow_colour": "#ff7a5c",
+      "energy": 0.3,
+      "lean_degrees": 0,
+      "move": "shake"
+    },
+    "focused": {
+      "shape_keys": {
+        "tilt_in": 0.5,
+        "size_down": 0.2,
+        "mouth_flat": 1,
+        "brow_angry": 0.3
+      },
+      "glow_colour": "#40ffd0",
+      "energy": 0.2,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "relieved": {
+      "shape_keys": {
+        "close_L": 0.45,
+        "close_R": 0.45,
+        "squint_L": 0.3,
+        "squint_R": 0.3,
+        "mouth_open": 0.2,
+        "brow_sad": 0.3
+      },
+      "glow_colour": "#9fffd8",
+      "energy": 0.3,
+      "lean_degrees": -3,
+      "move": "squash"
+    },
+    "fond": {
+      "shape_keys": {
+        "squint_L": 0.7,
+        "squint_R": 0.7,
+        "blush": 0.8,
+        "mouth_open": 0.3,
+        "brow_sad": 0.3
+      },
+      "glow_colour": "#ffb3d9",
+      "energy": 0.4,
+      "lean_degrees": 8,
+      "move": "wiggle"
+    },
+    "scared": {
+      "shape_keys": {
+        "size_down": 0.15,
+        "brow_sad": 1,
+        "tilt_out": 0.35,
+        "mouth_frown": 0.6,
+        "mouth_o": 0.25,
+        "look_up": 0.4
+      },
+      "glow_colour": "#8fa8ff",
+      "energy": 0.2,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "sunny": {
+      "shape_keys": {
+        "look_up": 0.8,
+        "look_right": 0.6,
+        "mouth_open": 1,
+        "blush": 0.8,
+        "brow_up": 0.4
+      },
+      "glow_colour": "#ffd45c",
+      "energy": 0.6,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "windy": {
+      "shape_keys": {
+        "close_L": 0.45,
+        "close_R": 0.45,
+        "brow_angry": 0.35,
+        "mouth_flat": 0.6,
+        "look_left": 0.3
+      },
+      "glow_colour": "#bfefff",
+      "energy": 0.5,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "foggy": {
+      "shape_keys": {
+        "brow_up": 0.5,
+        "size_down": 0.15,
+        "mouth_o": 0.35,
+        "look_left": 0.2
+      },
+      "glow_colour": "#9fd8c8",
+      "energy": 0.25,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "hot": {
+      "shape_keys": {
+        "close_L": 0.4,
+        "close_R": 0.4,
+        "mouth_open": 0.55,
+        "blush": 1,
+        "brow_sad": 0.5
+      },
+      "glow_colour": "#ffa04d",
+      "energy": 0.15,
+      "lean_degrees": 0,
+      "move": null
+    }
+  },
+  "weather": {
+    "rain": {
+      "mood": "surprised",
+      "shape_keys": {
+        "look_up": 0.6
+      },
+      "move": "jolt",
+      "loop_move": false,
+      "props_group": "Weather_Rain"
+    },
+    "storm": {
+      "mood": "scared",
+      "shape_keys": {},
+      "move": "cower",
+      "loop_move": true,
+      "props_group": "Weather_Storm"
+    },
+    "sunny": {
+      "mood": "sunny",
+      "shape_keys": {},
+      "move": "sun_bask",
+      "loop_move": true,
+      "props_group": "Weather_Sunny"
+    },
+    "wind": {
+      "mood": "windy",
+      "shape_keys": {},
+      "move": "windswept",
+      "loop_move": true,
+      "props_group": "Weather_Wind"
+    },
+    "fog": {
+      "mood": "foggy",
+      "shape_keys": {},
+      "move": "fog_peer",
+      "loop_move": true,
+      "props_group": "Weather_Fog"
+    },
+    "hot": {
+      "mood": "hot",
+      "shape_keys": {},
+      "move": "melt",
+      "loop_move": true,
+      "props_group": "Weather_Hot"
+    }
+  },
+  "gestures": [
+    "bounce",
+    "nod",
+    "shake",
+    "tilt",
+    "squash",
+    "wiggle",
+    "look_around",
+    "idle",
+    "spin_jump",
+    "dance",
+    "hops",
+    "dizzy",
+    "slump",
+    "jolt",
+    "peek",
+    "cower",
+    "sun_bask",
+    "windswept",
+    "fog_peer",
+    "melt"
+  ]
+}

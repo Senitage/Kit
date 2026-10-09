@@ -669,6 +669,12 @@ class FaceSettings(_Section):
         "home_app and on his robots. Retro is the original glowing pill eyes; switch "
         "back any time.",
     )
+    pack_folder: str = Field(
+        "",
+        description="A folder holding a 3D face pack (face.json and the .glb) to use for a "
+        "3D character instead of the one built into Kit, e.g. the pack folder your Blender "
+        "project writes. Each rebuild shows on the desk within seconds. Empty: built in.",
+    )
 
 
 class MemorySettings(_Section):

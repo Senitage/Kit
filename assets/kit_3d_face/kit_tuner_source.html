@@ -1,0 +1,550 @@
+<title>Kit Tuning Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a workbench. Live 3D stage on the left (sticky), tuning groups stacked on the right; one column on phones. */
+:root {
+  --bg: #e8ecf1;
+  --panel: #f5f7fa;
+  --ink: #1a1f26;
+  --muted: #586271;
+  --line: #d3d9e1;
+  --stage: #cdd5e0;
+  --accent: #0f8f69;
+  --accent-soft: #d3f2e6;
+  --chip: #ffffff;
+  --f-display: "Fredoka", ui-rounded, "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151a; --panel: #181d24; --ink: #e4e9ef; --muted: #96a1af; --line: #29303a;
+    --stage: #1b2129; --accent: #4fe2b2; --accent-soft: #163a2f; --chip: #1f2630; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151a; --panel: #181d24; --ink: #e4e9ef; --muted: #96a1af; --line: #29303a;
+  --stage: #1b2129; --accent: #4fe2b2; --accent-soft: #163a2f; --chip: #1f2630; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); }
+.bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; padding-inline: 20px; padding-block: 20px; max-width: 1280px; margin: 0 auto; }
+.stage-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start; display: grid; gap: 10px; }
+.stage { position: relative; aspect-ratio: 1 / 1; max-height: calc(100vh - 110px); width: 100%; max-width: 100%; border-radius: 22px; overflow: hidden; background: var(--stage); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.stage .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--f-display); font-size: 18px; text-align: center; padding: 20px; }
+.hint { position: absolute; left: 14px; bottom: 12px; font-size: 12px; color: var(--muted); }
+.nowbar { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--muted); }
+.nowbar b { color: var(--ink); font-weight: 700; }
+.pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+.controls { display: grid; gap: 14px; min-width: 0; }
+header h1 { font-family: var(--f-display); font-weight: 600; font-size: 30px; line-height: 1.1; margin: 0 0 6px; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 58ch; }
+.group { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 16px; display: grid; gap: 12px; min-width: 0; }
+.group h2 { margin: 0; font-family: var(--f-display); font-weight: 500; font-size: 18px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.group h2 small { font-family: var(--f-body); font-size: 12px; color: var(--muted); font-weight: 400; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips .sub { width: 100%; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+button.chip { font: 500 13px/1 var(--f-body); color: var(--ink); background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+button.chip:hover { border-color: var(--accent); }
+button.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 700; }
+button.chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #4dffc0); box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
+.row label { font-size: 14px; }
+.row output { font: 500 13px var(--f-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.row .help { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: -2px; }
+.toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.colour-row { display: flex; align-items: center; gap: 10px; font-size: 14px; flex-wrap: wrap; }
+.colour-row input[type=color] { width: 44px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); padding: 2px; }
+.sub-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: -6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--chip); flex-wrap: wrap; }
+.seg button { font: 500 13px var(--f-body); color: var(--ink); background: transparent; border: 0; padding: 8px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); font-weight: 700; }
+pre { margin: 0; font: 12px/1.5 var(--f-mono); background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; max-height: 240px; }
+.actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.actions button { font: 700 13px var(--f-body); background: var(--accent); color: var(--bg); border: 0; border-radius: 999px; padding: 9px 16px; cursor: pointer; }
+.actions span { font-size: 13px; color: var(--muted); }
+@media (max-width: 860px) {
+  .bench { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+  .stage-col { position: static; }
+  .stage { max-height: 70vh; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="bench">
+  <section class="stage-col" aria-label="Kit preview">
+    <div class="stage" id="stage">
+      <div class="msg" id="msg">Waking Kit up&hellip;</div>
+      <div class="hint">Drag to spin Kit &middot; scroll to zoom</div>
+    </div>
+    <div class="nowbar">
+      <span class="pill">Mood <b id="nowMood">Neutral</b></span>
+      <span class="pill">Move <b id="nowMove">none</b></span>
+      <span class="pill">Face <b id="nowFace">Expression</b></span>
+      <span class="pill">Weather <b id="nowWeather">none</b></span>
+    </div>
+  </section>
+
+  <main class="controls">
+    <header>
+      <h1>Kit Tuning Bench</h1>
+      <p>Try Kit's moods and moves on the real 3D model, and tune how he feels to be around. When it feels right, copy the settings at the bottom for Kit's character preset.</p>
+    </header>
+
+    <section class="group" aria-labelledby="h-mood">
+      <h2 id="h-mood">Mood <small>17 from your reference sheet</small></h2>
+      <div class="chips" id="moods"></div>
+      <label class="toggle"><input type="checkbox" id="autoMove" checked> Play a move when the mood changes</label>
+      <label class="toggle"><input type="checkbox" id="colourFollows" checked> Glow colour follows the mood</label>
+      <div class="colour-row"><input type="color" id="moodColour" value="#4dffc0" aria-label="Glow colour for this mood"> <span>Glow colour for <b id="colourFor">Neutral</b></span></div>
+    </section>
+
+    <section class="group" aria-labelledby="h-feel">
+      <h2 id="h-feel">Feel <small>live, no rebuild needed</small></h2>
+      <div class="row"><label for="tau">Mood change time</label><output id="tauOut"></output>
+        <input type="range" id="tau" min="0.05" max="2" step="0.05" value="0.35">
+        <span class="help">How long Kit takes to glide from one face to the next.</span></div>
+      <div class="row"><label for="energy">Energy</label><output id="energyOut"></output>
+        <input type="range" id="energy" min="0" max="2" step="0.05" value="1">
+        <span class="help">How much he bobs and sways on his own. Each mood scales it too: excited moves most, tired least.</span></div>
+      <div class="row"><label for="moveSpeed">Move speed</label><output id="moveSpeedOut"></output>
+        <input type="range" id="moveSpeed" min="0.5" max="2" step="0.05" value="1"></div>
+      <div class="row"><label for="blink">Blink every</label><output id="blinkOut"></output>
+        <input type="range" id="blink" min="1" max="10" step="0.5" value="4"></div>
+      <div class="row"><label for="glow">Glow brightness</label><output id="glowOut"></output>
+        <input type="range" id="glow" min="0.3" max="3" step="0.05" value="1.6"></div>
+      <label class="toggle"><input type="checkbox" id="follow" checked> Eyes follow your pointer</label>
+      <label class="toggle"><input type="checkbox" id="talking"> Talking</label>
+    </section>
+
+    <section class="group" aria-labelledby="h-moves">
+      <h2 id="h-moves">Moves <small>baked into kit_face.glb</small></h2>
+      <div class="chips" id="moves"></div>
+    </section>
+
+    <section class="group" aria-labelledby="h-face">
+      <h2 id="h-face">Face shows <small>what Kit acts out when you ask</small></h2>
+      <div class="seg" role="group" aria-label="Face shows">
+        <button type="button" data-face="expression" aria-pressed="true">Expression</button>
+        <button type="button" data-face="time" aria-pressed="false">Time</button>
+        <button type="button" data-face="temp" aria-pressed="false">Temperature</button>
+      </div>
+      <div class="row"><label for="temp">Example temperature</label><output id="tempOut"></output>
+        <input type="range" id="temp" min="-10" max="40" step="1" value="21"></div>
+      <div class="sub-label">Weather show</div>
+      <div class="seg" role="group" aria-label="Weather show">
+        <button type="button" data-weather="none" aria-pressed="true">None</button>
+        <button type="button" data-weather="rain" aria-pressed="false">Rain</button>
+        <button type="button" data-weather="storm" aria-pressed="false">Storm</button>
+        <button type="button" data-weather="sunny" aria-pressed="false">Sunny</button>
+      </div>
+    </section>
+
+    <section class="group" aria-labelledby="h-out">
+      <h2 id="h-out">Settings for Kit</h2>
+      <pre id="json"></pre>
+      <div class="actions"><button type="button" id="copy">Copy settings</button><span id="copied" aria-live="polite"></span></div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/GammaCorrectionShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+const KIT_GLB_BASE64 = "__KIT_GLB_BASE64__";
+
+// ---- moods: shape-key mix, glow colour, liveliness and lean (from the 17 reference faces) ----
+const MOODS = {
+  neutral:   { k: {}, c: '#4dffc0', e: 0.45, tilt: 0 },
+  happy:     { k: { squint_L: 1, squint_R: 1, mouth_open: 1, blush: 0.8 }, c: '#6dffb0', e: 0.8, tilt: 0 },
+  curious:   { k: { brow_up: 0.6, size_up: 0.3, mouth_o: 0.5, look_right: 0.3 }, c: '#5ef0ff', e: 0.6, tilt: 10 },
+  thinking:  { k: { look_up: 0.7, look_left: 0.4, mouth_flat: 1, brow_angry: 0.2 }, c: '#6fb8ff', e: 0.3, tilt: -8 },
+  surprised: { k: { size_up: 1, brow_up: 1, mouth_o: 1 }, c: '#c6ffff', e: 0.9, tilt: 0 },
+  concerned: { k: { tilt_out: 0.7, brow_sad: 1, mouth_frown: 0.6 }, c: '#8fd0ff', e: 0.3, tilt: 0 },
+  playful:   { k: { squint_L: 1, mouth_open: 1, blush: 1, look_right: 0.3 }, c: '#7dffd8', e: 1.0, tilt: 8 },
+  tired:     { k: { close_L: 0.7, close_R: 0.7, mouth_flat: 1, size_down: 0.3 }, c: '#3f9a85', e: 0.1, tilt: -4 },
+  proud:     { k: { squint_L: 0.6, squint_R: 0.6, mouth_open: 0.5, brow_up: 0.3, look_up: 0.2 }, c: '#ffe07a', e: 0.5, tilt: -6 },
+  excited:   { k: { size_up: 0.8, brow_up: 0.8, mouth_open: 1, blush: 1 }, c: '#ffd45c', e: 1.0, tilt: 0 },
+  sad:       { k: { tilt_out: 1, brow_sad: 1, mouth_frown: 1, look_down: 0.5, blush: 0.4 }, c: '#6a9cff', e: 0.1, tilt: 0 },
+  confused:  { k: { close_R: 0.35, brow_up: 0.5, brow_angry: 0.3, mouth_frown: 0.4, look_left: 0.2 }, c: '#b9a0ff', e: 0.4, tilt: 12 },
+  shy:       { k: { look_down: 0.6, look_left: 0.4, blush: 1, mouth_flat: 0.5, size_down: 0.2 }, c: '#ffb0c8', e: 0.3, tilt: -8 },
+  grumpy:    { k: { tilt_in: 1, brow_angry: 1, mouth_frown: 0.8 }, c: '#ff7a5c', e: 0.3, tilt: 0 },
+  focused:   { k: { tilt_in: 0.5, size_down: 0.2, mouth_flat: 1, brow_angry: 0.3 }, c: '#40ffd0', e: 0.2, tilt: 0 },
+  relieved:  { k: { close_L: 0.45, close_R: 0.45, squint_L: 0.3, squint_R: 0.3, mouth_open: 0.2, brow_sad: 0.3 }, c: '#9fffd8', e: 0.3, tilt: -3 },
+  fond:      { k: { squint_L: 0.7, squint_R: 0.7, blush: 0.8, mouth_open: 0.3, brow_sad: 0.3 }, c: '#ffb3d9', e: 0.4, tilt: 8 },
+  scared:    { k: { size_down: 0.15, brow_sad: 1, tilt_out: 0.35, mouth_frown: 0.6, mouth_o: 0.25, look_up: 0.4 }, c: '#8fa8ff', e: 0.2, tilt: 0 },
+  sunny:     { k: { look_up: 0.8, look_right: 0.6, mouth_open: 1, blush: 0.8, brow_up: 0.4 }, c: '#ffd45c', e: 0.6, tilt: 0 },
+};
+// Weather shows: a mood (plus face tweaks), a Kit move, and props from the model that appear with it
+const SHOWS = {
+  none: null,
+  rain:  { mood: 'surprised', face: { look_up: 0.6 }, move: 'jolt', loop: false, group: 'Weather_Rain' },
+  storm: { mood: 'scared', move: 'cower', loop: true, group: 'Weather_Storm' },
+  sunny: { mood: 'sunny', move: 'sun_bask', loop: true, group: 'Weather_Sunny' },
+};
+const MOVE_FOR_MOOD = { happy: 'bounce', excited: 'hops', surprised: 'jolt', sad: 'slump', curious: 'tilt', confused: 'dizzy',
+  playful: 'dance', grumpy: 'shake', proud: 'nod', shy: 'peek', thinking: 'look_around', relieved: 'squash', fond: 'wiggle' };
+const MOVES_SMALL = ['bounce', 'nod', 'shake', 'tilt', 'squash', 'wiggle', 'look_around', 'idle'];
+const MOVES_BIG = ['spin_jump', 'dance', 'hops', 'dizzy', 'slump', 'jolt', 'peek'];
+const MOVES_WEATHER = ['cower', 'sun_bask'];
+const nice = s => s.replace('_', ' ').replace(/^./, c => c.toUpperCase());
+
+const state = {
+  mood: 'neutral', tau: 0.35, energy: 1, moveSpeed: 1, blinkEvery: 4, glow: 1.6,
+  follow: true, talking: false, autoMove: true, colourFollows: true, face: 'expression', temp: 21, weather: 'none',
+  colours: Object.fromEntries(Object.entries(MOODS).map(([m, v]) => [m, v.c])),
+};
+try {
+  const saved = JSON.parse(localStorage.getItem('kit-tuning') || 'null');
+  if (saved) Object.assign(state, saved, { mood: 'neutral', face: 'expression', weather: 'none', talking: false });
+  for (const [m, v] of Object.entries(MOODS)) if (!state.colours[m]) state.colours[m] = v.c;
+} catch (e) {}
+if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) state.energy = Math.min(state.energy, 0.4);
+
+// ---- controls ----
+const $ = id => document.getElementById(id);
+const moodBox = $('moods');
+for (const m of Object.keys(MOODS)) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.dataset.mood = m;
+  b.innerHTML = `<span class="dot"></span>${nice(m)}`;
+  b.addEventListener('click', () => setMood(m));
+  moodBox.appendChild(b);
+}
+const moveBox = $('moves');
+for (const [title, list] of [['Small', MOVES_SMALL], ['Big', MOVES_BIG], ['Weather', MOVES_WEATHER]]) {
+  const s = document.createElement('span'); s.className = 'sub'; s.textContent = title; moveBox.appendChild(s);
+  for (const mv of list) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = nice(mv);
+    b.addEventListener('click', () => playMove(mv));
+    moveBox.appendChild(b);
+  }
+}
+function paintMoodChips() {
+  for (const b of moodBox.children) {
+    b.setAttribute('aria-pressed', String(b.dataset.mood === state.mood));
+    b.style.setProperty('--c', state.colours[b.dataset.mood]);
+  }
+  $('nowMood').textContent = nice(state.mood);
+  $('colourFor').textContent = nice(state.mood);
+  $('moodColour').value = state.colours[state.mood];
+}
+const sliders = [
+  ['tau', 'tau', v => v.toFixed(2) + ' s'], ['energy', 'energy', v => Math.round(v * 100) + '%'],
+  ['moveSpeed', 'moveSpeed', v => Math.round(v * 100) + '%'], ['blink', 'blinkEvery', v => v.toFixed(1) + ' s'],
+  ['glow', 'glow', v => v.toFixed(2)], ['temp', 'temp', v => v + ' °C'],
+];
+for (const [id, key, fmt] of sliders) {
+  const el = $(id), out = $(id + 'Out');
+  el.value = state[key]; out.textContent = fmt(+el.value);
+  el.addEventListener('input', () => { state[key] = +el.value; out.textContent = fmt(state[key]); changed(); });
+}
+for (const id of ['follow', 'talking', 'autoMove', 'colourFollows']) {
+  const el = $(id); el.checked = state[id];
+  el.addEventListener('change', () => { state[id] = el.checked; changed(); });
+}
+$('moodColour').addEventListener('input', e => { state.colours[state.mood] = e.target.value; paintMoodChips(); changed(); });
+for (const b of document.querySelectorAll('[data-weather]')) {
+  b.addEventListener('click', () => {
+    for (const o of document.querySelectorAll('[data-weather]')) o.setAttribute('aria-pressed', String(o === b));
+    setWeather(b.dataset.weather);
+  });
+}
+for (const b of document.querySelectorAll('[data-face]')) {
+  b.addEventListener('click', () => {
+    state.face = b.dataset.face;
+    for (const o of document.querySelectorAll('[data-face]')) o.setAttribute('aria-pressed', String(o === b));
+    $('nowFace').textContent = b.textContent;
+    drawDigits(true);
+  });
+}
+function settingsForKit() {
+  return {
+    mood_blend_seconds: state.tau, energy: state.energy, move_speed: state.moveSpeed,
+    blink_every_seconds: state.blinkEvery, glow: state.glow, glow_follows_mood: state.colourFollows,
+    move_on_mood_change: state.autoMove, mood_colours: state.colours, mood_moves: MOVE_FOR_MOOD,
+    weather_shows: Object.fromEntries(Object.entries(SHOWS).filter(([, v]) => v)),
+  };
+}
+function changed() {
+  $('json').textContent = JSON.stringify(settingsForKit(), null, 2);
+  try {
+    const { mood, face, weather, talking, ...keep } = state;
+    localStorage.setItem('kit-tuning', JSON.stringify(keep));
+  } catch (e) {}
+}
+$('copy').addEventListener('click', () => {
+  const text = $('json').textContent;
+  const done = () => { $('copied').textContent = 'Copied'; setTimeout(() => $('copied').textContent = '', 2000); };
+  navigator.clipboard?.writeText(text).then(done, () => {
+    const r = document.createRange(); r.selectNodeContents($('json'));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    $('copied').textContent = 'Selected, press Ctrl+C';
+  }) ?? done();
+});
+paintMoodChips(); changed();
+
+// ---- 3D ----
+const stage = $('stage');
+let renderer, scene, camera, controls, composer, bloom, mixer, clips = {}, currentAction = null;
+let pivot, faceMeshes = [], glowMat, headBone, shadow, digitPlane, digitCtx, digitTex, propMixer, hemi, flash = 0;
+const groups = {};   // show -> { node, clips: [AnimationAction], pop: 0..1 target }
+const cur = {}; const curColour = new THREE.Color(MOODS.neutral.c).convertSRGBToLinear(); let curTilt = 0;
+const pointer = { x: 0, y: 0, active: false }, gaze = { x: 0, y: 0 };
+let blinkT = 0, nextBlink = 2;
+
+function stageColour() {
+  return new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#cdd5e0').convertSRGBToLinear();
+}
+
+function init() {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  stage.prepend(renderer.domElement);
+  scene = new THREE.Scene();
+  scene.background = stageColour();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+  camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  camera.position.set(0, 0.35, 8);
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.15, 0); controls.enableDamping = true; controls.enablePan = false;
+  controls.minDistance = 4.5; controls.maxDistance = 13;
+  hemi = new THREE.HemisphereLight(0xdfe8f5, 0x20242c, 0.2); scene.add(hemi);
+  const key = new THREE.DirectionalLight(0xffffff, 0.6); key.position.set(-3, 4, 4); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xcfe0ff, 0.6); rim.position.set(3, 2, -4); scene.add(rim);
+
+  composer = new THREE.EffectComposer(renderer);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  bloom = new THREE.UnrealBloomPass(new THREE.Vector2(512, 512), 0.5, 0.5, 0.85);
+  composer.addPass(bloom);
+  composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
+
+  // soft contact shadow under Kit
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(0,0,0,0.55)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.0), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = -0.9; scene.add(shadow);
+
+  resize(); new ResizeObserver(resize).observe(stage);
+  const themeWatch = () => { scene.background = stageColour(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeWatch);
+  new MutationObserver(themeWatch).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  stage.addEventListener('pointermove', e => {
+    const r = stage.getBoundingClientRect();
+    pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1; pointer.y = -(((e.clientY - r.top) / r.height) * 2 - 1); pointer.active = true;
+  });
+  stage.addEventListener('pointerleave', () => { pointer.active = false; });
+
+  const bin = Uint8Array.from(atob(KIT_GLB_BASE64), ch => ch.charCodeAt(0));
+  new THREE.GLTFLoader().parse(bin.buffer, '', onModel, err => { $('msg').textContent = 'Kit could not load: ' + err.message; });
+}
+
+function onModel(gltf) {
+  const model = gltf.scene;
+  pivot = new THREE.Group(); pivot.position.y = -0.84; scene.add(pivot);
+  model.position.y = 0.84; pivot.add(model);
+  model.traverse(o => {
+    if (o.isMesh && o.morphTargetDictionary) faceMeshes.push(o);
+    if (o.material && o.material.name === 'Mint glow') glowMat = o.material;
+    if (o.isMesh) o.frustumCulled = false;
+    if (o.material && o.material.name === 'Shell') o.material.envMapIntensity = 0.12;
+    if (o.material && /cloud/i.test(o.material.name)) o.material.envMapIntensity = 0.2;
+    if (o.material && o.material.name === 'Rain') { o.material.color.set(0x000000); o.material.emissiveIntensity = 0.55; }
+    if (o.material && o.material.name === 'Blush') { o.material.color.set(0x000000); o.material.emissiveIntensity = 0.45; }
+  });
+  headBone = model.getObjectByName('head');
+  // weather props live in the world, not on Kit, so they don't sway with him
+  model.updateMatrixWorld(true);
+  propMixer = new THREE.AnimationMixer(scene);
+  for (const [show, def] of Object.entries(SHOWS)) {
+    const node = def && model.getObjectByName(def.group);
+    if (!node) continue;
+    scene.attach(node); node.visible = false;
+    groups[show] = { node, clips: [], pop: 0, shown: 0, base: node.scale.clone() };
+  }
+  for (const name of Object.keys(faceMeshes[0]?.morphTargetDictionary || {})) cur[name] = 0;
+  mixer = new THREE.AnimationMixer(model);
+  for (const clip of gltf.animations) clips[clip.name] = clip;
+  // each weather group plays every clip that animates something inside it
+  for (const g of Object.values(groups)) {
+    const inside = new Set(); g.node.traverse(o => inside.add(THREE.PropertyBinding.sanitizeNodeName(o.name)));
+    for (const clip of gltf.animations) {
+      if (clip.tracks.some(t => inside.has(t.name.split('.')[0]))) {
+        g.clips.push(propMixer.clipAction(clip).setLoop(THREE.LoopRepeat, Infinity));
+      }
+    }
+  }
+  mixer.addEventListener('finished', () => { $('nowMove').textContent = 'none'; });
+
+  // digit display for time / temperature, riding on the head bone
+  const dc = document.createElement('canvas'); dc.width = 512; dc.height = 256;
+  digitCtx = dc.getContext('2d'); digitTex = new THREE.CanvasTexture(dc); digitTex.encoding = THREE.sRGBEncoding;
+  digitPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75),
+    new THREE.MeshBasicMaterial({ map: digitTex, transparent: true, depthWrite: false, toneMapped: false }));
+  model.updateMatrixWorld(true);
+  digitPlane.position.set(0, -0.02, 0.5);
+  scene.add(digitPlane); digitPlane.updateMatrixWorld(true);
+  (headBone || model).attach(digitPlane);
+  digitPlane.visible = false;
+
+  $('msg').remove();
+  playMove('bounce');
+  requestAnimationFrame(tick);
+}
+
+function setMood(m, quiet) {
+  state.mood = m; paintMoodChips();
+  if (!quiet && state.autoMove && MOVE_FOR_MOOD[m]) playMove(MOVE_FOR_MOOD[m]);
+}
+
+function setWeather(w) {
+  state.weather = w;
+  const show = SHOWS[w];
+  $('nowWeather').textContent = w === 'none' ? 'none' : nice(w);
+  for (const [key, g] of Object.entries(groups)) {
+    const on = key === w;
+    g.pop = on ? 1 : 0;
+    if (on) { g.node.visible = true; g.shown = 0; for (const a of g.clips) a.reset().play(); }
+  }
+  if (!show) { setMood('neutral', true); playMove('bounce'); return; }
+  setMood(show.mood, true);
+  playMove(show.move, show.loop);
+}
+
+function playMove(name, loop) {
+  if (!mixer || !clips[name]) return;
+  const action = mixer.clipAction(clips[name]);
+  action.reset();
+  if (loop) action.setLoop(THREE.LoopRepeat, Infinity); else action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = !!loop;
+  if (currentAction && currentAction !== action) currentAction.crossFadeTo(action, loop ? 0.35 : 0.15, false);
+  action.play(); currentAction = action;
+  $('nowMove').textContent = nice(name);
+}
+
+let lastDigits = '';
+function drawDigits(force) {
+  if (!digitCtx) return;
+  const now = new Date();
+  const colon = now.getSeconds() % 2 ? ' ' : ':';
+  const text = state.face === 'time'
+    ? String(now.getHours()).padStart(2, '0') + colon + String(now.getMinutes()).padStart(2, '0')
+    : state.face === 'temp' ? state.temp + '°' : '';
+  if (!force && text === lastDigits) return;
+  lastDigits = text;
+  const g = digitCtx; g.clearRect(0, 0, 512, 256);
+  g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '600 150px Fredoka, "Segoe UI", sans-serif';
+  if (state.face === 'time') {
+    // fixed-width layout so the colon blink doesn't make digits jump
+    const [h, m] = [text.slice(0, 2), text.slice(3)];
+    g.fillText(h, 150, 135); g.fillText(m, 362, 135);
+    if (colon === ':') { g.beginPath(); g.arc(256, 100, 13, 0, 7); g.arc(256, 168, 13, 0, 7); g.fill(); }
+  } else if (text) {
+    g.fillText(text, 256, 135);
+  }
+  digitTex.needsUpdate = true;
+}
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  renderer.setSize(w, h, false); composer?.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+
+const clock = new THREE.Clock(), tmpV = new THREE.Vector3(), target = {}, tmpC = new THREE.Color();
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
+  const mood = MOODS[state.mood];
+
+  // face targets: mood + blink + gaze + talk
+  const showFace = (SHOWS[state.weather] || {}).face || {};
+  for (const k in cur) target[k] = Math.max(mood.k[k] || 0, showFace[k] || 0);
+  nextBlink -= dt;
+  if (nextBlink <= 0) { blinkT = 0.16; nextBlink = state.blinkEvery * (0.6 + Math.random() * 0.8); }
+  if (blinkT > 0) {
+    blinkT -= dt; const b = Math.sin(Math.max(0, blinkT) / 0.16 * Math.PI);
+    target.close_L = Math.max(target.close_L, b); target.close_R = Math.max(target.close_R, b);
+  }
+  const gx = state.follow && pointer.active ? pointer.x : 0, gy = state.follow && pointer.active ? pointer.y : 0;
+  gaze.x += (gx - gaze.x) * Math.min(1, dt * 8); gaze.y += (gy - gaze.y) * Math.min(1, dt * 8);
+  target.look_right = Math.min(1, target.look_right + Math.max(0, gaze.x) * 0.9);
+  target.look_left = Math.min(1, target.look_left + Math.max(0, -gaze.x) * 0.9);
+  target.look_up = Math.min(1, target.look_up + Math.max(0, gaze.y) * 0.7);
+  target.look_down = Math.min(1, target.look_down + Math.max(0, -gaze.y) * 0.7);
+  if (state.talking) target.mouth_open = Math.max(target.mouth_open, 0.25 + 0.6 * Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1)));
+
+  const k = 1 - Math.exp(-dt / Math.max(state.tau, 0.01) * 3);
+  for (const name in cur) {
+    cur[name] += (target[name] - cur[name]) * (name.startsWith('close') && blinkT > 0 ? 1 : k);
+    for (const m of faceMeshes) m.morphTargetInfluences[m.morphTargetDictionary[name]] = cur[name];
+  }
+  const faceOn = state.face === 'expression';
+  for (const m of faceMeshes) m.visible = faceOn;
+  if (digitPlane) { digitPlane.visible = !faceOn; drawDigits(false); }
+
+  tmpC.set(state.colourFollows ? state.colours[state.mood] : state.colours.neutral).convertSRGBToLinear();
+  curColour.lerp(tmpC, k);
+  if (glowMat) { glowMat.color.setRGB(0, 0, 0); glowMat.emissive.copy(curColour); glowMat.emissiveIntensity = state.glow * 0.55; }
+  if (digitPlane) digitPlane.material.color.copy(curColour).multiplyScalar(state.glow * 0.55);
+  bloom.strength = 0.2 + state.glow * 0.2;
+
+  // body: baked move (mixer) + live idle motion scaled by energy x mood
+  mixer.timeScale = state.moveSpeed; mixer.update(dt); propMixer.update(dt);
+  // lightning lights up the room for a moment
+  // weather pops in with a little overshoot and shrinks away when it ends
+  for (const g of Object.values(groups)) {
+    g.shown += ((g.pop) - g.shown) * Math.min(1, dt * (g.pop ? 5 : 8));
+    const x = g.shown, s = g.pop ? x + Math.sin(x * Math.PI) * 0.18 : x;
+    g.node.scale.copy(g.base).multiplyScalar(Math.max(0.001, s));
+    if (!g.pop && x < 0.02 && g.node.visible) { g.node.visible = false; for (const a of g.clips) a.stop(); }
+  }
+  const bolt = scene.getObjectByName('Lightning');
+  if (bolt && groups.storm?.node.visible && bolt.scale.x > 0.5) flash = 1;
+  flash = Math.max(0, flash - dt * 5);
+  hemi.intensity = 0.2 + flash * 1.6;
+  const E = state.energy * mood.e;
+  curTilt += (mood.tilt - curTilt) * k;
+  pivot.position.y = -0.84 + 0.045 * E * (0.5 + 0.5 * Math.sin(t * (1.4 + 2.6 * E)));
+  pivot.rotation.z = THREE.MathUtils.degToRad(curTilt) + 0.06 * E * Math.sin(t * (0.8 + 1.4 * E));
+  pivot.rotation.y = 0.14 * E * Math.sin(t * 0.45) + gaze.x * 0.18;
+  pivot.rotation.x = -gaze.y * 0.08;
+  pivot.scale.set(1, 1 + 0.012 * Math.sin(t * 1.3), 1);
+
+  // shadow shrinks as Kit leaves the ground
+  if (headBone) {
+    headBone.getWorldPosition(tmpV);
+    const lift = Math.max(0, tmpV.y + 0.84);
+    shadow.scale.setScalar(Math.max(0.4, 1 - lift * 0.6)); shadow.material.opacity = Math.max(0.15, 1 - lift * 0.9);
+    shadow.position.x = tmpV.x;
+  }
+
+  controls.update();
+  composer.render();
+}
+
+try { init(); } catch (e) { $('msg').textContent = 'This browser could not start 3D: ' + e.message; }
+</script>
