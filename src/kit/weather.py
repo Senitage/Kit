@@ -74,6 +74,7 @@ class Today:
     top_c: float | None
     low_c: float | None
     rain_chance: int | None
+    wind_kmh: float | None = None  # now's wind, or the day's strongest for another day
 
 
 class Weather:
@@ -112,9 +113,10 @@ class Weather:
                 "longitude": where.longitude,
                 "timezone": "auto",
                 "forecast_days": ahead + 1,
-                "current": "temperature_2m,weather_code",
+                "current": "temperature_2m,weather_code,wind_speed_10m",
                 "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
-                "precipitation_probability_max",
+                "precipitation_probability_max,wind_speed_10m_max",
+                "wind_speed_unit": "kmh",
             },
         )
         cur = data.get("current") or {}
@@ -132,6 +134,7 @@ class Weather:
                 day("temperature_2m_max"),
                 day("temperature_2m_min"),
                 day("precipitation_probability_max"),
+                day("wind_speed_10m_max"),
             )
         return Today(
             where.name,
@@ -140,6 +143,7 @@ class Weather:
             day("temperature_2m_max"),
             day("temperature_2m_min"),
             day("precipitation_probability_max"),
+            cur.get("wind_speed_10m"),
         )
 
     async def find(self, place: str, country: str = "") -> Place:

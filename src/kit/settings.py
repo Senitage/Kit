@@ -678,6 +678,13 @@ class FaceSettings(_Section):
         "home_app and on his robots. Retro is the original glowing pill eyes; switch "
         "back any time.",
     )
+    hot_c: float = Field(
+        35.0,
+        ge=20,
+        le=55,
+        description="When you ask about the weather, a dry day this hot or hotter (°C) "
+        "shows as a hot day on his face: the sun beating down and him sweating.",
+    )
 
 
 class MemorySettings(_Section):

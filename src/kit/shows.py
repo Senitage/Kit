@@ -52,7 +52,7 @@ LATER = re.compile(
 # What the face draws, from the forecast's words (kit.weather.CODES).
 SKIES = (
     ("thunder", "storm"),
-    ("snow", "snow"),
+    ("snow", "rain"),  # never in Perth: something falling will do
     ("rain", "rain"),
     ("drizzle", "rain"),
     ("shower", "rain"),
@@ -63,6 +63,9 @@ SKIES = (
     ("clear", "sun"),
 )
 NIGHT_FROM, NIGHT_UNTIL = 19, 6  # hours: a clear sky after dark shows the moon
+WET = ("rain", "storm")  # skies that win over heat and wind
+HOT_C = 35.0  # a hot day, unless the settings say (face.hot_c)
+WINDY_KMH = 35.0  # a windy day: a strong breeze, the Fremantle Doctor on a good day
 
 
 class Forecasts(Protocol):
@@ -111,13 +114,20 @@ def sky_kind(sky: str, night: bool = False) -> str:
     return kind
 
 
-def weather_show(today: Today, now: datetime, ahead: int = 0) -> dict:
-    """The sky and a temperature: now's for today, the top for tomorrow."""
+def weather_show(today: Today, now: datetime, ahead: int = 0, hot_c: float = HOT_C) -> dict:
+    """The sky and a temperature: now's for today, the top for tomorrow. A dry day
+    at ``hot_c`` or more is "hot"; otherwise a dry one with wind is "wind"."""
     temp = today.now_c if ahead == 0 and today.now_c is not None else today.top_c
     night = ahead == 0 and (now.hour >= NIGHT_FROM or now.hour < NIGHT_UNTIL)
+    sky = sky_kind(today.sky, night)
+    if sky not in WET:
+        if temp is not None and temp >= hot_c:
+            sky = "hot"
+        elif today.wind_kmh is not None and today.wind_kmh >= WINDY_KMH:
+            sky = "wind"
     show = {
         "kind": "weather",
-        "sky": sky_kind(today.sky, night),
+        "sky": sky,
         "words": today.sky,
         "small": "tomorrow" if ahead else "",
     }
@@ -132,6 +142,7 @@ async def show_for(
     weather: Forecasts | None,
     home: str,
     country: str = "",
+    hot_c: float = HOT_C,
 ) -> dict | None:
     """What the face should show for Dan's message, with the facts, or None."""
     asked = asked_for(text, home)
@@ -145,4 +156,4 @@ async def show_for(
     if weather is None or not home:
         return None
     today = await weather.today(home, country, ahead=ahead)
-    return weather_show(today, now, ahead)
+    return weather_show(today, now, ahead, hot_c)
