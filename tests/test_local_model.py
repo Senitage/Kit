@@ -79,9 +79,13 @@ def test_plain_text_and_livelier_sampling_when_asked():
         "temperature": 0.95,
         "num_ctx": 8192,
         "min_p": 0.05,
+        "top_k": 64,
+        "top_p": 0.95,
         "repeat_penalty": 1.08,
+        "repeat_last_n": 64,
     }
-    assert "repeat_penalty" not in lively(OllamaSettings(), plain=False)
+    json_options = lively(OllamaSettings(), plain=False)
+    assert "repeat_penalty" not in json_options and "repeat_last_n" not in json_options
 
 
 def test_reading_ahead_fills_the_cache_with_the_same_model_and_context():

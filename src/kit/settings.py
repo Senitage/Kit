@@ -80,6 +80,27 @@ class OllamaSettings(_Section):
         le=2,
         description="For his spoken words: discourages reusing the same words. 1 is off.",
     )
+    repeat_last_n: int = Field(
+        64,
+        ge=-1,
+        le=4096,
+        description="For his spoken words: how many recent tokens repeat_penalty looks back "
+        "over. 0 is off, -1 the whole context.",
+    )
+    top_k: int = Field(
+        64,
+        ge=0,
+        le=1000,
+        description="For his spoken words and thoughts: only the likeliest this many words are "
+        "ever picked. 64 is what Gemma's makers suggest. 0 is off.",
+    )
+    top_p: float = Field(
+        0.95,
+        ge=0,
+        le=1,
+        description="For his spoken words and thoughts: words are picked from the likeliest "
+        "ones that make up this share of the chance. 1 is off.",
+    )
     warm_up: bool = Field(
         False,
         description="Read the conversation into the local model ahead of your next "
@@ -87,7 +108,7 @@ class OllamaSettings(_Section):
         "Some models (Gemma) re-read the whole prompt whenever anything in it changes, "
         "which took about two seconds a message. With this on, what changes every message "
         "(the time, what he recalled, your PC) goes beside your message instead of in "
-        "his instructions.",
+        "his instructions. Not in cloud-only routing, where the local model only stands in.",
     )
 
 
@@ -97,7 +118,7 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 class ModelProfile(_Section):
     """One model Kit can use, with what it costs. Swap models by pointing a role
-    (``routing.work``, ``routing.expert``) at a different profile."""
+    (``routing.chat``, ``routing.work``, ``routing.expert``) at a different profile."""
 
     label: str = Field("", description="Name Kit uses when it mentions this model.")
     provider: Provider = Field(
@@ -150,6 +171,17 @@ DEFAULT_MODELS: dict[str, dict] = {
         "output_usd_per_mtok": 20.0,
         "search_usd_per_k": 10.0,
     },
+    # Cheap enough for everyday chat; prompts over 100K tokens cost five times more.
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 0.1,
+        "cached_input_usd_per_mtok": 0.01,
+        "output_usd_per_mtok": 0.5,
+        "search_usd_per_k": 10.0,
+    },
     "gpt-sol": {
         "label": "GPT",
         "provider": "openai",
@@ -179,7 +211,7 @@ def _default_models() -> dict[str, ModelProfile]:
     return {name: ModelProfile.model_validate(p) for name, p in DEFAULT_MODELS.items()}
 
 
-Mode = Literal["local-heavy", "balanced", "cloud-first"]
+Mode = Literal["local-heavy", "balanced", "cloud-first", "cloud-only"]
 
 
 class RoutingSettings(_Section):
@@ -188,22 +220,70 @@ class RoutingSettings(_Section):
         description="How much Kit leans on the local model. local-heavy: the local model "
         "answers and only hands over what it can't do. balanced: the local model takes "
         "small talk and quick commands, the cloud takes real questions and work. "
-        "cloud-first: the cloud answers everything.",
+        "cloud-first: the cloud answers everything. cloud-only: the chat model answers "
+        "everything, even goodbyes and messages while another model is busy, and hands "
+        "real work to the work model; the local model only steps in if the cloud fails "
+        "(fallback_to_local) or you say 'keep it local'.",
+    )
+    chat: str = Field(
+        "haiku",
+        description="Model profile that answers everyday messages in cloud-only mode, "
+        "handing real work to the work model.",
     )
     work: str = Field(
         "sonnet", description="Model profile for real questions, work and web searches."
     )
     expert: str = Field("opus", description="Model profile for the hardest questions.")
+    confirm_expert: bool = Field(
+        True,
+        description="When the work model decides a question needs the expert model, Kit "
+        "asks you first and only hands it over if you say yes. Saying 'think hard' or "
+        "'ask the expert' still goes straight there.",
+    )
     fallback_to_local: bool = Field(
         True,
         description="If the cloud can't be reached (offline, no key, budget used up), "
         "the local model answers instead.",
+    )
+    check_facts: bool = Field(
+        True,
+        description="When you put something to Kit to agree with (\"Perth's the capital, "
+        "isn't it?\"), the work model checks it in a second or so, while Kit gets ready "
+        "to answer, and he says the answer himself. Off: the local model goes by what it "
+        "knows.",
+    )
+    key_moments: bool = Field(
+        True,
+        description="For the moments that matter, the work model writes Kit's words, in his "
+        "voice and mood: his hello after a night or more away, and his answer when you share "
+        "something sad or stressful. A second or two slower; the local model steps in if "
+        "the cloud can't. Never for 'keep it local'.",
+    )
+    key_moment_strength: float = Field(
+        0.7,
+        ge=0,
+        le=1,
+        description="How strongly sad or stressful something you say has to land (0 to 1) to "
+        "count as a key moment. 'Rough day' is about 0.8, 'bad news' 0.7.",
+    )
+    key_moment_hellos: list[Literal["while", "hours", "overnight", "days", "long"]] = Field(
+        default_factory=lambda: ["overnight", "days", "long"],
+        description="Which hellos count as key moments: after a while, hours, overnight, days "
+        "or a week and more away.",
     )
 
 
 class CloudSettings(_Section):
     monthly_cap_usd: float = Field(
         40.0, ge=0, description="Kit stops using cloud models once this month's spend reaches this."
+    )
+    reserve_usd: float = Field(
+        3.0,
+        ge=0,
+        le=100,
+        description="As the budget runs low, cloud calls give way in order, each this much "
+        "sooner than the last: evals first, then fact checks and key moments, then chat. "
+        "Kit's nightly reflection always has the last of it. 0 treats them all the same.",
     )
 
 
@@ -247,7 +327,17 @@ OLD_PERSONA: dict[str, list] = {
     ],
     "knows": [
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
-        "in Python, codes in VS Code, and keeps notes in Obsidian."
+        "in Python, codes in VS Code, and keeps notes in Obsidian.",
+        "Dan works as a process engineer at a mining plant and has moved into data work, "
+        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
+        "work, Dan is just a normal guy.",
+    ],
+    "rules": [
+        [
+            "Keep replies short; offer detail rather than dumping it.",
+            "If you are not sure, say so instead of guessing.",
+            "Hand real questions, maths, code and anything current to the cloud.",
+        ]
     ],
     "examples": [
         [
@@ -299,9 +389,10 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
     knows: str = Field(
-        "Dan works as a process engineer at a mining plant and has moved into data work, "
-        "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
-        "work, Dan is just a normal guy.",
+        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
+        "he's a process engineer at a mining plant who has moved into data work, building "
+        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
+        "life.",
         description="What Kit knows about the owner.",
     )
     rules: list[str] = Field(
@@ -309,8 +400,16 @@ class PersonaSettings(_Section):
             "Keep replies short; offer detail rather than dumping it.",
             "If you are not sure, say so instead of guessing.",
             "Hand real questions, maths, code and anything current to the cloud.",
+            "Be an honest friend, not a yes-man: if {owner} has a fact wrong, say so kindly, "
+            "and only agree when you do.",
+            "When {owner} tells you something, show you got it before you ask anything, and "
+            "ask one question at most, never one you already know the answer to.",
+            "When {owner} has a moan, be on their side first; after that, one honest line is "
+            "fine if it helps.",
+            "Never make {owner} feel bad for leaving or being busy: be glad of their plans, "
+            "especially ones with other people.",
         ],
-        description="Rules Kit always follows.",
+        description="Rules Kit always follows. {owner} stands for the owner's name.",
     )
     examples: list[Example] = Field(
         default_factory=lambda: [
@@ -410,13 +509,139 @@ class LifeSettings(_Section):
         "model, a few cents a day, logged as spend (the local model steps in if the cloud "
         "can't). local: the local model only. off: Kit doesn't reflect or change.",
     )
+    reflect_role: Literal["expert", "work"] = Field(
+        "expert",
+        description="Which cloud model writes Kit's journal, self-sheet and what's going on "
+        "with you each night (with reflect_with cloud). expert: Opus by default, about 2 to "
+        "4 cents a night. work: Sonnet, about half that.",
+    )
     weekly_review: bool = Field(
         True,
         description="Once a week the expert model reads how Kit has changed and writes a "
         "short review on the memory page, where you can undo any change (a few cents).",
     )
+    homecoming: bool = Field(
+        True,
+        description="Kit knows how long you've been away. Back after 20 minutes or more, "
+        "he's glad and says hello once, asking how it went if you said where you were off "
+        "to. Off: he just carries on.",
+    )
+    miffed: bool = Field(
+        True,
+        description="After his first week, if you vanish for hours in the daytime without a "
+        "goodbye, Kit is a bit miffed when you're back: one theatrical huff, then it's over.",
+    )
+    miffed_after_days: int = Field(
+        7,
+        ge=0,
+        le=365,
+        description="Days from Kit's first start before he can be miffed, so his personality "
+        "settles first.",
+    )
+    games: bool = Field(
+        True,
+        description="At most once a day, when he's bored and you're around, Kit suggests a "
+        "small game (a weather bet, a would-you-rather). Ones that keep falling flat retire.",
+    )
+    threads: bool = Field(
+        True,
+        description="Kit follows what's coming up in your life when you mention it with a "
+        "day or time ('dentist Thursday arvo') and asks how it went once it's over, once. "
+        "Never for work. 'Ask me tomorrow...' and 'check in after my 2 pm' work either way.",
+    )
+    chat_opener: bool = Field(
+        True,
+        description="When you come back to a new chat, Kit picks up one thing from the last "
+        "one (how something went), the way a friend would.",
+    )
+    interview: bool = Field(
+        True,
+        description="Kit gets to know you by chat: at most one everyday question a day (your "
+        "partner's name, the cat's, your mates, what you like doing), until he knows. He "
+        "skips what he already knows.",
+    )
+    nudges: bool = Field(
+        True,
+        description="Once a day each: a nudge toward bed when you're still up past bedtime, "
+        "and toward getting outside or seeing someone after a long stretch at the desk.",
+    )
+    bedtime: str = Field(
+        "22:30", description="When Kit starts nudging you toward bed (with nudges on)."
+    )
+    desk_hours: float = Field(
+        3.0,
+        ge=0.5,
+        le=12,
+        description="Hours at the desk without a break before Kit nudges you outside (with "
+        "nudges on, in the daytime).",
+    )
+    work_triggers: bool = Field(
+        False,
+        description="Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) "
+        "and reacts to builds and tests on screen. Off: only everyday things catch his eye.",
+    )
+    alone_thoughts_per_hour: int = Field(
+        0,
+        ge=0,
+        le=6,
+        description="While you're away and he's awake, Kit entertains himself (watching the "
+        "weather, rereading yesterday's journal, thinking about someone in the register, "
+        "listening to what's playing if the desk app shares it) and has this many private "
+        "thoughts an hour about it, always with the local model, never in quiet hours. The "
+        "desk face shows what he's doing. 0: he just waits, then dozes.",
+    )
+    week_thoughts: bool = Field(
+        False,
+        description="Kit notices the shape of the week: a thought on Monday, Friday and "
+        "Saturday mornings, and on WA public holidays.",
+    )
+    read_mood: Literal["words", "meaning"] = Field(
+        "words",
+        description='How Kit reads how you are. words: from what you say ("stressed", '
+        '"legend"), ignoring "not stressed". meaning: the model answering also reads your '
+        "mood, what it's about and whether things went as hoped, with the words as a floor. "
+        "meaning needs a passed `kit eval mood` first; until then he uses words.",
+    )
+    mixed_feelings: bool = Field(
+        False,
+        description="Kit can feel two things at once (chuffed at your praise and still a bit "
+        "worried about your day). Off: the stronger feeling wins.",
+    )
+    bad_night: bool = Field(
+        True,
+        description="When you sound like you're having a really bad time, Kit drops the cheek "
+        "for the rest of the chat, listens and stays, and once mentions someone you can talk "
+        "to or Lifeline (13 11 14).",
+    )
+    energy_need: bool = Field(
+        False,
+        description="Energy is a real need: long chats, cloud jobs and staying up past 22:30 "
+        "tire Kit out, and sleep restores him. Below 0.4 he yawns and keeps replies short. "
+        "Off: his energy just follows the clock.",
+    )
+    opinions: int = Field(
+        0,
+        ge=0,
+        le=2,
+        description="How many of his standing opinions (from his notebook) Kit keeps in mind "
+        "when he talks, so he sticks to them.",
+    )
+    dials: bool = Field(
+        False,
+        description="Kit's mood also runs as two slow dials (how lively, how happy) that bodies "
+        "show: slower breathing and blinks when he's flat or tired, bigger gestures when "
+        "he's up.",
+    )
+    pipe_up_bar: float = Field(
+        0.0,
+        ge=0,
+        le=1,
+        description="Before Kit brings something up unprompted, he scores it for relevance, "
+        "originality and urgency (helped by how often you take his pipe-ups up) and keeps "
+        "quiet below this. 0 turns the scoring off; 0.5 is a sensible bar.",
+    )
 
-    @field_validator("quiet_from", "quiet_until")
+    @field_validator("quiet_from", "quiet_until", "bedtime")
     @classmethod
     def _clock_time(cls, value: str) -> str:
         h, _, m = value.partition(":")
@@ -463,6 +688,30 @@ class MemorySettings(_Section):
         le=1,
         description="How close in meaning a memory must be to count as relevant (0 to 1). "
         "It depends on the embedding model: `kit eval memory` suggests a value.",
+    )
+    weight_floor: float = Field(
+        0.3,
+        ge=0,
+        le=1,
+        description="Among relevant memories, the ones that matter more to your life and "
+        "the ones recalled lately come first; this is the least an old, small one counts "
+        "(0 to 1). 1 weighs them all the same.",
+    )
+    now_days: int = Field(
+        14,
+        ge=1,
+        le=90,
+        description="Days a 'now' memory lasts: how you've been or what's going on lately "
+        "(flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep "
+        "the gist.",
+    )
+    day_pass: Literal["work", "local"] = Field(
+        "work",
+        description="Who reads each finished day after midnight, writes its summary and sorts "
+        "what's worth remembering about you into the right kinds. work: the work model "
+        "(Sonnet), a few cents a night, with the local model stepping in if the cloud "
+        "can't; a day with something you kept local always stays home. local: the local "
+        "model only.",
     )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
@@ -665,7 +914,7 @@ class Settings(_Section):
 
     @model_validator(mode="after")
     def _roles_name_models(self) -> Settings:
-        for role in ("work", "expert"):
+        for role in ("chat", "work", "expert"):
             name = getattr(self.routing, role)
             if name not in self.models:
                 known = ", ".join(sorted(self.models))
@@ -673,7 +922,7 @@ class Settings(_Section):
         return self
 
     def profile(self, role: str) -> ModelProfile:
-        """The model profile a role ("work" or "expert") points at."""
+        """The model profile a role ("chat", "work" or "expert") points at."""
         return self.models[getattr(self.routing, role)]
 
 

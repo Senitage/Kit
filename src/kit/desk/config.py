@@ -57,6 +57,7 @@ def desk_dir() -> Path:
 class DeskConfig:
     brain_url: str = "http://kit-server:8600"
     watch: bool = True  # report open windows and focus to Kit
+    share_playing: bool = False  # tell Kit what's playing (a song, a video), for his away life
     poll_seconds: float = 2.0  # how often the desktop is checked
     heartbeat_seconds: float = 20.0  # report at least this often, even with no change
     hidden_apps: list[str] = field(default_factory=lambda: list(HIDDEN_APPS))

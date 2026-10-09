@@ -507,3 +507,35 @@ def test_messages_and_the_conversation_copy_as_plain_text(qapp):
     assert pasted.startswith("Me: How big a pump?\n\n[Kit isn't set up yet")
     assert pasted.endswith("Kit: An 8/6 AH.\n\n1,050 rpm")
     assert chat.status.text() == "Copied the conversation"
+
+
+def test_his_face_listens_while_dan_types_to_him(qapp):
+    chat = ChatWindow()
+    states = []
+    chat.state.connect(states.append)
+    chat.input.setPlainText("Hey Kit, guess what")
+    assert states[-1] == "listening"
+    chat.input.setPlainText("Hey Kit, guess what happened")
+    assert states.count("listening") == 1  # once, not every key
+    chat.input.clear()
+    assert states[-1] == "idle"
+    assert desk_app.FACE_STATES["listening"] == "listening"
+
+
+def test_a_reaction_plays_even_mid_conversation(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    played = []
+    monkeypatch.setattr(desk.face.face, "play", lambda gesture, now: played.append(gesture))
+    try:
+        desk.chat._in_flight = 1  # answering something
+        desk._on_life({"type": "fidget", "gesture": "yawn"})
+        desk._on_life({"type": "react", "gesture": "wave"})
+        assert played == ["wave"]  # a fidget waits; a reaction doesn't
+    finally:
+        desk.chat._in_flight = 0
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

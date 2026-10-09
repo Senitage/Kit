@@ -17,7 +17,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-from kit.life import FEELING_KINDS, everyday
+from kit.life import THOUGHT_FEELINGS, everyday
 
 THOUGHT_SCHEMA = {
     "type": "object",
@@ -25,7 +25,7 @@ THOUGHT_SCHEMA = {
         "thought": {"type": "string"},
         "kind": {"type": "string", "enum": ["thought", "opinion"]},
         "want": {"type": "string"},
-        "feeling": {"type": "string", "enum": ["same", *FEELING_KINDS]},
+        "feeling": {"type": "string", "enum": ["same", *THOUGHT_FEELINGS]},
         "why": {"type": "string"},
     },
     "required": ["thought", "kind", "want", "feeling", "why"],
@@ -63,10 +63,12 @@ def thinking_messages(
     mind: list[str],
     remembered: list[str],
     said_today: list[str],
+    stances: bool = False,
 ) -> list[dict]:
     """The prompt for one private thought. ``who`` is his self-sheet (or the persona
-    he was given), ``happened`` what set this thought off."""
-    feelings = ", ".join(FEELING_KINDS)
+    he was given), ``happened`` what set this thought off. ``stances``
+    (``life.opinions``): an opinion must be a stance he'd stand by, not an observation."""
+    feelings = ", ".join(THOUGHT_FEELINGS)
     system = [
         f"You are {name}'s inner voice. {name} is a small companion who lives on {owner}'s "
         f"desk and helps out. This is {name} thinking to himself: nobody hears it.",
@@ -82,7 +84,14 @@ def thinking_messages(
         f"about {owner} or what's going on. Make it new (not one of your recent thoughts) "
         f"and more than a description of the screen. One or two short sentences, in your "
         f"own voice: {style}. {everyday(owner)}",
-        "- kind: opinion if it's a view you've formed, else thought.",
+        (
+            f"- kind: opinion only for a stance on a topic that you'd stand by and argue "
+            f'for, said as a plain statement ("Pineapple on pizza is underrated.", '
+            f'"Winter\'s the best time of year."). Anything you noticed about {owner} or '
+            f"the screen, a guess, a plan, a joke or a question is a thought."
+            if stances
+            else "- kind: opinion if it's a view you've formed, else thought."
+        ),
         f"- want: if it's something you'd like to say or ask {owner} when you get the "
         f"chance, write that as one short line in your own words. If it's for tomorrow (or "
         f"{owner} asked you to bring it up tomorrow), start with Tomorrow. Otherwise empty.",
@@ -123,7 +132,7 @@ def parse_thought(raw: str, trigger: str) -> Thought | None:
         text=text("thought"),
         kind="opinion" if data.get("kind") == "opinion" else "thought",
         want=text("want"),
-        feeling=feeling if feeling in FEELING_KINDS else "",
+        feeling=feeling if feeling in THOUGHT_FEELINGS else "",
         why=text("why"),
         trigger=trigger,
     )

@@ -58,7 +58,8 @@ word, speech to text) is the next part of stage 3.
   prompt whenever anything in it changes, which took about two seconds a message.
   With it on, what changes every message (the time, what Kit recalled, the PC)
   goes beside Dan's message rather than in Kit's instructions. Off by default
-  while it's tried.
+  while it's tried, and never in cloud-only routing, where the local model only
+  stands in and reading ahead would just load it back onto the GPU.
 - **Speech off** (`kit speech off`) stops the engine within a few seconds, which
   frees its memory. With speech on, the server loads the engine at start-up, so
   the first reply isn't kept waiting.
@@ -136,10 +137,10 @@ The engine's own messages go to `<data>/logs/speech.log`.
 - [ ] When Kit pipes up by himself, he says it out loud.
 - [ ] Untick "Show Kit's words as he says them" on the Look page: words appear as
       they stream in again, and he still speaks.
-- [ ] `kit config set ollama.warm_up true`, then chat for a few turns. In
-      `<data>/logs/kit.log`, each message's first `local model: read N tokens` line
-      drops from thousands of tokens to a few hundred from the second message on,
-      and replies start sooner.
+- [ ] With routing other than cloud-only, `kit config set ollama.warm_up true`,
+      then chat for a few turns. In `<data>/logs/kit.log`, each message's first
+      `local model: read N tokens` line drops from thousands of tokens to a few
+      hundred from the second message on, and replies start sooner.
 - [ ] Ask something that makes him grumpy or tired: Turbo opens with a groan or sigh.
 - [ ] `kit speech off`: within a few seconds `nvidia-smi` shows the memory freed,
       and replies are silent.

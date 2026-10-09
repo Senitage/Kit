@@ -58,6 +58,56 @@ the brain writes them, in the mood he's in. The voice engine is swappable
 `kit speech bench` compares engines on the same lines. Set it up and test it with
 [docs/stage-3-voice.md](docs/stage-3-voice.md).
 
+## Now: Kit as a companion, stage 3
+
+A life of his own, and feeling it. While you're away he keeps himself busy
+(watching the weather, rereading his journal, thinking about the cat) and
+tells you truthfully what he got up to. He knows Friday arvo from Monday
+morning and the WA public holidays, reads "not stressed, footy's on late" the
+right way (and, once `kit eval mood` passes on your own lines, reads your mood
+by meaning), can feel two things at once, gets tired, sticks to his views, and
+looks before he pipes up. On a really bad night he drops the cheek and stays.
+Each change is a setting, off until you turn it on (the bad-night care is on).
+Update and test it with
+[docs/stage-companion-3.md](docs/stage-companion-3.md).
+
+```
+kit life         # now also: where he is and what he's doing, energy, dials
+kit eval mood    # does reading your mood by meaning beat the words?
+```
+
+## Kit as a companion, stage 2
+
+He follows your life. Mention something coming up ("dentist Thursday arvo") and
+he asks how it went once it's over; ask him to check in after your 2 pm and he
+does. A new chat picks up one thing from the last, Monday brings "how was the
+weekend?", and each night he writes what's going on with you so he never asks
+what he already knows. He gets to know you a question a day, nudges you to bed
+or outside once a day, keeps running jokes, and Claude steps in for the moments
+that matter. Update and test it with
+[docs/stage-companion-2.md](docs/stage-companion-2.md).
+
+```
+kit life             # now also: what he'll ask about and when
+kit life notebook    # what's going on with you, threads, running jokes
+```
+
+## Kit as a companion, stage 1
+
+Kit knows how long you were gone, even across a restart. He's glad when you're
+back and says hello once (asking how lunch was, if you said), sees you off with
+one warm line and no guilt, and after his first week is a bit miffed if you
+vanish for hours without a goodbye. He's a small companion on your side rather
+than an assistant: an honest friend who corrects you kindly and asks one
+question at a time. He knows what's true about himself, grows closer to you
+slowly, suggests a small game now and then, and reacts the moment you speak.
+Update and test it with [docs/stage-companion-1.md](docs/stage-companion-1.md).
+
+```
+kit life                                  # now also: how close you are, a hello owed, your last goodbye
+kit eval companion --models gemma4:e4b    # clean goodbyes, no guilt in hellos, honest answers
+```
+
 ## Kit's inner life (side stage)
 
 Kit gets a life between conversations: feelings with a reason, private thoughts

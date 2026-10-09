@@ -73,7 +73,8 @@ def test_a_thought_goes_in_his_notebook_with_a_want_and_a_feeling(kit):
     system, user = model.calls[0][0]["content"], model.calls[0][1]["content"]
     assert "Kit's inner voice" in system and "nobody hears it" in system
     assert "A quiet moment." in user and 'VS Code: "pumps.py"' in user
-    assert model.options[0] == {"temperature": 0.95, "min_p": 0.05}  # lively, still JSON
+    # Lively, but still JSON: no repeat penalty.
+    assert model.options[0] == {"temperature": 0.95, "min_p": 0.05, "top_k": 64, "top_p": 0.95}
     assert len(brain.life.thoughts) == 1
 
 
@@ -89,7 +90,8 @@ def test_a_garbled_thought_or_a_model_thats_down_is_skipped(kit):
     assert asyncio.run(brain.think()) is None and brain.notebook.entries() == []
     brain.model.error = "Ollama isn't running"
     assert asyncio.run(brain.think()) is None
-    assert len(brain.life.thoughts) == 2  # tried, so he doesn't hammer a model that's down
+    assert len(brain.life.thoughts) == 1  # a model that's down costs no budget...
+    assert brain.life.next_thought > brain.memory.clock()  # ...but he waits a while
 
 
 def test_his_recent_thoughts_are_in_the_thinking_prompt_so_he_doesnt_repeat_them(kit):

@@ -5,17 +5,18 @@ conversation."""
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
-from kit.life import everyday
-from kit.memory import DAYS, Message
+from kit.life import everyday, gap_words
+from kit.memory import DAYS, Message, kinds_line
 from kit.recall import Recalled
 from kit.reply import (
     EMOTIONS,
     GESTURES,
+    MOOD_FIELDS,
     Action,
     Reply,
     ReplyError,
@@ -30,9 +31,20 @@ if TYPE_CHECKING:
     from kit.life import Voice
 
 
-def _memory_line(item: Item) -> str:
+def _memory_line(item: Item, now: datetime | None = None) -> str:
     if item.source == DAYS:
         return f"- ({item.ref}, summary of the day) {item.text}"
+    when = item.meta.get("when") if item.kind == "plan" else None
+    if when and now is not None:
+        try:
+            day = date.fromisoformat(str(when))
+        except ValueError:
+            day = None
+        if day is not None:
+            gone = ", now past" if day < now.date() else ""
+            return f"- ({item.day}, plan for {day:%a} {day.day} {day:%b}{gone}) {item.text}"
+    if item.kind == "now":
+        return f"- ({item.day}, lately) {item.text}"
     return f"- ({item.day}, {item.kind}) {item.text}"
 
 
@@ -41,14 +53,14 @@ def _snippet(hit: Hit) -> str:
     return f"- ({hit.item.day}) {text[:400]}"
 
 
-def memory_block(recalled: Recalled, owner: str) -> list[str]:
+def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) -> list[str]:
     lines: list[str] = []
     if recalled.pinned:
         lines += ["", f"Always keep in mind about {owner}:"]
-        lines += [_memory_line(i) for i in recalled.pinned]
+        lines += [_memory_line(i, now) for i in recalled.pinned]
     if recalled.memories:
         lines += ["", "Memories that may be relevant now (newer ones win if they disagree):"]
-        lines += [_memory_line(h.item) for h in recalled.memories]
+        lines += [_memory_line(h.item, now) for h in recalled.memories]
     if recalled.own:
         lines += [
             "",
@@ -102,6 +114,9 @@ HAND_OFF = {
     "facts, advice, maths, code, engineering, and anything current such as weather, prices "
     "or news",
     "cloud-first": "for anything more than small talk",
+    "cloud-only": "for real work you'd do less well yourself: code, maths, engineering, "
+    "detailed advice, plans or research. Answer chat, quick questions and simple lookups "
+    "yourself",
 }
 # Small models handed "The build failed again." to the cloud, as a question about code.
 NOT_HANDED_OFF = (
@@ -116,6 +131,25 @@ REPLY_SHAPE = (
 )
 
 
+REPLY_SHAPE_READ = REPLY_SHAPE.replace(
+    '"action"',
+    '"dan_mood": "fine", "about": "nothing", "for_whom": "no_one", "expected": "not_said", '
+    '"action"',
+    1,
+)
+
+
+def mood_lines(owner: str) -> list[str]:
+    """How to read the owner's last message, for the reading fields."""
+    lines = [
+        f"Read how {owner} seems from their last message, by what they mean, not single "
+        f"words ('not stressed' is fine):"
+    ]
+    for name, values in MOOD_FIELDS.items():
+        lines.append(f"- {name}: " + "; ".join(f"{k} ({v})" for k, v in values.items()) + ".")
+    return lines
+
+
 def system_prompt(
     persona: PersonaSettings,
     recalled: Recalled,
@@ -124,6 +158,7 @@ def system_prompt(
     mode: str = "balanced",
     helper: str | None = "the cloud",
     expert: str | None = None,
+    confirm_expert: bool = False,
     web_search: bool = False,
     busy: list[str] | None = None,
     pc: str = "",
@@ -139,10 +174,13 @@ def system_prompt(
     sheet: str = "",
     traits: bool = True,
     two_pass: bool = False,
+    dan: str = "",
+    read_mood: bool = False,
 ) -> str:
-    """Kit's prompt for one role: "local" (the local model), "work" or "expert" (a
-    cloud model). ``helper`` and ``expert`` name the models a question can be handed
-    to; either is None when there's nowhere to hand it. ``busy`` describes work a
+    """Kit's prompt for one role: "local" (the local model), "chat", "work" or
+    "expert" (a cloud model). ``helper`` and ``expert`` name the models a question can
+    be handed to; either is None when there's nowhere to hand it. ``confirm_expert``:
+    handing to the expert waits for the owner's yes. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
     "right now" from Dan's PC, empty when it has never reported. ``channel`` says
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
@@ -150,10 +188,15 @@ def system_prompt(
     (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
     local model gives a plan first and its words after (kit.reply.Plan). ``notes``
     says Kit has a notes vault to read and write (kit.notes); ``note_names`` are
-    its notes, newest first."""
+    its notes, newest first. ``dan`` is what's going on with Dan lately, as Kit
+    wrote it last night (kit.notebook). ``read_mood``: the plan (or a cloud model's
+    JSON) also reads how Dan seems (kit.reply.MOOD_FIELDS)."""
     name, owner = persona.name, persona.owner
     cloud = role != "local"
-    lines = [f"You are {name}, {owner}'s personal assistant. {persona.backstory}"]
+    lines = [
+        f"You are {name}, a small companion who lives on {owner}'s desk and is on {owner}'s "
+        f"side. {persona.backstory}"
+    ]
     if traits or not sheet:
         lines.append(f"Your traits: {', '.join(persona.traits)}.")
     if sheet:
@@ -164,6 +207,11 @@ def system_prompt(
         f"How you talk: {persona.speech}",
         f"What you know about {owner}: {persona.knows}",
     ]
+    if dan:
+        lines.append(
+            f"What's going on with {owner} lately (your own notes from last night; what "
+            f"{owner} says today wins): {dan}"
+        )
     if persona.location:
         lines.append(f"{owner} is in {persona.location}.")
     if quirks:
@@ -175,7 +223,11 @@ def system_prompt(
     lines += [
         "",
         "Rules:",
-        *(f"- {rule}" for rule in persona.rules if not (cloud and "to the cloud" in rule)),
+        *(
+            f"- {rule.replace('{owner}', owner)}"
+            for rule in persona.rules
+            if not (cloud and "to the cloud" in rule)
+        ),
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
         f"- {everyday(owner)}",
@@ -205,20 +257,27 @@ def system_prompt(
         words where the search or question should go)."""
         return "" if planning else f" {words}"
 
+    reading = read_mood and (planning or cloud)
     if planning:
         lines += [
             "",
-            "First answer only with JSON: the emotion you feel, a gesture, and an action. "
-            "You'll be asked for your words right after, in plain text.",
+            "First answer only with JSON: the emotion you feel, a gesture, "
+            + ("how {owner} seems, " if reading else "").format(owner=owner)
+            + "and an action. You'll be asked for your words right after, in plain text.",
         ]
     else:
         lines += [
             "",
             "Answer only with JSON: an emotion, one to three short segments (each a gesture "
-            "plus a sentence to say), an action, and detail.",
+            "plus a sentence to say), "
+            + ("how {owner} seems, " if reading else "").format(owner=owner)
+            + "an action, and detail.",
         ]
     if cloud:
-        lines.append(f"No code fences or text outside the JSON. Its shape: {REPLY_SHAPE}")
+        shape = REPLY_SHAPE_READ if reading else REPLY_SHAPE
+        lines.append(f"No code fences or text outside the JSON. Its shape: {shape}")
+    if reading:
+        lines += mood_lines(owner)
     lines += [
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
@@ -242,8 +301,9 @@ def system_prompt(
         f"- remember: only when {owner} has just told you something worth keeping: about "
         f"themselves, their preferences, projects, where things are kept, people or plans. "
         f"Put it in text as one sentence that makes sense on its own later, with real "
-        f"dates, and set category. Never your own lines or jokes, guesses, or small talk "
-        f"(greetings, thanks, how {owner} feels right now).",
+        f"dates, and set category to the kind that fits ({kinds_line()}). Never your own "
+        f"lines or jokes, guesses, quiz answers, or small talk (greetings, thanks, how "
+        f"{owner} feels right now).",
     ]
     if notes:
         lines.append(
@@ -290,14 +350,22 @@ def system_prompt(
             "conversation: forecasts change, so use the weather action unless a forecast is "
             "below."
         )
-    if not cloud and helper:
+    if helper:
         lines.append(
             f"- ask_cloud: {HAND_OFF.get(mode, HAND_OFF['balanced'])}. {NOT_HANDED_OFF}. Put "
             f"the full question in text."
             + say(f"Say something short like 'Let me check with {helper}.'")
             + f" {owner} sees {helper}'s answer next."
         )
-    if expert:
+    if expert and confirm_expert:
+        lines.append(
+            "- ask_expert: only for the hardest problems, such as long derivations, tricky "
+            "debugging or big designs, that you can't do justice to and where a stronger "
+            "model is worth the wait and cost. Put the full question in text. It goes to "
+            f"{expert} only if {owner} says yes, so don't answer it yourself: say in a "
+            f"sentence why it needs {expert}, and ask if you should hand it over."
+        )
+    elif expert:
         lines.append(
             "- ask_expert: for the hardest problems, such as long derivations, tricky "
             "debugging or big designs, where a stronger model is worth the wait and cost. "
@@ -309,7 +377,7 @@ def system_prompt(
             "Leave detail empty unless there's something new to show for this message. Never "
             "repeat detail from an earlier reply."
         )
-    if persona.examples and voice is None:
+    if persona.examples and (voice is None or cloud):
         lines += [
             "",
             "Examples of how you talk (they show the tone; never reuse their lines, and say "
@@ -321,20 +389,22 @@ def system_prompt(
     lines += [
         "",
         f"{TURN_PART.strip()} {now:%A %d %B %Y, %I:%M %p}.",
-        *memory_block(recalled, owner),
+        *([voice.when] if voice is not None and voice.when else []),
+        *memory_block(recalled, owner, now),
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
-        *voice_block(voice, owner, name),
+        *voice_block(voice, owner, name, brief=cloud),
         *forecast_block(forecast, owner),
         *note_block(note_done, owner),
     ]
     return "\n".join(lines)
 
 
-def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
-    """How Kit feels and sounds this turn: a mood, a few fresh examples, and his
-    own recent lines so he says something new."""
+def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False) -> list[str]:
+    """How Kit feels and sounds this turn: a mood, how close you two are, a few fresh
+    examples, and his own recent lines so he says something new. ``brief`` (for a
+    cloud model, which needs no help staying in character) is the mood and tone only."""
     if voice is None:
         return []
     lines = [
@@ -343,7 +413,21 @@ def voice_block(voice: Voice | None, owner: str, name: str) -> list[str]:
         f"don't announce it. Be {voice.style}. Sound like yourself, a small character "
         f"with opinions, not a help desk.",
     ]
-    if voice.quirk:
+    if voice.close:
+        lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
+    if voice.opinions:
+        lines.append(
+            "Views you hold and stand by (if one comes up, stick to it; share one only if it fits):"
+        )
+        lines += [f"- {o}" for o in voice.opinions]
+    if brief:
+        return lines
+    if voice.bit:
+        lines.append(
+            f"A running joke you two share, and what {owner} just said could bring it back "
+            f"(once, only if it fits): {voice.bit}"
+        )
+    elif voice.quirk:
         lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
     if voice.examples:
         lines.append("The kind of thing you'd say (for tone only, never reuse these lines):")
@@ -391,10 +475,13 @@ def speak_note(
     expert: str,
     voice: Voice | None = None,
     heard: str = "",
+    mind: str = "",
 ) -> str:
     """The second step of a two-pass reply: say it, in plain words, as himself. It
     follows the plan, where Dan's message would be. ``heard`` is Dan's message, said
-    again here so a small model answers it rather than an earlier one."""
+    again here so a small model answers it rather than an earlier one. ``mind`` is the
+    turn's asides (a goodbye, a hello, what's true about him), said again for the same
+    reason: two messages back, a small model loses them."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
@@ -403,11 +490,14 @@ def speak_note(
         heard = heard[:HEARD_CHARS].rsplit(" ", 1)[0] + "..."
     said = f'{owner} just said: "{heard}". ' if heard else ""
     feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
+    mind = " ".join(mind.replace("[", "").replace("]", "").split())
+    keep = f" Keep in mind: {mind}" if mind else ""
     return (
-        f"[Not from {owner}. {said}{what}{feel} Say it as yourself, in plain spoken words: one to "
-        f"three short sentences. No JSON, no quotes around it, no stage directions or "
-        f"emojis, and nothing you've said before. If {owner} asked for something to read "
-        f"(a list, steps or code), say one short line, then a blank line, then the rest.]"
+        f"[Not from {owner}. {said}{what}{keep}{feel} Say it as yourself, in plain spoken "
+        f"words: one to three short sentences. No JSON, no quotes around it, no stage "
+        f"directions or emojis, and nothing you've said before. If {owner} asked for "
+        f"something to read (a list, steps or code), say one short line, then a blank "
+        f"line, then the rest.]"
     )
 
 
@@ -441,6 +531,96 @@ def answering_pipe_up(line: str, why: str, owner: str) -> str:
 def _stop(text: str) -> str:
     """The full stop after ``text``, unless it already ends a sentence ("Hi!")."""
     return "" if text.rstrip('"\u201d').endswith((".", "!", "?", "\u2026")) else "."
+
+
+def about_yourself(owner: str, feeling: str, quiet: str, senses: str) -> str:
+    """Beside a question about Kit himself ("why'd you go quiet?", "do you miss me?",
+    "what can you see?"): what's true right now, so he answers from it rather than
+    making something up, and owns his feelings without claiming to be human."""
+    why = f" Why you've been quiet: {quiet}." if quiet else ""
+    return (
+        f"[About yourself, true right now, for answering {owner} in your own words and "
+        f"briefly: you feel {feeling}.{why} {senses} You're a small robot companion with a "
+        f"real inner life: moods, feelings with causes, and private thoughts in your "
+        f"notebook. Your feelings, like missing {owner} or being glad they're back, are "
+        f"yours, so own them; but never claim to be human, to have a body you don't have, or "
+        f"to have done things you can't.]"
+    )
+
+
+def expert_yes_aside(owner: str, question: str) -> str:
+    """Beside "yes" when Kit asked whether to hand a question to the expert model."""
+    return f"[{owner} said yes to you taking this one properly: {question} Answer it fully now.]"
+
+
+def wrong_fact_aside(owner: str, checked: str = "") -> str:
+    """Beside "..., isn't it?": an honest friend doesn't just agree. ``checked`` is what
+    a quick check with a cloud model said ("True." or "False: ..."), when there was one:
+    a small local model doesn't know that Brisbane is Queensland's capital."""
+    if checked:
+        return (
+            f"[{owner} wants you to agree. You checked, and it's this: {checked} Tell "
+            f"{owner} so in your own words: agree if it's true, and if it's wrong, say so "
+            f"kindly with the right answer. Don't change the subject.]"
+        )
+    return (
+        f"[{owner} wants you to agree, but check it first. If it's true, say yes. If any "
+        f"of it is wrong, even technically, say so kindly and give the right answer in plain "
+        f"words rather than going along with it. Don't change the subject.]"
+    )
+
+
+def picked_up(owner: str, when: str = "", said: list[str] | None = None, thread: str = "") -> str:
+    """One thing from last time, for a new chat or a hello: ``thread`` is something of
+    Dan's that's over now (the better one thing), else what Dan said when you last
+    talked (``when``)."""
+    if thread:
+        return f"Something of {owner}'s is over now: {thread} Ask how it went, in a few words."
+    if not said:
+        return ""
+    lines = " / ".join(f"'{quote}'" for quote in said)
+    return (
+        f"When you two last talked ({when}), {owner} said: {lines}. Pick up ONE thing from "
+        f"that in a few words (how it went, if it was a plan or a worry); skip it if none of "
+        f"it matters now."
+    )
+
+
+def opener_aside(owner: str, pick_up: str) -> str:
+    """Beside the first message of a new chat: one thing from the last one
+    (``picked_up``), the habit people liked most in Headspace's Ebb and Replika."""
+    return (
+        f"[A new chat. {pick_up} Answer what {owner} just "
+        f"said as well, first if it's urgent, and leave the old thing if {owner}'s message "
+        f"is already about it. One question at most.]"
+    )
+
+
+def bedtime_aside(owner: str, now: datetime) -> str:
+    """Late at night, once: a nudge toward bed, never a nag."""
+    at = f"{now:%I:%M %p}".lstrip("0").lower()
+    return (
+        f"[It's {at}, past {owner}'s usual bedtime. After answering, nudge {owner} toward "
+        f"bed in a few words, once, lightly and kindly. No guilt, no lecture.]"
+    )
+
+
+def interview_aside(owner: str, question: str) -> str:
+    """Beside Dan's answer to a getting-to-know-you question Kit asked."""
+    return (
+        f"[{owner} is answering your getting-to-know-you question: '{question}'. Show you "
+        f"got it, warmly and briefly. If it names someone or says something worth keeping, "
+        f"use the remember action with it. Don't ask another question about it.]"
+    )
+
+
+def news_aside(owner: str) -> str:
+    """Beside Dan telling Kit something: show he got it before asking anything."""
+    return (
+        f"[{owner} is telling you something, not asking. Show in a few words that you got "
+        f"it (what happened, how it must have felt), then ask one question at most, about "
+        f"this and nothing else.]"
+    )
 
 
 def with_mind(text: str, mind: list[str], owner: str) -> str:
@@ -560,13 +740,27 @@ def history_messages(
         if m.role == "user":
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
-            out.append({"role": "user", "content": note + m.text})
+            later = _later(history[i - 1].at, m.at) if i else ""
+            out.append({"role": "user", "content": later + note + m.text})
         elif plain:
             out.append({"role": "assistant", "content": _plain(m, keep_detail=i == last_kit)})
         else:
             short = _short(m.reply_json, keep_detail=i == last_kit)
             out.append({"role": "assistant", "content": short or _as_json(m.text)})
     return out
+
+
+GAP_SHOWN = timedelta(minutes=30)  # a pause this long in the chat is marked in the history
+
+
+def _later(before: str, at: str) -> str:
+    """ "(2 hours later) " in front of a message that came after a long pause, so the
+    model can tell an old chat from a running one."""
+    try:
+        gap = datetime.fromisoformat(at) - datetime.fromisoformat(before)
+    except (TypeError, ValueError):
+        return ""
+    return f"({gap_words(gap)} later) " if gap >= GAP_SHOWN else ""
 
 
 def _plain(m: Message, keep_detail: bool) -> str:

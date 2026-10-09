@@ -55,7 +55,14 @@ def test_he_plans_in_json_then_speaks_in_plain_words_livelier(memory):
     assert speak[-1]["content"].startswith(
         '[Not from Dan. Dan just said: "Morning Kit". Now say your reply to Dan.'
     )
-    assert model.speak_options[0] == {"temperature": 0.95, "min_p": 0.05, "repeat_penalty": 1.08}
+    assert model.speak_options[0] == {
+        "temperature": 0.95,
+        "min_p": 0.05,
+        "top_k": 64,
+        "top_p": 0.95,
+        "repeat_penalty": 1.08,
+        "repeat_last_n": 64,
+    }
     assert says(events) == "Morning. Coffee first?"
     final = events[-1]["reply"]
     assert final["emotion"] == "playful"
@@ -410,6 +417,42 @@ def test_the_conversation_is_read_ahead_once_his_voice_is_quiet(memory, quick_wa
     # The next message's prompt carries straight on from what was read ahead, so the
     # model only has Dan's message left to read.
     assert then[: len(ahead)] == ahead and len(then) == len(ahead) + 1
+
+
+def test_in_cloud_only_the_local_model_stands_in_without_reading_ahead(memory, quick_warm):
+    """There it only answers what Dan keeps local: reading ahead would only load it
+    back onto the GPU after every reply."""
+    brain, model = make(
+        memory, reply("Righto."), ollama={"warm_up": True}, routing={"mode": "cloud-only"}
+    )
+    brain.voice_quiet = lambda: 5.0
+
+    async def go():
+        [e async for e in brain.chat("How's things? Keep it local please")]
+        await asyncio.sleep(0.1)
+
+    asyncio.run(go())
+    assert "\n\nIt is " in model.calls[0][0]["content"]  # its usual prompt
+    assert model.calls[0][-1]["content"].endswith("Keep it local please")
+    assert model.warm_calls == []
+
+
+def test_a_pipe_up_he_keeps_to_himself_leaves_the_read_ahead_be(memory, quick_warm):
+    brain, model = make(
+        memory, reply("Morning."), ollama={"warm_up": True}, life={"pipe_up_bar": 1.0}
+    )
+    quiet = [0.0]
+    brain.voice_quiet = lambda: quiet[0]
+
+    async def go():
+        [e async for e in brain.chat("Morning Kit")]
+        assert [e async for e in brain.pipe_up("bored")] == []  # scored under the bar
+        quiet[0] = 5.0
+        await asyncio.sleep(0.1)
+
+    asyncio.run(go())
+    [ahead] = model.warm_calls
+    assert ahead[-1] == {"role": "assistant", "content": "Morning."}
 
 
 def test_a_message_before_the_read_ahead_starts_cancels_it(memory, quick_warm):

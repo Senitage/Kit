@@ -21,9 +21,13 @@ speak_pass = true
 speak_temperature = 0.95     # his spoken words and his private thoughts
 min_p = 0.05                 # keeps a high temperature sensible; 0 is off
 repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
+repeat_last_n = 64           # how far back repeat_penalty looks, in tokens
+top_k = 64                   # Gemma's suggested sampling: only the likeliest 64 words
+top_p = 0.95                 # ...that make up 95% of the chance
 # Read the conversation into the model ahead of your next message, once Kit and
 # his voice have finished, so he starts answering sooner (about two seconds on
-# Gemma, which otherwise re-reads the whole prompt every message).
+# Gemma, which otherwise re-reads the whole prompt every message). Not in
+# cloud-only routing, where the local model only stands in.
 warm_up = false
 
 [routing]
@@ -32,19 +36,37 @@ warm_up = false
 #   balanced     the local model takes small talk and quick commands, the cloud
 #                takes real questions, work and anything current
 #   cloud-first  the cloud answers everything
+#   cloud-only   the chat model answers everything (even goodbyes, and chat while
+#                another model is busy) and hands real work to the work model
 # Say "keep it local", "ask Claude" or "think hard" to choose for one message.
 mode = "balanced"
 # Which model profile (see [models] below, or `kit models`) does what.
+chat = "haiku"      # cloud-only: everyday messages
 work = "sonnet"
 expert = "opus"
+# When the work model decides a question needs the expert, Kit asks you first.
+# "Think hard" still goes straight to it.
+confirm_expert = true
 # If the cloud can't be reached, the local model answers instead.
 fallback_to_local = true
+# "Perth's the capital, isn't it?": the work model checks it quickly and Kit
+# says the answer himself, rather than the local model going by what it knows.
+check_facts = true
+# The moments that matter get the work model's words in Kit's voice: his hello
+# after a night or more away, and his answer when you share something sad or
+# stressful. Never for "keep it local"; the local model steps in if need be.
+key_moments = true
+key_moment_strength = 0.7
+key_moment_hellos = ["overnight", "days", "long"]
 
 [cloud]
 # Kit stops using cloud models once this month's spend reaches the cap.
 monthly_cap_usd = 40.0
+# As it runs low, calls give way in order, each this much sooner: evals, then
+# fact checks and key moments, then chat. His nightly reflection gets the last.
+reserve_usd = 3.0
 
-# Built-in model profiles: sonnet, opus, gpt-sol and gemini-flash. Change any
+# Built-in model profiles: sonnet, opus, haiku, gpt-sol and gemini-flash. Change any
 # field here (prices change), or add your own and point a role at it.
 # Each needs its provider's API key in the secrets folder; see docs/stage-0-setup.md.
 # [models.sonnet]
@@ -70,6 +92,9 @@ relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
 own_memories = 3             # from his own notebook: thoughts, opinions, moments, journal
+weight_floor = 0.3           # what matters more and was recalled lately comes first; 1 is off
+now_days = 14                # "how you've been lately" memories fade after this
+day_pass = "work"            # who sorts each day's memories after midnight: work (Sonnet) or local
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.
@@ -112,5 +137,27 @@ own_memories = 3             # from his own notebook: thoughts, opinions, moment
 # think_every_minutes = 8   # a private thought in a quiet moment while you're around
 # thoughts_per_hour = 6     # each is a quick local model call; 0 stops them
 # reflect_with = "cloud"    # who writes his journal and self-sheet each night:
-#                           # cloud (the work model, a few cents), local, or off
+#                           # cloud (a few cents), local, or off
+# reflect_role = "expert"   # which cloud model: expert (Opus) or work (Sonnet)
 # weekly_review = true      # the expert model reviews how he's changed, weekly
+# homecoming = true         # glad when you're back after 20 min or more; says hello once
+# miffed = true             # hours gone in the daytime with no goodbye: one mock huff
+# miffed_after_days = 7     # ...but not in his first week
+# games = true              # at most one small game a day, when he's bored
+# threads = true            # "dentist Thursday arvo": he asks how it went, once
+# chat_opener = true        # a new chat picks up one thing from the last one
+# interview = true          # one getting-to-know-you question a day, till he knows
+# nudges = true             # once a day each: toward bed, and outside after a long stretch
+# bedtime = "22:30"
+# desk_hours = 3.0          # at the desk this long without a break: the outside nudge
+# work_triggers = false     # curious about work apps, sites and builds on screen
+# alone_thoughts_per_hour = 0  # away life: he entertains himself while you're out and
+#                           # thinks about it this often (local model only); 1 is plenty
+# week_thoughts = false     # Monday, Friday and Saturday mornings, WA public holidays
+# read_mood = "words"       # words, or meaning (after a passed `kit eval mood`)
+# mixed_feelings = false    # two feelings at once
+# bad_night = true          # a really bad time: no cheek, he stays, mentions Lifeline once
+# energy_need = false       # chats, cloud jobs and late nights tire him; sleep restores
+# opinions = 0              # standing opinions he keeps in mind when he talks (0 to 2)
+# dials = false             # liveliness and happiness dials that the face shows
+# pipe_up_bar = 0.0         # score a pipe-up first and keep quiet below this (0.5)
