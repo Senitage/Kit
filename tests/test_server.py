@@ -82,6 +82,20 @@ def test_undo_with_nothing_to_undo(setup):
     assert client.post("/api/settings/undo", headers=AUTH).status_code == 422
 
 
+def test_face_serves_the_character_sheet(setup):
+    client, _, _ = setup
+    assert client.get("/api/face").status_code == 401
+    sheet = client.get("/api/face", headers=AUTH).json()
+    assert sheet["name"] == "Retro"
+    assert "happy" in sheet["poses"] and "nod" in sheet["gestures"]
+    presets = client.get("/api/face/presets", headers=AUTH).json()
+    assert presets["current"] == "retro"
+    assert {"id": "retro", "name": "Retro"} in presets["presets"]
+    assert client.get("/api/status", headers=AUTH).json()["face"] == "retro"
+    bad = client.patch("/api/settings", json={"face": {"character": "nope"}}, headers=AUTH)
+    assert bad.status_code == 422
+
+
 def test_schema_and_status(setup, paths):
     client, _, _ = setup
     schema = client.get("/api/settings/schema", headers=AUTH).json()
@@ -96,6 +110,10 @@ def test_facts_and_spend(setup):
     client.post("/api/chat", json={"text": "ask claude why"}, headers=AUTH)
     spend = client.get("/api/spend", headers=AUTH).json()
     assert spend["month_usd"] > 0 and spend["log"][0]["question"] == "ask claude why"
+    summary = client.get("/api/spend/summary?days=7", headers=AUTH).json()
+    assert len(summary["days"]) == 7 and summary["total_usd"] == spend["month_usd"]
+    assert summary["models"][0]["calls"] >= 1 and "cap_usd" in summary
+    assert client.get("/api/spend?limit=1", headers=AUTH).json()["log"][0]["question"]
     assert client.get("/api/memory/facts", headers=AUTH).json() == []
     assert client.delete("/api/memory/facts/1", headers=AUTH).status_code == 404
 

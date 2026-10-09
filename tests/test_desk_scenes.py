@@ -38,7 +38,7 @@ def render(show=None, t=0.0):
             p,
             QRectF(0, 0, SIZE, SIZE),
             frame,
-            eyes=scene.eyes(t),
+            shown=scene.eyes(t),
             inside=lambda q, s, c: scene.inside(q, s, t, c),
         )
         scene.over(p, SIZE, t)

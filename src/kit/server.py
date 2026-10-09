@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
+from kit.face import character as characters
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
@@ -41,7 +42,7 @@ NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes
 
 class ChatIn(BaseModel):
     text: str
-    # Where Dan is talking from (kit.channels): desk, voice, phone, web or terminal.
+    # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
 
 
@@ -158,6 +159,20 @@ def create_app(
     def health() -> dict:
         return {"ok": True, "name": store.current().persona.name, "version": kit.__version__}
 
+    @app.get("/api/face", dependencies=auth)
+    def face() -> dict:
+        """The character sheet Kit is set to (face.character), so every app that draws
+        him draws the same Kit."""
+        return characters.preset(store.current().face.character).sheet
+
+    @app.get("/api/face/presets", dependencies=auth)
+    def face_presets() -> dict:
+        """Every character Kit can be, and which one he is now."""
+        return {
+            "current": store.current().face.character,
+            "presets": [{"id": n, "name": characters.preset(n).name} for n in characters.presets()],
+        }
+
     @app.get("/api/status", dependencies=auth)
     def status() -> dict:
         s = store.current()
@@ -172,6 +187,7 @@ def create_app(
             "cloud_month_usd": round(memory.month_spend(), 4),
             "cloud_cap_usd": s.cloud.monthly_cap_usd,
             "working_on": brain.busy(),
+            "face": s.face.character,
             "memory_facts": len(memory.facts()),
             "memory_items": memory.index.count(),
             "memory_search": "words only: " + brain.recall.embed_problem
@@ -502,11 +518,20 @@ def create_app(
         return brain.life.state()
 
     @app.get("/api/spend", dependencies=auth)
-    def spend() -> dict:
+    def spend(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
         return {
             "month_usd": round(memory.month_spend(), 4),
             "cap_usd": store.current().cloud.monthly_cap_usd,
-            "log": [s.__dict__ for s in memory.spend_log()],
+            "log": [s.__dict__ for s in memory.spend_log(limit)],
+        }
+
+    @app.get("/api/spend/summary", dependencies=auth)
+    def spend_summary(days: Annotated[int, Query(ge=1, le=366)] = 30) -> dict:
+        """Cloud spend per day and per model, for a chart (the home_app Kit page)."""
+        return {
+            **memory.spend_summary(days),
+            "month_usd": round(memory.month_spend(), 4),
+            "cap_usd": store.current().cloud.monthly_cap_usd,
         }
 
     return app

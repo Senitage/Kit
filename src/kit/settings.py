@@ -20,6 +20,8 @@ from pydantic import (
     model_validator,
 )
 
+from kit.face import character as characters
+
 SCHEMA_VERSION = 1
 
 
@@ -641,6 +643,18 @@ class LifeSettings(_Section):
         return f"{int(h):02d}:{m}"
 
 
+CharacterName = Literal[tuple(characters.presets())]  # type: ignore[valid-type]
+
+
+class FaceSettings(_Section):
+    character: CharacterName = Field(
+        characters.DEFAULT,
+        description="Which character Kit is: how he looks and moves in the desk app, "
+        "home_app and on his robots. Retro is the original glowing pill eyes; switch "
+        "back any time.",
+    )
+
+
 class MemorySettings(_Section):
     embed_model: str = Field(
         "nomic-embed-text",
@@ -714,6 +728,7 @@ class Settings(_Section):
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
+    face: FaceSettings = Field(default_factory=FaceSettings)
 
     @field_validator("models", mode="before")
     @classmethod
