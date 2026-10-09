@@ -27,6 +27,7 @@ CHANNELS: dict[str, tuple[str, str]] = {
         "they can see it.",
     ),
     "web": ("typing on your chat page in a browser", ""),
+    "home": ("typing on your page in their home_app website, in a browser", ""),
     "terminal": ("typing in the terminal", ""),
 }
 DEFAULT = "web"
@@ -35,6 +36,7 @@ SHORT = {
     "voice": "voice",
     "phone": "their phone",
     "web": "the chat page",
+    "home": "your home_app page",
     "terminal": "the terminal",
 }
 
