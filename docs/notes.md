@@ -33,7 +33,7 @@ Change `Notes` to your share's name if it's different (it's case sensitive):
 
 ```
 sudo mkdir -p /mnt/nas/notes
-echo '//192.168.86.109/Notes  /mnt/nas/notes  cifs  credentials=/etc/kit-nas.cred,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab
+echo '//192.168.1.50/Notes  /mnt/nas/notes  cifs  credentials=/etc/kit-nas.cred,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail,x-systemd.automount 0 0' | sudo tee -a /etc/fstab
 sudo systemctl daemon-reload
 sudo mount /mnt/nas/notes
 ls /mnt/nas/notes
@@ -41,7 +41,7 @@ touch /mnt/nas/notes/.kit-test && rm /mnt/nas/notes/.kit-test && echo writable
 ```
 
 If the share is a folder inside another shared folder, put the whole path in
-the first column, for example `//192.168.86.109/home/Notes`. Mount error 13
+the first column, for example `//192.168.1.50/home/Notes`. Mount error 13
 means the `kit` user doesn't have permission yet (step 1).
 
 ## 3. Tell Kit where it is
