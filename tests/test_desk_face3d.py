@@ -108,7 +108,7 @@ def test_glow_stops_only_while_kits_model_is_on_screen():
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QBuffer, QByteArray, QTimer
     from PySide6.QtGui import QColor, QPixmap
     from PySide6.QtWidgets import QApplication
 
@@ -118,15 +118,29 @@ def test_glow_stops_only_while_kits_model_is_on_screen():
     widget = FaceWidget()
     widget.resize(40, 40)
 
-    class Page:  # stands in for the off-screen web view
-        def grab(self):
-            frame = QPixmap(40, 40)
-            frame.fill(QColor(255, 0, 0))
-            return frame
+    def png(colour):
+        frame = QPixmap(40, 40)
+        frame.fill(colour)
+        data = QByteArray()
+        buffer = QBuffer(data)
+        frame.save(buffer, "PNG")
+        return face3d.PNG_PREFIX + bytes(data.toBase64()).decode()
+
+    class Page:  # stands in for the off-screen web view and its page
+        answer = png(QColor(255, 0, 0))
+
+        def page(self):
+            return self
+
+        def runJavaScript(self, js, world, callback):  # noqa: N802 (Qt's name)
+            assert js == face3d.FRAME_JS
+            callback(self.answer)
 
     shown = face3d.Face3D.__new__(face3d.Face3D)  # no web engine: just the hand-over
     shown.widget, shown.view, shown.frame = widget, Page(), None
     shown.covering, shown._ready = False, True
+    shown.grabs = shown.blanks = 0
+    shown._told, shown._asking = 0.0, False
     shown._paint = face3d._Paint(shown)
     shown._frames = QTimer(widget)
     assert widget._timer.isActive()
@@ -134,6 +148,10 @@ def test_glow_stops_only_while_kits_model_is_on_screen():
     shown._drawn(True)
     assert shown.covering and not widget._timer.isActive() and shown._frames.isActive()
     assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)  # the page's frame
+    Page.answer = png(QColor(0, 0, 0, 0))  # an empty frame keeps the last good one
+    shown._grab()
+    assert shown.blanks == 0 and shown.grabs == 0  # counted, then logged and reset
+    assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)
     widget.face.tick(0.0)
     shown._tick_face()  # the rig still runs: moods expire, gaze follows the mouse
     assert widget.face._last > 0.0

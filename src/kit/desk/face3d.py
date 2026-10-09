@@ -19,6 +19,7 @@ engine is missing or the page can't load, Glow stays.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
@@ -35,6 +36,8 @@ log = logging.getLogger(__name__)
 APP = "desk"
 STEP_MS = 50  # how often face changes are copied to the page
 FRAME_MS = 33  # how often the page's picture is copied to the window (~30 fps)
+FRAME_JS = "window.kit && kit.frame ? kit.frame() : null"
+PNG_PREFIX = "data:image/png;base64,"
 
 
 def available() -> bool:
@@ -103,6 +106,17 @@ class Mirror:
         return out
 
 
+def _blank(frame: QPixmap) -> bool:
+    """Whether a frame has nothing in it: Kit sits in the middle, so a frame with
+    nothing drawn across its middle is empty."""
+    if frame.isNull() or frame.width() < 4 or frame.height() < 4:
+        return True
+    img = frame.toImage()
+    w, h = img.width(), img.height()
+    y = h // 2
+    return all(img.pixelColor(w * i // 8, y).alpha() == 0 for i in range(2, 7))
+
+
 class _Paint(QObject):
     """Paints the 3D page's latest frame in the Glow window instead of Glow."""
 
@@ -160,6 +174,9 @@ class Face3D:
         self.covering = False  # Kit's model is drawn, so Glow is stopped
         self._steps = 0
         self.loads = 0  # page loads, for the log: a page reloading over and over shows here
+        self.grabs = self.blanks = 0  # frames copied, and how many came back empty
+        self._asking = False  # a frame has been asked for and not come back yet
+        self._told = time.monotonic()
         self.view.load(QUrl(self.url))
         self.view.show()
         self._timer.start(STEP_MS)
@@ -186,6 +203,7 @@ class Face3D:
         log.info("Kit's 3D face %s", "shown" if on else "hidden; showing Glow")
         glow_timer = getattr(self.widget, "_timer", None)
         if on:
+            self._asking = False
             self._grab()
             self.widget.installEventFilter(self._paint)
             self._frames.start(FRAME_MS)
@@ -200,9 +218,34 @@ class Face3D:
         self.widget.update()
 
     def _grab(self) -> None:
-        """Copy the page's picture and repaint the window with it."""
-        self.frame = self.view.grab()
-        self.widget.update()
+        """Ask the page for its picture; ``_take`` paints it when it comes back. The
+        page draws and reads the picture in one go, so it is never half drawn or
+        empty, which copying the off-screen view itself can be on Windows."""
+        if self._asking:
+            return
+        self._asking = True
+        self.view.page().runJavaScript(FRAME_JS, 0, self._take)
+
+    def _take(self, data) -> None:
+        self._asking = False
+        if not self.covering:
+            return
+        frame = None
+        if isinstance(data, str) and data.startswith(PNG_PREFIX):
+            frame = QPixmap()
+            frame.loadFromData(base64.b64decode(data[len(PNG_PREFIX) :]), "PNG")
+        elif data is None:
+            frame = self.view.grab()  # a brain without kit.frame yet
+        self.grabs += 1
+        if frame is None or _blank(frame):
+            self.blanks += 1
+        else:
+            self.frame = frame
+            self.widget.update()
+        now = time.monotonic()
+        if self.blanks and now - self._told > 60:
+            log.info("Kit's 3D face: %d of %d frames came back empty", self.blanks, self.grabs)
+            self._told, self.blanks, self.grabs = now, 0, 0
 
     def _drawn(self, drawn) -> None:
         self._cover(bool(drawn) and self._ready)
