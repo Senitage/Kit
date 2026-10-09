@@ -705,10 +705,15 @@ class LookPage(QWidget):
         self.font_pt.setValue(config.font_pt)
         self.font_pt.valueChanged.connect(self._changed)
         form.addRow("Text size", self.font_pt)
-        self.speech = QCheckBox("Say replies in a speech bubble when the chat is closed")
+        self.speech = QCheckBox("Show what Kit says in a bubble under his face")
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
         form.addRow(self.speech)
+        self.boop = QCheckBox("Boop when Kit says something")
+        self.boop.setToolTip("A little noise so you don't miss him. Turn it off once he talks.")
+        self.boop.setChecked(config.boop)
+        self.boop.toggled.connect(self._changed)
+        form.addRow(self.boop)
         layout.addLayout(form)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -729,6 +734,7 @@ class LookPage(QWidget):
             face_size=self.size.value(),
             font_pt=self.font_pt.value(),
             speech_bubble=self.speech.isChecked(),
+            boop=self.boop.isChecked(),
         )
 
     def _changed(self, *_args) -> None:
@@ -757,6 +763,14 @@ class LookPage(QWidget):
         self.size.setValue(d.face_size)
         self.font_pt.setValue(d.font_pt)
         self.speech.setChecked(d.speech_bubble)
+        self.boop.setChecked(d.boop)
+
+    def show_boop(self, on: bool) -> None:
+        """The tray's boop switch changed: show it here without saving again."""
+        self.boop.blockSignals(True)
+        self.boop.setChecked(on)
+        self.boop.blockSignals(False)
+        self.config = replace(self.config, boop=on)
 
 
 # Updates

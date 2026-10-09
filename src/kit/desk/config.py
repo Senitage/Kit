@@ -71,7 +71,8 @@ class DeskConfig:
     accent: str = "#3b78d8"
     eye_colour: str = "#7ef3e6"
     font_pt: float = 10.5
-    speech_bubble: bool = True  # say replies beside the face while the chat is closed
+    speech_bubble: bool = True  # say what Kit says in a bubble under his face
+    boop: bool = True  # a little noise when he says something (kit.desk.sound)
     chat_width: int = 460
     chat_height: int = 640
     # Updates (kit.desk.update).

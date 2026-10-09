@@ -495,3 +495,69 @@ def test_a_reaction_plays_even_mid_conversation(qapp, desk_dir, monkeypatch):
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def _wait(qapp, seconds):
+    import time as _t
+
+    end = _t.time() + seconds
+    while _t.time() < end:
+        qapp.processEvents()
+
+
+def test_what_kit_says_sits_under_his_face_and_he_hops_up_for_room(qapp):
+    face = desk_app.HelperFace(150)
+    screen = face.screen().availableGeometry()
+    home = desk_app.QPoint(screen.right() - 174, screen.bottom() - 154)  # tucked in the corner
+    face.move(home)
+    face.show()
+    bubble = desk_app.SpeechBubble(face)
+    bubble.setText("Righto, the kettle's on.")
+    _wait(qapp, 0.5)
+    f = face.frameGeometry()
+    assert bubble.isVisible() and face.pos() != home  # hopped up to make room
+    assert bubble.y() >= f.top() + int(f.height() * 0.8)  # under his face, not over it
+    assert bubble.geometry().bottom() <= screen.bottom()
+    bubble.setText("")
+    _wait(qapp, 0.5)
+    assert not bubble.isVisible() and face.pos() == home  # settled back down
+    bubble.idle_text = lambda: "watching the rain..."
+    bubble.setText("")
+    assert bubble.isVisible() and bubble.text() == "watching the rain..."
+    bubble.hide()
+    face.close()
+
+
+def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    played = []
+    desk.sounds.player = lambda path: played.append(path.name)
+    desk.performer.perform = lambda reply: None
+    try:
+        desk.show_chat()  # even with the chat open
+        desk._act_out(reply_event("Hi")["reply"])
+        assert played == ["boop-1.wav"] and desk.bubble.enabled
+        desk._on_life({"type": "pipe_up", "reply": reply_event("Psst.")["reply"]})
+        _wait(qapp, 1.0)
+        assert played[-1] == "bip_boop-1.wav"
+        desk.boop_action.setChecked(False)  # the tray switch
+        assert DeskConfig.load(desk_dir).boop is False
+        desk._act_out(reply_event("Quiet now")["reply"])
+        assert len(played) == 2
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
+def test_the_boop_is_a_short_wav():
+    import io
+    import wave
+
+    from kit.desk.sound import SOUNDS, tone
+
+    with wave.open(io.BytesIO(tone(SOUNDS["boop"]))) as w:
+        assert w.getnchannels() == 1 and 0.1 < w.getnframes() / w.getframerate() < 0.3
