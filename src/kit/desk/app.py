@@ -3,7 +3,7 @@
 - Kit sits in the taskbar tray as his face. Click it (or the face) for the chat;
   right-click for the menu.
 - Glow floats on screen, always on top, and can be dragged anywhere. He acts out
-  each reply, says it in a little speech bubble when the chat is closed, and
+  each reply, says it in a speech bubble under his face (with a boop), and
   goes grey when he can't reach the brain.
 - Every couple of seconds the app checks which windows are open and which has
   focus, and tells the brain when that changes (``kit.desk.watch``). Window
@@ -479,6 +479,7 @@ class DeskApp(QObject):
         self.boop_action.toggled.connect(self.set_boop)
         menu.addAction(self.boop_action)
         menu.addSeparator()
+        menu.addAction("How Kit's feeling...", lambda: self.open_window("Mood"))
         menu.addAction("What Kit remembers...", lambda: self.open_window("Memory"))
         menu.addAction("Settings...", lambda: self.open_window("Kit's settings"))
         menu.addAction("Look...", lambda: self.open_window("Look"))
@@ -641,6 +642,7 @@ class DeskApp(QObject):
             )
             self.window.setWindowIcon(face_icon(eye=self.config.eye_colour))
             self.window.apply_look(self._palette(), self.config.font_pt)
+            self.window.mood.face.eye = QColor(self.config.eye_colour)
             self.window.pc.saved.connect(self.save_pc)
             self.window.look.changed.connect(self.set_look)
             self.window.updates.settings_changed.connect(self._update_settings)
@@ -665,6 +667,7 @@ class DeskApp(QObject):
         self.chat.apply_look(palette, self.config.font_pt)
         if self.window is not None:
             self.window.apply_look(palette, self.config.font_pt)
+            self.window.mood.face.eye = QColor(self.config.eye_colour)
         self.face.eye = QColor(self.config.eye_colour)
         if self.face.width() != self.config.face_size:
             centre = self.face.frameGeometry().center()
@@ -854,7 +857,7 @@ class DeskApp(QObject):
 
     def _show_doing(self) -> None:
         """What Kit's doing on his own ("watching the rain...") in his bubble, while
-        the chat's closed and he isn't saying anything."""
+        he isn't saying anything."""
         if self._busy() or not self.config.speech_bubble:
             return
         self.bubble.enabled = True

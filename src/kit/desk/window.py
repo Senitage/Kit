@@ -1,4 +1,6 @@
-"""Kit's window on the desk PC: Memory, Kit's settings, This PC, Look and Updates.
+"""Kit's window on the desk PC: Mood, Memory, Kit's settings, This PC, Look and Updates.
+
+Mood shows how Kit is, like a Sims needs panel (kit.desk.mood); it only looks.
 
 Memory and Kit's settings are the same as the brain's memory and settings pages
 (they use the same API), so a change here shows there and the other way round.
@@ -51,6 +53,7 @@ from kit.desk import startup, theme
 from kit.desk.client import BrainClient
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
+from kit.desk.mood import MoodPage
 from kit.desk.update import VERSION, Release, Updater
 
 # Tests flip this so background calls finish before the next line runs.
@@ -921,7 +924,7 @@ class _Progress(QObject):
 class KitWindow(QWidget):
     """Kit's window, opened from the tray menu or the ⚙ in the chat."""
 
-    PAGES = ["Memory", "Kit's settings", "This PC", "Look", "Updates"]
+    PAGES = ["Mood", "Memory", "Kit's settings", "This PC", "Look", "Updates"]
 
     def __init__(
         self,
@@ -939,6 +942,7 @@ class KitWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.resize(900, 660)
         self.setMinimumSize(620, 460)
+        self.mood = MoodPage(client, in_background)
         self.memory = MemoryPage(client, brain_url)
         self.brain_settings = BrainSettingsPage(client, brain_url)
         self.pc = PcPage(config, token)
@@ -950,7 +954,7 @@ class KitWindow(QWidget):
         self.nav.setFixedWidth(180)
         self.nav.addItems(self.PAGES)
         self.stack = QStackedWidget()
-        for page in (self.memory, self.brain_settings, self.pc, self.look, self.updates):
+        for page in (self.mood, self.memory, self.brain_settings, self.pc, self.look, self.updates):
             self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self._go)
         layout = QHBoxLayout(self)
@@ -974,3 +978,4 @@ class KitWindow(QWidget):
 
     def apply_look(self, palette: theme.Palette, font_pt: float) -> None:
         self.setStyleSheet(theme.window_style(palette, font_pt))
+        self.mood.apply_look(palette)

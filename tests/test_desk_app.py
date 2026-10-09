@@ -584,3 +584,44 @@ def test_a_show_plays_as_he_answers(qapp, desk_dir, monkeypatch):
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+LIFE = {
+    "mood": "curious",
+    "presence": "alone",
+    "doing": "watching the rain",
+    "energy": 0.8,
+    "drives": {"boredom": 0.3, "curiosity": 0.55, "social": 0.6, "energy": 0.8},
+    "dials": {"arousal": 0.7, "valence": 0.4},
+    "feeling": {"name": "chuffed", "why": "Dan said thanks for the reminder"},
+    "closeness": "good mates",
+    "thinking": "Whether the cat likes rain.",
+    "wants": ["the weather bet"],
+}
+
+
+def test_the_mood_page_shows_his_needs_and_cant_change_them(qapp, sync_window, tmp_path):
+    from PySide6.QtWidgets import QAbstractButton, QAbstractSpinBox, QLineEdit, QSlider
+
+    brain = FakeBrain()
+    brain.life = lambda: LIFE
+    win = make_window(sync_window, brain, tmp_path)
+    win.show_page("Mood")
+    page = win.mood
+    assert page.mood.text() == "Curious"
+    assert "watching the rain" in page.presence.text()
+    assert "chuffed" in page.feeling.text() and "thanks" in page.feeling.text()
+    bars = {name: bar.target for name, bar in page.bars.items()}
+    assert bars["Energy"] == pytest.approx(0.8)
+    assert bars["Fun"] == pytest.approx(0.7)  # not bored
+    assert bars["Company"] == pytest.approx(0.4)  # wants company
+    assert bars["Happiness"] == pytest.approx(0.7)
+    assert page.face.face.emotion == "happy"  # chuffed
+    assert 0.6 < page.gem.level < 0.7
+    # Only to look at: nothing on the page can set a need.
+    for kind in (QAbstractButton, QSlider, QAbstractSpinBox, QLineEdit):
+        assert not page.findChildren(kind)
+    brain.life = lambda: {**LIFE, "dials": None, "mood": "asleep", "feeling": None}
+    page.refresh()
+    assert "Happiness" not in page.bars and page.face.face.state == "sleeping"
+    win.close()

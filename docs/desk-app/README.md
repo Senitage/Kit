@@ -13,7 +13,10 @@ your PC.
 |---|---|
 | `src/kit/desk/` | The app itself, all Python (PySide6 for the windows). `app.py` starts it. |
 | `src/kit/desk/chat.py` | The chat window. |
-| `src/kit/desk/window.py` | Kit's window: Memory, Kit's settings, This PC, Look, Updates. |
+| `src/kit/desk/window.py` | Kit's window: Mood, Memory, Kit's settings, This PC, Look, Updates. |
+| `src/kit/desk/mood.py` | The Mood page: his face, mood gem and needs bars, read from the brain. |
+| `src/kit/desk/scenes.py` | What Glow shows when the brain sends a show: the time, the date, the weather. |
+| `src/kit/desk/sound.py` | The boop when he says something. |
 | `src/kit/desk/theme.py` | Colours and styles, from the Look page. |
 | `src/kit/desk/update.py` | The update check and download. |
 | `src/kit/desk/browser_extension/` | The Chrome extension. |
