@@ -15,10 +15,16 @@ import httpx
 # A cloud answer with web searches can take a minute or two to arrive.
 CHAT_TIMEOUT = httpx.Timeout(10.0, read=300.0)
 TIMEOUT = httpx.Timeout(5.0)
+# A voice engine that's still loading (Chatterbox, the first time) can take minutes.
+SPEAK_TIMEOUT = httpx.Timeout(5.0, read=300.0)
 
 
 class BrainError(Exception):
     """The brain couldn't be reached, or said no. The message is fit to show Dan."""
+
+
+class SpeechOff(BrainError):
+    """Kit's speech is turned off on the server."""
 
 
 class BrainClient:
@@ -75,6 +81,26 @@ class BrainClient:
 
     def new_chat(self) -> None:
         self._call("POST", "/api/chat/new")
+
+    # Kit's voice (made on the server, played here).
+
+    def speech_status(self) -> dict:
+        return self._call("GET", "/api/speech").json()
+
+    def speak(self, text: str, emotion: str = "neutral", first: bool = False) -> bytes:
+        """One sentence as a WAV file. Raises SpeechOff if speech is turned off."""
+        try:
+            r = self._http.post(
+                "/api/speech/say",
+                json={"text": text, "emotion": emotion, "first": first},
+                timeout=SPEAK_TIMEOUT,
+            )
+        except httpx.HTTPError as e:
+            raise BrainError(f"Kit's voice didn't answer ({type(e).__name__}).") from e
+        if r.status_code == 409:
+            raise SpeechOff(r.text)
+        _check(r)
+        return r.content
 
     # Kit's settings, as on the settings page.
 

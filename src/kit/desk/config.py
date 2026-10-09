@@ -72,6 +72,7 @@ class DeskConfig:
     eye_colour: str = "#7ef3e6"
     font_pt: float = 10.5
     speech_bubble: bool = True  # say what Kit says in a bubble under his face
+    words_with_voice: bool = True  # with his voice on, his words show as he says them
     boop: bool = True  # a little noise when he says something (kit.desk.sound)
     movement: str = "lively"  # how much he moves: still, a_little, lively or bouncy
     chat_width: int = 460

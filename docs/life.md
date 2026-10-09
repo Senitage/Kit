@@ -452,7 +452,8 @@ brain. They're instant and need nothing from the server:
   climbs back to his spot.
 
 Pipe-ups appear in his speech bubble and in the chat, so you can answer them.
-If his face is hidden, they show as a Windows notification.
+With his voice on (stage 3) he says them out loud too, unless he's already
+talking. If his face is hidden, they show as a Windows notification.
 
 Some things get a **reaction** the moment they happen, before any answer, so
 you can see he heard: he perks up when you're back, waves when you say goodbye,

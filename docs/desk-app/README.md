@@ -36,7 +36,9 @@ cooked from it each time.
 1. **Numbers the build.** On GitHub it writes the run number into
    `src/kit/desk/_build.py`, so the version reads `0.1.0.<run number>`, for
    example `0.1.0.57`. Each build is newer than the one before, which is how
-   the update check spots a new one. A build made by hand is `0.1.0.0`.
+   the update check spots a new one. A build made by hand is `0.1.0.0`. A pull
+   request's build also notes the pull request and its commit, which makes it a
+   *test build* (see Updates).
 2. **Freezes the app with PyInstaller.** PyInstaller collects Python itself, Kit's
    desk code, Qt and every library into a folder with `Kit.exe` in it, so the
    desk PC doesn't need Python installed.
@@ -82,6 +84,12 @@ Once Kit is installed you shouldn't need to download anything again:
   against GitHub's size and SHA-256 checksum. A damaged download is thrown away.
 - Kit then runs the installer quietly and closes. The installer replaces the
   files and starts Kit again, and your settings stay as they were.
+- A **test build** (a pull request's installer, from its run's Artifacts) is only
+  offered a release that has its changes, which is once the pull request is
+  merged. Releases are built from `main`, so a newer number alone could be older
+  code: Kit's voice was lost that way. Until then the Updates page says the newest
+  release was built without the test build's changes, and **Install it anyway**
+  goes back to it.
 
 Untick **Check for updates once a day** on the Updates page to stop the checks.
 

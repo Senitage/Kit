@@ -551,34 +551,39 @@ def test_look_changes_show_at_once_and_only_touch_the_look(qapp, desk_dir, monke
         desk.face.close()
 
 
-def test_updates_page_offers_a_newer_version(qapp, sync_window, tmp_path):
+class FakeUpdater:
+    def __init__(self, found):
+        self.found = found
+
+    def newer(self):
+        return self.found
+
+    def download(self, release, folder, progress=None):
+        path = folder / release.asset
+        path.write_bytes(b"MZ")
+        return path
+
+    def close(self):
+        pass
+
+
+def found_release(has_this_build=True):
     from kit.desk.update import Release
 
-    class FakeUpdater:
-        def __init__(self, found):
-            self.found = found
-
-        def newer(self):
-            return self.found
-
-        def download(self, release, folder, progress=None):
-            path = folder / release.asset
-            path.write_bytes(b"MZ")
-            return path
-
-        def close(self):
-            pass
-
-    found = Release("0.1.0.99", "desk-v0.1.0.99", "New chat look", "", "", "K.exe", "u", 2, "")
-    win = sync_window.KitWindow(
-        DeskConfig(),
-        "",
-        "",
-        lambda: None,
-        lambda: "",
-        tmp_path,
-        updater=lambda c, t: FakeUpdater(found),
+    return Release(
+        "0.1.0.99", "desk-v0.1.0.99", "New chat look", "", "", "K.exe", "u", 2, "", has_this_build
     )
+
+
+def updates_window(window, found, tmp_path):
+    updater = FakeUpdater(found)
+    return window.KitWindow(
+        DeskConfig(), "", "", lambda: None, lambda: "", tmp_path, updater=lambda c, t: updater
+    )
+
+
+def test_updates_page_offers_a_newer_version(qapp, sync_window, tmp_path):
+    win = updates_window(sync_window, found_release(), tmp_path)
     installs = []
     win.updates.install.connect(installs.append)
     win.show_page("Updates")
@@ -587,6 +592,45 @@ def test_updates_page_offers_a_newer_version(qapp, sync_window, tmp_path):
     win.updates.download()
     assert installs and installs[0].name == "K.exe"
     win.close()
+
+
+def test_updates_page_says_a_release_lacks_a_test_builds_changes(qapp, sync_window, tmp_path):
+    win = updates_window(sync_window, found_release(has_this_build=False), tmp_path)
+    installs = []
+    win.updates.install.connect(installs.append)
+    win.show_page("Updates")
+    win.updates.check()
+    assert "without this test build's changes" in win.updates.status.text()
+    assert win.updates.install_button.text() == "Install it anyway"
+    win.updates.download()  # Dan's choice: back to main's release
+    assert installs and installs[0].name == "K.exe"
+    win.close()
+
+
+def test_the_daily_check_only_offers_a_release_with_a_test_builds_changes(
+    qapp, desk_dir, sync_window, monkeypatch
+):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    told = []
+    monkeypatch.setattr(desk.tray, "showMessage", lambda *args: told.append(args))
+    try:
+        held = FakeUpdater(found_release(has_this_build=False))
+        monkeypatch.setattr(desk_app, "Updater", lambda repo, token: held)
+        desk.check_for_update()
+        assert desk.window is None and not told  # Kit keeps quiet: it'd lose the test
+        ready = FakeUpdater(found_release())
+        monkeypatch.setattr(desk_app, "Updater", lambda repo, token: ready)
+        desk.check_for_update()
+        assert desk.window.isVisible() and "0.1.0.99" in told[0][1]
+    finally:
+        desk.quit()
+        if desk.window is not None:
+            desk.window.close()
+        desk.chat.close()
+        desk.face.close()
 
 
 def test_a_new_topic_shows_as_a_note(qapp):
