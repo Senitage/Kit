@@ -51,7 +51,7 @@ from kit.desk import startup, theme
 from kit.desk.client import BrainClient
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
-from kit.desk.update import VERSION, Release, Updater
+from kit.desk.update import PULL, VERSION, Release, Updater
 
 # Tests flip this so background calls finish before the next line runs.
 SYNC = False
@@ -709,6 +709,10 @@ class LookPage(QWidget):
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
         form.addRow(self.speech)
+        self.in_step = QCheckBox("Show Kit's words as he says them (when his voice is on)")
+        self.in_step.setChecked(config.words_with_voice)
+        self.in_step.toggled.connect(self._changed)
+        form.addRow(self.in_step)
         layout.addLayout(form)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -729,6 +733,7 @@ class LookPage(QWidget):
             face_size=self.size.value(),
             font_pt=self.font_pt.value(),
             speech_bubble=self.speech.isChecked(),
+            words_with_voice=self.in_step.isChecked(),
         )
 
     def _changed(self, *_args) -> None:
@@ -757,6 +762,7 @@ class LookPage(QWidget):
         self.size.setValue(d.face_size)
         self.font_pt.setValue(d.font_pt)
         self.speech.setChecked(d.speech_bubble)
+        self.in_step.setChecked(d.words_with_voice)
 
 
 # Updates
@@ -783,7 +789,8 @@ class UpdatesPage(QWidget):
             "New versions of the desk app are published on GitHub. Kit checks once a day "
             "and asks before installing anything.",
         )
-        self.current = _label(f"This is Kit desk app {VERSION}.")
+        test = f", a test build from pull request #{PULL}" if PULL else ""
+        self.current = _label(f"This is Kit desk app {VERSION}{test}.")
         layout.addWidget(self.current)
         self.auto = QCheckBox("Check for updates once a day")
         self.auto.setChecked(config.check_updates)
@@ -862,7 +869,16 @@ class UpdatesPage(QWidget):
             self.install_button.hide()
             self.notes.setText("")
             return
-        self.status.setText(f"Version {result.version} is ready ({result.size // 1_000_000} MB).")
+        if result.has_this_build:
+            size = result.size // 1_000_000
+            self.status.setText(f"Version {result.version} is ready ({size} MB).")
+            self.install_button.setText("Download and install")
+        else:  # main's newer release, still without what this test build is trying out
+            self.status.setText(
+                f"Version {result.version} is out, but it was built without this test "
+                "build's changes. Kit will offer it once they're merged."
+            )
+            self.install_button.setText("Install it anyway")
         self.notes.setText(result.notes[:3000] or f"[See it on GitHub]({result.page})")
         self.install_button.show()
 

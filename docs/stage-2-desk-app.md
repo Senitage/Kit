@@ -32,7 +32,8 @@ The desk app puts Kit on your desk PC:
   - **This PC**: the brain's address and token, what Kit may see, and start at
     logon.
   - **Look**: dark, light or match Windows; the accent colour; Kit's eye
-    colour; face size; text size; and whether he talks in a speech bubble.
+    colour; face size; text size; whether he talks in a speech bubble; and
+    whether his words show as he says them when his voice is on (stage 3).
     Changes show straight away.
   - **Updates**: the version you have, and new versions from GitHub (see
     [desk-app/README.md](desk-app/README.md)).

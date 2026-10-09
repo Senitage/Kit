@@ -155,9 +155,11 @@ from kit.prompt import (
     picked_up,
     recall_results,
     speak_note,
+    split_turn,
     system_prompt,
     weather_results,
     with_mind,
+    with_now,
     with_pc_look,
     wrong_fact_aside,
 )
@@ -236,6 +238,13 @@ DEEP_RECALL = 10
 # Where the message being answered came from. Each turn is its own task, so each
 # sees its own channel without passing it through every call.
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# Reading the conversation into the local model ahead of Dan's next message
+# (ollama.warm_up): a moment after Kit has finished, once his voice has been quiet
+# for a moment too (they share the GPU, and his voice mustn't stutter).
+WARM_AFTER_S = 1.0
+VOICE_QUIET_S = 1.0
+WARM_POLL_S = 0.25
+WARM_WAIT_S = 120.0  # no quiet moment in this long: don't bother
 # How Kit feels and sounds this turn (kit.life.Voice), for the local model's prompt.
 VOICE: contextvars.ContextVar[Voice | None] = contextvars.ContextVar("voice", default=None)
 # A plain note request Kit has already carried out this turn (kit.notes.request), as
@@ -484,6 +493,13 @@ def own_role(settings: Settings) -> str:
     return CHAT if settings.routing.mode == "cloud-only" else LOCAL
 
 
+def reads_ahead(settings: Settings) -> bool:
+    """The local model reads the conversation in ahead of Dan's next message
+    (``ollama.warm_up``), while it's the one answering him. In cloud-only routing it
+    only stands in, and reading ahead would just load it onto the GPU for nothing."""
+    return settings.ollama.warm_up and own_role(settings) == LOCAL
+
+
 class Brain:
     def __init__(
         self,
@@ -530,6 +546,11 @@ class Brain:
         readers = Readers(self._read_weather, self._read_journal, self._read_thing, self._music)
         self.pastimes = Pastimes(readers, memory.clock, memory, self.life.rng)
         self._musing: asyncio.Task | None = None  # a thought while alone; a chat stops it
+        # Seconds since his voice was last being made (kit.speech; the server sets it).
+        self.voice_quiet: Callable[[], float] = lambda: float("inf")
+        self._warm_task: asyncio.Task | None = None
+        self._warming = False  # reading ahead right now
+        self._channel = CHANNEL.get()  # where Dan last talked from
 
     @property
     def quirks(self) -> list[str]:
@@ -552,6 +573,7 @@ class Brain:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
+        self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
         task.add_done_callback(self._turns.discard)
@@ -567,9 +589,11 @@ class Brain:
             emit({"type": "error", "message": "Something went wrong there. Say again?"})
         finally:
             emit(None)
+            self._keep_warm()
 
     async def _run_turn(self, text: str, emit: Callable[[Event], None]) -> None:
         settings = self.settings()
+        self._channel = CHANNEL.get()
         before = self.memory.recent(1)  # what Dan is answering, if anything
         new_chat = self._new_chat_if_quiet(settings)
         history = self.memory.recent(settings.brain.history_messages)
@@ -1085,6 +1109,7 @@ class Brain:
         said: list[str] = []
         message_id = None
         kept_quiet = False
+        self._cancel_warm()  # only once he's going to say something: it reads ahead after
         try:
             doing = self.pc.now_line(owner) or f"what {owner} is up to"
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
@@ -1102,11 +1127,12 @@ class Brain:
                     share=about,
                     aim=aim,
                 )
-            messages = [
-                {"role": "system", "content": self._system(settings, recalled, LOCAL, False)},
-                *history_messages(history, "desk", plain=settings.ollama.speak_pass),
-                {"role": "user", "content": prompt},
-            ]
+            messages = self._local_messages(
+                settings,
+                self._system(settings, recalled, LOCAL, False),
+                history_messages(history, "desk", plain=settings.ollama.speak_pass),
+                prompt,
+            )
             hello: list[Event] | None = None
             if home is not None and self._key_hello(home, settings):
                 hello = await self._cloud_hello(home, prompt, history, recalled, settings) or None
@@ -1128,6 +1154,7 @@ class Brain:
             VOICE.reset(voice_token)
             LINT.reset(lint_token)
             MIND.reset(mind_token)
+            self._keep_warm()
         if not said:
             self.life.held_back(reason, home)
             if kept_quiet:  # he was about to say something, and thought better of it
@@ -1527,6 +1554,7 @@ class Brain:
         something he wants to bring up, or change how he feels. ``trigger`` is what
         set it off, from ``Life.think_now``."""
         kind, happened = trigger or ("asked", "A moment to yourself.")
+        self._cancel_warm()
         settings = self.settings()
         persona = settings.persona
         owner = persona.owner
@@ -1583,6 +1611,8 @@ class Brain:
         except asyncio.CancelledError:
             self.life.thought_failed()  # Dan started talking: the thought can wait
             raise
+        finally:
+            self._keep_warm()
         self.life.thought_had(kind)
         thought = parse_thought(raw, kind)
         if thought is None:
@@ -1840,6 +1870,63 @@ class Brain:
             return ""
         return dan.text
 
+    @staticmethod
+    def _local_messages(settings: Settings, system: str, past: list[dict], user: str) -> list[dict]:
+        """The local model's prompt. When it reads ahead (``reads_ahead``), this turn's
+        part of the instructions goes beside Dan's message, so everything before his
+        message is what was read ahead (``_warm``) and only his message is left to read."""
+        if reads_ahead(settings):
+            system, now = split_turn(system)
+            user = with_now(user, now, settings.persona.owner)
+        return [{"role": "system", "content": system}, *past, {"role": "user", "content": user}]
+
+    def _keep_warm(self) -> None:
+        """Once Kit has finished, read the conversation into the local model ahead of
+        Dan's next message (``reads_ahead``)."""
+        self._cancel_warm()
+        if reads_ahead(self.settings()):
+            self._warm_task = asyncio.create_task(self._warm())
+
+    def _cancel_warm(self) -> None:
+        """Kit's starting something: a read-ahead still waiting is dropped. One that's
+        reading carries on; stopping it would save nothing, as the model reads it
+        either way before it gets to what's next."""
+        task, self._warm_task = self._warm_task, None
+        if task is not None and not self._warming:
+            task.cancel()
+
+    async def _warm(self) -> None:
+        waited = WARM_AFTER_S
+        await asyncio.sleep(WARM_AFTER_S)
+        while any(not t.done() for t in self._turns) or self.voice_quiet() < VOICE_QUIET_S:
+            if waited > WARM_WAIT_S:
+                return
+            await asyncio.sleep(WARM_POLL_S)
+            waited += WARM_POLL_S
+        settings = self.settings()
+        if not reads_ahead(settings):  # switched off, or to cloud-only, meanwhile
+            return
+        self._warming = True
+        try:
+            await self.model.warm(self._warm_messages(settings))
+        except LocalModelError as e:
+            log.info("couldn't read the conversation in ahead: %s", e)
+        except Exception:
+            log.exception("reading the conversation in ahead failed")
+        finally:
+            self._warming = False
+
+    def _warm_messages(self, settings: Settings) -> list[dict]:
+        """The start of the local model's prompt for Dan's next message, as far as
+        it's known before he sends it: Kit's instructions and the conversation so far.
+        A message that's answered differently (Kit can't hand it to the cloud, or it
+        starts a new conversation) starts differently, and is read in full as before."""
+        history = self.memory.recent(settings.brain.history_messages)
+        system = self._system(settings, Recalled([], [], []), LOCAL, hand_off=True)
+        plain = settings.ollama.speak_pass
+        past = history_messages(history, self._channel, plain=plain)
+        return self._local_messages(settings, system, past, "")[:-1]
+
     async def _converse(
         self,
         text: str,
@@ -1860,14 +1947,16 @@ class Brain:
             seen, shown = self.memory.shared(history), recalled.for_cloud()
         system = self._system(settings, shown, role, hand_off, forecast, pc_detail, seen)
         plain = role == LOCAL and settings.ollama.speak_pass  # the words come as plain text
-        messages = [
-            {"role": "system", "content": system},
-            *history_messages(seen, CHANNEL.get(), plain=plain),
-            {
-                "role": "user",
-                "content": self._user_turn(text, role, settings, pc_detail, answering),
-            },
-        ]
+        past = history_messages(seen, CHANNEL.get(), plain=plain)
+        user = self._user_turn(text, role, settings, pc_detail, answering)
+        if role == LOCAL:
+            messages = self._local_messages(settings, system, past, user)
+        else:
+            messages = [
+                {"role": "system", "content": system},
+                *past,
+                {"role": "user", "content": user},
+            ]
         job = None
         if role != LOCAL:
             job = Job(next(self._job_ids), question or text, settings.profile(role).name)
@@ -2148,6 +2237,7 @@ class Brain:
         spoken = detail = ""
         tries = HELD_TRIES if hold else 2
         plan = Plan.default()
+        said_all = False  # his words are complete, though the model may still be writing
         try:
             plan = await self._plan(messages)
             if plan.action.kind == "thing" and not named_in(plan.action.text, heard):
@@ -2157,6 +2247,8 @@ class Brain:
                 # Dan didn't ask for a note, so Kit offers rather than writes one.
                 offer = plan.action.model_copy(update={"kind": "offer_note"})
                 plan = plan.model_copy(update={"action": offer})
+            if not hold:  # how he feels, before his words: the voice speaks in this mood
+                yield {"type": "mood", "emotion": plan.emotion}
             note = speak_note(
                 plan.action,
                 settings.persona.owner,
@@ -2179,7 +2271,7 @@ class Brain:
                 async with aclosing(self.model.stream(talk, None, None, options)) as pieces:
                     async for piece in pieces:
                         stream.feed(piece)
-                        if hold:
+                        if hold or said_all:
                             continue
                         if not stream.released:
                             first = stream.first()
@@ -2189,7 +2281,14 @@ class Brain:
                                 again = first
                                 break
                             stream.release()
-                        if out := stream.take():
+                        if stream.finished():
+                            # The rest is written detail, or dropped: his voice needn't
+                            # wait for it to say his last sentence.
+                            if out := stream.end():
+                                yield {"type": "say", "text": out}
+                            yield {"type": "spoken"}
+                            said_all = True
+                        elif out := stream.take():
                             yield {"type": "say", "text": out}
                 retry = ""  # what the speaking note says next go, if there is one
                 if hold:
@@ -2220,6 +2319,8 @@ class Brain:
                     yield {"type": "say", "text": out}
                 spoken, detail = stream.result()
                 if spoken:
+                    if not hold and not said_all:
+                        yield {"type": "spoken"}
                     break
                 if stream.wrote_json():  # his plan again rather than words
                     talk = [*talk[:-1], {"role": "user", "content": note + IN_WORDS}]

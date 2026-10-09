@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
-desk = ["PySide6>=6.6", "psutil>=5.9"]
+desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 
 [project.scripts]
 kit = "kit.cli:main"
