@@ -929,7 +929,12 @@ class Brain:
     async def _show_for(self, text: str, settings: Settings) -> dict | None:
         persona = settings.persona
         return await show_for(
-            text, self.memory.clock(), self.weather, persona.location, persona.country
+            text,
+            self.memory.clock(),
+            self.weather,
+            persona.location,
+            persona.country,
+            settings.face.hot_c,
         )
 
     @staticmethod

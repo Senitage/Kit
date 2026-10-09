@@ -2,7 +2,7 @@
 
 Ask the time and his eyes turn into the time. Ask about the weather and the sky
 does it on him: rain falls from a little cloud over his head, the sun comes out
-at his corner, snow drifts, and his eyes show the temperature first.
+at his corner, the wind blows past, and his eyes show the temperature first.
 
 A scene paints in two layers, both called every frame by ``FaceWidget``:
 
@@ -23,14 +23,17 @@ import math
 import random
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QTransform
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QTransform
 
 RAIN = QColor(150, 205, 255)
 CLOUD = QColor(214, 222, 232)
 STORM_CLOUD = QColor(120, 130, 146)
 SUN = QColor(255, 206, 84)
 MOON = QColor(255, 236, 170)
-SNOW = QColor(245, 250, 255)
+SWEAT = QColor(170, 220, 255)
+LEAF = QColor(126, 190, 96)
+HEAT = QColor(255, 150, 70)
+GUST = QColor(225, 232, 240)
 FOG = QColor(200, 210, 220)
 
 
@@ -293,19 +296,6 @@ class Storm(Rain):
         super().over(p, s, t)
 
 
-class Snow(Falling):
-    gesture = "wiggle"
-    count = 22
-    speed = 0.22
-    colour = CLOUD
-
-    def drop(self, p: QPainter, s: float, x: float, y: float, t: float, phase: float) -> None:
-        sway = 0.025 * math.sin(t * 2 + phase * 9)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(SNOW)
-        p.drawEllipse(QPointF(s * (x + sway), s * y), s * 0.014, s * 0.014)
-
-
 class Fog(Scene):
     gesture = "look_away"
 
@@ -319,14 +309,92 @@ class Fog(Scene):
             p.drawRoundedRect(QRectF(x, s * y, s * 0.8, s * 0.07), s * 0.035, s * 0.035)
 
 
+class Wind(Scene):
+    """Gusts blow past him, with a leaf tumbling through, and he sways with them."""
+
+    gesture = "wiggle"
+    GUSTS = ((0.22, 0.0, 1.0), (0.45, 0.35, 1.25), (0.68, 0.7, 0.9), (0.86, 0.15, 1.1))
+
+    def over(self, p: QPainter, s: float, t: float) -> None:
+        for y, phase, pace in self.GUSTS:
+            x = ((phase + t * 0.55 * pace) % 1.4) - 0.4  # left to right, off and on again
+            gust = QPainterPath(QPointF(s * x, s * y))
+            gust.cubicTo(
+                QPointF(s * (x + 0.12), s * (y - 0.03)),
+                QPointF(s * (x + 0.22), s * (y + 0.03)),
+                QPointF(s * (x + 0.32), s * y),
+            )
+            colour = QColor(GUST)
+            colour.setAlpha(150)
+            p.setPen(QPen(colour, s * 0.014, c=Qt.PenCapStyle.RoundCap))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(gust)
+            # A curl at the gust's front, like a cartoon breeze.
+            p.drawArc(
+                QRectF(s * (x + 0.28), s * (y - 0.06), s * 0.07, s * 0.06), 270 * 16, 270 * 16
+            )
+        lx = ((t * 0.4) % 1.3) - 0.15
+        ly = 0.12 + 0.6 * lx + 0.05 * math.sin(t * 5)
+        p.save()
+        p.translate(s * lx, s * ly)
+        p.rotate(t * 200)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(LEAF)
+        p.drawEllipse(QPointF(0, 0), s * 0.03, s * 0.014)
+        p.restore()
+
+
+class Hot(Scene):
+    """A scorcher: a big sun at his corner, the air shimmering and a drop of sweat."""
+
+    gesture = "droop"
+
+    def over(self, p: QPainter, s: float, t: float) -> None:
+        # His screen warms up from the bottom, pulsing gently in the heat.
+        warm = QLinearGradient(0, s * 0.17, 0, s * 0.83)
+        glow = QColor(HEAT)
+        glow.setAlpha(0)
+        warm.setColorAt(0.25, glow)
+        glow.setAlpha(int(55 + 20 * math.sin(t * 2.2)))
+        warm.setColorAt(1.0, glow)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(warm)
+        p.drawRoundedRect(QRectF(s * 0.1, s * 0.17, s * 0.8, s * 0.66), s * 0.16, s * 0.16)
+        sun(p, s, t, cx=0.82, cy=0.14)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for i, x in enumerate((0.3, 0.5, 0.7)):
+            rise = (t * 0.3 + i * 0.33) % 1.0  # shimmer rising off him
+            y = 0.9 - 0.3 * rise
+            heat = QColor(HEAT)
+            heat.setAlphaF(0.75 * math.sin(math.pi * rise))
+            p.setPen(QPen(heat, s * 0.016, c=Qt.PenCapStyle.RoundCap))
+            wave = QPainterPath(QPointF(s * x, s * y))
+            for k in range(1, 13):
+                wave.lineTo(s * (x + 0.02 * math.sin(k * 1.1 + t * 5 + i)), s * (y - 0.012 * k))
+            p.drawPath(wave)
+        drip = (t % 2.4) / 2.4  # a sweat drop slides down his side, again and again
+        c = QPointF(s * 0.84, s * (0.3 + 0.32 * drip))
+        r = s * 0.032
+        drop = QPainterPath(c + QPointF(0, -r * 1.8))
+        drop.cubicTo(c + QPointF(r * 0.3, -r), c + QPointF(r, -r * 0.2), c + QPointF(r, r * 0.2))
+        drop.arcTo(QRectF(c.x() - r, c.y() - r * 0.8, 2 * r, 2 * r), 0, -180)
+        drop.cubicTo(c + QPointF(-r, -r * 0.2), c + QPointF(-r * 0.3, -r), c + QPointF(0, -r * 1.8))
+        p.setPen(Qt.PenStyle.NoPen)
+        sweat = QColor(SWEAT)
+        sweat.setAlphaF(1.0 - 0.5 * drip)
+        p.setBrush(sweat)
+        p.drawPath(drop)
+
+
 SKIES: dict[str, type[Scene]] = {
     "sun": Sun,
     "part_cloud": PartCloud,
     "cloud": Clouds,
     "rain": Rain,
     "storm": Storm,
-    "snow": Snow,
     "fog": Fog,
+    "wind": Wind,
+    "hot": Hot,
     "moon": Moon,
 }
 SCENES: dict[str, type[Scene]] = {"time": Digits, "date": Digits, "weather": Weather}

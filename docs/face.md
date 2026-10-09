@@ -102,8 +102,11 @@ ends where he sits, so the arm can use the same names later.
 Glow can show things besides his eyes. Ask Kit the time and his eyes turn into
 the time; ask the date and they become "FRI" over "9 OCT". Ask about the
 weather and the temperature takes his eyes' place, then the sky plays on and
-around him: rain or a storm from a little cloud over his head, snow, sun, a
-passing cloud, fog, or the moon and stars after dark.
+around him: rain or a storm from a little cloud over his head, sun, a
+passing cloud, fog, or the moon and stars after dark. A dry day at 35°C or more
+(`face.hot_c`) is a scorcher, with shimmering air and a drop of sweat; a dry day
+with wind of 35 km/h or more has gusts and a leaf blowing past. Rain and storms
+win over both. Snow shows as rain; Perth doesn't need it.
 
 - `kit.shows` (brain) picks a show from Dan's words and fills in the facts from
   the clock and Open-Meteo (`Weather.today`, which can also give tomorrow). It

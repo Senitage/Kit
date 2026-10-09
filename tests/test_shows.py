@@ -61,6 +61,26 @@ def test_the_weather_shows_the_sky_and_a_temperature():
     assert sky_kind("something new") == "cloud"
 
 
+def test_a_hot_or_windy_dry_day_shows_as_one_and_rain_wins():
+    noon = datetime(2026, 10, 9, 12)
+
+    def sky(words, now_c, wind=None, hot_c=35.0, at=noon):
+        return weather_show(Today("Perth", now_c, words, 30.0, 9.0, 0, wind), at, hot_c=hot_c)
+
+    assert sky("clear", 38.4)["sky"] == "hot" and sky("clear", 38.4)["text"] == "38°"
+    assert sky("clear", 35.0)["sky"] == "hot"  # from the setting up
+    assert sky("clear", 34.9)["sky"] == "sun"
+    assert sky("clear", 31.0, hot_c=30.0)["sky"] == "hot"  # face.hot_c moves it
+    assert sky("partly cloudy", 22.0, wind=35.0)["sky"] == "wind"
+    assert sky("partly cloudy", 22.0, wind=34.0)["sky"] == "part_cloud"
+    assert sky("clear", 37.0, wind=50.0)["sky"] == "hot"  # a hot windy day is still hot
+    assert sky("heavy rain", 36.0, wind=60.0)["sky"] == "rain"
+    assert sky("thunderstorms", 36.0, wind=60.0)["sky"] == "storm"
+    assert sky("clear", 20.0, wind=40.0, at=datetime(2026, 10, 9, 22))["sky"] == "wind"
+    assert sky("fog", 9.0)["sky"] == "fog" and sky("freezing fog", 2.0)["sky"] == "fog"
+    assert sky_kind("light snow") == "rain"  # no snow in Perth: it falls like rain
+
+
 def test_a_weather_show_needs_the_forecast():
     now = datetime(2026, 10, 9, 12)
     assert asyncio.run(show_for("weather?", now, None, HOME)) is None

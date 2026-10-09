@@ -60,6 +60,7 @@ FORECAST = {
         "precipitation_probability_max": [5, 70, 20],
         "precipitation_sum": [0.0, 4.2, 0.0],
         "uv_index_max": [7.1, 5.0, 6.4],
+        "wind_speed_10m_max": [24.0, 41.5, 18.0],
     },
 }
 
@@ -77,6 +78,18 @@ def server(request):
     if "geocoding" in request.url.host:
         return httpx.Response(200, json=PERTHS)
     return httpx.Response(200, json=FORECAST)
+
+
+def test_today_carries_the_wind():
+    seen = []
+    weather = weather_with(server, seen)
+    today = asyncio.run(weather.today("Perth, WA", "AU"))
+    assert today.wind_kmh == 11.2 and today.now_c == 16.4
+    tomorrow = asyncio.run(weather.today("Perth, WA", "AU", ahead=1))
+    assert tomorrow.wind_kmh == 41.5 and tomorrow.sky == "light rain"
+    asked = seen[-1].url.params
+    assert "wind_speed_10m" in asked["current"] and "wind_speed_10m_max" in asked["daily"]
+    assert asked["wind_speed_unit"] == "kmh"
 
 
 def test_finds_perth_wa_not_scotland_or_tasmania():
