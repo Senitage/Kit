@@ -1,7 +1,7 @@
 {
-  "name": "Glow",
+  "name": "Retro",
   "version": 1,
-  "about": "Kit's character sheet: his looks, which look each app or body uses, his mood poses and his gesture moves. Every app that draws Kit (desk app, home_app, robot screens) reads this one file, from the brain at /api/face. See docs/face.md.",
+  "about": "Kit's Retro character (the original Glow pill eyes). A character sheet holds his looks, which look each app or body uses, his mood poses and his gesture moves. Every app that draws Kit (desk app, home_app, robot screens) reads this one file, from the brain at /api/face. See docs/face.md.",
   "use": {"default": "glow", "desk": "glow", "home_app": "glow", "robot": "glow"},
   "looks": {
     "glow": {

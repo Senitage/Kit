@@ -145,3 +145,7 @@ now_days = 14                # "how you've been lately" memories fade after this
 # bedtime = "22:30"
 # desk_hours = 3.0          # at the desk this long without a break: the outside nudge
 # work_triggers = false     # curious about work apps, sites and builds on screen
+
+# [face]
+# character = "retro"       # which character Kit is (src/kit/face/characters); retro is
+#                           # the original glowing pill eyes, so switching back is easy

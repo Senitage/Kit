@@ -14,7 +14,7 @@ Three layers make up each frame:
 3. Gestures play on top of the pose for a second or so, then hand back.
 
 The poses, how each state bends them, and the gesture moves all come from
-Kit's character sheet (character.json, see kit.face.character), so every app
+Kit's character sheet (characters/*.json, see kit.face.character), so every app
 that draws him uses the same numbers.
 
 Time is passed in (seconds, any monotonic clock) and randomness is injected, so
@@ -47,7 +47,7 @@ class Pose:
     head_y: float = 0.0  # head height offset, + lower (fraction of face size)
 
 
-# Every emotion's pose, from Kit's character sheet (character.json).
+# Every emotion's pose, from the default character's sheet (characters/retro.json).
 POSES: dict[str, Pose] = {name: Pose(**builtin().pose(name)) for name in builtin().emotions}
 
 STATES = ("idle", "sleeping", "listening", "thinking", "speaking", "working", "offline")

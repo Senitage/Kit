@@ -1,6 +1,8 @@
 """Kit's character sheet: the one file that says how he looks and moves.
 
-``character.json`` (next to this module) holds his looks, which look each app
+Each character is one sheet in ``characters/`` next to this module (``retro``
+is the original Glow pill eyes). The ``face.character`` setting picks which
+one Kit is; switching back is just changing it back. A sheet holds his looks, which look each app
 or body uses, a pose for every emotion, how each state bends that pose, and
 every gesture as a set of moves.
 
@@ -255,11 +257,31 @@ def from_sheet(sheet: Mapping) -> Character:
     return Character(json.loads(json.dumps(sheet)))  # a private copy
 
 
+DEFAULT = "retro"
+
+
+def _folder():
+    return resources.files("kit.face").joinpath("characters")
+
+
+def presets() -> list[str]:
+    """The characters Kit ships with, by name (the file names in ``characters/``)."""
+    names = [f.name[:-5] for f in _folder().iterdir() if f.name.endswith(".json")]
+    return sorted(names, key=lambda n: (n != DEFAULT, n))
+
+
 @functools.cache
-def builtin() -> Character:
-    """The character sheet that ships with Kit (read once; don't change its sheet)."""
-    text = resources.files("kit.face").joinpath("character.json").read_text(encoding="utf-8")
+def preset(name: str) -> Character:
+    """One of Kit's characters (read once; don't change its sheet)."""
+    if name not in presets():
+        raise CharacterError(f"no character called {name!r} ({', '.join(presets())})")
+    text = _folder().joinpath(f"{name}.json").read_text(encoding="utf-8")
     return from_sheet(json.loads(text))
+
+
+def builtin() -> Character:
+    """The default character, Retro: what a face shows before it hears otherwise."""
+    return preset(DEFAULT)
 
 
 _current: Character | None = None

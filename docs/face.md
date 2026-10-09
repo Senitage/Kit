@@ -25,8 +25,11 @@ enforces this, so adding an emotion means adding its pose too.
 
 ## The character sheet
 
-Everything that makes Kit look like Kit lives in one file,
-`src/kit/face/character.json`:
+Everything that makes Kit look like Kit lives in one file per character in
+`src/kit/face/characters/`. `retro.json` is the original Glow pill eyes. The
+`face.character` setting (`[face]` in settings.toml, or the settings page)
+picks which character he is, so a new design sits beside Retro and switching
+back is one setting. A character sheet holds:
 
 - `looks`: each way of drawing him. `glow` is the 2D pill eyes: colours and
   the size and place of his screen, eyes, glow and blush, as fractions of the
@@ -43,9 +46,10 @@ Everything that makes Kit look like Kit lives in one file,
   (`bump`, `hold`, `sin`, `abs_sin`, `line`, `jolt`); `kit.face.character`
   explains them.
 
-The brain serves this file at `GET /api/face`. The desk app loads it each time
-it connects (keeping its own copy if the brain is older), and home_app's Kit
-page loads it the same way, so a redesign is one edit to this file and every
+The brain serves the chosen sheet at `GET /api/face` and lists the characters at
+`GET /api/face/presets`. The desk app loads the sheet when it connects and
+whenever `face.character` changes (keeping its own copy if the brain is older), and home_app's Kit
+page loads it the same way, so a redesign is one new sheet and every
 app follows. `kit.face.character.check` says in plain words what is wrong with
 a broken sheet, and a broken sheet is never used.
 

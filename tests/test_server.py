@@ -86,8 +86,14 @@ def test_face_serves_the_character_sheet(setup):
     client, _, _ = setup
     assert client.get("/api/face").status_code == 401
     sheet = client.get("/api/face", headers=AUTH).json()
-    assert sheet["name"] == "Glow"
+    assert sheet["name"] == "Retro"
     assert "happy" in sheet["poses"] and "nod" in sheet["gestures"]
+    presets = client.get("/api/face/presets", headers=AUTH).json()
+    assert presets["current"] == "retro"
+    assert {"id": "retro", "name": "Retro"} in presets["presets"]
+    assert client.get("/api/status", headers=AUTH).json()["face"] == "retro"
+    bad = client.patch("/api/settings", json={"face": {"character": "nope"}}, headers=AUTH)
+    assert bad.status_code == 422
 
 
 def test_schema_and_status(setup, paths):

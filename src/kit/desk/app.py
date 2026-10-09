@@ -277,7 +277,7 @@ class DeskApp(QObject):
         self.token = load_token()
         self.update_token = load_token(name=UPDATE_TOKEN_FILE)
         self.client: BrainClient | None = None
-        self._face_from: BrainClient | None = None  # whose character sheet is in use
+        self._face_from: tuple | None = None  # (brain, character) whose sheet is in use
         self.online: bool | None = None
         self._stop = threading.Event()
         self._signals = _Signals()
@@ -623,8 +623,10 @@ class DeskApp(QObject):
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
                 return
-            if client is not self._face_from:
-                self._face_from = client
+            # Fetch his character sheet on connecting and whenever face.character changes.
+            key = (client, status.get("face"))
+            if key != self._face_from:
+                self._face_from = key
                 load_character(client)
 
         threading.Thread(target=work, name="kit-health", daemon=True).start()

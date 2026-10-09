@@ -104,3 +104,13 @@ def test_each_app_or_body_picks_2d_or_3d(sheet):
     # An app that can only draw 2D gets the 3D look's 2D fallback.
     assert kit.look("desk")["style"] == "glow"
     assert kit.look("phone") == kit.look("default")  # unnamed apps use the default
+
+
+def test_kit_ships_named_characters_with_retro_first():
+    assert ch.presets()[0] == "retro"
+    assert ch.builtin() is ch.preset("retro")
+    assert ch.preset("retro").name == "Retro"
+    for name in ch.presets():
+        assert ch.check(ch.preset(name).sheet) == []
+    with pytest.raises(ch.CharacterError, match="no character called 'nope'"):
+        ch.preset("nope")
