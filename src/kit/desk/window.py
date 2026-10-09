@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from kit.desk import startup, theme
+from kit.desk import face3d, startup, theme
 from kit.desk.client import BrainClient
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
@@ -752,14 +752,23 @@ class Swatches(QWidget):
 
 
 class LookPage(QWidget):
-    changed = Signal(object)  # the new DeskConfig
+    """How Kit and the chat look. Which character he is lives in the brain (so it's the
+    same everywhere); the rest is kept on this PC. The Glow-only choices hide while
+    his character is 3D."""
 
-    def __init__(self, config: DeskConfig) -> None:
+    changed = Signal(object)  # the new DeskConfig
+    character_picked = Signal(str)  # a character's id: Kit should become it
+
+    def __init__(
+        self, config: DeskConfig, client: Callable[[], BrainClient | None] | None = None
+    ) -> None:
         super().__init__()
         self.config = config
+        self.client = client or (lambda: None)
         page, layout = _page(
             "Look",
-            "Make Kit yours. Changes show straight away and are kept on this PC.",
+            "Make Kit yours. Changes show straight away; who he is goes everywhere he "
+            "appears, the rest is kept on this PC.",
         )
         self.preview = FaceWidget()
         self.preview.setFixedSize(150, 150)
@@ -777,6 +786,13 @@ class LookPage(QWidget):
         layout.addLayout(top)
 
         form = QFormLayout()
+        self.form = form
+        self.character = QComboBox()
+        self.character.setToolTip("Which character Kit is, here, in home_app and on his robots")
+        self.character.activated.connect(self._pick_character)
+        form.addRow("Character", self.character)
+        self.style_note = _label("", "help")
+        form.addRow("", self.style_note)
         self.theme = QComboBox()
         self.theme.addItem("Match Windows", "system")
         self.theme.addItem("Dark", "dark")
@@ -803,6 +819,8 @@ class LookPage(QWidget):
         self.font_pt.setValue(config.font_pt)
         self.font_pt.valueChanged.connect(self._changed)
         form.addRow("Text size", self.font_pt)
+        self.three_d = False
+        self.show_style(False)
         self.speech = QCheckBox("Show what Kit says in a bubble under his face")
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
@@ -833,6 +851,37 @@ class LookPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
         self._sample()
+
+    def refresh(self) -> None:
+        client = self.client()
+        if client is None:
+            return
+        in_background(client.face_presets, self._presets)
+
+    def _presets(self, result) -> None:
+        if isinstance(result, Exception):
+            return  # an older brain: the character is still on Kit's settings page
+        self.character.blockSignals(True)
+        self.character.clear()
+        for preset in result.get("presets", []):
+            self.character.addItem(preset.get("name") or preset["id"], preset["id"])
+        self.character.setCurrentIndex(max(0, self.character.findData(result.get("current"))))
+        self.character.blockSignals(False)
+
+    def _pick_character(self, index: int) -> None:
+        picked = self.character.itemData(index)
+        if picked:
+            self.character_picked.emit(picked)
+
+    def show_style(self, three_d: bool) -> None:
+        """Show the choices that fit his character: eye colours are for the Glow face."""
+        self.three_d = three_d
+        self.form.setRowVisible(self.eyes, not three_d)
+        self.style_note.setText(
+            "His 3D face brings its own colours, so there's no eye colour to pick."
+            if three_d
+            else "The Glow face: pick his eye colour below."
+        )
 
     def values(self) -> DeskConfig:
         return replace(
@@ -1054,7 +1103,11 @@ class KitWindow(QWidget):
         self.memory = MemoryPage(client, brain_url)
         self.brain_settings = BrainSettingsPage(client, brain_url)
         self.pc = PcPage(config, token)
-        self.look = LookPage(config)
+        self.client = client
+        self.look = LookPage(config, client)
+        self.look.character_picked.connect(self._pick_character)
+        self._look: tuple[str | None, dict] = (None, {})
+        self._faces3d: list[face3d.Face3D | None] = [None, None]
         kwargs = {"updater": updater} if updater else {}
         self.updates = UpdatesPage(config, update_token, download_dir, **kwargs)
         self.nav = QListWidget()
@@ -1083,6 +1136,39 @@ class KitWindow(QWidget):
         page = self.stack.currentWidget()
         if hasattr(page, "refresh"):
             page.refresh()
+
+    character_changed = Signal()  # Kit became another character from the Look page
+
+    def _pick_character(self, name: str) -> None:
+        client = self.client()
+        if client is None:
+            return
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                self.look.style_note.setText(f"Couldn't change him: {result}")
+                return
+            self.character_changed.emit()
+
+        in_background(lambda: client.save_settings({"face": {"character": name}}), done)
+
+    def use_look(self, brain_url: str | None, look: dict) -> None:
+        """Draw Kit on the Mood and Look pages as he looks on the desk: Glow, or his
+        3D face while this window is open (each 3D face is a web page, so they're
+        only kept while they can be seen)."""
+        self._look = (brain_url, look)
+        self.look.show_style(face3d.wants_3d(look))
+        shown = brain_url if self.isVisible() else None
+        for i, widget in enumerate((self.mood.face, self.look.preview)):
+            self._faces3d[i] = face3d.sync(widget, shown, look, self._faces3d[i])
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        super().showEvent(event)
+        self.use_look(*self._look)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        super().hideEvent(event)
+        self.use_look(*self._look)
 
     def apply_look(self, palette: theme.Palette, font_pt: float) -> None:
         self.setStyleSheet(theme.window_style(palette, font_pt))

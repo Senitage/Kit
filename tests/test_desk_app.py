@@ -392,6 +392,12 @@ class FakeBrain:
     def search(self, q, k=15):
         return {"hits": [{"source": "facts", "title": "", "text": "Tax is in Finance/Tax"}]}
 
+    def face_presets(self):
+        return {
+            "current": "retro",
+            "presets": [{"id": "retro", "name": "Retro"}, {"id": "kit3d", "name": "Kit 3D"}],
+        }
+
 
 @pytest.fixture
 def sync_window(monkeypatch):
@@ -440,6 +446,49 @@ def test_kits_settings_fold_away_and_search(qapp, sync_window, tmp_path):
     assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
     page.save()  # a reload keeps it open
     assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
+    win.close()
+
+
+def test_look_page_picks_his_character_and_fits_its_style(qapp, sync_window, tmp_path, monkeypatch):
+    monkeypatch.setattr(sync_window.face3d, "sync", lambda *args: None)  # no web pages here
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    changed = []
+    win.character_changed.connect(lambda: changed.append(True))
+    win.show_page("Look")
+    look = win.look
+    assert [look.character.itemText(i) for i in range(look.character.count())] == [
+        "Retro",
+        "Kit 3D",
+    ]
+    look.character.activated.emit(1)
+    assert brain.saved[-1] == {"face": {"character": "kit3d"}} and changed
+    assert look.eyes.isVisibleTo(look)
+    win.use_look("http://kit:8600", {"style": "model"})  # 3D: no eye colours to pick
+    assert not look.eyes.isVisibleTo(look) and "3D" in look.style_note.text()
+    win.use_look("http://kit:8600", {"style": "glow"})
+    assert look.eyes.isVisibleTo(look)
+    win.close()
+
+
+def test_mood_and_look_show_his_3d_face_only_while_the_window_is_open(
+    qapp, sync_window, tmp_path, monkeypatch
+):
+    seen = []
+
+    def sync(widget, url, look, current):
+        seen.append((widget, url))
+        return "3d" if url else None
+
+    monkeypatch.setattr(sync_window.face3d, "sync", sync)
+    win = make_window(sync_window, FakeBrain(), tmp_path)
+    win.use_look("http://kit:8600", {"style": "model"})
+    assert [url for _, url in seen] == [None, None]  # closed: no web pages
+    win.show_page("Mood")
+    assert {w for w, url in seen[-2:] if url} == {win.mood.face, win.look.preview}
+    assert win._faces3d == ["3d", "3d"]
+    win.hide()
+    assert [url for _, url in seen[-2:]] == [None, None]
     win.close()
 
 
