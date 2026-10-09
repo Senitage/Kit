@@ -152,7 +152,7 @@ def create_app(
         for task in tasks:
             task.cancel()
         if speech is not None:
-            await asyncio.to_thread(speech.stop)
+            await asyncio.to_thread(speech.close)
 
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
     if speech is not None:

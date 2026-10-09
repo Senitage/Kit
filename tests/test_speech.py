@@ -178,6 +178,53 @@ def test_an_engine_that_cant_start_says_why_and_isnt_retried_straight_away(paths
     assert launcher.started == 2
 
 
+class LoadingProcess:
+    """An engine that's still loading: running, but not answering yet."""
+
+    def __init__(self):
+        self.alive = True
+
+    def __call__(self, command, log_file):
+        return self
+
+    def poll(self):
+        return None if self.alive else 0
+
+    def terminate(self):
+        self.alive = False
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def test_shutting_down_stops_a_load_under_way_and_starts_no_more(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "chatterbox"}})
+    engine = LoadingProcess()
+    refused = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(503)))
+    service = SpeechService(
+        lambda: s.speech, paths, engine, refused, sleep=lambda _: time.sleep(0.01)
+    )
+    failed = []
+
+    def load():
+        try:
+            service.ensure()
+        except SpeechError as e:
+            failed.append(str(e))
+
+    loading = threading.Thread(target=load)
+    loading.start()
+    time.sleep(0.1)
+    service.close()
+    loading.join(timeout=2)
+    assert not loading.is_alive()
+    assert failed and "shutting down" in failed[0]
+    assert not engine.alive
+    with pytest.raises(SpeechError, match="shutting down"):
+        service.ensure()
+
+
 def test_the_command_uses_the_engines_own_python_and_finds_the_voice_clip(paths):
     paths.ensure()
     clip = paths.state_dir / "speech" / "kit_voice.wav"
@@ -244,6 +291,8 @@ class FakeSpeech:
 
     def stop(self):
         self.on = False
+
+    close = stop
 
     def quiet_s(self):
         return 99.0
