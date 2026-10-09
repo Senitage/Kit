@@ -93,6 +93,7 @@ class SpeechService:
         self._making = 0  # sentences being made right now
         self._made_at = float("-inf")  # when the last one was done
         self._making_lock = threading.Lock()
+        self._closing = False  # Kit is shutting down: no more starting engines
 
     @property
     def url(self) -> str:
@@ -141,6 +142,8 @@ class SpeechService:
         """Start the engine (``speech.engine`` unless named) if it isn't already
         running with these settings; returns its health."""
         with self._lock:
+            if self._closing:
+                raise SpeechError("Kit is shutting down")
             s = self.settings()
             name = engine or s.engine
             if name not in s.engines:
@@ -176,6 +179,9 @@ class SpeechService:
         except OSError as e:
             raise SpeechError(f"couldn't start {name} with {command[0]}: {e}") from e
         while self.clock() - start < timeout_s:
+            if self._closing:
+                self.stop()
+                raise SpeechError(f"Kit is shutting down, so {name} wasn't loaded")
             if self._process.poll() is not None:
                 self._close_log()
                 raise SpeechError(f"{name} stopped while loading: {last_line(log_path)}")
@@ -244,6 +250,13 @@ class SpeechService:
             "note": self.note,
             "engines": {name: e.kind for name, e in s.engines.items()},
         }
+
+    def close(self) -> None:
+        """Kit is shutting down: stop the engine and don't start it again. An engine
+        still loading gives up at once, so a restart isn't held up by a load that
+        began after the stop (the service manager stops the engine with Kit)."""
+        self._closing = True
+        self.stop()
 
     def stop(self) -> None:
         with self._lock:
