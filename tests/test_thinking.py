@@ -90,7 +90,8 @@ def test_a_garbled_thought_or_a_model_thats_down_is_skipped(kit):
     assert asyncio.run(brain.think()) is None and brain.notebook.entries() == []
     brain.model.error = "Ollama isn't running"
     assert asyncio.run(brain.think()) is None
-    assert len(brain.life.thoughts) == 2  # tried, so he doesn't hammer a model that's down
+    assert len(brain.life.thoughts) == 1  # a model that's down costs no budget...
+    assert brain.life.next_thought > brain.memory.clock()  # ...but he waits a while
 
 
 def test_his_recent_thoughts_are_in_the_thinking_prompt_so_he_doesnt_repeat_them(kit):

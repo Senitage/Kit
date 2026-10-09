@@ -279,6 +279,8 @@ class DeskApp(QObject):
         self.client: BrainClient | None = None
         self._face_from: tuple | None = None  # (brain, character) whose sheet is in use
         self.online: bool | None = None
+        self._doing = ""  # what Kit's doing on his own, shown in his bubble
+        self._quiet = ""  # why he's keeping quiet, shown in the tray's tooltip
         self._stop = threading.Event()
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
@@ -357,6 +359,10 @@ class DeskApp(QObject):
         self.watch_action.setChecked(self.config.watch)
         self.watch_action.toggled.connect(self.set_watching)
         menu.addAction(self.watch_action)
+        self.playing_action = QAction("Share what's playing", menu, checkable=True)
+        self.playing_action.setChecked(self.config.share_playing)
+        self.playing_action.toggled.connect(self.set_sharing_playing)
+        menu.addAction(self.playing_action)
         menu.addSeparator()
         menu.addAction("What Kit remembers...", lambda: self.open_window("Memory"))
         menu.addAction("Settings...", lambda: self.open_window("Kit's settings"))
@@ -450,6 +456,16 @@ class DeskApp(QObject):
             "I can see what you're working on again."
             if on
             else "Okay, I've stopped looking at your windows.",
+            face_icon(),
+            2500,
+        )
+
+    def set_sharing_playing(self, on: bool) -> None:
+        self.config.share_playing = on
+        self.config.save()
+        self.tray.showMessage(
+            "Kit",
+            "I'll keep an ear on what's playing." if on else "Okay, I won't listen in.",
             face_icon(),
             2500,
         )
@@ -639,6 +655,8 @@ class DeskApp(QObject):
                 log.info("brain %s: %s", "online" if online else "offline", detail)
         self.online = online
         tip = "Kit" if online else f"Kit is offline: {detail}"
+        if online and self._quiet:
+            tip += f"\nQuiet: {self._quiet}"
         if self.reporter.error and online:
             tip += f"\nCan't send what you're working on: {self.reporter.error}"
         self.tray.setToolTip(tip[:120])
@@ -694,6 +712,15 @@ class DeskApp(QObject):
         elif event.get("type") == "react":  # a reaction plays even mid-conversation
             if not self.alive.asleep:
                 face.play(event.get("gesture", "perk_up"), time.monotonic())
+        elif event.get("type") == "doing":  # what he's up to while you're out
+            self._doing = str(event.get("what") or "")
+            self._show_doing()
+        elif event.get("type") == "dials":
+            face.set_dials(float(event.get("arousal", 0.5)), float(event.get("valence", 0.0)))
+        elif event.get("type") == "quiet":  # why he's keeping quiet, in the tray's tooltip
+            self._quiet = str(event.get("because") or "")
+            if self.online:
+                self._show_online(True, "online")
         elif event.get("type") == "pipe_up":
             reply = event.get("reply") or {}
             if self.alive.asleep:
@@ -703,6 +730,14 @@ class DeskApp(QObject):
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))
                 self.tray.showMessage("Kit", said, face_icon(), 8000)
+
+    def _show_doing(self) -> None:
+        """What Kit's doing on his own ("watching the rain...") in his bubble, while
+        the chat's closed and he isn't saying anything."""
+        if self._busy() or self.chat.isVisible() or not self.config.speech_bubble:
+            return
+        self.bubble.enabled = True
+        self.bubble.setText(f"{self._doing}..." if self._doing else "")
 
     def _busy(self) -> bool:
         return self.chat._in_flight > 0 or self.face.face.state in (
@@ -728,6 +763,8 @@ class DeskApp(QObject):
         if state in FACE_STATES:
             if state != "speaking":  # speaking is set by the performer, word by word
                 self.face.face.set_state(FACE_STATES[state])
+        elif state == "heard":  # a little nod as a message goes, before he thinks
+            self.face.face.play("nod", time.monotonic())
         elif state == "error":
             self.face.face.play("shrug", time.monotonic())
         elif state.startswith("asking"):

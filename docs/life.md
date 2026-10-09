@@ -53,6 +53,54 @@ a little too, and a thought of his can change how he feels. Ask him how he's
 feeling and he can tell you why: "a bit worried, you said you were stressed
 about the shutdown".
 
+Words that are negated don't count: "not stressed, footy's on late" and "I'm
+not worried" leave him calm, while "not just stressed, I'm wrecked" still
+counts.
+
+## Reading how you are
+
+By default Kit reads your mood from your words, as above (`life.read_mood =
+words`). With `meaning`, the model that answers also reads, in the same call,
+how you seem (fine, stressed, sad, chuffed...), who it's about (him, you,
+someone else, work), who it's for, and whether it went better or worse than
+you hoped. "My boss said my report was a disaster" makes him sympathetic
+without any trigger word; "you're useless" said to him hurts; a thank-you
+warms him. The words stay as a floor, so nothing they caught is lost.
+
+Reading by meaning only switches on once `kit eval mood` has run your own
+labelled lines (`config/companion-lines.toml` in Kit's data folder, never in
+the repo) and the reading beat the words on at least 40 of them. Until then
+`meaning` quietly falls back to words; `kit life` shows which he's using.
+
+With `life.mixed_feelings` he holds two feelings at once, the strongest two:
+chuffed at your praise and still a bit worried about your day. Off, the
+stronger one wins, as before.
+
+## A bad night
+
+When you sound like you're having a really bad time ("I can't cope", "worst
+night of my life", "I've had enough of everything"), Kit drops the cheek and
+the games for the next three hours, listens and stays. He validates first,
+says one honest line after, and once in that time mentions someone you can
+talk to (by name, if he knows your partner or a mate) or Lifeline on 13 11 14.
+Anything about hurting yourself gets "are you safe right now?", Lifeline and
+000, every time. `life.bad_night` is on by default; it's the one stage 3
+change that is, because it matters most the first time it's needed.
+
+## Energy
+
+His energy follows the clock by default. With `life.energy_need` it's a real
+need: chatting tires him a little (about 0.1 an hour of chat), each real job
+handed to Sonnet or Opus a bit more, and staying up past 10:30 pm most of all.
+Everyday answers, even from the cloud, cost nothing. Sleep restores him: 45 minutes asleep brings him back
+to full, as does a night off. Below 0.4 he's sleepy: he yawns and keeps his
+replies short.
+
+With `life.dials`, his mood also runs as two slow dials, how lively and how
+happy, that ease toward where his feelings and energy are. The desk face shows
+them: slower breathing and blinks when he's flat or tired, bigger gestures and
+a touch more blush when he's up. At the middle the face is as before.
+
 ## Knowing you were gone
 
 Kit keeps track of time the way a pet does: when you last talked, when you last
@@ -130,6 +178,9 @@ His next pipe-up suggests it. Answer and it landed; ignore it and it flopped. A
 game that flops three times without ever landing is retired (`GET /api/life`
 lists them). `life.games = false` stops them.
 
+Bet him a temperature and from 4 pm he checks today's top: chuffed if he won,
+put out if he lost (he'll want to tell you either way), amused on a draw.
+
 ## His own thoughts
 
 Every eight minutes or so while you're at the PC (`life.think_every_minutes`),
@@ -141,9 +192,11 @@ from his self-sheet, his quirks, how he feels, what's on your screen, what he
 remembers and what's been said today, and it may write nothing at all if
 nothing comes to mind.
 
-He doesn't think while you're talking to him, while he's asleep, or when
-nobody's around, and never more than `life.thoughts_per_hour` times an hour.
-Each thought is one quick call to the local model; nothing goes to the cloud.
+He doesn't think while you're talking to him or while he's asleep, and never
+more than `life.thoughts_per_hour` times an hour. Each thought is one quick
+call to the local model; nothing goes to the cloud. A thought that fails (the
+model's down) costs nothing from the hour's allowance; he just tries again
+after the usual gap.
 
 A thought can:
 - turn into something he **wants to say or ask** you. It presses harder the
@@ -153,6 +206,43 @@ A thought can:
 
 Ask "what are you thinking about?" and he tells you his actual recent thoughts,
 not an invented one. If nothing's been on his mind, he says so.
+
+With `life.week_thoughts`, the week has a shape: a thought on Monday, Friday
+and Saturday mornings, on WA public holidays, and the day before one ("a long
+weekend's coming").
+
+With `life.opinions` (1 or 2), his latest standing opinions from his
+notebook stay in front of him when he talks, so he sticks to them kindly
+instead of agreeing with whatever you say. Only real stances count, and his
+nightly reflection chooses them, with a day's hindsight: a view on a topic
+he'd argue for ("Winter's the best time of year"), never a remark about you,
+a joke or a musing. Opinions from his thoughts during the day, and from
+before the setting was on, aren't held. A stance stands a day after the
+reflection that chose it.
+
+## While you're away
+
+By default, when you leave he waits, then dozes off after
+`life.sleep_after_minutes`. A message wakes him, from the desk or your phone,
+and he stays up while you're chatting even if the PC says you're away. With `life.alone_thoughts_per_hour` above 0 he
+has a life of his own meanwhile. He picks something to do by what he needs
+most: watching the weather (bored), rereading yesterday's journal (missing
+you), thinking about someone or something in his register, a person, pet,
+vehicle or place (curious), or listening to what the PC is playing, if the
+desk app's "Share what's playing" is on. Each lasts 20 to 40 minutes and eases
+the need it feeds; a pastime rests a while before he does it again, and he
+looks out at the weather once an absence. The desk face shows a little bubble
+with what he's doing.
+
+He has up to that many private thoughts an hour about it, always with the
+local model and never the cloud. After `life.sleep_after_minutes` he dozes off
+as usual, so raise it (45 is a good start) to give him time to himself. In
+quiet hours there's none of this: he just goes to sleep.
+
+Everything he did goes in his notebook. Ask "what did you get up to?" and he
+tells you just that; his hello when you're back mentions it; and on a day he
+spent entirely alone, the nightly journal is one plain line saying so, written
+without a model. `kit life` shows where he is: here, away, alone or asleep.
 
 ## Something for later
 
@@ -328,6 +418,13 @@ ignoring him: no sulk. Talking to him makes up for it. Say
 lets him back, and so does "Quiet for an hour" in the tray menu.
 `life.chattiness = 0` means he never speaks first but still fidgets.
 `life.enabled = false` turns it all off.
+
+With `life.pipe_up_bar` above 0, he weighs each thing before bringing it up:
+how relevant it is to what you're doing, whether it's new or he's said it
+already, and how pressing it is, nudged up or down by how often you've taken
+his recent pipe-ups up (`kit life` shows the rate). Below the bar he keeps it
+to himself. 0.5 is a sensible bar. When he's keeping quiet, the desk tray's
+tooltip says why.
 
 ## One brain, many bodies
 
