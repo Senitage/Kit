@@ -163,8 +163,10 @@ the reading makes a local reply.
 - [ ] **Tired.** With `energy_need` on, chat for an hour late at night.
       `kit life` shows his energy dropping; past 0.4 he yawns and keeps it
       short. Next morning he's back to full.
-- [ ] **He sticks to his view.** With `opinions 1`, disagree with the opinion
-      at the top of his notebook. He holds his ground, kindly.
+- [ ] **He sticks to his view.** With `opinions 1`, give him a day or two to
+      form a stance (new opinions on the notebook tab read like "Winter's the
+      best time of year", not remarks about you). Then disagree with it. He
+      holds his ground, kindly.
 - [ ] **Dials.** With `dials` on, the desk face breathes slower when he's flat
       and gestures bigger when he's up. Hovering on the tray icon says why he's
       keeping quiet when he is.

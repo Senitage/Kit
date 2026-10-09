@@ -213,9 +213,11 @@ weekend's coming").
 
 With `life.opinions` (1 or 2), his latest standing opinions from his
 notebook stay in front of him when he talks, so he sticks to them kindly
-instead of agreeing with whatever you say. Only real views count: a question
-or a passing musing ("I wonder if...", "Is that AI thing smarter than me?")
-stays a thought.
+instead of agreeing with whatever you say. Only real stances count. With the
+setting on, his thoughts file something as an opinion only when it's a view
+on a topic he'd argue for ("Winter's the best time of year"); what he noticed
+about you, a guess, a joke or a musing stays a thought. Opinions from before
+the setting was on aren't held, and a new one stands after a day.
 
 ## While you're away
 

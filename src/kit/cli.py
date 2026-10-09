@@ -410,7 +410,7 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
     print(f"quiet:    {state.get('quiet_because') or 'ready to pipe up'}")
     if state.get("closeness"):
         print(f"you two:  {state['closeness']}")
-    if state.get("away_since"):
+    if state.get("away_since") and state.get("presence") != "here":
         print(f"away:     since {state['away_since'][11:16]} (as far as Kit can tell)")
     if state.get("hello_owed"):
         print(f"hello:    owed ({state['hello_owed']}), said at the next chance")

@@ -1476,6 +1476,7 @@ class Brain:
                 self.notebook.mind(owner, 5),
                 remembered,
                 said_today,
+                stances=settings.life.opinions > 0,
             )
             options = lively(settings.ollama, plain=False)
             raw = await self.model.complete(messages, THOUGHT_SCHEMA, None, options)
@@ -1493,6 +1494,8 @@ class Brain:
         keep = {"private": True} if private else {}
         if kind == "alone" and self.life.doing is not None:
             keep["doing"] = self.life.doing.doing
+        if thought.kind == "opinion" and settings.life.opinions > 0 and a_view(thought.text):
+            keep["stance"] = True  # a view he can stand by (life.opinions)
         if thought.text and self.notebook.write(thought.kind, thought.text, trigger=kind, **keep):
             self.life.publish({"type": "fidget", "gesture": "look_up", "mood": "thinking"})
         if thought.want:
@@ -1538,8 +1541,10 @@ class Brain:
         return self.life.voice(persona.owner, own, said, self.quirks, text, mind, opinions)
 
     def _opinions(self, settings: Settings, shared: bool = False) -> list[str]:
-        """His standing opinions (``life.opinions``): views he's held at least a day,
-        newest first. ``shared``: none formed from what Dan kept local."""
+        """His standing opinions (``life.opinions``): stances he's held at least a day,
+        newest first. Only ones formed as stances count (the thinking prompt asks for
+        them once the setting is on), never observations from before it. ``shared``:
+        none formed from what Dan kept local."""
         want = settings.life.opinions
         if want <= 0:
             return []
@@ -1549,6 +1554,7 @@ class Brain:
             for e in self.notebook.entries("opinion", 30)
             if now - parse_time(e.created, now) >= OPINION_STANDS
             and not (shared and e.meta.get("private"))
+            and e.meta.get("stance")
             and a_view(e.text)
         ]
         return [e.text for e in held[:want]]

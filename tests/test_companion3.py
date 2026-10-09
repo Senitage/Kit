@@ -667,21 +667,46 @@ def test_a_view_is_a_statement_not_a_musing():
     assert a_view("Dan works too hard. He should take Friday off.")
 
 
-def test_musings_arent_held_as_opinions(kit):
+def test_musings_and_old_observations_arent_held_as_opinions(kit):
     brain, model, _ = kit(reply("Sure."), opinions=2)
-    brain.notebook.write("opinion", "Is that AI thing actually smarter than me at puns?")
-    brain.notebook.write("opinion", "Pineapple on pizza is underrated.")
+    brain.notebook.write("opinion", "Pineapple on pizza is underrated.", stance=True)
+    brain.notebook.write(
+        "opinion", "Is that AI thing actually smarter than me at puns?", stance=True
+    )
+    # From before the setting: an observation the old prompt filed as an opinion.
+    brain.notebook.write("opinion", "He looks like he's battling the settings menu again.")
     brain.memory.clock.now += timedelta(days=2)
     collect(brain.chat("Pizza tonight?"))
     held = model.calls[0][0]["content"].split("Views you hold and stand by", 1)[1]
-    assert "Pineapple" in held and "smarter" not in held.split("\n\n")[0]
+    held = held.split("\n\n")[0]
+    assert "Pineapple" in held and "smarter" not in held and "settings menu" not in held
+
+
+def test_with_opinions_on_he_files_only_stances_as_opinions(kit):
+    stance = json.dumps(
+        {
+            "thought": "Winter's the best time of year.",
+            "kind": "opinion",
+            "want": "",
+            "feeling": "same",
+            "why": "",
+        }
+    )
+    brain, model, _ = kit(stance, opinions=1)
+    asyncio.run(brain.think(("quiet", "A quiet moment.")))
+    assert "a stance on a topic" in model.calls[0][0]["content"]
+    held = brain.notebook.entries("opinion")
+    assert held[0].text == "Winter's the best time of year." and held[0].meta.get("stance")
+    off, model, _ = kit(stance, opinions=0)  # the same data folder, setting off again
+    asyncio.run(off.think(("quiet", "A quiet moment.")))
+    assert "a stance on a topic" not in model.calls[0][0]["content"]
 
 
 def test_standing_opinions_are_in_his_voice(kit):
     brain, model, _ = kit(reply("Pineapple belongs on pizza, fight me."), opinions=1)
-    brain.notebook.write("opinion", "Pineapple on pizza is underrated.")
+    brain.notebook.write("opinion", "Pineapple on pizza is underrated.", stance=True)
     brain.memory.clock.now += timedelta(days=2)
-    brain.notebook.write("opinion", "A brand new view.")  # not held long enough yet
+    brain.notebook.write("opinion", "A brand new view.", stance=True)  # not held long enough
     collect(brain.chat("Pizza tonight?"))
     system = model.calls[0][0]["content"]
     held = system.split("Views you hold and stand by", 1)[1].split("\n")[1:3]
