@@ -103,6 +103,13 @@ name: `storm`, `rain`, `wind`, `fog` and `hot`, with `sun` and `part_cloud`
 bringing `sunny`. A pack without that show uses the nearest one it has (hot
 falls back to sunny) or just shows the temperature.
 
+Asleep (`kit.setState("sleeping")`), he plays the pack's `sleep` show (moon,
+stars, floating Zs) and every few minutes drifts into its `dream` show for a
+little while; waking ends it. Any show in the pack can also be played by name,
+like `kit.show({kind: "dream"})`. The clock and the temperature light up on
+the model's own seven-segment digits when it has them (a `-` lights segment g;
+the date still uses a flat label).
+
 The page asks the brain for a version every few seconds and reloads (keeping
 his mood) when it changes: a new page, a different character, or a changed
 model or pack. So a new model, retuned moods or a fix to how he moves reach

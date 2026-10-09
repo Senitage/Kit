@@ -1,7 +1,7 @@
 {
   "name": "Kit 3D",
   "style": "model",
-  "version": "20261009120826",
+  "version": "20261009125357",
   "model": "kit_face.glb",
   "tuning": {
     "mood_blend_seconds": 0.35,
@@ -280,6 +280,31 @@
       "energy": 0.15,
       "lean_degrees": 0,
       "move": null
+    },
+    "sleepy": {
+      "shape_keys": {
+        "close_L": 1,
+        "close_R": 1,
+        "mouth_flat": 0.4,
+        "size_down": 0.2
+      },
+      "glow_colour": "#3f5cff",
+      "energy": 0.05,
+      "lean_degrees": 0,
+      "move": null
+    },
+    "dreaming": {
+      "shape_keys": {
+        "close_L": 1,
+        "close_R": 1,
+        "blush": 0.6,
+        "mouth_open": 0.15,
+        "brow_up": 0.2
+      },
+      "glow_colour": "#a98bff",
+      "energy": 0.05,
+      "lean_degrees": 0,
+      "move": null
     }
   },
   "weather": {
@@ -290,42 +315,82 @@
       },
       "move": "jolt",
       "loop_move": false,
-      "props_group": "Weather_Rain"
+      "props_groups": [
+        "Weather_Rain"
+      ],
+      "asleep": false
     },
     "storm": {
       "mood": "scared",
       "shape_keys": {},
       "move": "cower",
       "loop_move": true,
-      "props_group": "Weather_Storm"
+      "props_groups": [
+        "Weather_Storm"
+      ],
+      "asleep": false
     },
     "sunny": {
       "mood": "sunny",
       "shape_keys": {},
       "move": "sun_bask",
       "loop_move": true,
-      "props_group": "Weather_Sunny"
+      "props_groups": [
+        "Weather_Sunny"
+      ],
+      "asleep": false
     },
     "wind": {
       "mood": "windy",
       "shape_keys": {},
       "move": "windswept",
       "loop_move": true,
-      "props_group": "Weather_Wind"
+      "props_groups": [
+        "Weather_Wind"
+      ],
+      "asleep": false
     },
     "fog": {
       "mood": "foggy",
       "shape_keys": {},
       "move": "fog_peer",
       "loop_move": true,
-      "props_group": "Weather_Fog"
+      "props_groups": [
+        "Weather_Fog"
+      ],
+      "asleep": false
     },
     "hot": {
       "mood": "hot",
       "shape_keys": {},
       "move": "melt",
       "loop_move": true,
-      "props_group": "Weather_Hot"
+      "props_groups": [
+        "Weather_Hot"
+      ],
+      "asleep": false
+    },
+    "sleep": {
+      "mood": "sleepy",
+      "shape_keys": {},
+      "move": "sleep_breathe",
+      "loop_move": true,
+      "props_groups": [
+        "Mode_Sleep",
+        "Mode_Zzz"
+      ],
+      "asleep": true
+    },
+    "dream": {
+      "mood": "dreaming",
+      "shape_keys": {},
+      "move": "dream_wiggle",
+      "loop_move": true,
+      "props_groups": [
+        "Mode_Sleep",
+        "Mode_Dream"
+      ],
+      "asleep": true
     }
   },
   "gestures": [
@@ -348,6 +413,8 @@
     "sun_bask",
     "windswept",
     "fog_peer",
-    "melt"
+    "melt",
+    "sleep_breathe",
+    "dream_wiggle"
   ]
 }

@@ -9,7 +9,9 @@
      kit.play('nod')           one of Kit's gestures (kit.reply), or a clip name
      kit.setState('sleeping')  idle, sleeping, listening, thinking, speaking, working, offline
      kit.lookAt(x, y)          look toward a point, -1..1 each way, y down
-     kit.show({...})           a show from the brain (kit.shows): weather, time, date
+     kit.show({...})           a show from the brain (kit.shows): weather, time, date,
+                               or any show in the pack by name ({kind: 'dream'})
+   Asleep, he shows the pack's sleep show and now and then drifts into its dream.
    Calls made before the model has loaded are kept and played once it has.
 
    Page options (query string): app=desk (whose look to draw), character=<preset>,
@@ -25,6 +27,10 @@
   var BG = params.get('bg') || 'transparent';
   var POLL_MS = 4000;
   var SHOW_SECONDS = 8;
+  // Asleep: dream for DREAM_SECONDS every DREAM_EVERY seconds, the first after DREAM_AFTER.
+  var DREAM_AFTER = 60, DREAM_EVERY = 180, DREAM_SECONDS = 25;
+  // Seven-segment digits (segments a..g) for the model's clock and thermometer.
+  var SEGMENTS = ['abcdef', 'bc', 'abdeg', 'abcdg', 'bcfg', 'acdfg', 'acdefg', 'abc', 'abcdefg', 'abcdfg'];
   var OFFLINE_COLOUR = '#8c96a0';
   var $ = function (id) { return document.getElementById(id); };
   function say(text) { $('msg').textContent = text || ''; }
@@ -49,6 +55,7 @@
     setState: function (state) {
       want.state = state || 'idle';
       if (want.state === 'sleeping' || want.state === 'offline') endShow(true);
+      else if (show && (pack.weather || {})[show.kind] && pack.weather[show.kind].asleep) endShow(true);  // woken from a dream
       remember();
     },
     lookAt: function (x, y) { want.look = { x: +x || 0, y: +y || 0, until: now() + 3 }; },
@@ -59,8 +66,11 @@
   // ---- the scene ----
   var info, pack, moods, gestures, tuning;
   var baseZ = 6.4, renderer, scene, camera, composer, bloom, hemi, shadow, pivot, headBone, glowMat;
-  var mixer, propMixer, currentAction = null, clips = {}, groups = {}, faceMeshes = [];
-  var digitCtx, digitTex, digitPlane;
+  var mixer, propMixer, currentAction = null, clips = {}, faceMeshes = [];
+  // Show props: each node once (sleep and dream share some), and each show's nodes.
+  var props = {}, showProps = {};
+  var digitCtx, digitTex, digitPlane, segs = {}, hasSegments = false;
+  var mode = '', asleepSince = null;
   var cur = {}, target = {}, gaze = { x: 0, y: 0 }, curColour = new THREE.Color(), tmpC = new THREE.Color();
   var curTilt = 0, curEnergy = 0.45, glowScale = 1, flash = 0;
   var blinkT = 0, nextBlink = 2, pulse = null, show = null, lastDigits = '';
@@ -138,17 +148,27 @@
     // Weather props live in the world, not on Kit, so they don't sway with him.
     propMixer = new THREE.AnimationMixer(scene);
     Object.keys(pack.weather || {}).forEach(function (kind) {
-      var node = model.getObjectByName(pack.weather[kind].props_group);
-      if (!node) return;
-      scene.attach(node); node.visible = false;
-      groups[kind] = { node: node, clips: [], pop: 0, shown: 0, base: node.scale.clone() };
+      var w = pack.weather[kind];
+      showProps[kind] = (w.props_groups || (w.props_group ? [w.props_group] : [])).filter(function (name) {
+        if (props[name]) return true;
+        var node = model.getObjectByName(name);
+        if (!node) return false;
+        scene.attach(node); node.visible = false;
+        props[name] = { node: node, clips: [], shown: 0, base: node.scale.clone() };
+        return true;
+      });
     });
+    // The clock and thermometer digits on his face, hidden until a show needs them.
+    model.traverse(function (o) {
+      if (/^(Time|Temp)_/.test(o.name)) { segs[o.name] = o; o.visible = false; }
+    });
+    hasSegments = !!segs.Time_D0_a;
     var dict = (faceMeshes[0] && faceMeshes[0].morphTargetDictionary) || {};
     Object.keys(dict).forEach(function (name) { cur[name] = 0; });
     mixer = new THREE.AnimationMixer(model);
     gltf.animations.forEach(function (clip) { clips[clip.name] = clip; });
-    Object.keys(groups).forEach(function (kind) {
-      var grp = groups[kind], inside = new Set();
+    Object.keys(props).forEach(function (name) {
+      var grp = props[name], inside = new Set();
       grp.node.traverse(function (o) { inside.add(THREE.PropertyBinding.sanitizeNodeName(o.name)); });
       gltf.animations.forEach(function (clip) {
         if (clip.tracks.some(function (t) { return inside.has(t.name.split('.')[0]); })) {
@@ -213,12 +233,11 @@
   function startShow(what) {
     if (!what || !what.kind) return;
     endShow(true);
-    var kind = what.kind === 'weather' ? weatherKind(what.sky || '') : '';
+    var shows = pack.weather || {};
+    var kind = what.kind === 'weather' ? weatherKind(what.sky || '') : shows[what.kind] ? what.kind : '';
     show = { what: what, kind: kind, until: now() + (+what.seconds || SHOW_SECONDS), digits: false };
-    var w = kind && (pack.weather || {})[kind];
+    var w = kind && shows[kind];
     if (w) {
-      var grp = groups[kind];
-      if (grp) { grp.pop = 1; grp.shown = 0; grp.node.visible = true; grp.clips.forEach(function (a) { a.reset().play(); }); }
       state.showMood = w.mood;
       show.face = w.shape_keys || {};
       playClip(w.move, !!w.loop_move);
@@ -243,7 +262,6 @@
   }
   function endShow(quiet) {
     if (!show) return;
-    Object.keys(groups).forEach(function (k) { groups[k].pop = 0; });
     state.showMood = null;
     show = null;
     if (digitPlane) digitPlane.visible = false;
@@ -263,6 +281,54 @@
     digitTex.needsUpdate = true;
   }
 
+  /* Light a number on the model's own seven-segment digits: the clock (H:MM, the
+     colon blinking) or the thermometer (two digits, a minus, the degree sign). */
+  function lightDigit(prefix, ch) {
+    var on = ch === '-' ? 'g' : ch >= '0' && ch <= '9' ? SEGMENTS[+ch] : '';
+    'abcdefg'.split('').forEach(function (seg) {
+      var node = segs[prefix + '_' + seg];
+      if (node) node.visible = on.indexOf(seg) >= 0;
+    });
+  }
+  function hideSegments() {
+    Object.keys(segs).forEach(function (name) { segs[name].visible = false; });
+  }
+  function showSegments(what, t) {
+    hideSegments();
+    if (!hasSegments) return false;
+    var text = String(what.text || '');
+    if (what.kind === 'time') {
+      var hm = /^(\d{1,2}):(\d{2})$/.exec(text);
+      if (!hm) return false;
+      var hh = ('  ' + hm[1]).slice(-2), mm = hm[2];
+      [hh[0], hh[1], mm[0], mm[1]].forEach(function (ch, i) { lightDigit('Time_D' + i, ch); });
+      if (segs.Time_Colon) segs.Time_Colon.visible = t % 1 < 0.6;
+      return true;
+    }
+    if (what.kind === 'weather') {
+      var deg = /^(-?\d{1,3})/.exec(text);
+      if (!deg) return false;
+      var n = Math.max(-99, Math.min(99, +deg[1])), abs = String(Math.abs(n));
+      var d0 = abs.length > 1 ? abs[0] : n < 0 ? '-' : ' ', d1 = abs[abs.length - 1];
+      lightDigit('Temp_D0', d0); lightDigit('Temp_D1', d1);
+      if (segs.Temp_Minus) segs.Temp_Minus.visible = n <= -10;
+      if (segs.Temp_Deg) segs.Temp_Deg.visible = true;
+      if (segs.Temp_C) segs.Temp_C.visible = true;
+      return true;
+    }
+    return false;
+  }
+
+  /* Asleep, the pack's sleep show plays, drifting into its dream now and then. */
+  function sleepMode(t, asleep) {
+    var shows = pack.weather || {};
+    if (!asleep) { asleepSince = null; return ''; }
+    if (asleepSince === null) asleepSince = t;
+    var slept = t - asleepSince;
+    var dreaming = shows.dream && slept >= DREAM_AFTER && (slept - DREAM_AFTER) % DREAM_EVERY < DREAM_SECONDS;
+    return dreaming ? 'dream' : shows.sleep ? 'sleep' : '';
+  }
+
   function resize() {
     var w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
     renderer.setSize(w, h, false);
@@ -278,12 +344,21 @@
     var dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
     if (show && t > show.until) endShow(false);
     // pull back while weather props are out so the cloud or sun stays in view
-    var props = show && show.kind ? 1 : 0;
-    camera.position.z += (baseZ * (1 + 0.45 * props) - camera.position.z) * Math.min(1, dt * 4);
-    camera.position.y += (0.25 + 0.3 * props - camera.position.y) * Math.min(1, dt * 4);
-    camera.lookAt(0, 0.05 + 0.3 * props, 0);
+    var away = (show && show.kind) || mode ? 1 : 0;
+    camera.position.z += (baseZ * (1 + 0.45 * away) - camera.position.z) * Math.min(1, dt * 4);
+    camera.position.y += (0.25 + 0.3 * away - camera.position.y) * Math.min(1, dt * 4);
+    camera.lookAt(0, 0.05 + 0.3 * away, 0);
     var st = want.state;
-    var moodName = state.showMood || (st === 'offline' ? 'tired' : st === 'thinking' && state.mood === 'neutral' ? 'thinking' : state.mood);
+    var asleep = st === 'sleeping';
+    var newMode = show ? '' : sleepMode(t, asleep);
+    if (newMode !== mode) {
+      var mw = (pack.weather || {})[newMode];
+      if (mw) playClip(mw.move, !!mw.loop_move);
+      else if (mode) playClip('idle');
+      mode = newMode;
+    }
+    var modeShow = mode ? pack.weather[mode] : null;
+    var moodName = state.showMood || (modeShow && modeShow.mood) || (st === 'offline' ? 'tired' : st === 'thinking' && state.mood === 'neutral' ? 'thinking' : state.mood);
     var m = mood(moodName);
     var k = 1 - Math.exp(-dt / Math.max(tuning.mood_blend_seconds || 0.35, 0.01) * 3);
 
@@ -291,6 +366,7 @@
     var keys = m.shape_keys || {}, name;
     for (name in cur) target[name] = keys[name] || 0;
     if (show && show.face) for (name in show.face) target[name] = Math.max(target[name] || 0, show.face[name]);
+    if (modeShow) for (name in modeShow.shape_keys || {}) target[name] = Math.max(target[name] || 0, modeShow.shape_keys[name]);
     if (pulse) {
       var p = (t - pulse.start) / pulse.seconds;
       if (p >= 1) pulse = null;
@@ -300,8 +376,7 @@
       }
     }
     if (st === 'listening') { target.size_up = Math.min(1, (target.size_up || 0) + 0.2); target.brow_up = Math.min(1, (target.brow_up || 0) + 0.2); }
-    var asleep = st === 'sleeping';
-    if (asleep) { target.close_L = 0.92; target.close_R = 0.92; target.mouth_flat = 0.6; }
+    if (asleep && !modeShow) { target.close_L = 0.92; target.close_R = 0.92; target.mouth_flat = 0.6; }
     nextBlink -= dt;
     if (!asleep && st !== 'offline' && nextBlink <= 0) {
       blinkT = 0.16; nextBlink = (tuning.blink_every_seconds || 4) * (0.6 + Math.random() * 0.8);
@@ -328,10 +403,11 @@
       }
     }
     var digits = show && t >= show.digitsAt && show.what.text;
+    var segments = digits ? showSegments(show.what, t) : (hideSegments(), false);
     for (var j = 0; j < faceMeshes.length; j++) faceMeshes[j].visible = !digits;
     if (digitPlane) {
-      digitPlane.visible = !!digits;
-      if (digits) drawDigits(String(show.what.text), show.what.small || '');
+      digitPlane.visible = !!digits && !segments;
+      if (digits && !segments) drawDigits(String(show.what.text), show.what.small || '');
     }
 
     // glow: the mood's colour, grey when offline, dim asleep
@@ -348,15 +424,19 @@
 
     // body: the baked move plus live idle motion scaled by energy and mood
     mixer.timeScale = tuning.move_speed || 1; mixer.update(dt); propMixer.update(dt);
-    Object.keys(groups).forEach(function (kind) {
-      var grp = groups[kind];
-      grp.shown += (grp.pop - grp.shown) * Math.min(1, dt * (grp.pop ? 5 : 8));
-      var x = grp.shown, s = grp.pop ? x + Math.sin(x * Math.PI) * 0.18 : x;
+    // props pop in for the show playing (or the sleep and dream shows) and out after
+    var out = (show && showProps[show.kind]) || (mode && showProps[mode]) || [];
+    Object.keys(props).forEach(function (name) {
+      var grp = props[name], pop = out.indexOf(name) >= 0 ? 1 : 0;
+      if (pop && !grp.node.visible) { grp.shown = 0; grp.node.visible = true; grp.clips.forEach(function (a) { a.reset().play(); }); }
+      grp.shown += (pop - grp.shown) * Math.min(1, dt * (pop ? 5 : 8));
+      var x = grp.shown, s = pop ? x + Math.sin(x * Math.PI) * 0.18 : x;
       grp.node.scale.copy(grp.base).multiplyScalar(Math.max(0.001, s));
-      if (!grp.pop && x < 0.02 && grp.node.visible) { grp.node.visible = false; grp.clips.forEach(function (a) { a.stop(); }); }
+      if (!pop && x < 0.02 && grp.node.visible) { grp.node.visible = false; grp.clips.forEach(function (a) { a.stop(); }); }
     });
     var bolt = scene.getObjectByName('Lightning');
-    if (bolt && groups.storm && groups.storm.node.visible && bolt.scale.x > 0.5) flash = 1;
+    var storm = props[(showProps.storm || [])[0]];
+    if (bolt && storm && storm.node.visible && bolt.scale.x > 0.5) flash = 1;
     flash = Math.max(0, flash - dt * 5);
     hemi.intensity = 0.2 + flash * 1.6;
     var energyTarget = (tuning.energy || 1) * (asleep ? 0.05 : st === 'offline' ? 0.08 : (m.energy || 0.45));
