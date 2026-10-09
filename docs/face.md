@@ -23,6 +23,24 @@ picked it on 2026-10-05 from four styles in the
 Every emotion and gesture in `kit.reply` must have a pose and a clip. A test
 enforces this, so adding an emotion means adding its pose too.
 
+## Body moves: hops, loops and big gestures
+
+Gestures move his face within its own screen; body moves move all of him.
+`kit.face.body` describes each one (a loop, a hop, a double hop, a jump back, a
+sway, a sink, a bob, a dash, a peek) as a path in face sizes that starts and
+ends where he sits, so the arm can use the same names later.
+
+- A gesture with a bigger version brings it along (bounce hops twice, startle
+  jumps back, droop sinks), an excited reply does a loop, and so does his hello
+  when Dan gets back.
+- On the desk, `kit.desk.alive.Body` moves his window: where Dan left him, plus
+  the lift that makes room for his words, plus the move. His window has a
+  see-through margin, so big tilts and squashes aren't cut off.
+- The Look page's "How much Kit moves" sets how big his gestures are and
+  whether body moves play: Lively (the default), Bouncy, A little (the old
+  size, no body moves) or Still. He waits a few seconds between moves, and a
+  loop at most every 40 seconds, so he's lively without being frantic.
+
 ## Shows: the time, the date, the weather
 
 Glow can show things besides his eyes. Ask Kit the time and his eyes turn into

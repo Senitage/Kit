@@ -384,7 +384,7 @@ def test_look_changes_show_at_once_and_only_touch_the_look(qapp, desk_dir, monke
         look = desk.window.look
         look.eyes.pick("#ffc66b")
         look.size.setValue(200)
-        assert desk.face.eye.name() == "#ffc66b" and desk.face.width() == 200
+        assert desk.face.eye.name() == "#ffc66b" and round(desk.face.face_rect().width()) == 200
         desk.window.pc.form.url.setText("http://elsewhere:8600")  # typed, not saved
         look.theme.setCurrentIndex(look.theme.findData("light"))
         saved = DeskConfig.load(desk_dir)
@@ -506,26 +506,61 @@ def _wait(qapp, seconds):
 
 
 def test_what_kit_says_sits_under_his_face_and_he_hops_up_for_room(qapp):
+    from kit.desk.alive import Body
+
     face = desk_app.HelperFace(150)
     screen = face.screen().availableGeometry()
-    home = desk_app.QPoint(screen.right() - 174, screen.bottom() - 154)  # tucked in the corner
-    face.move(home)
     face.show()
-    bubble = desk_app.SpeechBubble(face)
+    face.put_face_at(desk_app.QPoint(screen.right() - 174, screen.bottom() - 154))  # the corner
+    home = face.pos()
+    body = Body(face, lambda: 150)
+    bubble = desk_app.SpeechBubble(face, body)
     bubble.setText("Righto, the kettle's on.")
-    _wait(qapp, 0.5)
-    f = face.frameGeometry()
-    assert bubble.isVisible() and face.pos() != home  # hopped up to make room
+    _wait(qapp, 0.8)
+    f = face.face_geometry()
+    assert bubble.isVisible() and face.pos().y() < home.y()  # hopped up to make room
     assert bubble.y() >= f.top() + int(f.height() * 0.8)  # under his face, not over it
     assert bubble.geometry().bottom() <= screen.bottom()
     bubble.setText("")
-    _wait(qapp, 0.5)
+    _wait(qapp, 0.8)
     assert not bubble.isVisible() and face.pos() == home  # settled back down
     bubble.idle_text = lambda: "watching the rain..."
     bubble.setText("")
     assert bubble.isVisible() and bubble.text() == "watching the rain..."
     bubble.hide()
     face.close()
+
+
+def test_he_loops_when_excited_and_comes_home(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9", face_x=300, face_y=300).save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    desk.sounds.player = None
+    try:
+        home = desk.face.pos()
+        assert desk.face.face_pos() == desk_app.QPoint(300, 300)  # where Dan left his face
+        desk.face.face.set_emotion("excited", 0.0)
+        assert desk.body.moving == "loop"
+        _wait(qapp, 0.6)
+        assert desk.face.pos() != home  # out on his loop
+        _wait(qapp, 1.4)
+        assert desk.body.moving is None and desk.face.pos() == home
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving is None  # too soon after the last move
+        desk._moved_at.clear()
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving == "hop_hop"
+        desk.body.stop()
+        desk.config.movement = "a_little"
+        desk.apply_look()
+        desk._moved_at.clear()
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving is None and desk.face.face.amplitude == 1.0
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
 
 
 def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):

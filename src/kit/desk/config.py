@@ -64,7 +64,7 @@ class DeskConfig:
     hidden_words: list[str] = field(default_factory=lambda: list(HIDDEN_WORDS))
     show_face: bool = True
     face_size: int = 150
-    face_x: int | None = None  # where Dan last left the face; None puts it bottom right
+    face_x: int | None = None  # where Dan last left the face (its top left); None: bottom right
     face_y: int | None = None
     # How Kit looks (the Look page).
     theme: str = "system"  # system, dark or light
@@ -73,6 +73,7 @@ class DeskConfig:
     font_pt: float = 10.5
     speech_bubble: bool = True  # say what Kit says in a bubble under his face
     boop: bool = True  # a little noise when he says something (kit.desk.sound)
+    movement: str = "lively"  # how much he moves: still, a_little, lively or bouncy
     chat_width: int = 460
     chat_height: int = 640
     # Updates (kit.desk.update).

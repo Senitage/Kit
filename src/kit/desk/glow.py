@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath, QPen
@@ -132,6 +133,8 @@ class FaceWidget(QWidget):
         self.background: QColor | None = None
         self.eye: QColor | None = None
         self.follow_mouse = True
+        self.margin = 0.0  # room around his face to move into, as a fraction of its size
+        self.spin, self.squash = 0.0, 1.0  # set by a body move (kit.desk.alive.Body)
         self._frame = self.face.tick(time.monotonic())
         self.scene: Scene | None = None
         self._scene_at = 0.0
@@ -168,24 +171,39 @@ class FaceWidget(QWidget):
     def scene_time(self) -> float:
         return time.monotonic() - self._scene_at
 
+    def face_rect(self) -> QRectF:
+        """Where his face is drawn: a square in the middle, leaving ``margin`` around
+        it for big moves, which would otherwise be cut off at the window's edge."""
+        side = min(self.width(), self.height()) / (1 + 2 * self.margin)
+        return QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
+
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         p = QPainter(self)
-        rect = QRectF(self.rect())
+        if self.background is not None:
+            p.fillRect(self.rect(), self.background)
+        rect = self.face_rect()
+        frame = self._frame
+        if self.spin or self.squash != 1.0:  # a body move (kit.face.body)
+            frame = replace(
+                frame,
+                rot=frame.rot + self.spin,
+                sy=frame.sy * self.squash,
+                sx=frame.sx * (2 - self.squash),
+            )
         scene = self.scene
         if scene is None:
-            paint_glow(p, rect, self._frame, self.background, self.eye)
+            paint_glow(p, rect, frame, None, self.eye)
         else:
             t = self.scene_time()
             paint_glow(
                 p,
                 rect,
-                self._frame,
-                self.background,
+                frame,
+                None,
                 self.eye,
                 eyes=scene.eyes(t),
                 inside=lambda q, s, colour: scene.inside(q, s, t, colour),
             )
-            s = min(rect.width(), rect.height())
-            p.translate((rect.width() - s) / 2, (rect.height() - s) / 2)
-            scene.over(p, s, t)
+            p.translate(rect.topLeft())
+            scene.over(p, rect.width(), t)
         p.end()

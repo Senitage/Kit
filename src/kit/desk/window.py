@@ -712,6 +712,17 @@ class LookPage(QWidget):
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
         form.addRow(self.speech)
+        self.movement = QComboBox()
+        for label, key in (
+            ("Lively: hops, loops and big gestures", "lively"),
+            ("Bouncy: even more", "bouncy"),
+            ("A little: small gestures only", "a_little"),
+            ("Still: hardly moves", "still"),
+        ):
+            self.movement.addItem(label, key)
+        self.movement.setCurrentIndex(max(0, self.movement.findData(config.movement)))
+        self.movement.currentIndexChanged.connect(self._changed)
+        form.addRow("How much Kit moves", self.movement)
         self.boop = QCheckBox("Boop when Kit says something")
         self.boop.setToolTip("A little noise so you don't miss him. Turn it off once he talks.")
         self.boop.setChecked(config.boop)
@@ -738,6 +749,7 @@ class LookPage(QWidget):
             font_pt=self.font_pt.value(),
             speech_bubble=self.speech.isChecked(),
             boop=self.boop.isChecked(),
+            movement=self.movement.currentData(),
         )
 
     def _changed(self, *_args) -> None:
@@ -767,6 +779,7 @@ class LookPage(QWidget):
         self.font_pt.setValue(d.font_pt)
         self.speech.setChecked(d.speech_bubble)
         self.boop.setChecked(d.boop)
+        self.movement.setCurrentIndex(self.movement.findData(d.movement))
 
     def show_boop(self, on: bool) -> None:
         """The tray's boop switch changed: show it here without saving again."""

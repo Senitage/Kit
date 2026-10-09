@@ -17,6 +17,101 @@ from collections.abc import Callable
 from PySide6.QtCore import QEasingCurve, QObject, QPoint, QPropertyAnimation, QTimer
 
 from kit.desk.glow import FaceWidget
+from kit.face.body import step
+
+FRAME_MS = 16
+
+
+class Body(QObject):
+    """Where Glow's window sits, as three parts added up: home (where Dan left
+    him), a lift (hopping up to make room for his words under him) and a body move
+    (a loop, a hop: kit.face.body). Only this moves him while he's awake, so the
+    lift and a move can happen at once without fighting over his position.
+
+    ``scale`` makes the moves bigger or smaller (0 turns them off)."""
+
+    LIFT_EASE = 0.18  # how much of the way to the new lift each frame goes
+
+    def __init__(self, face: FaceWidget, size: Callable[[], int]) -> None:
+        super().__init__(face)
+        self.face = face
+        self.size = size  # his face's size in pixels (not the window's)
+        self.scale = 1.0
+        self.home: QPoint | None = None  # set while anything is moving him
+        self.lift_to = 0.0  # pixels up
+        self._lift = 0.0
+        self._move: tuple[str, float] | None = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+
+    @property
+    def lifted(self) -> float:
+        """Pixels he's up by right now (on his way to ``lift_to``)."""
+        return self._lift
+
+    @property
+    def moving(self) -> str | None:
+        return self._move[0] if self._move else None
+
+    def play(self, name: str | None) -> None:
+        """Start a body move, unless he's mid-move or moves are off."""
+        if not name or self.scale <= 0 or self._move is not None or not self.face.isVisible():
+            return
+        self._move = (name, time.monotonic())
+        self._start()
+
+    def lift(self, pixels: float) -> None:
+        """Hop up by ``pixels`` (0 settles back down)."""
+        self.lift_to = max(0.0, pixels)
+        if self.lift_to or self._lift:
+            self._start()
+
+    def stop(self, go_home: bool = True) -> None:
+        """Stop moving him: back home first, unless Dan has grabbed him (then
+        wherever he is becomes home as Dan drags him)."""
+        self.timer.stop()
+        if go_home and self.home is not None:
+            self.face.move(self.home)
+        self.home, self._move = None, None
+        self.lift_to = self._lift = 0.0
+        self.face.spin, self.face.squash = 0.0, 1.0
+
+    def _start(self) -> None:
+        if self.home is None:
+            self.home = self.face.pos()
+        if not self.timer.isActive():
+            self.timer.start(FRAME_MS)
+
+    def tick(self) -> None:
+        if self.home is None:
+            self.timer.stop()
+            return
+        self._lift += (self.lift_to - self._lift) * self.LIFT_EASE
+        if abs(self.lift_to - self._lift) < 0.5:
+            self._lift = self.lift_to
+        x = y = spin = 0.0
+        squash = 1.0
+        if self._move is not None:
+            at = step(self._move[0], time.monotonic() - self._move[1])
+            if at is None:
+                self._move = None
+            else:
+                k, size = self.scale, self.size()
+                x, y = at.x * size * k, at.y * size * k
+                spin, squash = at.spin * min(k, 1.5), 1 + (at.squash - 1) * k
+        self.face.spin, self.face.squash = spin, squash
+        to = self.home + QPoint(round(x), round(y - self._lift))
+        screen = self.face.screen()
+        if screen is not None:  # never off the screen's edge
+            area = screen.availableGeometry()
+            to.setX(max(area.left(), min(to.x(), area.right() - self.face.width())))
+            to.setY(max(area.top(), min(to.y(), area.bottom() - self.face.height())))
+        if to != self.face.pos():
+            self.face.move(to)
+        if self._move is None and self._lift == 0.0 and self.lift_to == 0.0:
+            self.face.move(self.home)
+            self.home = None
+            self.timer.stop()
 
 
 class Alive(QObject):
@@ -26,9 +121,11 @@ class Alive(QObject):
         focused_rect: Callable[[], tuple[int, int, int, int] | None],
         busy: Callable[[], bool],
         rng: random.Random | None = None,
+        body: Body | None = None,
     ) -> None:
         super().__init__(face)
         self.face = face
+        self.body = body
         self.focused_rect = focused_rect
         self.busy = busy
         self.rng = rng or random.Random()
@@ -68,10 +165,13 @@ class Alive(QObject):
         QTimer.singleShot(1800, lambda: self.asleep and self.face.face.set_state("sleeping"))
         if not self.face.isVisible():
             return
+        if self.body is not None:
+            self.body.stop()  # back home first, so that's where he wakes up
         self._awake_pos = self.face.pos()
         screen = self.face.screen().availableGeometry()
         # Lie on the bottom of the screen, half tucked under its edge.
-        rest = QPoint(self.face.x(), screen.bottom() - int(self.face.height() * 0.55))
+        f = self.face.face_rect()
+        rest = QPoint(self.face.x(), screen.bottom() - int(f.top() + f.height() * 0.55))
         self._slide(rest, 2600, QEasingCurve.Type.InOutSine)
 
     def wake_up(self) -> None:

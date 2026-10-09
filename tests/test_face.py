@@ -141,3 +141,38 @@ def test_wink_closes_only_one_eye():
     face.play("wink", 0)
     mid = run(face, 0, CLIPS["wink"].seconds / 2)[-1]
     assert mid.open_right < 0.2 < 0.8 < mid.open_left
+
+
+def test_body_moves_start_and_end_where_he_sits():
+    from kit.face.body import MOVES, step
+
+    for name, move in MOVES.items():
+        for at in (0.0, move.seconds * 0.999):
+            s = step(name, at)
+            assert abs(s.x) < 0.02 and abs(s.y) < 0.02, name
+        middle = [step(name, move.seconds * k / 10) for k in range(1, 10)]
+        assert max(abs(s.x) + abs(s.y) for s in middle) > 0.05, name  # it really moves
+        assert step(name, move.seconds) is None
+
+
+def test_moves_go_with_gestures_emotions_and_reasons():
+    from kit.face.body import EMOTION_MOVES, GESTURE_MOVES, MOVES, move_for
+    from kit.face.rig import CLIPS, POSES
+
+    assert set(GESTURE_MOVES) <= set(CLIPS) and set(EMOTION_MOVES) <= set(POSES)
+    assert set(GESTURE_MOVES.values()) | set(EMOTION_MOVES.values()) <= set(MOVES)
+    assert move_for(emotion="excited") == "loop"
+    assert move_for(reason="back") == "loop"
+    assert move_for(gesture="bounce") == "hop_hop"
+    assert move_for(gesture="wink") is None
+
+
+def test_bigger_gestures_and_the_body_is_told():
+    from kit.face import Face
+
+    told = []
+    small, big = Face(), Face(amplitude=1.8, on_play=lambda g, now: told.append(g))
+    for face in (small, big):
+        face.play("nod", 0.0)
+    assert told == ["nod"]
+    assert abs(big.tick(0.25).dy) > abs(small.tick(0.25).dy) * 1.5

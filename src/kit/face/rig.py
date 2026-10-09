@@ -342,6 +342,11 @@ class Face:
     rng: random.Random = field(default_factory=random.Random)
     ease_s: float = 0.11  # how quickly the face settles into a new pose
     look_hold_s: float = 3.0  # how long a look_at target holds before idle gaze resumes
+    amplitude: float = 1.0  # how big his gestures are (the desk's "how much he moves")
+    # Told of each gesture and emotion as it starts, so a body can add a bigger
+    # move of its own (kit.face.body).
+    on_play: Callable[[str, float], None] | None = None
+    on_emotion: Callable[[str, float], None] | None = None
 
     def __post_init__(self) -> None:
         self.emotion = "neutral"
@@ -369,14 +374,19 @@ class Face:
         """Ease toward an emotion's pose; after ``hold_s`` seconds drift back to neutral."""
         if name not in POSES:
             raise ValueError(f"unknown emotion {name!r}")
+        changed = name != self.emotion
         self.emotion = name
         self._target = POSES[name]
         self._emotion_until = None if hold_s is None else now + hold_s
+        if changed and self.on_emotion is not None:
+            self.on_emotion(name, now)
 
     def play(self, gesture: str, now: float) -> None:
         if gesture not in CLIPS:
             raise ValueError(f"unknown gesture {gesture!r}")
         self._clip = None if gesture == "none" else (gesture, now)
+        if self._clip and self.on_play is not None:
+            self.on_play(gesture, now)
 
     def set_state(self, state: str) -> None:
         if state not in STATES:
@@ -417,7 +427,7 @@ class Face:
         self._dials[0] += (self.arousal - self._dials[0]) * k
         self._dials[1] += (self.valence - self._dials[1]) * k
         arousal, valence = self._dials
-        g = _scaled(self._gesture(now), 0.7 + 0.6 * arousal)  # 1 at the middle
+        g = _scaled(self._gesture(now), (0.7 + 0.6 * arousal) * self.amplitude)
         look_x, look_y = self._gaze(now)
         period = 7.0 if self.state == "sleeping" else 4.2 * (1 + (0.5 - arousal) * 0.6)
         if self._breath is None:
