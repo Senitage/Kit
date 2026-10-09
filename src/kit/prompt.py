@@ -85,6 +85,27 @@ def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) ->
 # it stays the same between turns, so providers can reuse it from their cache.
 TURN_PART = "\n\nIt is"
 
+
+def split_turn(system: str) -> tuple[str, str]:
+    """A system prompt cut where this turn's part begins: (the part that stays the
+    same between turns, this turn's part). The second is "" if there isn't one."""
+    fixed, found, turn = system.rpartition(TURN_PART)
+    if not found:
+        return system, ""
+    return fixed, (found + turn).strip()
+
+
+def with_now(text: str, now: str, owner: str) -> str:
+    """``owner``'s message with this turn's part of the prompt (the time, what Kit
+    recalled, the PC...) in front of it. For a local model that only reuses what it
+    has read when the new prompt carries straight on from it (``ollama.warm_up``):
+    with this turn's part here rather than in the instructions, the instructions and
+    the conversation so far read the same every turn."""
+    if not now:
+        return text
+    return f"[Not from {owner}: how things stand right now, for you to use.\n{now}]\n\n{text}"
+
+
 HAND_OFF = {
     "local-heavy": "for anything you can't answer well yourself, such as hard maths, long "
     "code, detailed engineering, current information (weather, prices, news) or facts you're "

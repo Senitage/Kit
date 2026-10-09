@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import shutil
+import time
 import tomllib
 from importlib import resources
 
@@ -160,6 +161,82 @@ def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
+    """Kit's voice: show the engines, switch one, turn speech on or off, try a line,
+    or compare engines side by side."""
+    from kit.speech.service import SpeechError, SpeechService
+
+    store = SettingsStore(paths)
+    action = args.action or "show"
+    try:
+        if action == "use":
+            store.update({"speech": {"engine": args.engine}}, "cli")
+            print(f"Kit now speaks with {args.engine}; it loads in the background")
+            return 0
+        if action in ("on", "off"):
+            store.update({"speech": {"enabled": action == "on"}}, "cli")
+            print(f"speech is {action}")
+            return 0
+    except SettingsError as e:
+        print(e)
+        return 1
+    s = store.current().speech
+    if action == "show":
+        print(f"speech: {'on' if s.enabled else 'off'}   engine: {s.engine}\n")
+        print(f"  {'name':<18} {'kind':<17} {'python':<28} voice")
+        for name, e in s.engines.items():
+            mark = "*" if name == s.engine else " "
+            voice = e.voice or e.reference or "-"
+            python = e.python or "(Kit's own)"
+            print(f"{mark} {name:<18} {e.kind:<17} {python:<28} {voice}")
+        print("\nSwitch with: kit speech use <name>")
+        print('Try one:     kit speech say "Hello" --engine <name> --mood happy')
+        print("Compare:     kit speech bench --engines chatterbox-turbo kokoro")
+        return 0
+    # A separate port, so this doesn't disturb the engine Kit's server is running.
+    kwargs = {"launcher": launcher} if launcher else {}
+    service = SpeechService(lambda: store.current().speech, paths, port_offset=1, **kwargs)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    try:
+        if action == "say":
+            return _speech_say(paths, service, args, stamp)
+        from kit.speech.bench import run_bench
+
+        out_dir = paths.state_dir / "speech" / "bench" / stamp
+        run_bench(service, args.engines or [s.engine], out_dir)
+        print(f"\nListen and compare: {out_dir / 'index.html'}")
+        return 0
+    except SpeechError as e:
+        print(e)
+        return 1
+    finally:
+        service.stop()
+
+
+def _speech_say(paths: KitPaths, service, args: argparse.Namespace, stamp: str) -> int:
+    from kit.speech.bench import join_wavs
+    from kit.speech.sentences import SentenceSplitter
+
+    engine = args.engine or service.settings().engine
+    print(f"loading {engine}...")
+    service.ensure(engine)
+    print(f"  ready in {service.load_s:.1f} s on {service.health.get('device')}")
+    if service.note:
+        print(f"  note: {service.note}")
+    splitter = SentenceSplitter()
+    clips = []
+    for n, piece in enumerate(splitter.feed(args.text + " ") + splitter.flush()):
+        spoken = service.speak(piece, args.mood, engine, first=n == 0)
+        clips.append(spoken.wav)
+        print(f"  {spoken.synth_ms / 1000:5.2f} s to make {spoken.audio_ms / 1000:4.1f} s: {piece}")
+    folder = paths.state_dir / "speech" / "said"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = folder / f"{stamp}-{engine}.wav"
+    out.write_bytes(join_wavs(clips))
+    print(f"saved {out}")
+    return 0
+
+
 def cmd_config(paths: KitPaths, args: argparse.Namespace) -> int:
     store = SettingsStore(paths)
     try:
@@ -267,7 +344,10 @@ def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
     print(f"{settings.persona.name} is listening.")
     print(f"  chat:     http://{shown}:{port}/#token={token}")
     print(f"  settings: http://{shown}:{port}/settings#token={token}")
-    app = create_app(store, memory, brain, token, paths=paths)
+    from kit.speech.service import SpeechService
+
+    speech = SpeechService(lambda: store.current().speech, paths)
+    app = create_app(store, memory, brain, token, paths=paths, speech=speech)
     uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
 
@@ -1206,6 +1286,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     models.add_argument("name", nargs="?", help="model profile to use for it")
 
+    speech = sub.add_parser("speech", help="Kit's voice: engines, switch, try a line, compare")
+    spsub = speech.add_subparsers(dest="action")
+    spsub.add_parser("show", help="list the voice engines and which one is in use")
+    spuse = spsub.add_parser("use", help="switch engine, e.g. kit speech use chatterbox-turbo")
+    spuse.add_argument("engine")
+    spsub.add_parser("on", help="Kit speaks his replies in the desk app")
+    spsub.add_parser("off", help="Kit stops speaking (frees the voice engine's memory)")
+    spsay = spsub.add_parser("say", help="say a line and show how long it took")
+    spsay.add_argument("text")
+    spsay.add_argument("--engine", help="default: the one in use")
+    spsay.add_argument("--mood", default="neutral", help="one of Kit's emotions, e.g. excited")
+    spbench = spsub.add_parser("bench", help="compare engines on the same Kit lines")
+    spbench.add_argument("--engines", nargs="+", default=[], help="default: the one in use")
     weather = sub.add_parser("weather", help="show the forecast Kit sees")
     weather.add_argument("place", nargs="?", help="somewhere else, e.g. 'Broome, WA'")
 
@@ -1304,6 +1397,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_memory(paths, args)
     if args.command == "models":
         return cmd_models(paths, args)
+    if args.command == "speech":
+        return cmd_speech(paths, args)
     if args.command == "notes":
         return cmd_notes(paths)
     if args.command == "things":

@@ -109,6 +109,15 @@ class OllamaSettings(_Section):
         description="For his spoken words and thoughts: words are picked from the likeliest "
         "ones that make up this share of the chance. 1 is off.",
     )
+    warm_up: bool = Field(
+        False,
+        description="Read the conversation into the local model ahead of your next "
+        "message, once Kit (and his voice) has finished, so he starts answering sooner. "
+        "Some models (Gemma) re-read the whole prompt whenever anything in it changes, "
+        "which took about two seconds a message. With this on, what changes every message "
+        "(the time, what he recalled, your PC) goes beside your message instead of in "
+        "his instructions. Not in cloud-only routing, where the local model only stands in.",
+    )
 
 
 Provider = Literal["anthropic", "openai", "google", "ollama"]
@@ -737,6 +746,169 @@ class MemorySettings(_Section):
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
 
+SpeechKind = Literal["kokoro", "piper", "chatterbox", "chatterbox-turbo", "tone"]
+
+# How strongly standard Chatterbox acts out each of Kit's emotions (its
+# "exaggeration" dial: 0 is flat, 0.5 normal, above 1 very animated).
+DEFAULT_EXAGGERATION: dict[str, float] = {
+    "default": 0.5,
+    "neutral": 0.45,
+    "happy": 0.7,
+    "curious": 0.6,
+    "thinking": 0.4,
+    "surprised": 0.9,
+    "concerned": 0.55,
+    "playful": 0.8,
+    "tired": 0.3,
+    "proud": 0.75,
+    "excited": 1.1,
+    "sad": 0.45,
+    "confused": 0.6,
+    "shy": 0.45,
+    "grumpy": 0.8,
+    "focused": 0.4,
+    "relieved": 0.6,
+    "fond": 0.65,
+}
+
+# Speed change per emotion for engines without an emotion dial (Kokoro, Piper).
+DEFAULT_MOOD_SPEED: dict[str, float] = {
+    "default": 1.0,
+    "excited": 1.12,
+    "surprised": 1.08,
+    "playful": 1.06,
+    "happy": 1.05,
+    "grumpy": 1.02,
+    "focused": 0.97,
+    "thinking": 0.95,
+    "concerned": 0.95,
+    "shy": 0.95,
+    "sad": 0.9,
+    "tired": 0.88,
+}
+
+
+# Sounds Chatterbox Turbo makes to open a reply in these emotions. Its tags (from its
+# tokenizer, 2026-10-07): [advertisement] [angry] [chuckle] [clear throat] [cough]
+# [crying] [dramatic] [fear] [gasp] [groan] [happy] [laugh] [narration] [sarcastic]
+# [shush] [sigh] [sniff] [surprised] [whispering]. Each adds about half a second.
+DEFAULT_MOOD_TAGS: dict[str, str] = {
+    "tired": "[sigh]",
+    "sad": "[sigh]",
+    "grumpy": "[groan]",
+    "playful": "[chuckle]",
+    "surprised": "[gasp]",
+}
+
+
+class SpeechEngine(_Section):
+    """One voice engine Kit can speak with. Swap engines by pointing
+    ``speech.engine`` at a different profile; each runs in its own background
+    program, so engines with clashing libraries can live in separate Pythons."""
+
+    kind: SpeechKind = Field(
+        description="Which engine: kokoro and piper are fast on a CPU; chatterbox is the "
+        "most expressive (GPU); chatterbox-turbo is faster but has no emotion dial; tone "
+        "beeps, for testing."
+    )
+    python: str = Field(
+        "",
+        description="The Python that has this engine installed, e.g. "
+        "~/kit-voice/.venv/bin/python. Empty: the Python running Kit.",
+    )
+    device: Literal["auto", "cpu", "cuda"] = Field(
+        "auto", description="Chatterbox only: auto uses the graphics card if there is one."
+    )
+    voice: str = Field(
+        "",
+        description="kokoro: a voice name such as af_heart. piper: the voice's .onnx file "
+        "(a bare name is looked for in Kit's speech models folder).",
+    )
+    reference: str = Field(
+        "",
+        description="chatterbox: a clip of at least 6 seconds whose voice Kit copies. A bare "
+        "name is looked for in Kit's speech folder. Empty: Chatterbox's own voice.",
+    )
+    speed: float = Field(1.0, ge=0.5, le=2, description="kokoro and piper: talking speed.")
+    mood_speed: dict[str, float] = Field(
+        default_factory=lambda: dict(DEFAULT_MOOD_SPEED),
+        description="kokoro and piper: speed change per emotion ('default' for the rest).",
+    )
+    exaggeration: dict[str, float] = Field(
+        default_factory=lambda: dict(DEFAULT_EXAGGERATION),
+        description="chatterbox: how strongly each emotion is acted out, 0 to 2 "
+        "('default' for the rest).",
+    )
+    cfg_weight: float = Field(
+        0.5, ge=0, le=1, description="chatterbox: lower is slower and more deliberate."
+    )
+    mood_tags: dict[str, str] = Field(
+        default_factory=lambda: dict(DEFAULT_MOOD_TAGS),
+        description="chatterbox-turbo: a sound that opens a reply in that emotion, such as "
+        "[sigh] or [chuckle].",
+    )
+
+
+DEFAULT_SPEECH_ENGINES: dict[str, dict] = {
+    "kokoro": {"kind": "kokoro", "voice": "af_heart"},
+    "piper": {"kind": "piper", "voice": "en_US-lessac-medium.onnx"},
+    "chatterbox": {"kind": "chatterbox", "reference": "kit_voice.wav"},
+    "chatterbox-turbo": {"kind": "chatterbox-turbo", "reference": "kit_voice.wav"},
+    "tone": {"kind": "tone"},
+}
+
+
+def _default_speech_engines() -> dict[str, SpeechEngine]:
+    return {n: SpeechEngine.model_validate(p) for n, p in DEFAULT_SPEECH_ENGINES.items()}
+
+
+class SpeechSettings(_Section):
+    enabled: bool = Field(False, description="Kit speaks his replies aloud in the desk app.")
+    engine: str = Field(
+        "kokoro", description="Which voice engine profile Kit speaks with (see engines)."
+    )
+    engines: dict[str, SpeechEngine] = Field(
+        default_factory=_default_speech_engines,
+        description="Voice engines Kit can use, by name. Built-in profiles are always there; "
+        "change their fields or add your own (e.g. a second kokoro voice).",
+    )
+    port: int = Field(
+        8611, ge=1024, le=65535, description="Local port for the voice engine's program."
+    )
+    load_timeout_s: int = Field(
+        240,
+        ge=10,
+        le=1800,
+        description="How long a voice engine may take to load (the first Chatterbox start "
+        "downloads its model).",
+    )
+
+    @field_validator("engines", mode="before")
+    @classmethod
+    def _keep_built_in_engines(cls, value):
+        if not isinstance(value, dict):
+            return value
+        merged = {name: dict(p) for name, p in DEFAULT_SPEECH_ENGINES.items()}
+        for name, profile in value.items():
+            if isinstance(profile, BaseModel):
+                profile = profile.model_dump()
+            if isinstance(profile, dict):
+                profile = {**merged.get(name, {}), **profile}
+            merged[name] = profile
+        return merged
+
+    @model_validator(mode="after")
+    def _engine_is_known(self) -> SpeechSettings:
+        if self.engine not in self.engines:
+            known = ", ".join(sorted(self.engines))
+            raise ValueError(f"speech.engine is '{self.engine}', which isn't an engine ({known})")
+        return self
+
+    @property
+    def profile(self) -> SpeechEngine:
+        return self.engines[self.engine]
+
+
 class Settings(_Section):
     schema_version: Literal[1] = SCHEMA_VERSION
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
@@ -752,6 +924,7 @@ class Settings(_Section):
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
+    speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
 
     @field_validator("models", mode="before")

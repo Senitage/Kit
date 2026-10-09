@@ -17,7 +17,7 @@ from importlib import resources
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import kit
@@ -31,12 +31,14 @@ from kit.paths import KitPaths
 from kit.pc_context import Snapshot
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
+from kit.speech.service import SpeechError, SpeechService
 from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
 
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
+SPEECH_CHECK_S = 5  # how often the voice engine is started or stopped to match settings
 NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes after two weeks."
 
 
@@ -44,6 +46,13 @@ class ChatIn(BaseModel):
     text: str
     # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
+
+
+class SpeakIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    emotion: str = Field("neutral", max_length=20)
+    # The opening of a reply, where an engine may add a sound (a sigh, a chuckle).
+    first: bool = False
 
 
 class FactIn(BaseModel):
@@ -124,6 +133,8 @@ def create_app(
     paths: KitPaths | None = None,
     life_every_s: float | None = TICK_S,
     notes_every_s: float | None = NOTES_SYNC_S,
+    speech: SpeechService | None = None,
+    speech_check_s: float | None = SPEECH_CHECK_S,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -134,11 +145,17 @@ def create_app(
             tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
         if notes_every_s:
             tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
+        if speech is not None and speech_check_s:
+            tasks.append(asyncio.create_task(_speech_loop(speech, store, speech_check_s)))
         yield
         for task in tasks:
             task.cancel()
+        if speech is not None:
+            await asyncio.to_thread(speech.stop)
 
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
+    if speech is not None:
+        brain.voice_quiet = speech.quiet_s  # reading ahead waits for his voice to finish
 
     def require_token(authorization: Annotated[str, Header()] = "") -> None:
         given = authorization.removeprefix("Bearer ").strip()
@@ -517,6 +534,33 @@ def create_app(
             brain.life.wake()
         return brain.life.state()
 
+    @app.get("/api/speech", dependencies=auth)
+    def speech_status() -> dict:
+        if speech is None:
+            return {"enabled": False, "available": False}
+        return {"available": True, **speech.status()}
+
+    @app.post("/api/speech/say", dependencies=auth)
+    async def speech_say(body: SpeakIn) -> Response:
+        """One sentence of Kit's speech as a WAV file, in the voice engine in use."""
+        if speech is None or not store.current().speech.enabled:
+            raise HTTPException(409, "speech is off; turn it on with `kit speech on`")
+        try:
+            spoken = await asyncio.to_thread(
+                speech.speak, body.text, body.emotion, None, body.first
+            )
+        except SpeechError as e:
+            raise HTTPException(503, str(e)) from e
+        return Response(
+            spoken.wav,
+            media_type="audio/wav",
+            headers={
+                "X-Synth-Ms": f"{spoken.synth_ms:.0f}",
+                "X-Audio-Ms": f"{spoken.audio_ms:.0f}",
+                "X-Engine": spoken.engine,
+            },
+        )
+
     @app.get("/api/spend", dependencies=auth)
     def spend(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
         return {
@@ -547,6 +591,26 @@ async def _notes_loop(brain: Brain, store: SettingsStore, every_s: float) -> Non
                 await brain.recall.index_pending(limit=5000)
         except Exception:
             log.exception("reading the notes vault failed")
+        await asyncio.sleep(every_s)
+
+
+async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: float) -> None:
+    """Load the voice engine when speech is on, so the first reply isn't kept waiting
+    while it loads; stop it when speech is off, which frees the graphics card."""
+    last_problem = ""
+    while True:
+        try:
+            if store.current().speech.enabled:
+                await asyncio.to_thread(speech.ensure)
+            elif speech.running():
+                await asyncio.to_thread(speech.stop)
+            last_problem = ""
+        except SpeechError as e:
+            if str(e) != last_problem:  # once per problem, not every few seconds
+                log.warning("voice engine: %s", e)
+            last_problem = str(e)
+        except Exception:
+            log.exception("managing the voice engine failed")
         await asyncio.sleep(every_s)
 
 

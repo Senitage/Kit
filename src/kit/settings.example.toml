@@ -27,6 +27,11 @@ repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
 repeat_last_n = 64           # how far back repeat_penalty looks, in tokens
 top_k = 64                   # Gemma's suggested sampling: only the likeliest 64 words
 top_p = 0.95                 # ...that make up 95% of the chance
+# Read the conversation into the model ahead of your next message, once Kit and
+# his voice have finished, so he starts answering sooner (about two seconds on
+# Gemma, which otherwise re-reads the whole prompt every message). Not in
+# cloud-only routing, where the local model only stands in.
+warm_up = false
 
 [routing]
 # How much Kit leans on the local model:

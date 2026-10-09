@@ -67,12 +67,13 @@ from kit.desk import startup, theme
 from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
-from kit.desk.client import BrainClient, BrainError
+from kit.desk.client import BrainClient, BrainError, SpeechOff
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.sound import Sounds
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
+from kit.desk.voice import Speaker
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
 from kit.desk.window import ConnectionForm, KitWindow, in_background
 from kit.face import Face, character
@@ -96,6 +97,7 @@ LOOK_FIELDS = (
     "speech_bubble",
     "boop",
     "movement",
+    "words_with_voice",
 )
 # How much Kit moves (the Look page): (how big his gestures are, how big his
 # whole-body moves are, 0 for none).
@@ -448,6 +450,7 @@ class DeskApp(QObject):
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
+        self.chat.speaker = Speaker(self._speak, heard=self.chat.heard)
         self._save_soon = QTimer(self)
         self._save_soon.setSingleShot(True)
         self._save_soon.timeout.connect(lambda: self.config.save())
@@ -561,6 +564,12 @@ class DeskApp(QObject):
         fade.setEndValue(1.0)
         fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _speak(self, text: str, emotion: str, first: bool) -> bytes:
+        """One sentence of Kit's speech from the server (SpeechOff if it's turned off)."""
+        if self.client is None:
+            raise SpeechOff("not connected")
+        return self.client.speak(text, emotion, first)
 
     def _chat_resized(self, size) -> None:
         if (size.width(), size.height()) != (self.config.chat_width, self.config.chat_height):
@@ -704,6 +713,7 @@ class DeskApp(QObject):
         """Show the Look page's choices everywhere: chat, window, face and bubble."""
         palette = self._palette()
         self.chat.apply_look(palette, self.config.font_pt)
+        self.chat.in_step = self.config.words_with_voice
         if self.window is not None:
             self.window.apply_look(palette, self.config.font_pt)
             self.window.mood.face.eye = QColor(self.config.eye_colour)
@@ -738,6 +748,9 @@ class DeskApp(QObject):
                 log.info("update check: %s", found)
                 return
             if found is None:
+                return
+            if not found.has_this_build:
+                log.info("update %s doesn't have this test build's changes yet", found.version)
                 return
             log.info("update %s is available (this is %s)", found.version, VERSION)
             self.open_window("Updates")
@@ -805,6 +818,12 @@ class DeskApp(QObject):
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
                 return
+            speaker = self.chat.speaker
+            try:  # is his voice on? (his words wait for it only when it is)
+                if speaker is not None:
+                    speaker.live = bool(client.speech_status().get("enabled"))
+            except BrainError:
+                pass  # a brain from before Kit had a voice
             # Fetch his character sheet on connecting and whenever face.character changes.
             key = (client, status.get("face"))
             if key != self._face_from:
@@ -895,7 +914,8 @@ class DeskApp(QObject):
             self._next_sound = "bip_boop"  # he started this one himself
             if event.get("reason") == "back":  # Dan's home: a happy loop
                 QTimer.singleShot(400, lambda: self._move(reason="back"))
-            QTimer.singleShot(700, lambda: self.chat.on_event(0, {"type": "reply", "reply": reply}))
+            # His voice is made while he perks up; his words show as he starts saying it.
+            self.chat.pipe_up(reply, lead_in_ms=700)
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))
                 self.tray.showMessage("Kit", said, face_icon(), 8000)
@@ -1027,7 +1047,14 @@ def _selftest(argv: list[str]) -> int:
     window = KitWindow(DeskConfig(), "", "", lambda: None, lambda: "", desk_dir() / "updates")
     ok = "Self-test." in chat.text() and QLocalServer is not None and window is not None
     app.quit()
-    return 0 if ok else 3
+    if not ok:
+        return 3
+    if sys.platform == "win32":
+        try:  # Kit's voice plays through PortAudio, which the sounddevice package carries
+            import sounddevice  # noqa: F401
+        except Exception:
+            return 4
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
