@@ -202,12 +202,17 @@ MUSING = re.compile(
 SENTENCES = re.compile(r"(?<=[.!?…])\s+|\.{3}\s*|…\s*|\s+-\s+|\s*[;:]\s+")
 
 
-def a_view(text: str) -> bool:
+ABOUT_HIM = re.compile(r"\b(he|he's|him|his)\b", re.I)
+
+
+def a_view(text: str, owner: str = "") -> bool:
     """An opinion he can stand by: statements only, with no question or passing musing
     in it anywhere ("Is that AI thing actually smarter than me?", "... Wonder if he'll
-    ever stop")."""
+    ever stop"), and on a topic, not a remark about ``owner``."""
     text = text.strip()
     if len(text.split()) < 4 or "?" in text:
+        return False
+    if owner and (ABOUT_HIM.search(text) or re.search(rf"\b{re.escape(owner)}\b", text, re.I)):
         return False
     return not any(MUSING.search(part) for part in SENTENCES.split(text) if part.strip())
 
@@ -1494,8 +1499,6 @@ class Brain:
         keep = {"private": True} if private else {}
         if kind == "alone" and self.life.doing is not None:
             keep["doing"] = self.life.doing.doing
-        if thought.kind == "opinion" and settings.life.opinions > 0 and a_view(thought.text):
-            keep["stance"] = True  # a view he can stand by (life.opinions)
         if thought.text and self.notebook.write(thought.kind, thought.text, trigger=kind, **keep):
             self.life.publish({"type": "fidget", "gesture": "look_up", "mood": "thinking"})
         if thought.want:
@@ -1542,9 +1545,9 @@ class Brain:
 
     def _opinions(self, settings: Settings, shared: bool = False) -> list[str]:
         """His standing opinions (``life.opinions``): stances he's held at least a day,
-        newest first. Only ones formed as stances count (the thinking prompt asks for
-        them once the setting is on), never observations from before it. ``shared``:
-        none formed from what Dan kept local."""
+        newest first. Only ones the nightly reflection chose as stances count (the
+        local model can't be trusted to tell a stance from a remark mid-thought), never
+        remarks about Dan. ``shared``: none formed from what Dan kept local."""
         want = settings.life.opinions
         if want <= 0:
             return []
@@ -1555,7 +1558,7 @@ class Brain:
             if now - parse_time(e.created, now) >= OPINION_STANDS
             and not (shared and e.meta.get("private"))
             and e.meta.get("stance")
-            and a_view(e.text)
+            and a_view(e.text, settings.persona.owner)
         ]
         return [e.text for e in held[:want]]
 

@@ -664,7 +664,7 @@ def test_a_view_is_a_statement_not_a_musing():
     )
     assert not a_view("Dan's on that AI thing again. Wonder if he'll ever stop using it.")
     assert not a_view("He loves that ute... maybe too much, honestly")
-    assert a_view("Dan works too hard. He should take Friday off.")
+    assert a_view("Dan works too hard. He should take Friday off.")  # without an owner
 
 
 def test_musings_and_old_observations_arent_held_as_opinions(kit):
@@ -682,24 +682,43 @@ def test_musings_and_old_observations_arent_held_as_opinions(kit):
     assert "Pineapple" in held and "smarter" not in held and "settings menu" not in held
 
 
-def test_with_opinions_on_he_files_only_stances_as_opinions(kit):
-    stance = json.dumps(
+def test_only_the_nightly_reflection_chooses_stances(kit, paths):
+    """On Dan's PC the local model filed remarks about Dan as opinions, whatever the
+    thinking prompt said: a thought is never a stance by itself."""
+    remark = json.dumps(
         {
-            "thought": "Winter's the best time of year.",
+            "thought": "Winter's the best time of year, he can't argue.",
             "kind": "opinion",
             "want": "",
             "feeling": "same",
             "why": "",
         }
     )
-    brain, model, _ = kit(stance, opinions=1)
+    brain, model, store = kit(remark, opinions=1)
     asyncio.run(brain.think(("quiet", "A quiet moment.")))
-    assert "a stance on a topic" in model.calls[0][0]["content"]
-    held = brain.notebook.entries("opinion")
-    assert held[0].text == "Winter's the best time of year." and held[0].meta.get("stance")
-    off, model, _ = kit(stance, opinions=0)  # the same data folder, setting off again
-    asyncio.run(off.think(("quiet", "A quiet moment.")))
-    assert "a stance on a topic" not in model.calls[0][0]["content"]
+    assert not brain.notebook.entries("opinion")[0].meta.get("stance")
+    night = {
+        "journal": "A quiet day with Dan.",
+        "opinions": ["Winter's the best time of year.", "He needs to talk to me more."],
+    }
+    claude = FakeAnthropic(answer=json.dumps(night))
+    memory = brain.memory
+    memory.add_message("user", "Cold one today.")
+    reflector = Reflector(
+        memory, brain.notebook, model, make_cloud(memory, claude, key="k"), store.current
+    )
+    asyncio.run(reflector.reflect_day(memory.today()))
+    assert "that you'd argue for" in claude.calls[0]["system"][0]["text"]
+    stances = [e.text for e in brain.notebook.entries("opinion") if e.meta.get("stance")]
+    assert "Winter's the best time of year." in stances
+    memory.clock.now += timedelta(days=2)
+    assert brain._opinions(store.current()) == ["Winter's the best time of year."]
+
+
+def test_remarks_about_dan_are_never_views():
+    assert not a_view("He needs to start talking to me more, honestly.", "Dan")
+    assert not a_view("Dan works too hard most weeks.", "Dan")
+    assert a_view("Winter's the best time of year.", "Dan")
 
 
 def test_standing_opinions_are_in_his_voice(kit):
