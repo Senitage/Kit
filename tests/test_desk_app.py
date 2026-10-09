@@ -466,8 +466,9 @@ def test_look_page_picks_his_character_and_fits_its_style(qapp, sync_window, tmp
     assert look.eyes.isVisibleTo(look)
     win.use_look("http://kit:8600", {"style": "model"})  # 3D: no eye colours to pick
     assert not look.eyes.isVisibleTo(look) and "3D" in look.style_note.text()
+    assert win.mood.gem.y() > 0  # the mood gem comes down onto the 3D head
     win.use_look("http://kit:8600", {"style": "glow"})
-    assert look.eyes.isVisibleTo(look)
+    assert look.eyes.isVisibleTo(look) and win.mood.gem.y() == 0
     win.close()
 
 

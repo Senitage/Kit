@@ -100,8 +100,9 @@ His energy follows the clock by default. With `life.energy_need` it's a real
 need: chatting tires him a little (about 0.1 an hour of chat), each real job
 handed to Sonnet or Opus a bit more, and staying up past 10:30 pm most of all.
 Everyday answers, even from the cloud, cost nothing. Sleep restores him: 45 minutes asleep brings him back
-to full, as does a night off. Below 0.4 he's sleepy: he yawns and keeps his
-replies short.
+to full, as does a night off. However rested he is, his body clock winds him
+down from 9 pm, so he's sleepy by 11 pm and stays low until it lifts again
+between 5 and 7 am. Below 0.4 he's sleepy: he yawns and keeps his replies short.
 
 With `life.dials`, his mood also runs as two slow dials, how lively and how
 happy, that ease toward where his feelings and energy are. The desk face shows

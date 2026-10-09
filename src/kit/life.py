@@ -403,6 +403,9 @@ LATE_FROM = 22.5
 SLEEP_RESTORES = 0.6  # an hour asleep
 SLEPT_ENOUGH = timedelta(minutes=45)  # a sleep this long sets him back to full
 TIRED = 0.4  # below this he yawns and keeps it short
+NIGHT_CAP = 0.35  # his body clock's limit at night: under TIRED, so he's sleepy
+WIND_DOWN = (21.0, 23.0)  # hours over which the limit falls to NIGHT_CAP
+WAKE_UP = (5.0, 7.0)  # and rises back to full
 # Away life (``life.alone_thoughts_per_hour``, kit.pastimes).
 NOTHING_TO_DO = timedelta(minutes=15)  # found nothing to do: he waits this long to look again
 DID_KEPT = 12  # the pastimes he remembers doing today
@@ -806,6 +809,20 @@ def energy_at(now: datetime) -> float:
         return 0.25
     if 13.5 <= h < 15:
         return 0.6
+    return 1.0
+
+
+def bedtime_cap(now: datetime) -> float:
+    """The most energy his body clock allows (``life.energy_need``): full by day,
+    winding down from 21:00 to sleepy by 23:00, low through the night, and back up
+    from 05:00 to 07:00."""
+    h = now.hour + now.minute / 60
+    if WIND_DOWN[0] <= h < WIND_DOWN[1]:
+        return 1 - (1 - NIGHT_CAP) * (h - WIND_DOWN[0]) / (WIND_DOWN[1] - WIND_DOWN[0])
+    if h >= WIND_DOWN[1] or h < WAKE_UP[0]:
+        return NIGHT_CAP
+    if h < WAKE_UP[1]:
+        return NIGHT_CAP + (1 - NIGHT_CAP) * (h - WAKE_UP[0]) / (WAKE_UP[1] - WAKE_UP[0])
     return 1.0
 
 
@@ -1551,8 +1568,12 @@ class Life:
         h = now.hour + now.minute / 60
         if self.asleep:
             self.energy = min(1.0, self.energy + SLEEP_RESTORES * minutes / 60)
-        elif h >= LATE_FROM or h < 5:
-            self.energy = max(0.05, self.energy - LATE_TIRES * minutes / 60)
+        else:
+            if h >= LATE_FROM or h < 5:
+                self.energy = max(0.05, self.energy - LATE_TIRES * minutes / 60)
+            # However rested he is, his body clock winds him down at night: an evening
+            # nap mustn't leave him bright at 11 pm.
+            self.energy = min(self.energy, bedtime_cap(now))
         return self.energy
 
     # The mood dials (life.dials): how lively and how happy, for bodies to show
