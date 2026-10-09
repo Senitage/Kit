@@ -10,7 +10,7 @@ from kit.settings import Settings
 from kit.shows import asked_for, date_show, show_for, sky_kind, time_show, weather_show
 from kit.weather import Today
 
-HOME = "Perth, WA"
+HOME = "Richmond, NSW"
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ HOME = "Perth, WA"
         ("what day is it", ("date", 0)),
         ("What's the weather like?", ("weather", 0)),
         ("Is it going to rain tomorrow?", ("weather", 1)),
-        ("What's the weather in Perth?", ("weather", 0)),
+        ("What's the weather in Richmond?", ("weather", 0)),
         ("What's the temperature?", ("weather", 0)),
         ("What's the weather in Sydney?", None),  # not home: his face shows home
         ("Weather this weekend?", None),  # further than one picture can say
@@ -44,7 +44,7 @@ def test_the_time_and_date_read_like_a_clock_and_a_calendar():
 
 
 def test_the_weather_shows_the_sky_and_a_temperature():
-    today = Today("Perth", 17.6, "light rain", 21.0, 9.0, 80)
+    today = Today("Richmond", 17.6, "light rain", 21.0, 9.0, 80)
     noon = datetime(2026, 10, 9, 12)
     assert weather_show(today, noon) == {
         "kind": "weather",
@@ -53,7 +53,7 @@ def test_the_weather_shows_the_sky_and_a_temperature():
         "small": "",
         "text": "18°",
     }
-    tomorrow = Today("Perth", None, "clear", 26.0, 12.0, 0)
+    tomorrow = Today("Richmond", None, "clear", 26.0, 12.0, 0)
     assert weather_show(tomorrow, noon, ahead=1)["text"] == "26°"
     assert sky_kind("clear", night=True) == "moon"
     assert sky_kind("thunderstorms with hail") == "storm"
@@ -65,7 +65,7 @@ def test_a_hot_or_windy_dry_day_shows_as_one_and_rain_wins():
     noon = datetime(2026, 10, 9, 12)
 
     def sky(words, now_c, wind=None, hot_c=35.0, at=noon):
-        return weather_show(Today("Perth", now_c, words, 30.0, 9.0, 0, wind), at, hot_c=hot_c)
+        return weather_show(Today("Richmond", now_c, words, 30.0, 9.0, 0, wind), at, hot_c=hot_c)
 
     assert sky("clear", 38.4)["sky"] == "hot" and sky("clear", 38.4)["text"] == "38°"
     assert sky("clear", 35.0)["sky"] == "hot"  # from the setting up
@@ -78,7 +78,7 @@ def test_a_hot_or_windy_dry_day_shows_as_one_and_rain_wins():
     assert sky("thunderstorms", 36.0, wind=60.0)["sky"] == "storm"
     assert sky("clear", 20.0, wind=40.0, at=datetime(2026, 10, 9, 22))["sky"] == "wind"
     assert sky("fog", 9.0)["sky"] == "fog" and sky("freezing fog", 2.0)["sky"] == "fog"
-    assert sky_kind("light snow") == "rain"  # no snow in Perth: it falls like rain
+    assert sky_kind("light snow") == "rain"  # no snow in Richmond: it falls like rain
 
 
 def test_a_weather_show_needs_the_forecast():

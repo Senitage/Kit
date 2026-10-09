@@ -5,28 +5,28 @@ import pytest
 
 from kit.weather import Weather, WeatherError, describe
 
-PERTHS = {
+RICHMONDS = {
     "results": [
         {
-            "name": "Perth",
-            "latitude": 56.4,
-            "longitude": -3.4,
+            "name": "Richmond",
+            "latitude": 54.4,
+            "longitude": -1.74,
             "country": "United Kingdom",
-            "admin1": "Scotland",
+            "admin1": "England",
             "population": 47000,
         },
         {
-            "name": "Perth",
-            "latitude": -31.95,
-            "longitude": 115.86,
+            "name": "Richmond",
+            "latitude": -33.6,
+            "longitude": 150.75,
             "country": "Australia",
-            "admin1": "Western Australia",
+            "admin1": "New South Wales",
             "population": 1900000,
         },
         {
-            "name": "Perth",
-            "latitude": -41.57,
-            "longitude": 147.17,
+            "name": "Richmond",
+            "latitude": -42.73,
+            "longitude": 147.44,
             "country": "Australia",
             "admin1": "Tasmania",
             "population": 3000,
@@ -76,52 +76,52 @@ def weather_with(handler, seen=None):
 
 def server(request):
     if "geocoding" in request.url.host:
-        return httpx.Response(200, json=PERTHS)
+        return httpx.Response(200, json=RICHMONDS)
     return httpx.Response(200, json=FORECAST)
 
 
 def test_today_carries_the_wind():
     seen = []
     weather = weather_with(server, seen)
-    today = asyncio.run(weather.today("Perth, WA", "AU"))
+    today = asyncio.run(weather.today("Richmond, NSW", "AU"))
     assert today.wind_kmh == 11.2 and today.now_c == 16.4
-    tomorrow = asyncio.run(weather.today("Perth, WA", "AU", ahead=1))
+    tomorrow = asyncio.run(weather.today("Richmond, NSW", "AU", ahead=1))
     assert tomorrow.wind_kmh == 41.5 and tomorrow.sky == "light rain"
     asked = seen[-1].url.params
     assert "wind_speed_10m" in asked["current"] and "wind_speed_10m_max" in asked["daily"]
     assert asked["wind_speed_unit"] == "kmh"
 
 
-def test_finds_perth_wa_not_scotland_or_tasmania():
+def test_finds_richmond_nsw_not_england_or_tasmania():
     seen = []
     w = weather_with(server, seen)
-    place = asyncio.run(w.find("Perth, WA", "AU"))
-    assert place.name == "Perth, Western Australia" and place.latitude == -31.95
-    assert seen[0].url.params["name"] == "Perth" and seen[0].url.params["countryCode"] == "AU"
-    # Without a state hint, the biggest Perth wins.
-    assert asyncio.run(w.find("Perth")).longitude == 115.86
+    place = asyncio.run(w.find("Richmond, NSW", "AU"))
+    assert place.name == "Richmond, New South Wales" and place.latitude == -33.6
+    assert seen[0].url.params["name"] == "Richmond" and seen[0].url.params["countryCode"] == "AU"
+    # Without a state hint, the biggest Richmond wins.
+    assert asyncio.run(w.find("Richmond")).longitude == 150.75
 
 
 def test_places_are_looked_up_once():
     seen = []
     w = weather_with(server, seen)
-    asyncio.run(w.forecast("Perth, WA", "AU"))
-    asyncio.run(w.forecast("Perth, WA", "AU"))
+    asyncio.run(w.forecast("Richmond, NSW", "AU"))
+    asyncio.run(w.forecast("Richmond, NSW", "AU"))
     assert [r.url.host for r in seen].count("geocoding-api.open-meteo.com") == 1
 
 
 def test_forecast_reads_well():
     seen = []
-    text = asyncio.run(weather_with(server, seen).forecast("Perth, WA", "AU"))
-    assert seen[1].url.params["latitude"] == "-31.95"
-    assert text.startswith("Forecast for Perth, Western Australia from Open-Meteo")
+    text = asyncio.run(weather_with(server, seen).forecast("Richmond, NSW", "AU"))
+    assert seen[1].url.params["latitude"] == "-33.6"
+    assert text.startswith("Forecast for Richmond, New South Wales from Open-Meteo")
     assert "Now: 16°C, feels like 15°C, mostly clear" in text
     assert "Next 24 hours:" in text and "Wed 12 AM" in text
     assert "Wednesday 07 Oct: light rain, 13°C to 21°C, 70% chance of rain (4.2 mm)" in text
 
 
 def test_describe_copes_with_missing_parts():
-    assert describe("Perth", {}).startswith("Forecast for Perth")
+    assert describe("Richmond", {}).startswith("Forecast for Richmond")
 
 
 @pytest.mark.parametrize(
@@ -134,7 +134,7 @@ def test_describe_copes_with_missing_parts():
 )
 def test_failures_are_plain_words(handler, words):
     with pytest.raises(WeatherError, match=words):
-        asyncio.run(weather_with(handler).forecast("Perth, WA"))
+        asyncio.run(weather_with(handler).forecast("Richmond, NSW"))
 
 
 def test_no_location_set():

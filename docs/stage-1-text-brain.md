@@ -134,9 +134,9 @@ nothing. Web searches use it too, to find results near you (Gemini's search
 ignores it):
 
 ```
-kit config set persona.location "Perth, WA"
+kit config set persona.location "Richmond, NSW"
 kit config set persona.country AU
-kit config set persona.timezone Australia/Perth
+kit config set persona.timezone Australia/Sydney
 ```
 
 Claude can also open a page it found (for a forecast, the weather service's
