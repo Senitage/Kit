@@ -92,3 +92,32 @@ def test_a_broken_web_engine_leaves_glow(fake_view, monkeypatch):
 
     monkeypatch.setattr(face3d, "Face3D", broken)
     assert face3d.sync(None, "http://kit:8600", MODEL, None) is None
+
+
+def test_glow_stops_only_while_kits_model_is_on_screen():
+    """Glow's 60 fps repaint makes the web view flash on Windows, so it stops while
+    the 3D face covers it, and comes back while the page loads or can't draw."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from kit.desk.glow import FaceWidget
+
+    QApplication.instance() or QApplication([])
+    widget = FaceWidget()
+    shown = face3d.Face3D.__new__(face3d.Face3D)  # no web view: just the hand-over
+    shown.widget, shown.covering, shown._ready = widget, False, True
+    shown._no_paint = face3d._NoPaint(widget)
+    assert widget._timer.isActive()
+
+    shown._drawn(True)
+    assert shown.covering and not widget._timer.isActive()
+    widget.face.tick(0.0)
+    shown._tick_face()  # the rig still runs: moods expire, gaze follows the mouse
+    assert widget.face._last > 0.0
+
+    shown._loading()  # a reload: Glow comes back until the model is drawn again
+    assert not shown.covering and widget._timer.isActive()
+    shown._drawn(True)  # not loaded yet, so it stays Glow
+    assert not shown.covering

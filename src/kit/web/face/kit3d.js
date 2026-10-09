@@ -61,6 +61,7 @@
     lookAt: function (x, y) { want.look = { x: +x || 0, y: +y || 0, until: now() + 3 }; },
     show: function (what) { if (ready) startShow(what); else queue.push(['show', what]); },
     info: null,
+    ready: false,  // true once Kit's model is on screen (the desk app shows Glow until then)
   };
 
   // ---- the scene ----
@@ -189,7 +190,7 @@
 
     curColour.set(mood(want.emotion).glow_colour || '#4dffc0').convertSRGBToLinear();
     say('');
-    ready = true;
+    ready = kit.ready = true;
     setMood(want.emotion, true);
     queue.splice(0).forEach(function (call) { kit[call[0]](call[1]); });
     if (!currentAction) playClip('bounce');
@@ -460,26 +461,38 @@
   }
 
   // ---- reload when the brain has something new ----
+  /* Reload when the brain has something new: the same new version on two checks in
+     a row, so a pack Blender is still writing, or one odd answer, doesn't reload him. */
   function watch() {
+    var seen = null;
     setInterval(function () {
       fetch('api/version?' + query(), { cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (v) { if (v && info && v.version !== info.version) { remember(); location.reload(); } })
+        .then(function (v) {
+          if (!v || !info || v.version === info.version) { seen = null; return; }
+          if (seen === v.version) { remember(); location.reload(); }
+          seen = v.version;
+        })
         .catch(function () {});
     }, POLL_MS);
   }
 
-  fetch('api/info?' + query(), { cache: 'no-store' })
-    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function (data) {
-      info = kit.info = data;
-      watch();
-      if (data.style !== 'model') { say('Kit is using a 2D look here.'); return; }
-      pack = data.pack || {};
-      moods = pack.moods || {};
-      tuning = pack.tuning || {};
-      gestures = data.look.gestures || {};
-      try { init(); } catch (e) { say("This screen couldn't start 3D: " + e.message); }
-    })
-    .catch(function (e) { say("Can't reach Kit: " + e.message); setTimeout(function () { location.reload(); }, POLL_MS); });
+  // Ask the brain what to draw; if it can't be reached, keep asking (without
+  // reloading the page, which would blank it each time).
+  function start() {
+    fetch('api/info?' + query(), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        info = kit.info = data;
+        watch();
+        if (data.style !== 'model') { say('Kit is using a 2D look here.'); return; }
+        pack = data.pack || {};
+        moods = pack.moods || {};
+        tuning = pack.tuning || {};
+        gestures = data.look.gestures || {};
+        try { init(); } catch (e) { say("This screen couldn't start 3D: " + e.message); }
+      })
+      .catch(function (e) { say("Can't reach Kit: " + e.message); setTimeout(start, POLL_MS); });
+  }
+  start();
 })();
