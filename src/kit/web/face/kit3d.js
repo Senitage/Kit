@@ -404,14 +404,15 @@
     var gx = 0, gy = 0;
     if (st === 'working') { gx = -0.6 + 1.2 * ((t / 1.6) % 1); gy = -0.3; }
     else if (want.look && t < want.look.until && st !== 'thinking' && !asleep) { gx = want.look.x; gy = -want.look.y; }
-    gaze.x += (gx - gaze.x) * Math.min(1, dt * 8); gaze.y += (gy - gaze.y) * Math.min(1, dt * 8);
+    var ease = Math.min(1, dt * 14);  // the gaze is eased once here, so the look keys follow it straight
+    gaze.x += (gx - gaze.x) * ease; gaze.y += (gy - gaze.y) * ease;
     target.look_right = Math.min(1, (target.look_right || 0) + Math.max(0, gaze.x) * 0.9);
     target.look_left = Math.min(1, (target.look_left || 0) + Math.max(0, -gaze.x) * 0.9);
     target.look_up = Math.min(1, (target.look_up || 0) + Math.max(0, gaze.y) * 0.7);
     target.look_down = Math.min(1, (target.look_down || 0) + Math.max(0, -gaze.y) * 0.7);
     if (st === 'speaking') target.mouth_open = Math.max(target.mouth_open || 0, 0.25 + 0.6 * Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1)));
     for (name in cur) {
-      cur[name] += ((target[name] || 0) - cur[name]) * (name.indexOf('close') === 0 && blinkT > 0 ? 1 : k);
+      cur[name] += ((target[name] || 0) - cur[name]) * ((name.indexOf('close') === 0 && blinkT > 0) || name.indexOf('look_') === 0 ? 1 : k);
       for (var i = 0; i < faceMeshes.length; i++) {
         var mesh = faceMeshes[i], idx = mesh.morphTargetDictionary[name];
         if (idx !== undefined) mesh.morphTargetInfluences[idx] = cur[name];
