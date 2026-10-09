@@ -43,6 +43,11 @@ class LocalModel(Protocol):
         """The model's whole output at once."""
         ...
 
+    async def unload(self) -> None:
+        """Take the usual model off the GPU now, rather than when its keep_alive runs
+        out."""
+        ...
+
 
 def lively(s: OllamaSettings, plain: bool = True) -> dict:
     """Sampling for Kit's own words and thoughts: livelier than his JSON decisions,
@@ -80,7 +85,7 @@ class OllamaModel:
             "messages": messages,
             "stream": True,
             "think": s.think,
-            "keep_alive": "30m",
+            "keep_alive": s.keep_alive,
             "options": {"temperature": s.temperature, "num_ctx": s.num_ctx, **(options or {})},
         }
         if schema is not None:
@@ -126,3 +131,13 @@ class OllamaModel:
         options: dict | None = None,
     ) -> str:
         return "".join([piece async for piece in self.stream(messages, schema, model, options)])
+
+    async def unload(self) -> None:
+        s = self.settings()
+        body = {"model": s.model, "keep_alive": 0}
+        try:
+            response = await self.client.post(f"{s.url}/api/generate", json=body, timeout=30)
+        except httpx.HTTPError as e:
+            raise LocalModelError(f"can't reach Ollama at {s.url}: {e}") from e
+        if response.status_code != 200:
+            raise LocalModelError(f"Ollama said {response.status_code}: {response.text[:200]}")

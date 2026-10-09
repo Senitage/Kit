@@ -19,6 +19,7 @@ from datetime import datetime
 
 from kit.life import THOUGHT_FEELINGS, everyday
 
+THOUGHT_SHAPE = '{"thought": "...", "kind": "thought", "want": "", "feeling": "same", "why": ""}'
 THOUGHT_SCHEMA = {
     "type": "object",
     "properties": {
