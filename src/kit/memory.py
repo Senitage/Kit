@@ -54,16 +54,23 @@ CONVERSATION = "conversation"
 SELF = "self"  # Kit's own notebook: what he thinks, wants and keeps (kit.notebook)
 SHEET = "self-sheet"  # who Kit thinks he is, and reviews of it: always in mind, never recalled
 FACT_KINDS = {
-    "about": "who the owner is: work, background, health, habits",
+    "about": "who the owner is: work, background, health, habits, hobbies",
     "preference": "likes, dislikes and how they want things done",
     "project": "something they're working on, its state and decisions",
     "place": "where something is kept: folders, files, apps, sites",
-    "person": "someone in their life and how they relate",
+    "person": "someone in their life, or a pet, and how they relate",
     "plan": "something coming up or intended, with dates",
     "now": "how they've been or what's going on lately (flat out, crook, a visitor "
     "staying): fades after two weeks",
     "other": "anything else worth keeping",
 }
+
+
+def kinds_line() -> str:
+    """The kinds of fact and what each is for, for a prompt."""
+    return "; ".join(f"{k}: {v}" for k, v in FACT_KINDS.items())
+
+
 # How much each kind of fact matters to Dan's life, 0 to 1, unless the nightly summary
 # says (kit.learning). It weighs recall a little (kit.recall).
 IMPORTANCE = {

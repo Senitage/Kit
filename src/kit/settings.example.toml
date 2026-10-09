@@ -89,6 +89,7 @@ conversation_snippets = 4
 own_memories = 3             # from his own notebook: thoughts, opinions, moments, journal
 weight_floor = 0.3           # what matters more and was recalled lately comes first; 1 is off
 now_days = 14                # "how you've been lately" memories fade after this
+day_pass = "work"            # who sorts each day's memories after midnight: work (Sonnet) or local
 
 [nas]
 # The Obsidian vault: the only NAS folder Kit may write to.

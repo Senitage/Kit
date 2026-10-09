@@ -696,6 +696,14 @@ class MemorySettings(_Section):
         "(flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep "
         "the gist.",
     )
+    day_pass: Literal["work", "local"] = Field(
+        "work",
+        description="Who reads each finished day after midnight, writes its summary and sorts "
+        "what's worth remembering about you into the right kinds. work: the work model "
+        "(Sonnet), a few cents a night, with the local model stepping in if the cloud "
+        "can't; a day with something you kept local always stays home. local: the local "
+        "model only.",
+    )
     backups_keep: int = Field(14, ge=1, le=365, description="Daily memory backups to keep.")
 
 

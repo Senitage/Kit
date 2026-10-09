@@ -68,7 +68,7 @@ from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudError
 from kit.daily import Daily
 from kit.knowledge import Item
-from kit.learning import Learner, relations_in, said_so
+from kit.learning import Learner, asking, relations_in, said_so
 from kit.life import (
     CLOUD_TIRES,
     FAREWELL,
@@ -508,7 +508,7 @@ class Brain:
         self.weather = weather
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
-        self.learner = Learner(memory, recall, model)
+        self.learner = Learner(memory, recall, model, asking(cloud, settings))
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
@@ -2234,9 +2234,11 @@ class Brain:
     async def summarise_past_days(self) -> list[str]:
         """Summarise each finished day and learn its facts. Returns the days done."""
         done = []
-        persona = self.settings().persona
+        settings = self.settings()
+        persona = settings.persona
+        cloud = settings.memory.day_pass == "work"
         for day in self.memory.days_to_summarise():
-            if not await self.learner.summarise_day(day, persona.owner, persona.name):
+            if not await self.learner.summarise_day(day, persona.owner, persona.name, cloud):
                 break
             done.append(day)
         return done

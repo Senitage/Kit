@@ -511,7 +511,7 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
 
     paths.ensure()
-    if args.action in ("summarise", "remember", "search", "reindex"):
+    if args.action in ("summarise", "remember", "search", "reindex", "tidy"):
         return asyncio.run(_memory_async(paths, args))
     memory = Memory(paths.state_dir / "memory.db")
     code = 0
@@ -591,6 +591,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                     )
                     text = " / ".join(h.item.text.splitlines())[:110]
                     print(f"{h.item.id:>5}  {h.item.day}  {h.item.source:<12} {how:<14} {text}")
+            elif args.action == "tidy":
+                return await _tidy(paths, store, memory, brain, args.apply)
             elif args.action == "reindex":
                 done = await brain.recall.index_pending(limit=1_000_000)
                 problem = brain.recall.embed_problem
@@ -598,6 +600,49 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                 return 1 if problem else 0
         finally:
             memory.close()
+    return 0
+
+
+async def _tidy(paths: KitPaths, store, memory, brain, apply: bool) -> int:
+    """Sort what Kit already knows: each fact to the kind that fits, logs of what was
+    asked dropped (or kept as the lasting fact they show). Shows the plan; ``apply``
+    carries it out after a backup."""
+    from kit.learning import apply_tidy, plan_tidy
+
+    settings = store.current()
+    facts = memory.facts()
+    if not facts:
+        print("nothing remembered yet")
+        return 0
+    ask = brain.learner.ask if settings.memory.day_pass == "work" else None
+    who = settings.profile("work").name if ask else settings.ollama.model
+    print(f"sorting {len(facts)} facts with {who}...")
+    p = settings.persona
+    plans = await plan_tidy(facts, p.owner, p.name, brain.model, ask)
+    changes = [t for t in plans if t.changes]
+    for t in changes:
+        if not t.keep:
+            print(f"drop   [{t.item.kind}] {t.item.text}")
+        else:
+            move = f"[{t.item.kind} -> {t.kind}]" if t.kind != t.item.kind else f"[{t.kind}]"
+            print(f"keep   {move} {t.text or t.item.text}")
+            if t.text:
+                print(f"       was: {t.item.text}")
+    dropped = sum(not t.keep for t in changes)
+    print(
+        f"\n{len(changes) - dropped} to move or reword, {dropped} to drop, "
+        f"{len(plans) - len(changes)} fine as they are"
+    )
+    if not changes:
+        return 0
+    if not apply:
+        print("Nothing changed yet: `kit memory tidy --apply` does it, after a backup.")
+        return 0
+    backup = memory.backup(paths.backups_dir, settings.memory.backups_keep)
+    changed, gone = apply_tidy(memory, changes)
+    await brain.recall.index_pending()
+    print(f"backed up to {backup}; moved or reworded {changed}, dropped {gone}")
+    print("A moved fact keeps its old version in its history on the memory page.")
     return 0
 
 
@@ -1175,6 +1220,10 @@ def main(argv: list[str] | None = None) -> int:
         msub.add_parser(name, help=text).add_argument("id", type=int)
     msub.add_parser("days", help="list day summaries")
     msub.add_parser("summarise", help="summarise finished days now")
+    mtidy = msub.add_parser(
+        "tidy", help="sort what Kit knows into the right kinds and drop logs of chats"
+    )
+    mtidy.add_argument("--apply", action="store_true", help="do it (after a backup)")
     msub.add_parser("reindex", help="build any missing meaning vectors now")
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
