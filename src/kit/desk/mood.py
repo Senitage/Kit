@@ -205,14 +205,19 @@ class NeedBar(QWidget):
         p.end()
 
 
+FACE_PX = 150  # his face on this page
+GEM_H = 58  # the gem's height, above his face
+GEM_DROP_3D = 34  # px the gem comes down over a 3D head
+
+
 class MoodGem(QWidget):
     """The mood gem over his head, as in The Sims: green when he's doing well,
     through amber to red when he isn't. It turns and bobs."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self.level = 0.75
-        self.setFixedSize(40, 58)
+        self.setFixedSize(40, GEM_H)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update)
         self._timer.start(33)
@@ -272,15 +277,18 @@ class MoodPage(QWidget):
         layout.addWidget(intro)
 
         top = QHBoxLayout()
-        head = QVBoxLayout()
-        head.setSpacing(0)
-        self.gem = MoodGem()
-        head.addWidget(self.gem, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.face = FaceWidget()
-        self.face.setFixedSize(150, 150)
+        # The gem floats over his face, placed by hand so it can come down onto a
+        # 3D head, which sits lower in the face than Glow's eyes.
+        head = QWidget()
+        head.setFixedSize(FACE_PX, GEM_H + FACE_PX)
+        self.face = FaceWidget(parent=head)
+        self.face.setFixedSize(FACE_PX, FACE_PX)
+        self.face.move(0, GEM_H)
         self.face.follow_mouse = False
-        head.addWidget(self.face)
-        top.addLayout(head)
+        self.gem = MoodGem(head)
+        self.gem.move((FACE_PX - self.gem.width()) // 2, 0)
+        self.gem.raise_()
+        top.addWidget(head)
         words = QVBoxLayout()
         words.addStretch(1)
         self.mood = QLabel("...")
@@ -318,6 +326,11 @@ class MoodPage(QWidget):
         outer.addWidget(scroll)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
+
+    def fit_gem(self, three_d: bool) -> None:
+        """Sit the gem just over his head: a 3D head is drawn lower in the face than
+        Glow's eyes, so the gem comes down to meet it."""
+        self.gem.move(self.gem.x(), GEM_DROP_3D if three_d else 0)
 
     def apply_look(self, palette: theme.Palette, eye: str | None = None) -> None:
         self._palette = palette

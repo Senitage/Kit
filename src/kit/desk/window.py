@@ -1158,6 +1158,7 @@ class KitWindow(QWidget):
         only kept while they can be seen)."""
         self._look = (brain_url, look)
         self.look.show_style(face3d.wants_3d(look))
+        self.mood.fit_gem(face3d.wants_3d(look))
         shown = brain_url if self.isVisible() else None
         for i, widget in enumerate((self.mood.face, self.look.preview)):
             self._faces3d[i] = face3d.sync(widget, shown, look, self._faces3d[i])
