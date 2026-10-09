@@ -320,6 +320,34 @@ FIDGETS = {
     "sulky": ["sigh", "look_away"],
 }
 
+# The face each mood and feeling wears between replies (kit.reply.EMOTIONS). A
+# feeling, having a cause, shows over the mood his drives put him in.
+MOOD_FACES = {
+    "content": "happy",
+    "curious": "curious",
+    "bored": "tired",
+    "lonely": "sad",
+    "sleepy": "tired",
+    "sulky": "grumpy",
+    "asleep": "neutral",
+}
+FEELING_FACES = {
+    "chuffed": "happy",
+    "warm": "fond",
+    "proud": "proud",
+    "pleased": "happy",
+    "excited": "excited",
+    "amused": "playful",
+    "worried": "concerned",
+    "sympathetic": "concerned",
+    "sad": "sad",
+    "put_out": "grumpy",
+    "hurt": "sad",
+    "glad": "happy",
+    "missing": "sad",
+    "miffed": "grumpy",
+}
+
 
 @dataclass
 class Drives:
@@ -851,6 +879,7 @@ class Life:
         self._week_done = ""  # the week moment he's had a thought about (kit.holidays)
         self._pipe_out: tuple[str, datetime] | None = None  # his last pipe-up, for taken_up
         self._quiet_shown: str | None = None  # the quiet_because bodies last heard
+        self._face_shown: str | None = None  # the resting face bodies last heard
         self._restore()
 
     @property
@@ -898,6 +927,7 @@ class Life:
         self.sulky = False
         self.held_until = None
         self._chat_open = True
+        self._show_face()
         self.save()
 
     def snooze(self, minutes: float) -> None:
@@ -937,6 +967,7 @@ class Life:
             if not force and current and current[0].left(now) > strength:
                 return False
             self._feelings = [new]
+        self._show_face()
         if show and not self.asleep:
             gesture = self.rng.choice(FEELING_KINDS[name][2])
             self.publish({"type": "fidget", "gesture": gesture, "mood": name})
@@ -1050,6 +1081,7 @@ class Life:
             self._wake()
             changed = True
         if changed:
+            self._show_face()
             self.save()
 
     def _wake(self) -> None:
@@ -1401,6 +1433,22 @@ class Life:
             return "lonely"
         return "content"
 
+    def face(self) -> str:
+        """The face he wears between replies: his strongest feeling's, else his
+        mood's. Asleep, it's neutral (bodies show sleep themselves)."""
+        mood = self.mood()
+        felt = None if mood == "asleep" else self.feeling_now()
+        if felt is not None and felt.name in FEELING_FACES:
+            return FEELING_FACES[felt.name]
+        return MOOD_FACES.get(mood, "neutral")
+
+    def _show_face(self) -> None:
+        """Tell bodies when his resting face changes."""
+        face = self.face()
+        if face != self._face_shown:
+            self._face_shown = face
+            self.publish({"type": "mood", "mood": self.mood(), "face": face})
+
     # The heartbeat
 
     def tick(self) -> str | None:
@@ -1490,6 +1538,7 @@ class Life:
             self.publish({"type": "fidget", "gesture": self.rng.choice(moves), "mood": mood})
         reason = self._wants_to_talk(now, snap, present)
         self._move_dials(minutes)
+        self._show_face()
         self.save()
         return reason
 
@@ -2065,6 +2114,7 @@ class Life:
         }
         return {
             "mood": self.mood(),
+            "face": self.face(),
             "presence": self.presence(),
             "doing": self.doing.doing if self.doing else None,
             "did_today": [

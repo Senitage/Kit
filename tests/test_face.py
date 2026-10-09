@@ -141,3 +141,17 @@ def test_wink_closes_only_one_eye():
     face.play("wink", 0)
     mid = run(face, 0, CLIPS["wink"].seconds / 2)[-1]
     assert mid.open_right < 0.2 < 0.8 < mid.open_left
+
+
+def test_between_replies_he_settles_to_his_mood_not_neutral():
+    face = Face(rng=random.Random(3))
+    face.tick(0)
+    face.rest("curious", 0)
+    assert face.emotion == "curious"  # not mid-reply: he wears it now
+    face.set_emotion("happy", 1, hold_s=2)
+    face.rest("concerned", 1.5)
+    assert face.emotion == "happy"  # a reply's emotion isn't cut short
+    run(face, 3.1, 0.1)
+    assert face.emotion == "concerned"
+    face.rest("no_such_pose", 4)
+    assert face.resting == "concerned"
