@@ -11,6 +11,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish this build as the latest desk release (Dan's say-so only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write  # to publish releases from main
@@ -48,8 +53,8 @@ jobs:
           name: Kit-Desk-Setup
           path: packaging/windows/build/installer/*.exe
           if-no-files-found: error
-      - name: Publish the release (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish the release (main, or a build Dan asked to release)
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
