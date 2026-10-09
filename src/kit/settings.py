@@ -256,7 +256,7 @@ class RoutingSettings(_Section):
     )
     check_facts: bool = Field(
         True,
-        description="When you put something to Kit to agree with (\"Perth's the capital, "
+        description="When you put something to Kit to agree with (\"Sydney's the capital, "
         "isn't it?\"), the work model checks it in a second or so, while Kit gets ready "
         "to answer, and he says the answer himself. Off: the local model goes by what it "
         "knows.",
@@ -389,14 +389,14 @@ class PersonaSettings(_Section):
     location: str = Field(
         "",
         description="Where the owner is, for weather and local searches, as 'city, state', "
-        "e.g. Perth, WA.",
+        "e.g. Richmond, NSW.",
     )
     country: str = Field(
         "",
         pattern=r"^([A-Z]{2})?$",
         description="The owner's country as a two-letter code, e.g. AU.",
     )
-    timezone: str = Field("", description="The owner's time zone, e.g. Australia/Perth.")
+    timezone: str = Field("", description="The owner's time zone, e.g. Australia/Sydney.")
     knows: str = Field(
         "Dan is a normal bloke who shares the house with his partner and a cat. For work "
         "he's a process engineer at a mining plant who has moved into data work, building "

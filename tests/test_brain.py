@@ -569,26 +569,29 @@ async def _collect(agen):
     return [e async for e in agen]
 
 
-PERTH = {"memory": {"min_similarity": 0.3}, "persona": {"location": "Perth, WA", "country": "AU"}}
+HOME = {
+    "memory": {"min_similarity": 0.3},
+    "persona": {"location": "Richmond, NSW", "country": "AU"},
+}
 
 
 def test_weather_question_is_answered_locally_from_the_forecast(memory):
     brain, model, claude = make(
-        memory, reply("Mild tonight, about 14 and clear."), settings=Settings.model_validate(PERTH)
+        memory, reply("Mild tonight, about 14 and clear."), settings=Settings.model_validate(HOME)
     )
     brain.weather = FakeWeather()
     events = collect(brain.chat("What's the weather like tonight?"))
     assert [e["type"] for e in events].count("reply") == 1
-    assert next(e for e in events if e["type"] == "weather")["place"] == "Perth, WA"
-    assert brain.weather.asked == [("Perth, WA", "AU")]
+    assert next(e for e in events if e["type"] == "weather")["place"] == "Richmond, NSW"
+    assert brain.weather.asked == [("Richmond, NSW", "AU")]
     system = model.calls[0][0]["content"]
-    assert "Forecast for Perth, WA" in system
+    assert "Forecast for Richmond, NSW" in system
     assert "ask_cloud" not in system  # no handing a weather question to the cloud
     assert not claude.calls
 
 
 def test_engineering_temperatures_are_not_weather(memory):
-    brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(PERTH))
+    brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(HOME))
     brain.weather = FakeWeather()
     collect(brain.chat("What temperature does the leach tank run at?"))
     assert brain.weather.asked == []
@@ -626,7 +629,7 @@ def test_weather_follow_up_gets_a_fresh_forecast(memory, clock):
         reply("Clear tonight."),
         reply("Drizzle early."),
         reply("Ok."),
-        settings=Settings.model_validate(PERTH),
+        settings=Settings.model_validate(HOME),
     )
     brain.weather = FakeWeather()
     collect(brain.chat("What's the weather like tonight?"))
@@ -634,7 +637,7 @@ def test_weather_follow_up_gets_a_fresh_forecast(memory, clock):
     collect(brain.chat("whats it going to be like tomorrow?"))
     assert len(brain.weather.asked) == 2
     follow_up = model.calls[1][0]["content"]
-    assert "Forecast for Perth" in follow_up
+    assert "Forecast for Richmond" in follow_up
     assert "ask_cloud" in follow_up  # not plainly weather, so it can still be handed on
     clock.now += timedelta(minutes=30)
     collect(brain.chat("what's on tomorrow?"))

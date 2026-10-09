@@ -203,7 +203,7 @@ def test_a_question_back_keeps_the_suggestion_open(memory):
 def test_anything_else_leaves_the_suggestion_waiting(memory):
     brain, model = make_brain(memory, thing_reply("Bob", "person"), reply("Sure."))
     collect(brain.chat("Bob from work called"))
-    collect(brain.chat("what time is it in Perth?"))
+    collect(brain.chat("what time is it in Richmond?"))
     assert len(model.calls) == 2 and len(Register(memory).suggestions()) == 1
     collect(brain.chat("yes"))  # too late: no longer an answer to the suggestion
     assert len(model.calls) == 3 and Register(memory).all() == []
