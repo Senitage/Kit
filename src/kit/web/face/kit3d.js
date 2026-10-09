@@ -9,6 +9,8 @@
      kit.play('nod')           one of Kit's gestures (kit.reply), or a clip name
      kit.setState('sleeping')  idle, sleeping, listening, thinking, speaking, working, offline
      kit.lookAt(x, y)          look toward a point, -1..1 each way, y down
+     kit.frame()               draw now and return the picture as a PNG data URL
+                               (the desk app copies these into its window)
      kit.setDials(a, v)        the mood dials: arousal 0..1 (livelier moves and
                                blinks), valence -1..1 (more or less blush)
      kit.show({...})           a show from the brain (kit.shows): weather, time, date,
@@ -67,6 +69,8 @@
       dials.valence = Math.max(-1, Math.min(1, +valence || 0));
     },
     show: function (what) { if (ready) startShow(what); else queue.push(['show', what]); },
+    // Drawn and read in one go, so the picture is always whole.
+    frame: function () { if (!ready) return null; draw(); return renderer.domElement.toDataURL('image/png'); },
     info: null,
     ready: false,  // true once Kit's model is on screen (the desk app shows Glow until then)
   };
@@ -347,6 +351,8 @@
     camera.updateProjectionMatrix();
   }
 
+  function draw() { if (composer) composer.render(); else renderer.render(scene, camera); }
+
   function tick() {
     requestAnimationFrame(tick);
     var dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
@@ -465,7 +471,7 @@
       shadow.material.opacity = Math.max(0.15, 1 - lift * 0.9);
       shadow.position.x = tmpV.x;
     }
-    if (composer) composer.render(); else renderer.render(scene, camera);
+    draw();
   }
 
   // ---- reload when the brain has something new ----
