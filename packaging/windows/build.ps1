@@ -45,6 +45,8 @@ Run $Python @(
     "-m", "PyInstaller", "$here\kit_desk.py",
     "--name", "Kit", "--windowed", "--noconfirm", "--clean",
     "--icon", "$build\kit.ico",
+    # Kit's character sheets: the face falls back to them when the brain is out of reach.
+    "--add-data", "$root\src\kit\face\characters;kit\face\characters",
     "--distpath", "$build\dist", "--workpath", "$build\work", "--specpath", "$build",
     # The brain's server side isn't part of the desk app.
     "--exclude-module", "fastapi", "--exclude-module", "uvicorn",

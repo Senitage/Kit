@@ -18,6 +18,9 @@ num_ctx = 8192
 # repeats himself less; he starts talking about half a second later.
 # false goes back to one JSON pass.
 speak_pass = true
+# How long the local model stays on the GPU after it was last used. With
+# routing.background = "chat" in cloud-only mode it's 2m whatever this says.
+keep_alive = "30m"
 speak_temperature = 0.95     # his spoken words and his private thoughts
 min_p = 0.05                 # keeps a high temperature sensible; 0 is off
 repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
@@ -52,6 +55,14 @@ fallback_to_local = true
 # "Perth's the capital, isn't it?": the work model checks it quickly and Kit
 # says the answer himself, rather than the local model going by what it knows.
 check_facts = true
+# Who does Kit's own background work: his private thoughts, his pipe-ups and
+# comparing something new you tell him with what he knows.
+#   local  the local model
+#   chat   the cloud: the chat model thinks and pipes up (about A$2 a month), the
+#          work model compares facts; what you kept local stays home, and the
+#          local model steps in if the cloud can't. In cloud-only mode the local
+#          model then leaves the GPU 2 minutes after it's used, so the voice has it.
+background = "local"
 # The moments that matter get the work model's words in Kit's voice: his hello
 # after a night or more away, and his answer when you share something sad or
 # stressful. Never for "keep it local"; the local model steps in if need be.
@@ -161,3 +172,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # opinions = 0              # standing opinions he keeps in mind when he talks (0 to 2)
 # dials = false             # liveliness and happiness dials that the face shows
 # pipe_up_bar = 0.0         # score a pipe-up first and keep quiet below this (0.5)
+
+# [face]
+# character = "retro"       # which character Kit is (src/kit/face/characters); retro is
+#                           # the original glowing pill eyes, so switching back is easy

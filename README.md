@@ -7,16 +7,43 @@ on-screen helper and later gets a body: a desk robot arm.
 Kit is built in tested stages. The plan and each stage's test checklist are in
 the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91).
 
+## Where Kit is up to (9 October 2026)
+
+| Part | State | Pull requests |
+| --- | --- | --- |
+| Stage 0: setup and `kit check` | Passed | #1 |
+| Stage 1: text brain and memory | Passed | #2 |
+| Stage 2: desk app and Glow face | Passed, redesign and self-updates merged | #3, #4, #5 |
+| Inner life: feelings, notebook, nightly reflection | Merged | #6 |
+| Notes in the NAS vault, only when asked | Merged | #7, #8, #10 |
+| Companion stage 1: he knows you were gone | Merged | #12 |
+| Companion stage 2: he follows your life | Merged | #13, #14 |
+| Cloud-only routing (Haiku chats, Sonnet works, ask before Opus) | Merged | #15 |
+| Cloud spend per day and model | Merged | #19 |
+| Companion stage 3: a life of his own, and feeling it | Merged | #17 |
+| His thoughts and pipe-ups can go to the cloud too | Merged | #21 |
+| Character sheets for his face (Retro first), 2D or 3D per app | Merged | #20 |
+| Desk app: words under his face, face shows, a Mood page | Built, test build in use | #18 (draft) |
+| Stage 3 part 1: Kit's voice | Built and being tested, not merged | #24 (draft, was #9) |
+| Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
+
+Next up: companion stages 4 and 5, then land the voice (#24) and vision (#11),
+then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
+Claude Code bridge). The full list and the decisions still open are at the top
+of the roadmap.
+
 ## Stage 1: text brain
 
 Kit chats by text in a browser or terminal. It recalls what's relevant from
 everything it has learned, by words and by meaning, and keeps its facts tidy
 as things change ([how memory works](docs/memory.md)). A register of things
 (people, vehicles, places, projects, equipment) tells it where each one lives:
-which NAS folder, Obsidian note, home_app record or Home Assistant area. Small talk stays on the
-local model; real questions go to a cloud model (Claude, GPT or Gemini, your
-choice) with web search, within a monthly budget. How much stays local is a
-setting, and Kit keeps chatting locally while a slow cloud answer works. It has settings and memory pages with history and undo. Set it up and test it with
+which NAS folder, Obsidian note, home_app record or Home Assistant area. Real
+questions go to a cloud model (Claude, GPT or Gemini, your choice) with web
+search, within a monthly budget. How much stays local is a setting
+(`routing.mode`): `balanced` keeps small talk on the local model, and
+`cloud-only` has a cheap chat model (Haiku) answer everything, hand real work
+to Sonnet and ask before calling Opus. It has settings and memory pages with history and undo. Set it up and test it with
 [docs/stage-1-text-brain.md](docs/stage-1-text-brain.md). Ideas waiting for a later stage are in
 [docs/improvements.md](docs/improvements.md).
 
@@ -58,7 +85,7 @@ the brain writes them, in the mood he's in. The voice engine is swappable
 `kit speech bench` compares engines on the same lines. Set it up and test it with
 [docs/stage-3-voice.md](docs/stage-3-voice.md).
 
-## Now: Kit as a companion, stage 3
+## Kit as a companion, stage 3
 
 A life of his own, and feeling it. While you're away he keeps himself busy
 (watching the weather, rereading his journal, thinking about the cat) and

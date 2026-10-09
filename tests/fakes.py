@@ -98,6 +98,11 @@ class FakeModel:
     async def warm(self, messages):
         self.warm_calls.append(messages)
 
+    async def unload(self):
+        self.unloads = getattr(self, "unloads", 0) + 1
+        if self.error:
+            raise LocalModelError(self.error)
+
 
 class FakeMessages:
     def __init__(self, owner):
