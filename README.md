@@ -22,8 +22,8 @@ the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee
 | Stage 3 part 1: Kit's voice | Built and being tested, not merged | #9 (draft) |
 | Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
 
-Next up: land the voice (#9), then vision (#11), then the microphone (stage 3
-part 2), companion stages 3 to 5, and stage 4 (tools, PC control and the
+Next up: companion stages 3 to 5, then land the voice (#9) and vision (#11),
+then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
 Claude Code bridge). The full list and the decisions still open are at the top
 of the roadmap.
 
