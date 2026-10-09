@@ -186,6 +186,7 @@ from kit.reply import (
     without_plans,
 )
 from kit.settings import Settings, cloud_background, local_stands_in
+from kit.shows import show_for
 from kit.things import THINGS, Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
@@ -320,6 +321,7 @@ WHEN = re.compile(
     re.IGNORECASE,
 )
 WEATHER_FOLLOW_UP = timedelta(minutes=15)
+SHOW_WAIT_S = 5.0  # how long a show (the weather) may still take once he's answered
 # "Check again" soon after a look at the PC means look again, not repeat the answer.
 AGAIN = re.compile(r"\b((check|look|have a look) again\W*$|again\?*$|and now\??$|refresh)", re.I)
 PC_FOLLOW_UP = timedelta(minutes=10)
@@ -685,6 +687,8 @@ class Brain:
                 user_id, settings.persona.owner, text, settings.persona.name, answered.text
             )
             return
+        # What his face shows (the time, the weather), looked up while he thinks.
+        showing = asyncio.create_task(self._show_for(text, settings))
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         # The check runs while he recalls, so it costs next to no time.
         checking = asyncio.create_task(self._check_fact(text, settings)) if check_fact else None
@@ -741,6 +745,10 @@ class Brain:
         if role != LOCAL and asides[0] and history[-1].id in self.memory.private_said():
             asides[0] = ""  # he piped up about something Dan kept local
             answering = "\n\n".join(a for a in asides if a)
+        await asyncio.sleep(0)  # the time and date are ready at once; the weather may be
+        shown = showing.done()
+        if shown:
+            self._emit_show(showing, emit)
         emotion, reply_id = "", None
         async for event in self._converse(
             text,
@@ -759,6 +767,10 @@ class Brain:
                     event = {**event, "question": text}
             emit(self._track(event, said))
 
+        if not shown:  # still looking it up when he started, maybe done since
+            if not showing.done():
+                await asyncio.wait({showing}, timeout=SHOW_WAIT_S)
+            self._emit_show(showing, emit)
         read = READ.get()
         from_read = feeling_from_read(read, text, owner) if read else None
         if from_read is not None:  # the model's reading takes over from the words
@@ -937,6 +949,34 @@ class Brain:
             self.memory.new_chat()
             return True
         return False
+
+    async def _show_for(self, text: str, settings: Settings) -> dict | None:
+        persona = settings.persona
+        return await show_for(
+            text,
+            self.memory.clock(),
+            self.weather,
+            persona.location,
+            persona.country,
+            settings.face.hot_c,
+        )
+
+    @staticmethod
+    def _emit_show(showing: asyncio.Task, emit: Callable[[Event], None]) -> None:
+        """Send what his face shows, once. A show that failed or took too long is
+        skipped: it's a nicety, never worth an error."""
+        if not showing.done():
+            showing.cancel()
+            return
+        if showing.cancelled():
+            return
+        error = showing.exception()
+        if error is not None:
+            log.info("nothing to show on his face: %s", error)
+            return
+        show = showing.result()
+        if show:
+            emit({"type": "show", "show": show})
 
     def _pc_recently(self) -> bool:
         return self._pc_at is not None and self.memory.clock() - self._pc_at < PC_FOLLOW_UP
@@ -1286,7 +1326,8 @@ class Brain:
 
     def _said_by_cloud(self, reply: Reply, answer: CloudAnswer) -> list[Event]:
         """A line of his own from a cloud model, kept and told as a pipe-up."""
-        message_id = self._remember_reply(reply, PIPE_UP)
+        meta = {"model": answer.model, "cost_usd": round(answer.cost_usd, 4)}
+        message_id = self._remember_reply(reply, PIPE_UP, meta)
         return [
             {"type": "say", "text": reply.text, "source": "cloud"},
             {
@@ -2154,18 +2195,21 @@ class Brain:
         reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"
-        message_id = self._remember_reply(reply, "cloud")
+        meta = {
+            "role": role,
+            "model": answer.model,
+            "label": profile.name,
+            "cost_usd": round(answer.cost_usd, 4),
+            "searches": answer.searches,
+        }
+        message_id = self._remember_reply(reply, "cloud", meta)
         yield {"type": "say", "text": reply.text, "source": "cloud"}
         yield {
             "type": "reply",
             "source": "cloud",
-            "role": role,
-            "model": answer.model,
-            "label": profile.name,
+            **meta,
             "reply": reply.model_dump(),
             "message_id": message_id,
-            "cost_usd": round(answer.cost_usd, 4),
-            "searches": answer.searches,
             "month_usd": round(self.memory.month_spend(), 4),
         }
 
@@ -2425,8 +2469,16 @@ class Brain:
             "message_id": message_id,
         }
 
-    def _remember_reply(self, reply: Reply, source: str) -> int:
-        return self.memory.add_message("kit", reply.full_text, reply_json(reply), source)
+    def _remember_reply(self, reply: Reply, source: str, meta: dict | None = None) -> int:
+        """Keep a reply; ``meta`` (who answered, what it cost) goes with it for the
+        desk chat's colours and details."""
+        return self.memory.add_message(
+            "kit",
+            reply.full_text,
+            reply_json(reply),
+            source,
+            meta_json=json.dumps(meta) if meta else None,
+        )
 
     async def summarise_past_days(self) -> list[str]:
         """Summarise each finished day and learn its facts. Returns the days done."""

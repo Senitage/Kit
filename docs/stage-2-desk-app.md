@@ -8,8 +8,8 @@ The desk app puts Kit on your desk PC:
   browser, Set up the Chrome extension, Check for updates, Quit Kit.
 - **Face on the desktop.** Glow floats on top of your windows. Drag him anywhere
   and he stays there next time. Click him to open the chat beside him. His eyes
-  follow the mouse, he acts out every reply, and when the chat is closed he says
-  it in a little speech bubble. He goes grey when he can't reach the brain.
+  follow the mouse, he acts out every reply, and he says it in a speech bubble
+  under his face with a little boop. He goes grey when he can't reach the brain.
 - **Chat.** It's the same conversation as the web chat page, with the same
   memory. Your messages are on the right in the accent colour and Kit's are on
   the left, as rounded bubbles. Kit's replies show markdown: bold, lists, code,

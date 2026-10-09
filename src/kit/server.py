@@ -330,6 +330,7 @@ def create_app(
                 "source": m.source,
                 "channel": m.channel,
                 "reply": json.loads(m.reply_json) if m.reply_json else None,
+                "meta": json.loads(m.meta_json) if m.meta_json else None,
             }
             for m in memory.recent(min(limit, 500))
         ]

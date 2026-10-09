@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -35,6 +36,7 @@ from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QKeySequence, QSho
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -70,7 +72,54 @@ class Line:
     role: str  # you, kit, claude, note or error
     text: str
     detail: str = ""
-    meta: list[str] = field(default_factory=list)
+    meta: list[tuple[str, str]] = field(default_factory=list)  # shown on a click
+    tier: str = "chat"  # which model answered (theme.TIERS), for the bubble's colour
+
+
+ROLE_NAMES = {"chat": "Chat", "work": "Work", "expert": "Expert"}
+
+
+def tier_of(meta: dict | None) -> str:
+    """Which model answered a reply: chat (local or cloud), work or expert."""
+    role = (meta or {}).get("role")
+    return role if role in theme.TIERS else "chat"
+
+
+def when(at: str | None = None, now: datetime | None = None) -> str:
+    """A message's time, with the day when it wasn't today."""
+    now = now or datetime.now()
+    try:
+        then = datetime.fromisoformat(at) if at else now
+    except ValueError:
+        return ""
+    if then.date() == now.date():
+        return then.strftime("%H:%M")
+    return then.strftime("%a %d %b, %H:%M")
+
+
+def details(meta: dict | None, source: str | None, at: str | None = None) -> list[tuple]:
+    """What the details panel shows for one of Kit's replies: who answered, as what,
+    what it cost and when."""
+    m = meta or {}
+    rows: list[tuple[str, str]] = []
+    if m.get("model"):
+        rows.append(("Answered by", m.get("label") or m["model"]))
+        if m.get("label") and m["label"] != m["model"]:
+            rows.append(("Model", m["model"]))
+    elif source in (None, "local"):
+        rows.append(("Answered by", "Kit's local model"))
+    rows.append(("As", ROLE_NAMES[tier_of(m)]))
+    if source == "pipe_up":
+        rows.append(("Said", "on his own"))
+    if "cost_usd" in m:
+        rows.append(("Cost", f"${m['cost_usd']:.3f}"))
+    if m.get("searches"):
+        rows.append(("Web searches", str(m["searches"])))
+    if "month_usd" in m:
+        rows.append(("This month", f"${m['month_usd']:.2f}"))
+    if stamp := when(at):
+        rows.append(("Time", stamp))
+    return rows
 
 
 @dataclass
@@ -87,10 +136,13 @@ class _Held:
 class Bubble(QFrame):
     """One message. Kit's text is markdown; Dan's is shown as typed."""
 
+    clicked = Signal()
+
     def __init__(self, line: Line, palette: theme.Palette) -> None:
         super().__init__()
         self.setObjectName("bubble")
         self.role = line.role
+        self.tier = line.tier
         self.body = QLabel()
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
@@ -100,23 +152,24 @@ class Bubble(QFrame):
             Qt.TextFormat.PlainText if line.role == "you" else Qt.TextFormat.RichText
         )
         self.link = ""
-        self.meta = QLabel()
-        self.meta.setObjectName("meta")
+        self._on_link = False  # a click on a link opens it, not the details
+        self.body.linkHovered.connect(lambda url: setattr(self, "_on_link", bool(url)))
+        self.body.installEventFilter(self)
+        if line.role != "you":
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Click for details")
         self.text = ""
         self.limit = 10_000  # the widest this bubble may be, set by Row.fit
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAD_X, 9, PAD_X, 9)
         layout.setSpacing(6)
         layout.addWidget(self.body)
-        layout.addWidget(self.meta)
         self.restyle(palette)
         self.set_line(line)
 
     def restyle(self, palette: theme.Palette) -> None:
-        self.setStyleSheet(theme.bubble_style(palette, self.role))
-        small = self.font()
-        small.setPointSizeF(max(7.0, small.pointSizeF() - 1.5))
-        self.meta.setFont(small)
+        self._palette = palette
+        self.setStyleSheet(theme.bubble_style(palette, self.role, self.tier))
         # Links in the accent colour, lightened on dark bubbles so they stay readable.
         link = QColor(palette.accent)
         self.link = (link.lighter(150) if palette.dark else link).name()
@@ -129,9 +182,27 @@ class Bubble(QFrame):
         self.text = message_text(line)
         self.body.setText(self._html(self.text))
         self.body.setVisible(bool(self.text))
-        self.meta.setText(" · ".join(line.meta))
-        self.meta.setVisible(bool(line.meta))
+        if line.tier != self.tier:
+            self.tier = line.tier
+            self.setStyleSheet(theme.bubble_style(self._palette, self.role, self.tier))
         self.fit(self.limit)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt's name)
+        # The text takes the clicks (to select and follow links), so a plain click on
+        # it counts as a click on the bubble.
+        if obj is self.body and event.type() == QEvent.Type.MouseButtonRelease:
+            self._release(event)
+        return super().eventFilter(obj, event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self._release(event)
+        super().mouseReleaseEvent(event)
+
+    def _release(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or self._on_link:
+            return
+        if not self.body.hasSelectedText():
+            self.clicked.emit()
 
     def _html(self, text: str) -> str:
         """Kit's markdown as HTML with links in the theme's colour (a label's link
@@ -192,6 +263,7 @@ class Row(QWidget):
 
     copied = Signal(str)  # text to put on the clipboard
     copy_all = Signal()
+    opened = Signal(object)  # this row: show its details
 
     def __init__(self, line: Line, palette: theme.Palette) -> None:
         super().__init__()
@@ -218,6 +290,8 @@ class Row(QWidget):
             layout.addWidget(self.note, 1)
         else:
             self.bubble = Bubble(line, palette)
+            if line.role != "you":
+                self.bubble.clicked.connect(lambda: self.opened.emit(self))
             self.bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
             if line.role == "you":
                 layout.addStretch(1)
@@ -266,6 +340,68 @@ class Row(QWidget):
             self.bubble.fit(max(160, int(width * BUBBLE_SHARE)))
 
 
+class Details(QWidget):
+    """A reply's details in a small panel that pops out beside the chat window,
+    level with the bubble. Clicking anywhere else closes it."""
+
+    GAP = 8
+
+    def __init__(self) -> None:
+        super().__init__(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.card = QFrame()
+        self.card.setObjectName("details")
+        self.grid = QGridLayout(self.card)
+        self.grid.setContentsMargins(14, 12, 14, 12)
+        self.grid.setHorizontalSpacing(14)
+        self.grid.setVerticalSpacing(5)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.card)
+
+    def fill(self, rows: list[tuple[str, str]], palette: theme.Palette) -> None:
+        self.card.setStyleSheet(theme.details_style(palette))
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        title = QLabel("Details")
+        title.setObjectName("title")
+        self.grid.addWidget(title, 0, 0, 1, 2)
+        for i, (name, value) in enumerate(rows or [("", "Nothing more to show")], start=1):
+            label = QLabel(name)
+            label.setObjectName("muted")
+            shown = QLabel(value)
+            shown.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.grid.addWidget(label, i, 0)
+            self.grid.addWidget(shown, i, 1)
+        self.adjustSize()
+
+    def show_for(self, row: Row, chat: QWidget, palette: theme.Palette) -> None:
+        self.fill(row.line.meta, palette)
+        self.move(place_beside(chat.frameGeometry(), self.size(), _top_of(row), chat))
+        self.show()
+
+
+def _top_of(row: Row) -> int:
+    target = row.bubble if row.bubble is not None else row
+    return target.mapToGlobal(QPoint(0, 0)).y()
+
+
+def place_beside(window, size: QSize, top: int, widget: QWidget | None = None) -> QPoint:
+    """Where the details panel goes: just outside the chat window on whichever side
+    has room (right first), level with the bubble, kept on the screen."""
+    screen = widget.screen().availableGeometry() if widget is not None else None
+    x = window.right() + Details.GAP
+    if screen is not None and x + size.width() > screen.right():
+        x = window.left() - Details.GAP - size.width()
+    y = top
+    if screen is not None:
+        x = max(screen.left(), x)
+        y = max(screen.top(), min(y, screen.bottom() - size.height()))
+    return QPoint(x, y)
+
+
 class Typing(QFrame):
     """Three dots that rise in turn while Kit thinks."""
 
@@ -310,11 +446,13 @@ class _Signals(QObject):
 
 class ChatWindow(QWidget):
     """Kit's chat. ``replied`` carries each finished reply for the face to act out;
+    ``shown`` carries what his face should show (the time, the weather);
     ``state`` carries what Kit is doing ("thinking", "speaking", "idle"...).
     ``settings_wanted`` asks the app to open Kit's window; ``resized`` reports the
     new size so it can be remembered."""
 
     replied = Signal(dict)
+    shown = Signal(dict)  # something for his face to show (kit.shows)
     state = Signal(str)
     settings_wanted = Signal()
     resized = Signal(QSize)
@@ -344,6 +482,7 @@ class ChatWindow(QWidget):
         self._loaded = False
         self._replace = False
         self._stick = True
+        self._details: Details | None = None
         self._signals = _Signals()
         self._signals.event.connect(self.on_event)
         self._signals.done.connect(self._turn_done)
@@ -558,7 +697,10 @@ class ChatWindow(QWidget):
             else:
                 reply = m.get("reply") or {}
                 role = "claude" if m.get("source") == "cloud" else "kit"
-                old.append(Line(role, m.get("text", ""), reply.get("detail", "")))
+                meta = m.get("meta")
+                line = Line(role, m.get("text", ""), reply.get("detail", ""), tier=tier_of(meta))
+                line.meta = details(meta, m.get("source"), m.get("at"))
+                old.append(line)
         lines = old if self._replace and not self._in_flight else old + self.lines
         if [(x.role, x.text) for x in lines] == [(x.role, x.text) for x in self.lines]:
             return  # nothing new: leave the view (and Dan's scroll position) alone
@@ -587,12 +729,8 @@ class ChatWindow(QWidget):
             text = " ".join(s.get("say", "") for s in reply.get("segments", []))
             cloud = ev.get("source") == "cloud"
             line = Line("claude" if cloud else "kit", text, reply.get("detail", ""))
-            if cloud:
-                line.meta = [f"{ev.get('label')} ({ev.get('model')})"]
-                if "cost_usd" in ev:
-                    line.meta.append(f"${ev['cost_usd']:.3f}")
-                if ev.get("searches"):
-                    line.meta.append(f"{ev['searches']} searches")
+            line.tier = tier_of(ev)
+            line.meta = details(ev, ev.get("source"))
             held = self._held.get(turn)
             if held is not None and held.text.strip():
                 held.final = line  # shown when his voice gets to the end
@@ -604,6 +742,8 @@ class ChatWindow(QWidget):
                 self._held.pop(turn, None)
                 self._show_reply(turn, line)
                 self.replied.emit(reply)
+        elif kind == "show":
+            self.shown.emit(ev.get("show") or {})
         elif kind == "handing_off":
             self._current.pop(turn, None)
             self._set_state(f"asking {ev.get('to', 'the cloud')}")
@@ -777,6 +917,7 @@ class ChatWindow(QWidget):
         row = Row(line, self.palette)
         row.copied.connect(self.copy_text)
         row.copy_all.connect(self.copy_conversation)
+        row.opened.connect(self.open_details)
         row.fit(self.scroll.viewport().width())
         self.rows.append(row)
         self.column.insertWidget(self.column.count() - 1, row)  # above the typing dots
@@ -821,6 +962,12 @@ class ChatWindow(QWidget):
         # buffer (blurry text on some screens), so it's removed once done.
         group.finished.connect(lambda: row.setGraphicsEffect(None))
         group.start(QParallelAnimationGroup.DeletionPolicy.DeleteWhenStopped)
+
+    def open_details(self, row: Row) -> None:
+        """Pop a reply's details (who answered, what it cost) out beside the chat."""
+        if self._details is None:
+            self._details = Details()
+        self._details.show_for(row, self, self.palette)
 
     # Scrolling: stay at the bottom while Dan is there.
 
@@ -913,8 +1060,6 @@ class ChatWindow(QWidget):
             parts.append(line.text)
             if line.detail:
                 parts.append(line.detail)
-            if line.meta:
-                parts.append(" · ".join(line.meta))
         return "\n".join(parts)
 
 

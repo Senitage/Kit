@@ -1,5 +1,6 @@
 """The desk app's windows, run without a screen. Needs the desk extra."""
 
+import gc
 import os
 
 import pytest
@@ -7,18 +8,31 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", reason="desk extra (PySide6) not installed")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPointF, Qt  # noqa: E402
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QMouseEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from kit.desk import app as desk_app  # noqa: E402
-from kit.desk.chat import ChatWindow  # noqa: E402
+from kit.desk.chat import ChatWindow, place_beside  # noqa: E402
 from kit.desk.config import DeskConfig, save_token  # noqa: E402
 
 
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def tidy_qt():
+    """Free each test's windows when it ends. Left to Python's garbage collector, a
+    finished test's Qt objects can be deleted in the middle of a later test's event
+    loop, which crashes Qt on Windows."""
+    yield
+    gc.collect()
+    app = QApplication.instance()
+    if app is not None:
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
 
 
 @pytest.fixture
@@ -66,7 +80,73 @@ def test_chat_shows_streamed_words_then_the_reply(qapp):
     text = chat.text()
     assert "Remembered: Dan likes tea." in text
     assert "Add to the register? Rex (pet) (yes or no)" in text
-    assert "Claude (sonnet) · $0.010" in text
+    # Who answered and the price wait for a click on the bubble.
+    assert "sonnet" not in text and "$0.010" not in text
+    assert ("Answered by", "Claude") in chat.lines[-1].meta
+    assert ("Cost", "$0.010") in chat.lines[-1].meta
+
+
+def test_bubbles_are_coloured_by_who_answered(qapp):
+    chat = ChatWindow()
+    chat.on_event(1, reply_event("Local hi."))
+    chat.on_event(2, reply_event("Haiku hi.", source="cloud", role="chat", model="haiku"))
+    chat.on_event(3, reply_event("Sonnet.", source="cloud", role="work", model="sonnet"))
+    chat.on_event(4, reply_event("Opus.", source="cloud", role="expert", model="opus"))
+    assert [line.tier for line in chat.lines] == ["chat", "chat", "work", "expert"]
+    p = chat.palette
+    styles = [row.bubble.styleSheet() for row in chat.rows]
+    assert p.bubble in styles[0] and p.bubble in styles[1]
+    assert p.work in styles[2] and p.expert in styles[3]
+
+
+def test_a_click_on_a_reply_pops_out_its_details(qapp):
+    chat = ChatWindow()
+    chat.show()
+    chat.on_event(
+        1,
+        reply_event(
+            "Sorted.",
+            source="cloud",
+            role="work",
+            label="Sonnet",
+            model="claude-sonnet",
+            cost_usd=0.0123,
+            searches=2,
+        ),
+    )
+    row = chat.rows[-1]
+    row.bubble.clicked.emit()
+    shown = [w.text() for w in chat._details.findChildren(QLabel)]
+    assert chat._details.isVisible()
+    assert {"Sonnet", "claude-sonnet", "Work", "$0.012", "2"} <= set(shown)
+    chat._details.hide()
+    chat.close()
+
+
+def test_old_replies_keep_their_colour_and_details(qapp):
+    chat = ChatWindow()
+    chat._show_history(
+        [
+            {"role": "user", "text": "Fix it"},
+            {
+                "role": "kit",
+                "text": "Fixed.",
+                "source": "cloud",
+                "at": "2026-10-08T09:30:00",
+                "meta": {"role": "expert", "label": "Opus", "model": "opus", "cost_usd": 0.2},
+            },
+            {"role": "kit", "text": "Hi.", "source": "local"},
+        ]
+    )
+    assert [line.tier for line in chat.lines] == ["chat", "expert", "chat"]
+    assert ("Answered by", "Opus") in chat.lines[1].meta
+    assert ("Time", "Thu 08 Oct, 09:30") in chat.lines[1].meta
+    assert ("Answered by", "Kit's local model") in chat.lines[2].meta
+
+
+def test_details_sit_beside_the_chat_on_the_side_with_room():
+    window = QRect(100, 100, 400, 600)
+    assert place_beside(window, QSize(200, 150), 300) == QPoint(window.right() + 8, 300)
 
 
 def test_chat_without_a_brain_says_to_set_it_up(qapp):
@@ -312,6 +392,12 @@ class FakeBrain:
     def search(self, q, k=15):
         return {"hits": [{"source": "facts", "title": "", "text": "Tax is in Finance/Tax"}]}
 
+    def face_presets(self):
+        return {
+            "current": "retro",
+            "presets": [{"id": "retro", "name": "Retro"}, {"id": "kit3d", "name": "Kit 3D"}],
+        }
+
 
 @pytest.fixture
 def sync_window(monkeypatch):
@@ -337,6 +423,73 @@ def test_kits_settings_page_round_trips_the_brains_settings(qapp, sync_window, t
     patch = brain.saved[-1]
     assert patch["brain"]["history_messages"] == brain.store["brain"]["history_messages"]
     assert patch["life"]["cheek"] == pytest.approx(brain.store["life"]["cheek"])
+    win.close()
+
+
+def test_kits_settings_fold_away_and_search(qapp, sync_window, tmp_path):
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    win.show()
+    win.show_page("Kit's settings")
+    page = win.brain_settings
+    assert page.groups and not any(box.body.isVisibleTo(page) for box in page.groups)
+    brain_box = next(box for box in page.groups if box.title == "Brain")
+    brain_box.head.click()  # Dan opens one
+    assert brain_box.body.isVisibleTo(page)
+    page.find.setText("history messages")
+    shown = [box for box in page.groups if box.isVisibleTo(page)]
+    assert shown == [brain_box] and brain_box.body.isVisibleTo(page)
+    page.find.setText("no such setting anywhere")
+    assert page.nothing.isVisibleTo(page) and not any(b.isVisibleTo(page) for b in page.groups)
+    page.find.clear()  # back as Dan left them: only Brain open
+    assert all(box.isVisibleTo(page) for box in page.groups)
+    assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
+    page.save()  # a reload keeps it open
+    assert [box.title for box in page.groups if box.body.isVisibleTo(page)] == ["Brain"]
+    win.close()
+
+
+def test_look_page_picks_his_character_and_fits_its_style(qapp, sync_window, tmp_path, monkeypatch):
+    monkeypatch.setattr(sync_window.face3d, "sync", lambda *args: None)  # no web pages here
+    brain = FakeBrain()
+    win = make_window(sync_window, brain, tmp_path)
+    changed = []
+    win.character_changed.connect(lambda: changed.append(True))
+    win.show_page("Look")
+    look = win.look
+    assert [look.character.itemText(i) for i in range(look.character.count())] == [
+        "Retro",
+        "Kit 3D",
+    ]
+    look.character.activated.emit(1)
+    assert brain.saved[-1] == {"face": {"character": "kit3d"}} and changed
+    assert look.eyes.isVisibleTo(look)
+    win.use_look("http://kit:8600", {"style": "model"})  # 3D: no eye colours to pick
+    assert not look.eyes.isVisibleTo(look) and "3D" in look.style_note.text()
+    assert win.mood.gem.y() > 0  # the mood gem comes down onto the 3D head
+    win.use_look("http://kit:8600", {"style": "glow"})
+    assert look.eyes.isVisibleTo(look) and win.mood.gem.y() == 0
+    win.close()
+
+
+def test_mood_and_look_show_his_3d_face_only_while_the_window_is_open(
+    qapp, sync_window, tmp_path, monkeypatch
+):
+    seen = []
+
+    def sync(widget, url, look, current):
+        seen.append((widget, url))
+        return "3d" if url else None
+
+    monkeypatch.setattr(sync_window.face3d, "sync", sync)
+    win = make_window(sync_window, FakeBrain(), tmp_path)
+    win.use_look("http://kit:8600", {"style": "model"})
+    assert [url for _, url in seen] == [None, None]  # closed: no web pages
+    win.show_page("Mood")
+    assert {w for w, url in seen[-2:] if url} == {win.mood.face, win.look.preview}
+    assert win._faces3d == ["3d", "3d"]
+    win.hide()
+    assert [url for _, url in seen[-2:]] == [None, None]
     win.close()
 
 
@@ -384,7 +537,7 @@ def test_look_changes_show_at_once_and_only_touch_the_look(qapp, desk_dir, monke
         look = desk.window.look
         look.eyes.pick("#ffc66b")
         look.size.setValue(200)
-        assert desk.face.eye.name() == "#ffc66b" and desk.face.width() == 200
+        assert desk.face.eye.name() == "#ffc66b" and round(desk.face.face_rect().width()) == 200
         desk.window.pc.form.url.setText("http://elsewhere:8600")  # typed, not saved
         look.theme.setCurrentIndex(look.theme.findData("light"))
         saved = DeskConfig.load(desk_dir)
@@ -539,6 +692,171 @@ def test_a_reaction_plays_even_mid_conversation(qapp, desk_dir, monkeypatch):
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def _wait(qapp, seconds):
+    import time as _t
+
+    end = _t.time() + seconds
+    while _t.time() < end:
+        qapp.processEvents()
+
+
+def test_what_kit_says_sits_under_his_face_and_he_hops_up_for_room(qapp):
+    from kit.desk.alive import Body
+
+    face = desk_app.HelperFace(150)
+    screen = face.screen().availableGeometry()
+    face.show()
+    face.put_face_at(desk_app.QPoint(screen.right() - 174, screen.bottom() - 154))  # the corner
+    home = face.pos()
+    body = Body(face, lambda: 150)
+    bubble = desk_app.SpeechBubble(face, body)
+    bubble.setText("Righto, the kettle's on.")
+    _wait(qapp, 0.8)
+    f = face.face_geometry()
+    assert bubble.isVisible() and face.pos().y() < home.y()  # hopped up to make room
+    assert bubble.y() >= f.top() + int(f.height() * 0.8)  # under his face, not over it
+    assert bubble.geometry().bottom() <= screen.bottom()
+    bubble.setText("")
+    _wait(qapp, 0.8)
+    assert not bubble.isVisible() and face.pos() == home  # settled back down
+    bubble.idle_text = lambda: "watching the rain..."
+    bubble.setText("")
+    assert bubble.isVisible() and bubble.text() == "watching the rain..."
+    bubble.hide()
+    face.close()
+
+
+def test_he_loops_when_excited_and_comes_home(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9", face_x=300, face_y=300).save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    desk.sounds.player = None
+    try:
+        home = desk.face.pos()
+        assert desk.face.face_pos() == desk_app.QPoint(300, 300)  # where Dan left his face
+        desk.face.face.set_emotion("excited", 0.0)
+        assert desk.body.moving == "loop"
+        _wait(qapp, 0.6)
+        assert desk.face.pos() != home  # out on his loop
+        _wait(qapp, 1.4)
+        assert desk.body.moving is None and desk.face.pos() == home
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving is None  # too soon after the last move
+        desk._moved_at.clear()
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving == "hop_hop"
+        desk.body.stop()
+        desk.config.movement = "a_little"
+        desk.apply_look()
+        desk._moved_at.clear()
+        desk.face.face.play("bounce", 0.0)
+        assert desk.body.moving is None and desk.face.face.amplitude == 1.0
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
+def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    played = []
+    desk.sounds.player = lambda path: played.append(path.name)
+    desk.performer.perform = lambda reply: None
+    try:
+        desk.show_chat()  # even with the chat open
+        desk._act_out(reply_event("Hi")["reply"])
+        assert played == ["boop-1.wav"] and desk.bubble.enabled
+        desk._on_life({"type": "pipe_up", "reply": reply_event("Psst.")["reply"]})
+        _wait(qapp, 1.0)
+        assert played[-1] == "bip_boop-1.wav"
+        desk.boop_action.setChecked(False)  # the tray switch
+        assert DeskConfig.load(desk_dir).boop is False
+        desk._act_out(reply_event("Quiet now")["reply"])
+        assert len(played) == 2
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
+def test_the_boop_is_a_short_wav():
+    import io
+    import wave
+
+    from kit.desk.sound import SOUNDS, tone
+
+    with wave.open(io.BytesIO(tone(SOUNDS["boop"]))) as w:
+        assert w.getnchannels() == 1 and 0.1 < w.getnframes() / w.getframerate() < 0.3
+
+
+def test_a_show_plays_as_he_answers(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    desk.sounds.player = None
+    desk.performer.perform = lambda reply: None
+    time_show = {"kind": "time", "text": "3:07", "small": "pm"}
+    try:
+        desk._chat_state("heard")
+        desk.chat.on_event(1, {"type": "show", "show": time_show})
+        assert desk.face.scene is None  # waits for his answer
+        desk.chat.on_event(1, reply_event("Just after three."))
+        assert desk.face.scene is not None and desk.face.scene.show == time_show
+        desk.face.scene = None
+        desk.chat.on_event(1, {"type": "show", "show": time_show})  # a late one
+        assert desk.face.scene is not None
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
+LIFE = {
+    "mood": "curious",
+    "presence": "alone",
+    "doing": "watching the rain",
+    "energy": 0.8,
+    "drives": {"boredom": 0.3, "curiosity": 0.55, "social": 0.6, "energy": 0.8},
+    "dials": {"arousal": 0.7, "valence": 0.4},
+    "feeling": {"name": "chuffed", "why": "Dan said thanks for the reminder"},
+    "closeness": "good mates",
+    "thinking": "Whether the cat likes rain.",
+    "wants": ["the weather bet"],
+}
+
+
+def test_the_mood_page_shows_his_needs_and_cant_change_them(qapp, sync_window, tmp_path):
+    from PySide6.QtWidgets import QAbstractButton, QAbstractSpinBox, QLineEdit, QSlider
+
+    brain = FakeBrain()
+    brain.life = lambda: LIFE
+    win = make_window(sync_window, brain, tmp_path)
+    win.show_page("Mood")
+    page = win.mood
+    assert page.mood.text() == "Curious"
+    assert "watching the rain" in page.presence.text()
+    assert "chuffed" in page.feeling.text() and "thanks" in page.feeling.text()
+    bars = {name: bar.target for name, bar in page.bars.items()}
+    assert bars["Energy"] == pytest.approx(0.8)
+    assert bars["Fun"] == pytest.approx(0.7)  # not bored
+    assert bars["Company"] == pytest.approx(0.4)  # wants company
+    assert bars["Happiness"] == pytest.approx(0.7)
+    assert page.face.face.emotion == "happy"  # chuffed
+    assert 0.6 < page.gem.level < 0.7
+    # Only to look at: nothing on the page can set a need.
+    for kind in (QAbstractButton, QSlider, QAbstractSpinBox, QLineEdit):
+        assert not page.findChildren(kind)
+    brain.life = lambda: {**LIFE, "dials": None, "mood": "asleep", "feeling": None}
+    page.refresh()
+    assert "Happiness" not in page.bars and page.face.face.state == "sleeping"
+    win.close()
 
 
 def test_the_desk_draws_kit_from_the_brains_character_sheet():

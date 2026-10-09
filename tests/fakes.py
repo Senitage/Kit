@@ -245,3 +245,10 @@ class FakeWeather:
         if self.fail:
             raise WeatherError("The forecast service returned an error (500).")
         return f"Forecast for {place} from Open-Meteo: clear, 14°C tonight."
+
+    async def today(self, place, country="", ahead=0):
+        from kit.weather import Today, WeatherError
+
+        if self.fail:
+            raise WeatherError("The forecast service returned an error (500).")
+        return Today(place, 14.0 if not ahead else None, "light rain", 19.0, 9.0, 70)

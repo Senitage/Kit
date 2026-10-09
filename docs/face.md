@@ -131,11 +131,51 @@ Blinks, eye darts, breathing, the reading sweep while working and the talking
 pulse are reflexes and stay in the rig's code. A new eye *shape* (not just new
 sizes or colours) needs a new painter `style` in each app.
 
+## Body moves: hops, loops and big gestures
+
+Gestures move his face within its own screen; body moves move all of him.
+`kit.face.body` describes each one (a loop, a hop, a double hop, a jump back, a
+sway, a sink, a bob, a dash, a peek) as a path in face sizes that starts and
+ends where he sits, so the arm can use the same names later.
+
+- A gesture with a bigger version brings it along (bounce hops twice, startle
+  jumps back, droop sinks), an excited reply does a loop, and so does his hello
+  when Dan gets back.
+- On the desk, `kit.desk.alive.Body` moves his window: where Dan left him, plus
+  the lift that makes room for his words, plus the move. His window has a
+  see-through margin, so big tilts and squashes aren't cut off.
+- The Look page's "How much Kit moves" sets how big his gestures are and
+  whether body moves play: Lively (the default), Bouncy, A little (the old
+  size, no body moves) or Still. He waits a few seconds between moves, and a
+  loop at most every 40 seconds, so he's lively without being frantic.
+
+## Shows: the time, the date, the weather
+
+Glow can show things besides his eyes. Ask Kit the time and his eyes turn into
+the time; ask the date and they become "FRI" over "9 OCT". Ask about the
+weather and the temperature takes his eyes' place, then the sky plays on and
+around him: rain or a storm from a little cloud over his head, sun, a
+passing cloud, fog, or the moon and stars after dark. A dry day at 35°C or more
+(`face.hot_c`) is a scorcher, with shimmering air and a drop of sweat; a dry day
+with wind of 35 km/h or more has gusts and a leaf blowing past. Rain and storms
+win over both. Snow shows as rain.
+
+- `kit.shows` (brain) picks a show from Dan's words and fills in the facts from
+  the clock and Open-Meteo (`Weather.today`, which can also give tomorrow). It
+  goes out as a `show` event beside the reply. The weather is only shown for
+  home, today or tomorrow; "the weather in Sydney" or "this weekend" shows
+  nothing.
+- `kit.desk.scenes` (desk app) draws each show. A scene paints on his screen
+  (moving with his head) and in front of him (staying put), and says how much
+  of his eyes show. The desk app starts it as his answer starts.
+- To add a show: a kind in `kit.shows` and a scene in `kit.desk.scenes.SCENES`.
+  A body that doesn't know a kind ignores it.
+
 ## Try it
 
 ```
 pip install -e ".[desk]"
-python -m kit.desk.face_preview           # buttons for every emotion, gesture and state
+python -m kit.desk.face_preview           # buttons for every emotion, gesture, state and show
 python -m kit.desk.face_preview --float   # a small always-on-top face you can drag
 ```
 

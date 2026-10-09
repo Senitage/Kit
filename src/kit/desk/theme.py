@@ -33,8 +33,11 @@ class Palette:
     dark: bool
     bg: str  # window background
     panel: str  # header and input bar
-    bubble: str  # Kit's bubbles
-    claude: str  # bubbles answered by a cloud model
+    bubble: str  # Kit's bubbles (the chat model: local or cloud)
+    work: str  # bubbles answered by the work model, and their edge
+    work_line: str
+    expert: str  # bubbles answered by the expert model, and their edge
+    expert_line: str
     text: str
     muted: str
     line: str
@@ -67,7 +70,10 @@ def palette(theme: str = "system", accent: str = ACCENTS["Blue"]) -> Palette:
             bg="#141517",
             panel="#1c1d20",
             bubble="#25272b",
-            claude="#2f2a20",
+            work="#3a2816",
+            work_line="#a8642a",
+            expert="#1b3222",
+            expert_line="#3f8f55",
             text="#ecebe7",
             muted="#9c9a94",
             line="#34363b",
@@ -81,7 +87,10 @@ def palette(theme: str = "system", accent: str = ACCENTS["Blue"]) -> Palette:
         bg="#f6f5f2",
         panel="#ffffff",
         bubble="#ffffff",
-        claude="#fbf2e4",
+        work="#fdebd6",
+        work_line="#eba25c",
+        expert="#e1f3e4",
+        expert_line="#76c08a",
         text="#1d1d1b",
         muted="#6b6a66",
         line="#e2e0da",
@@ -144,6 +153,10 @@ def window_style(p: Palette, font_pt: float = 10.5) -> str:
         padding: 14px 12px 10px 12px; background: {p.panel}; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 4px;
         color: {p.muted}; }}
+    QFrame#section {{ border: 1px solid {p.line}; border-radius: 14px; background: {p.panel}; }}
+    QToolButton#sectionHead {{ border: none; background: transparent; color: {p.text};
+        font-weight: 600; padding: 10px 12px; text-align: left; }}
+    QToolButton#sectionHead:hover {{ color: {p.accent}; }}
     QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px;
         border: 1px solid {p.line}; background: {p.bg}; }}
     QCheckBox::indicator:checked {{ background: {p.accent}; border-color: {p.accent}; }}
@@ -156,20 +169,36 @@ def window_style(p: Palette, font_pt: float = 10.5) -> str:
     """
 
 
-def bubble_style(p: Palette, role: str) -> str:
-    """Rounded bubbles: Dan's in the accent colour on the right, Kit's on the left."""
+TIERS = ("chat", "work", "expert")  # which model answered: kit.brain's roles
+
+
+def bubble_style(p: Palette, role: str, tier: str = "chat") -> str:
+    """Rounded bubbles: Dan's in the accent colour on the right, Kit's on the left,
+    coloured by who answered: plain for the chat model, orange for the work model,
+    green for the expert."""
     if role == "you":
         bg, fg, border = p.accent, p.accent_text, p.accent
         corners = "border-bottom-right-radius: 6px;"
-    elif role == "claude":
-        bg, fg, border = p.claude, p.text, p.line
-        corners = "border-bottom-left-radius: 6px;"
     else:
-        bg, fg, border = p.bubble, p.text, p.line
+        bg, border = {
+            "work": (p.work, p.work_line),
+            "expert": (p.expert, p.expert_line),
+        }.get(tier, (p.bubble, p.line))
+        fg = p.text
         corners = "border-bottom-left-radius: 6px;"
     return (
         f"QFrame#bubble {{ background: {bg}; border: 1px solid {border};"
         f" border-radius: 18px; {corners} }}"
         f" QLabel {{ color: {fg}; background: transparent; border: none; }}"
-        f" QLabel#meta {{ color: {fg if role == 'you' else p.muted}; }}"
+    )
+
+
+def details_style(p: Palette) -> str:
+    """The panel that pops out beside the chat with a reply's details."""
+    return (
+        f"QFrame#details {{ background: {p.panel}; border: 1px solid {p.line};"
+        f" border-radius: 12px; }}"
+        f" QLabel {{ color: {p.text}; background: transparent; border: none; }}"
+        f" QLabel#muted {{ color: {p.muted}; }}"
+        f" QLabel#title {{ font-weight: 600; }}"
     )

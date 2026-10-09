@@ -1,5 +1,6 @@
 import pytest
 
+from kit.face import character as characters
 from kit.settings import OLD_PERSONA, Settings, SettingsError, load_settings, validate_settings
 
 
@@ -98,3 +99,8 @@ def test_an_old_default_persona_is_read_as_todays():
     assert "flotation" not in str(today.model_dump()) and "pumps" not in today.backstory
     own = validate_settings({"persona": {"backstory": "Likes pumps. Dan said so."}}).persona
     assert own.backstory == "Likes pumps. Dan said so."  # his own words are kept
+
+
+def test_character_is_a_choice_even_with_one_preset():
+    face = Settings.model_json_schema()["$defs"]["FaceSettings"]["properties"]
+    assert face["character"]["enum"] == list(characters.presets())

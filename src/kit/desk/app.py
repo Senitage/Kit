@@ -3,7 +3,7 @@
 - Kit sits in the taskbar tray as his face. Click it (or the face) for the chat;
   right-click for the menu.
 - Glow floats on screen, always on top, and can be dragged anywhere. He acts out
-  each reply, says it in a little speech bubble when the chat is closed, and
+  each reply, says it in a speech bubble under his face (with a boop), and
   goes grey when he can't reach the brain.
 - Every couple of seconds the app checks which windows are open and which has
   focus, and tells the brain when that changes (``kit.desk.watch``). Window
@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import webbrowser
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,12 +34,22 @@ from PySide6.QtCore import (
     QObject,
     QPoint,
     QPropertyAnimation,
+    QRect,
     QRectF,
     Qt,
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QAction, QColor, QIcon, QMouseEvent, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
@@ -53,18 +64,20 @@ from PySide6.QtWidgets import (
 )
 
 from kit.desk import face3d, startup, theme
-from kit.desk.alive import Alive
+from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError, SpeechOff
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
+from kit.desk.sound import Sounds
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
 from kit.desk.voice import Speaker
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
 from kit.desk.window import ConnectionForm, KitWindow, in_background
 from kit.face import Face, character
+from kit.face.body import move_for
 from kit.face.character import CharacterError
 
 log = logging.getLogger("kit.desk")
@@ -82,8 +95,21 @@ LOOK_FIELDS = (
     "face_size",
     "font_pt",
     "speech_bubble",
+    "boop",
+    "movement",
     "words_with_voice",
 )
+# How much Kit moves (the Look page): (how big his gestures are, how big his
+# whole-body moves are, 0 for none).
+MOVEMENT = {
+    "still": (0.6, 0.0),
+    "a_little": (1.0, 0.0),
+    "lively": (1.5, 1.0),
+    "bouncy": (1.9, 1.35),
+}
+# Seconds before the same body move plays again, so he's lively, not frantic.
+MOVE_AGAIN_S = {"loop": 40.0}
+MOVE_GAP_S = 3.0  # between any two body moves
 UPDATE_FIELDS = ("check_updates", "update_repo")
 # What Kit's state reads as on the face while he works.
 FACE_STATES = {
@@ -137,10 +163,17 @@ class HelperFace(FaceWidget):
     click to open the chat; right-click for the menu."""
 
     clicked = Signal()
-    moved = Signal(QPoint)
+    grabbed = Signal()  # Dan pressed on him (he may be about to be dragged)
+    moved = Signal(QPoint)  # Dan dragged him here
+    shifted = Signal()  # he moved, by any means
+
+    # See-through room around his face for big gestures, so a tilt or a squash
+    # isn't cut off at the window's edge. Clicks there go through to what's behind.
+    MARGIN = 0.25
 
     def __init__(self, size: int) -> None:
         super().__init__()
+        self.margin = self.MARGIN
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -148,13 +181,35 @@ class HelperFace(FaceWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("Kit")
-        self.resize(size, size)
+        self.set_size(size)
         self._press: QPoint | None = None
         self._offset = QPoint()
         self.menu: QMenu | None = None
 
+    def set_size(self, size: int) -> None:
+        """His face ``size`` pixels across, keeping it where it is on screen."""
+        side = round(size * (1 + 2 * self.margin))
+        if side == self.width() == self.height():
+            return
+        centre = self.frameGeometry().center()
+        self.resize(side, side)
+        if self.isVisible():
+            self.move(centre - self.rect().center())
+
+    def face_geometry(self) -> QRect:
+        """Where his face is on screen (the window less its see-through margin)."""
+        return self.face_rect().toRect().translated(self.pos())
+
+    def face_pos(self) -> QPoint:
+        return self.face_geometry().topLeft()
+
+    def put_face_at(self, pos: QPoint) -> None:
+        """Move him so his face's top left is at ``pos``."""
+        self.move(pos - self.face_rect().toRect().topLeft())
+
     def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
         if e.button() == Qt.MouseButton.LeftButton:
+            self.grabbed.emit()
             self._press = e.globalPosition().toPoint()
             self._offset = self._press - self.frameGeometry().topLeft()
 
@@ -170,7 +225,11 @@ class HelperFace(FaceWidget):
         if travelled < 5:
             self.clicked.emit()
         else:
-            self.moved.emit(self.pos())
+            self.moved.emit(self.face_pos())
+
+    def moveEvent(self, e) -> None:  # noqa: N802
+        super().moveEvent(e)
+        self.shifted.emit()
 
     def contextMenuEvent(self, e) -> None:  # noqa: N802
         if self.menu:
@@ -178,12 +237,24 @@ class HelperFace(FaceWidget):
 
 
 class SpeechBubble(QLabel):
-    """What Kit says, shown under his face while the chat is closed."""
+    """What Kit says, in a bubble just under his face. When the bottom of the
+    screen leaves no room under him, he hops up a little while he talks and
+    settles back afterwards. With nothing to say it shows what he's doing on his
+    own (``idle_text``), if anything."""
 
-    def __init__(self, face: QWidget) -> None:
+    TAIL = 8  # how far the little point sticks up toward his face
+
+    def __init__(
+        self, face: HelperFace, body: Body, can_hop: Callable[[], bool] = lambda: True
+    ) -> None:
         super().__init__()
         self.face = face
+        self.body = body
+        self.can_hop = can_hop
         self.enabled = True
+        self.idle_text: Callable[[], str] = lambda: ""
+        self._fill, self._edge = QColor("#0f141b"), QColor("#2b333f")
+        self._above = False  # no room under him (asleep at the screen's edge)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -191,34 +262,96 @@ class SpeechBubble(QLabel):
             | Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWordWrap(True)
         self.restyle("#7ef3e6")
+        face.shifted.connect(self._follow)
 
     def restyle(self, eye: str, font_pt: float = 10.0) -> None:
         """Glow's speech is in the colour of his eyes, on his own dark screen."""
+        self._font_pt = font_pt
+        self._eye = eye
+        top, bottom = (8, 8 + self.TAIL) if self._above else (8 + self.TAIL, 8)
         self.setStyleSheet(
-            f"QLabel {{ background: #0f141b; color: {eye}; border: 1px solid #2b333f;"
-            f" border-radius: 14px; padding: 8px 12px; font-size: {font_pt}pt; }}"
+            f"QLabel {{ background: transparent; color: {eye};"
+            f" padding: {top}px 12px {bottom}px 12px; font-size: {font_pt}pt; }}"
         )
 
     def setText(self, text: str) -> None:  # noqa: N802 (called by Performer)
+        if not text:
+            text = self.idle_text()  # back to what he's doing, if anything
         super().setText(text)
         if not text or not self.enabled or not self.face.isVisible():
             self.hide()
+            self._settle()
             return
         self.ensurePolished()  # so the style sheet's font and padding are measured
         one_line = self.fontMetrics().horizontalAdvance(text) + 32
-        self.setFixedWidth(min(one_line, 280))
+        self.setFixedWidth(min(one_line, 300))
         self.adjustSize()
-        f = self.face.frameGeometry()
-        x = f.center().x() - self.width() // 2
-        y = f.bottom() + 4
+        self._place(hop=True)
+        self.show()
+        self.raise_()
+
+    def _place(self, hop: bool = False) -> None:
+        f = self.face.face_geometry()
         screen = self.face.screen().availableGeometry()
-        if y + self.height() > screen.bottom():
-            y = f.top() - self.height() - 4
+        # The face's dark screen ends 83% of the way down.
+        y = f.top() + int(f.height() * 0.84)
+        short = y + self.height() - screen.bottom()
+        above = False
+        if short > 0:
+            if hop and self.can_hop():
+                self.body.lift(self.body.lifted + short + 4)  # placed again as he rises
+            if not self.body.lift_to and not self.can_hop():
+                above = True  # asleep on the screen's edge: say it over his head
+                y = f.top() + int(f.height() * 0.15) - self.height()
+            else:
+                y = screen.bottom() - self.height()  # mid-hop
+        if above != self._above:
+            self._above = above
+            self.restyle(self._eye, self._font_pt)
+            self.adjustSize()
+        x = f.center().x() - self.width() // 2
         x = max(screen.left() + 4, min(x, screen.right() - self.width() - 4))
         self.move(x, y)
-        self.show()
+        self.update()
+
+    def _follow(self) -> None:
+        if self.isVisible():
+            self._place()
+
+    def _settle(self) -> None:
+        """Back down to where Dan left him."""
+        if self.body.lift_to:
+            self.body.lift(0)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        t = self.TAIL
+        body = r.adjusted(0, 0, 0, -t) if self._above else r.adjusted(0, t, 0, 0)
+        path = QPainterPath()
+        path.addRoundedRect(body, 14, 14)
+        # The point aims at his face, wherever the bubble had to sit.
+        tip_x = self.face.face_geometry().center().x() - self.x()
+        tip_x = max(body.left() + 18, min(tip_x, body.right() - 18))
+        tail = QPainterPath()
+        if self._above:
+            tail.moveTo(tip_x - t, body.bottom() - 1)
+            tail.lineTo(tip_x, r.bottom())
+            tail.lineTo(tip_x + t, body.bottom() - 1)
+        else:
+            tail.moveTo(tip_x - t, body.top() + 1)
+            tail.lineTo(tip_x, r.top())
+            tail.lineTo(tip_x + t, body.top() + 1)
+        tail.closeSubpath()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(self._edge, 1))
+        p.setBrush(self._fill)
+        p.drawPath(path.united(tail))
+        p.end()
+        super().paintEvent(event)
 
 
 class SettingsDialog(QDialog):
@@ -300,12 +433,23 @@ class DeskApp(QObject):
 
         self.face = HelperFace(self.config.face_size)
         self.face.setWindowIcon(face_icon())
-        self.bubble = SpeechBubble(self.face)
+        self.body = Body(self.face, lambda: self.config.face_size)
+        self.face.grabbed.connect(lambda: self.body.stop(go_home=False))
+        self.face.face.on_play = lambda gesture, _now: self._move(gesture=gesture)
+        self.face.face.on_emotion = lambda emotion, _now: self._move(emotion=emotion)
+        self._moved_at: dict[str, float] = {}
+        self.bubble = SpeechBubble(self.face, self.body, lambda: not self._asleep())
+        self.bubble.idle_text = lambda: f"{self._doing}..." if self._doing else ""
+        self.sounds = Sounds(desk_dir() / "sounds")
+        self._next_sound = "boop"
         self.performer = Performer(self.face, self.bubble)
         self.chat = ChatWindow()
         self.chat.setWindowIcon(face_icon())
         self.chat.resize(self.config.chat_width, self.config.chat_height)
         self.chat.replied.connect(self._act_out)
+        self.chat.shown.connect(self._show)
+        self._showing: dict | None = None  # a show waiting for his answer to start
+        self._answered = False  # he's answered the message just sent
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
@@ -342,7 +486,7 @@ class DeskApp(QObject):
         self.reporter = Reporter(
             desktop, self._report, lambda: self.config, system_status, browser=self.browser.current
         )
-        self.alive = Alive(self.face, desktop.focused_rect, self._busy)
+        self.alive = Alive(self.face, desktop.focused_rect, self._busy, body=self.body)
         self.health = QTimer(self)
         self.health.timeout.connect(self.check_health)
         self.health.start(HEALTH_EVERY_MS)
@@ -376,7 +520,12 @@ class DeskApp(QObject):
         self.playing_action.setChecked(self.config.share_playing)
         self.playing_action.toggled.connect(self.set_sharing_playing)
         menu.addAction(self.playing_action)
+        self.boop_action = QAction("Boop when Kit talks", menu, checkable=True)
+        self.boop_action.setChecked(self.config.boop)
+        self.boop_action.toggled.connect(self.set_boop)
+        menu.addAction(self.boop_action)
         menu.addSeparator()
+        menu.addAction("How Kit's feeling...", lambda: self.open_window("Mood"))
         menu.addAction("What Kit remembers...", lambda: self.open_window("Memory"))
         menu.addAction("Settings...", lambda: self.open_window("Kit's settings"))
         menu.addAction("Look...", lambda: self.open_window("Look"))
@@ -402,7 +551,6 @@ class DeskApp(QObject):
     def show_chat(self) -> None:
         if not self.chat.isVisible():
             self._place_chat()
-        self.bubble.hide()
         self.chat.load_history()
         if not self.chat.isVisible():
             self._fade_in(self.chat)
@@ -434,7 +582,7 @@ class DeskApp(QObject):
     def _place_chat(self) -> None:
         """Open the chat beside Kit's face, on whichever side has room."""
         screen = (self.face.screen() or self.app.primaryScreen()).availableGeometry()
-        f = self.face.frameGeometry()
+        f = self.face.face_geometry()
         w, h = self.chat.width(), self.chat.height()
         x = f.left() - w - 8 if f.left() - w - 8 >= screen.left() else f.right() + 8
         y = max(screen.top(), min(f.bottom() - h, screen.bottom() - h))
@@ -454,7 +602,7 @@ class DeskApp(QObject):
         )
         if not on_screen:  # first run, or the monitor it was on has gone
             x, y = screen.right() - size - 24, screen.bottom() - size - 24
-        self.face.move(x, y)
+        self.face.put_face_at(QPoint(x, y))
 
     def _face_moved(self, pos: QPoint) -> None:
         self.config.face_x, self.config.face_y = pos.x(), pos.y()
@@ -488,6 +636,16 @@ class DeskApp(QObject):
             face_icon(),
             2500,
         )
+
+    def set_boop(self, on: bool) -> None:
+        if on == self.config.boop:
+            return
+        self.config.boop = on
+        self.config.save()
+        if self.window is not None:
+            self.window.look.show_boop(on)
+        if on:
+            self.sounds.play("boop")
 
     def open_settings(self, first_run: bool = False) -> None:
         if not first_run:
@@ -535,8 +693,11 @@ class DeskApp(QObject):
             )
             self.window.setWindowIcon(face_icon(eye=self.config.eye_colour))
             self.window.apply_look(self._palette(), self.config.font_pt)
+            self.window.mood.face.eye = QColor(self.config.eye_colour)
             self.window.pc.saved.connect(self.save_pc)
             self.window.look.changed.connect(self.set_look)
+            self.window.character_changed.connect(self.check_health)
+            self._use_look()
             self.window.updates.settings_changed.connect(self._update_settings)
             self.window.updates.install.connect(self.install_update)
         if not self.window.isVisible():
@@ -550,6 +711,7 @@ class DeskApp(QObject):
 
     def set_look(self, config: DeskConfig) -> None:
         self._take(config, LOOK_FIELDS)
+        self.boop_action.setChecked(self.config.boop)
         self.apply_look()
 
     def apply_look(self) -> None:
@@ -559,12 +721,11 @@ class DeskApp(QObject):
         self.chat.in_step = self.config.words_with_voice
         if self.window is not None:
             self.window.apply_look(palette, self.config.font_pt)
+            self.window.mood.face.eye = QColor(self.config.eye_colour)
         self.face.eye = QColor(self.config.eye_colour)
-        if self.face.width() != self.config.face_size:
-            centre = self.face.frameGeometry().center()
-            self.face.resize(self.config.face_size, self.config.face_size)
-            if self.face.isVisible():
-                self.face.move(centre - self.face.rect().center())
+        self.face.set_size(self.config.face_size)
+        amplitude, self.body.scale = MOVEMENT.get(self.config.movement, MOVEMENT["lively"])
+        self.face.face.amplitude = amplitude
         self.bubble.restyle(self.config.eye_colour, max(8.0, self.config.font_pt - 0.5))
         icon = face_icon(eye=self.config.eye_colour)
         self.chat.setWindowIcon(icon)
@@ -682,6 +843,8 @@ class DeskApp(QObject):
         look = character.current().look("desk", ("glow", "model"))
         url = self.client.url if self.client is not None else None
         self._face3d = face3d.sync(self.face, url, look, self._face3d)
+        if self.window is not None:
+            self.window.use_look(url, look)
 
     def _show_online(self, online: bool, detail: str) -> None:
         if online != self.online:
@@ -725,6 +888,8 @@ class DeskApp(QObject):
                     after = state["last_event"]
                     if state.get("mood") == "asleep":
                         self._signals.life.emit({"type": "state", "state": "asleep"})
+                    if state.get("face"):  # the face he wears between replies
+                        self._signals.life.emit({"type": "mood", "face": state["face"]})
                 got = client.life_events(after)
                 for event in got["events"]:
                     self._signals.life.emit(event)
@@ -751,6 +916,8 @@ class DeskApp(QObject):
         elif event.get("type") == "doing":  # what he's up to while you're out
             self._doing = str(event.get("what") or "")
             self._show_doing()
+        elif event.get("type") == "mood":  # his mood: what he settles back to
+            face.rest(str(event.get("face") or "neutral"), time.monotonic())
         elif event.get("type") == "dials":
             face.set_dials(float(event.get("arousal", 0.5)), float(event.get("valence", 0.0)))
         elif event.get("type") == "quiet":  # why he's keeping quiet, in the tray's tooltip
@@ -762,6 +929,9 @@ class DeskApp(QObject):
             if self.alive.asleep:
                 self.alive.wake_up()
             face.play("perk_up", time.monotonic())
+            self._next_sound = "bip_boop"  # he started this one himself
+            if event.get("reason") == "back":  # Dan's home: a happy loop
+                QTimer.singleShot(400, lambda: self._move(reason="back"))
             # His voice is made while he perks up; his words show as he starts saying it.
             self.chat.pipe_up(reply, lead_in_ms=700)
             if not self.face.isVisible() and not self.chat.isVisible():
@@ -770,11 +940,29 @@ class DeskApp(QObject):
 
     def _show_doing(self) -> None:
         """What Kit's doing on his own ("watching the rain...") in his bubble, while
-        the chat's closed and he isn't saying anything."""
-        if self._busy() or self.chat.isVisible() or not self.config.speech_bubble:
+        he isn't saying anything."""
+        if self._busy() or not self.config.speech_bubble:
             return
         self.bubble.enabled = True
-        self.bubble.setText(f"{self._doing}..." if self._doing else "")
+        self.bubble.setText("")  # an empty bubble shows what he's doing (``idle_text``)
+
+    def _move(self, gesture: str = "", emotion: str = "", reason: str = "") -> None:
+        """A whole-body move to go with a gesture, an emotion or a reason, if one
+        does (kit.face.body): a loop when he's excited, a hop, a jump back."""
+        name = move_for(gesture, emotion, reason)
+        if name is None or self._asleep() or self.face.face.state == "offline":
+            return
+        now = time.monotonic()
+        last = max(self._moved_at.values(), default=-1e9)
+        again = self._moved_at.get(name, -1e9) + MOVE_AGAIN_S.get(name, 0.0)
+        if not reason and (now - last < MOVE_GAP_S or now < again):
+            return
+        if self.body.moving is None and self.body.scale > 0:
+            self._moved_at[name] = now
+            self.body.play(name)
+
+    def _asleep(self) -> bool:
+        return hasattr(self, "alive") and self.alive.asleep
 
     def _busy(self) -> bool:
         return self.chat._in_flight > 0 or self.face.face.state in (
@@ -802,6 +990,7 @@ class DeskApp(QObject):
                 self.face.face.set_state(FACE_STATES[state])
         elif state == "heard":  # a little nod as a message goes, before he thinks
             self.face.face.play("nod", time.monotonic())
+            self._showing, self._answered = None, False
         elif state == "error":
             self.face.face.play("shrug", time.monotonic())
         elif state.startswith("asking"):
@@ -810,9 +999,26 @@ class DeskApp(QObject):
             self.face.face.set_state("idle")
 
     def _act_out(self, reply: dict) -> None:
-        self.bubble.enabled = self.config.speech_bubble and not self.chat.isVisible()
-        if reply.get("segments"):
-            self.performer.perform(reply)
+        """Kit said something: he acts it out, says it under his face, and boops."""
+        self.bubble.enabled = self.config.speech_bubble
+        sound, self._next_sound = self._next_sound, "boop"
+        if not reply.get("segments"):
+            return
+        if self.config.boop:
+            self.sounds.play(sound)
+        self.performer.perform(reply)
+        self._answered = True
+        if self._showing is not None:
+            self.face.play_show(self._showing)
+            self._showing = None
+
+    def _show(self, show: dict) -> None:
+        """Something for his face to show (the time, the weather). It plays as he
+        answers, so the time is up while he says it; a late one plays at once."""
+        if self._answered:
+            self.face.play_show(show)
+        else:
+            self._showing = show
 
 
 def _quietly(call, *args) -> None:

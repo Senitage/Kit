@@ -1,6 +1,7 @@
 """Try Kit's Glow face without the brain: ``python -m kit.desk.face_preview``.
 
-Buttons set each emotion, play each gesture and switch each state, and
+Buttons set each emotion, play each gesture, switch each state and play each
+show (the time, the date, each kind of weather), and
 "Play a Kit reply" acts out sample replies the way the helper will. Add
 ``--float`` to see it as a small frameless always-on-top face you can drag.
 """
@@ -92,16 +93,44 @@ SAMPLES = [
 ]
 
 
+# What the brain sends when Dan asks the time or about the weather (kit.shows).
+SHOW_SAMPLES = {
+    "time": {"kind": "time", "text": "3:07", "small": "pm"},
+    "date": {"kind": "date", "small": "FRI", "text": "9 OCT"},
+    **{
+        sky: {"kind": "weather", "sky": sky, "text": temp}
+        for sky, temp in (
+            ("sun", "31°"),
+            ("part_cloud", "22°"),
+            ("cloud", "17°"),
+            ("rain", "14°"),
+            ("storm", "24°"),
+            ("wind", "19°"),
+            ("hot", "39°"),
+            ("fog", "9°"),
+            ("moon", "12°"),
+        )
+    },
+}
+
+
 class Performer:
-    """Acts out a reply's cues on a face widget, and shows the words."""
+    """Acts out a reply's cues on a face widget, and shows the words.
+
+    The words build up in the caption as he says them (a long reply shows one
+    sentence at a time) and stay up long enough to read once he's finished."""
+
+    WHOLE_UP_TO = 220  # characters: longer replies show a sentence at a time
 
     def __init__(self, widget: FaceWidget, caption: QLabel) -> None:
         self.widget = widget
         self.caption = caption
         self._timers: list[QTimer] = []
+        self._said: list[str] = []
 
     def perform(self, reply: dict) -> None:
         self.stop()
+        self._said = []
         cues = plan_reply(reply)
         hold = cues[-1].at + 2.5
         for cue in cues:
@@ -115,6 +144,11 @@ class Performer:
             t.stop()
         self._timers.clear()
 
+    @staticmethod
+    def linger(text: str) -> float:
+        """Seconds the words stay up after he's said them: time to read them."""
+        return min(14.0, 4.0 + 0.05 * len(text))
+
     def _run(self, cue, hold: float) -> None:
         face, now = self.widget.face, time.monotonic()
         if cue.kind == "emotion":
@@ -123,14 +157,19 @@ class Performer:
             face.play(cue.value, now)
         elif cue.kind == "say":
             face.set_state("speaking")
-            self.caption.setText(cue.value)
+            self._said.append(cue.value)
+            whole = " ".join(self._said)
+            self.caption.setText(whole if len(whole) <= self.WHOLE_UP_TO else cue.value)
             done = QTimer(singleShot=True)
             done.timeout.connect(lambda: face.set_state("idle"))
             done.start(int(cue.seconds * 1000))
             self._timers.append(done)
         elif cue.kind == "done":
             face.set_state("idle")
-            self.caption.setText("")
+            clear = QTimer(singleShot=True)
+            clear.timeout.connect(lambda: self.caption.setText(""))
+            clear.start(int(self.linger(self.caption.text()) * 1000))
+            self._timers.append(clear)
 
 
 class FloatingFace(FaceWidget):
@@ -201,6 +240,9 @@ def main() -> int:
         )
     )
     layout.addWidget(_buttons("State", list(STATES), face.set_state))
+    layout.addWidget(
+        _buttons("Show", list(SHOW_SAMPLES), lambda n: widget.play_show(SHOW_SAMPLES[n]))
+    )
     row = QHBoxLayout()
     say = QPushButton("Play a Kit reply")
     say.clicked.connect(lambda: performer.perform(next(samples)))
