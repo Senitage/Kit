@@ -34,8 +34,8 @@ from kit.face import Face
 log = logging.getLogger(__name__)
 
 APP = "desk"
-STEP_MS = 50  # how often face changes are copied to the page
-FRAME_MS = 33  # how often the page's picture is copied to the window (~30 fps)
+STEP_MS = 16  # how often face changes (and where the mouse is) are copied to the page
+FRAME_MS = 16  # how often the page's picture is copied to the window (up to 60 fps)
 FRAME_JS = "window.kit && kit.frame ? kit.frame() : null"
 PNG_PREFIX = "data:image/png;base64,"
 
@@ -259,7 +259,7 @@ class Face3D:
         if calls:
             self.run("".join(calls))
         self._steps += 1
-        if self._steps % 10 == 1:  # twice a second: is Kit's model on screen?
+        if self._steps % 30 == 1:  # twice a second: is Kit's model on screen?
             self.view.page().runJavaScript("!!(window.kit && window.kit.ready)", 0, self._drawn)
 
     def _tick_face(self) -> None:
