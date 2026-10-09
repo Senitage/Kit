@@ -320,6 +320,34 @@ FIDGETS = {
     "sulky": ["sigh", "look_away"],
 }
 
+# The face each mood and feeling wears between replies (kit.reply.EMOTIONS). A
+# feeling, having a cause, shows over the mood his drives put him in.
+MOOD_FACES = {
+    "content": "happy",
+    "curious": "curious",
+    "bored": "tired",
+    "lonely": "sad",
+    "sleepy": "tired",
+    "sulky": "grumpy",
+    "asleep": "neutral",
+}
+FEELING_FACES = {
+    "chuffed": "happy",
+    "warm": "fond",
+    "proud": "proud",
+    "pleased": "happy",
+    "excited": "excited",
+    "amused": "playful",
+    "worried": "concerned",
+    "sympathetic": "concerned",
+    "sad": "sad",
+    "put_out": "grumpy",
+    "hurt": "sad",
+    "glad": "happy",
+    "missing": "sad",
+    "miffed": "grumpy",
+}
+
 
 @dataclass
 class Drives:
@@ -375,6 +403,9 @@ LATE_FROM = 22.5
 SLEEP_RESTORES = 0.6  # an hour asleep
 SLEPT_ENOUGH = timedelta(minutes=45)  # a sleep this long sets him back to full
 TIRED = 0.4  # below this he yawns and keeps it short
+NIGHT_CAP = 0.35  # his body clock's limit at night: under TIRED, so he's sleepy
+WIND_DOWN = (21.0, 23.0)  # hours over which the limit falls to NIGHT_CAP
+WAKE_UP = (5.0, 7.0)  # and rises back to full
 # Away life (``life.alone_thoughts_per_hour``, kit.pastimes).
 NOTHING_TO_DO = timedelta(minutes=15)  # found nothing to do: he waits this long to look again
 DID_KEPT = 12  # the pastimes he remembers doing today
@@ -781,6 +812,20 @@ def energy_at(now: datetime) -> float:
     return 1.0
 
 
+def bedtime_cap(now: datetime) -> float:
+    """The most energy his body clock allows (``life.energy_need``): full by day,
+    winding down from 21:00 to sleepy by 23:00, low through the night, and back up
+    from 05:00 to 07:00."""
+    h = now.hour + now.minute / 60
+    if WIND_DOWN[0] <= h < WIND_DOWN[1]:
+        return 1 - (1 - NIGHT_CAP) * (h - WIND_DOWN[0]) / (WIND_DOWN[1] - WIND_DOWN[0])
+    if h >= WIND_DOWN[1] or h < WAKE_UP[0]:
+        return NIGHT_CAP
+    if h < WAKE_UP[1]:
+        return NIGHT_CAP + (1 - NIGHT_CAP) * (h - WAKE_UP[0]) / (WAKE_UP[1] - WAKE_UP[0])
+    return 1.0
+
+
 class Life:
     def __init__(
         self,
@@ -851,6 +896,7 @@ class Life:
         self._week_done = ""  # the week moment he's had a thought about (kit.holidays)
         self._pipe_out: tuple[str, datetime] | None = None  # his last pipe-up, for taken_up
         self._quiet_shown: str | None = None  # the quiet_because bodies last heard
+        self._face_shown: str | None = None  # the resting face bodies last heard
         self._restore()
 
     @property
@@ -898,6 +944,7 @@ class Life:
         self.sulky = False
         self.held_until = None
         self._chat_open = True
+        self._show_face()
         self.save()
 
     def snooze(self, minutes: float) -> None:
@@ -937,6 +984,7 @@ class Life:
             if not force and current and current[0].left(now) > strength:
                 return False
             self._feelings = [new]
+        self._show_face()
         if show and not self.asleep:
             gesture = self.rng.choice(FEELING_KINDS[name][2])
             self.publish({"type": "fidget", "gesture": gesture, "mood": name})
@@ -1050,6 +1098,7 @@ class Life:
             self._wake()
             changed = True
         if changed:
+            self._show_face()
             self.save()
 
     def _wake(self) -> None:
@@ -1401,6 +1450,22 @@ class Life:
             return "lonely"
         return "content"
 
+    def face(self) -> str:
+        """The face he wears between replies: his strongest feeling's, else his
+        mood's. Asleep, it's neutral (bodies show sleep themselves)."""
+        mood = self.mood()
+        felt = None if mood == "asleep" else self.feeling_now()
+        if felt is not None and felt.name in FEELING_FACES:
+            return FEELING_FACES[felt.name]
+        return MOOD_FACES.get(mood, "neutral")
+
+    def _show_face(self) -> None:
+        """Tell bodies when his resting face changes."""
+        face = self.face()
+        if face != self._face_shown:
+            self._face_shown = face
+            self.publish({"type": "mood", "mood": self.mood(), "face": face})
+
     # The heartbeat
 
     def tick(self) -> str | None:
@@ -1490,6 +1555,7 @@ class Life:
             self.publish({"type": "fidget", "gesture": self.rng.choice(moves), "mood": mood})
         reason = self._wants_to_talk(now, snap, present)
         self._move_dials(minutes)
+        self._show_face()
         self.save()
         return reason
 
@@ -1502,8 +1568,12 @@ class Life:
         h = now.hour + now.minute / 60
         if self.asleep:
             self.energy = min(1.0, self.energy + SLEEP_RESTORES * minutes / 60)
-        elif h >= LATE_FROM or h < 5:
-            self.energy = max(0.05, self.energy - LATE_TIRES * minutes / 60)
+        else:
+            if h >= LATE_FROM or h < 5:
+                self.energy = max(0.05, self.energy - LATE_TIRES * minutes / 60)
+            # However rested he is, his body clock winds him down at night: an evening
+            # nap mustn't leave him bright at 11 pm.
+            self.energy = min(self.energy, bedtime_cap(now))
         return self.energy
 
     # The mood dials (life.dials): how lively and how happy, for bodies to show
@@ -2065,6 +2135,7 @@ class Life:
         }
         return {
             "mood": self.mood(),
+            "face": self.face(),
             "presence": self.presence(),
             "doing": self.doing.doing if self.doing else None,
             "did_today": [

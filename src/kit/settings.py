@@ -634,7 +634,8 @@ class LifeSettings(_Section):
     energy_need: bool = Field(
         False,
         description="Energy is a real need: long chats, cloud jobs and staying up past 22:30 "
-        "tire Kit out, and sleep restores him. Below 0.4 he yawns and keeps replies short. "
+        "tire Kit out, and sleep restores him. His body clock winds him down from 21:00, so "
+        "he's sleepy by 23:00 however rested. Below 0.4 he yawns and keeps replies short. "
         "Off: his energy just follows the clock.",
     )
     opinions: int = Field(
@@ -677,6 +678,12 @@ class FaceSettings(_Section):
         description="Which character Kit is: how he looks and moves in the desk app, "
         "home_app and on his robots. Retro is the original glowing pill eyes; switch "
         "back any time.",
+    )
+    pack_folder: str = Field(
+        "",
+        description="A folder holding a 3D face pack (face.json and the .glb) to use for a "
+        "3D character instead of the one built into Kit, e.g. the pack folder your Blender "
+        "project writes. Each rebuild shows on the desk within seconds. Empty: built in.",
     )
 
 

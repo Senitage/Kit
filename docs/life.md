@@ -27,6 +27,13 @@ random from the ones that suit his mood. Sighs and looking around when he's
 bored, peeking and leaning in when he's curious, yawns when he's sleepy. The
 more bored he is, the more he fidgets.
 
+His mood is also the **face he wears between replies**: content looks happy,
+curious looks curious, bored and sleepy look tired, lonely looks sad, sulky looks
+grumpy. A feeling (below) shows over the mood, so worried looks concerned even
+while his drives say curious. A reply's own emotion plays over it, then his face
+settles back to this rather than to neutral. `GET /api/life` gives it as `face`,
+and bodies hear a `mood` event when it changes.
+
 ## Feelings, with a reason
 
 Things that happen make Kit feel something, and he knows why. The feeling
@@ -93,8 +100,9 @@ His energy follows the clock by default. With `life.energy_need` it's a real
 need: chatting tires him a little (about 0.1 an hour of chat), each real job
 handed to Sonnet or Opus a bit more, and staying up past 10:30 pm most of all.
 Everyday answers, even from the cloud, cost nothing. Sleep restores him: 45 minutes asleep brings him back
-to full, as does a night off. Below 0.4 he's sleepy: he yawns and keeps his
-replies short.
+to full, as does a night off. However rested he is, his body clock winds him
+down from 9 pm, so he's sleepy by 11 pm and stays low until it lifts again
+between 5 and 7 am. Below 0.4 he's sleepy: he yawns and keeps his replies short.
 
 With `life.dials`, his mood also runs as two slow dials, how lively and how
 happy, that ease toward where his feelings and energy are. The desk face shows
@@ -493,7 +501,7 @@ into each other, so no two look the same.
 - `GET /api/life`: mood, feeling and why, drives, what he's thinking, what he
   wants to bring up now and later, quirks, snooze, and the life settings.
 - `GET /api/life/events?after=N&wait=25`: fidgets, reactions, sleep and wake,
-  and pipe-ups after event N; waits up to `wait` seconds for one.
+  resting-face changes (`mood`), and pipe-ups after event N; waits up to `wait` seconds for one.
 - `POST /api/life/snooze {"minutes": 60}`: quiet for a while (0 lifts it).
 - `GET /api/life/notebook`: his self-sheet and its earlier versions, weekly
   reviews, quirks (and retired ones), wants, thoughts, opinions, moments,

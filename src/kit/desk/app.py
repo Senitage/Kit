@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from kit.desk import startup, theme
+from kit.desk import face3d, startup, theme
 from kit.desk.alive import Alive
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
@@ -276,6 +276,7 @@ class _NoDesktop:
 class _Signals(QObject):
     online = Signal(bool, str)
     life = Signal(dict)
+    character = Signal()
 
 
 class DeskApp(QObject):
@@ -294,6 +295,8 @@ class DeskApp(QObject):
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
         self._signals.life.connect(self._on_life)
+        self._signals.character.connect(self._use_look)
+        self._face3d: face3d.Face3D | None = None  # the 3D face page over Glow, if his look is 3D
 
         self.face = HelperFace(self.config.face_size)
         self.face.setWindowIcon(face_icon())
@@ -670,8 +673,15 @@ class DeskApp(QObject):
             if key != self._face_from:
                 self._face_from = key
                 load_character(client)
+                self._signals.character.emit()
 
         threading.Thread(target=work, name="kit-health", daemon=True).start()
+
+    def _use_look(self) -> None:
+        """Draw his desk look: Glow, or the brain's 3D face page over it."""
+        look = character.current().look("desk", ("glow", "model"))
+        url = self.client.url if self.client is not None else None
+        self._face3d = face3d.sync(self.face, url, look, self._face3d)
 
     def _show_online(self, online: bool, detail: str) -> None:
         if online != self.online:
@@ -841,6 +851,7 @@ def _selftest(argv: list[str]) -> int:
     """Prove a built exe has everything it needs (Qt plugins, the face), then exit.
     The installer build runs this before packaging."""
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    face3d.prepare()
     app = QApplication(argv[:1])
     if face_icon().isNull():
         return 2
@@ -848,6 +859,7 @@ def _selftest(argv: list[str]) -> int:
     chat.on_event(1, {"type": "say", "text": "**Self-test.**"})
     window = KitWindow(DeskConfig(), "", "", lambda: None, lambda: "", desk_dir() / "updates")
     ok = "Self-test." in chat.text() and QLocalServer is not None and window is not None
+    ok = ok and face3d.available()  # the 3D face needs Qt's web engine packed in
     app.quit()
     if not ok:
         return 3
@@ -867,6 +879,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--selftest" in argv:
         return _selftest(argv)
     _log_to_file()
+    face3d.prepare()
     app = QApplication(argv)
     app.setApplicationName("Kit")
     app.setQuitOnLastWindowClosed(False)  # closing the chat leaves Kit in the tray
