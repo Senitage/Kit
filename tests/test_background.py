@@ -6,6 +6,7 @@ local model leaves the GPU soon after it's used."""
 import asyncio
 import json
 
+import httpx
 import pytest
 
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
@@ -154,3 +155,29 @@ def test_ollama_is_told_how_long_to_keep_the_model():
     s = Settings.model_validate({"ollama": {"keep_alive": "5m"}})
     body = OllamaModel(lambda: s.ollama, None)._body(s.ollama, [], None, None)
     assert body["keep_alive"] == "5m"
+
+
+def test_switching_over_takes_the_local_model_off_the_gpu_once(memory):
+    brain, model, _ = make(memory, routing={"mode": "cloud-only"})
+    asyncio.run(brain.free_gpu())
+    asyncio.run(brain.free_gpu())
+    assert model.unloads == 1
+
+
+def test_the_local_model_stays_while_it_still_answers_chat(memory):
+    brain, model, _ = make(memory)  # balanced: it answers small talk
+    asyncio.run(brain.free_gpu())
+    assert not hasattr(model, "unloads")
+
+
+def test_ollama_is_asked_to_unload_the_chat_model():
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"done": True})
+
+    s = Settings.model_validate({"ollama": {"model": "gemma4:e4b"}})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    asyncio.run(OllamaModel(lambda: s.ollama, client).unload())
+    assert seen == [{"model": "gemma4:e4b", "keep_alive": 0}]

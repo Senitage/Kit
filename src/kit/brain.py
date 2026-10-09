@@ -183,7 +183,7 @@ from kit.reply import (
     spoken_reply,
     without_plans,
 )
-from kit.settings import Settings, cloud_background
+from kit.settings import Settings, cloud_background, local_stands_in
 from kit.things import THINGS, Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
 from kit.weather import Weather, WeatherError
@@ -512,6 +512,7 @@ class Brain:
         # His thoughts in the cloud (routing.background chat): the chat model, giving way
         # first as the month's budget runs low.
         self._ask_life = asking(cloud, settings, CHAT, priority="life")
+        self._local_freed = False  # the local model was taken off the GPU for the voice
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
         self.pending_thing: int | None = None
@@ -1270,6 +1271,24 @@ class Brain:
                 "cost_usd": round(answer.cost_usd, 4),
             },
         ]
+
+    async def free_gpu(self) -> None:
+        """Once the local model only stands in (``kit.settings.local_stands_in``), take it
+        off the GPU at once: switching over sends it nothing more, so without this it
+        would stay loaded till its old keep_alive ran out. When it's used again, its
+        short keep_alive sees it off by itself."""
+        if not local_stands_in(self.settings()):
+            self._local_freed = False
+            return
+        if self._local_freed:
+            return
+        try:
+            await self.model.unload()
+        except LocalModelError as e:
+            log.info("couldn't take the local model off the GPU: %s", e)
+            return
+        self._local_freed = True
+        log.info("the local model is off the GPU; the cloud does Kit's background work")
 
     def _life_in_cloud(self, settings: Settings) -> bool:
         """His thoughts and pipe-ups go to the chat model (``routing.background``)."""

@@ -781,9 +781,15 @@ def local_settings(settings: Settings) -> OllamaSettings:
     """The local model's settings as Ollama should see them: in cloud-only mode with the
     background work in the cloud, the local model only stands in (for what Dan keeps
     local, or when the cloud can't answer), so it leaves the GPU soon after."""
-    if settings.routing.mode == "cloud-only" and cloud_background(settings):
+    if local_stands_in(settings):
         return settings.ollama.model_copy(update={"keep_alive": LOCAL_STANDS_IN})
     return settings.ollama
+
+
+def local_stands_in(settings: Settings) -> bool:
+    """The cloud does everything, chat and background alike: the local model only
+    stands in for what Dan keeps local, or when the cloud can't answer."""
+    return settings.routing.mode == "cloud-only" and cloud_background(settings)
 
 
 class SettingsError(Exception):
