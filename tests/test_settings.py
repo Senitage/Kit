@@ -92,9 +92,9 @@ def test_settings_round_trip_through_toml():
 def test_an_old_default_persona_is_read_as_todays():
     # Every save writes the whole file, so the old work-heavy defaults were in it.
     old = {key: values[0] for key, values in OLD_PERSONA.items()}
-    persona = validate_settings({"persona": {**old, "location": "Perth, WA"}}).persona
+    persona = validate_settings({"persona": {**old, "location": "Richmond, NSW"}}).persona
     today = Settings().persona
-    assert persona.model_dump() == {**today.model_dump(), "location": "Perth, WA"}
+    assert persona.model_dump() == {**today.model_dump(), "location": "Richmond, NSW"}
     assert "flotation" not in str(today.model_dump()) and "pumps" not in today.backstory
     own = validate_settings({"persona": {"backstory": "Likes pumps. Dan said so."}}).persona
     assert own.backstory == "Likes pumps. Dan said so."  # his own words are kept

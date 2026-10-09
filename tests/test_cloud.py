@@ -104,19 +104,19 @@ def test_progress_is_reported_while_a_search_runs(memory):
     assert steps == ["searched the web for 'pump curves'"]
 
 
-PERTH = {"persona": {"location": "Perth, WA", "country": "AU", "timezone": "Australia/Perth"}}
+HOME = {"persona": {"location": "Richmond, NSW", "country": "AU", "timezone": "Australia/Sydney"}}
 
 
 def test_searches_know_where_dan_is(memory):
     fake = FakeAnthropic()
-    ask(make_cloud(memory, fake), settings=Settings.model_validate(PERTH))
+    ask(make_cloud(memory, fake), settings=Settings.model_validate(HOME))
     search, fetch = fake.calls[0]["tools"]
     assert search["user_location"] == {
         "type": "approximate",
-        "city": "Perth",
-        "region": "WA",
+        "city": "Richmond",
+        "region": "NSW",
         "country": "AU",
-        "timezone": "Australia/Perth",
+        "timezone": "Australia/Sydney",
     }
     assert fetch["name"] == "web_fetch" and fetch["max_content_tokens"] > 0
 
@@ -126,9 +126,9 @@ def test_no_location_means_no_user_location(memory):
     ask(make_cloud(memory, fake))
     assert "user_location" not in fake.calls[0]["tools"][0]
     assert Where.of(Settings().persona).approximate() is None
-    assert Where.of(Settings.model_validate({"persona": {"location": "Perth"}}).persona).city == (
-        "Perth"
-    )
+    assert Where.of(
+        Settings.model_validate({"persona": {"location": "Richmond"}}).persona
+    ).city == ("Richmond")
 
 
 def test_bad_country_code_is_refused():
@@ -140,15 +140,16 @@ def test_opening_a_page_is_reported():
     from types import SimpleNamespace as NS
 
     content = [
-        NS(type="server_tool_use", input={"query": "perth forecast"}),
+        NS(type="server_tool_use", input={"query": "richmond forecast"}),
         NS(
-            type="server_tool_use", input={"url": "https://www.bom.gov.au/wa/forecasts/perth.shtml"}
+            type="server_tool_use",
+            input={"url": "https://www.bom.gov.au/nsw/forecasts/richmond.shtml"},
         ),
         NS(type="text", text="hi"),
     ]
     assert _web_steps(content) == [
-        "searched the web for 'perth forecast'",
-        "opened https://www.bom.gov.au/wa/forecasts/perth.shtml",
+        "searched the web for 'richmond forecast'",
+        "opened https://www.bom.gov.au/nsw/forecasts/richmond.shtml",
     ]
 
 
@@ -256,7 +257,7 @@ OPENAI_OK = {
     "status": "completed",
     "output": [
         {"type": "reasoning", "summary": []},
-        {"type": "web_search_call", "action": {"type": "search", "queries": ["perth weather"]}},
+        {"type": "web_search_call", "action": {"type": "search", "queries": ["richmond weather"]}},
         {"type": "message", "content": [{"type": "output_text", "text": "Sunny, 24."}]},
     ],
     "usage": {
@@ -329,7 +330,7 @@ GEMINI_OK = {
                 "role": "model",
                 "parts": [{"text": "private thoughts", "thought": True}, {"text": "Sunny."}],
             },
-            "groundingMetadata": {"webSearchQueries": ["perth weather", "perth forecast"]},
+            "groundingMetadata": {"webSearchQueries": ["richmond weather", "richmond forecast"]},
         }
     ],
     "usageMetadata": {
@@ -400,6 +401,6 @@ def test_profile_name_prefers_label():
 def test_openai_search_knows_where_dan_is(memory):
     seen = []
     cloud = openai_cloud(memory, lambda r: httpx.Response(200, json=OPENAI_OK), seen)
-    ask(cloud, "gpt-sol", settings=Settings.model_validate(PERTH))
+    ask(cloud, "gpt-sol", settings=Settings.model_validate(HOME))
     tool = json.loads(seen[0].content)["tools"][0]
-    assert tool["user_location"]["city"] == "Perth" and tool["user_location"]["country"] == "AU"
+    assert tool["user_location"]["city"] == "Richmond" and tool["user_location"]["country"] == "AU"

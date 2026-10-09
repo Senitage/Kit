@@ -386,7 +386,7 @@ SELF_Q = re.compile(
     r"(\s+(today|this (morning|arvo|afternoon)|while i was (out|away|gone)))?\s*\??\s*$",
     re.IGNORECASE,
 )
-# "Perth's the capital, isn't it?": Dan wants Kit to agree, and might be wrong.
+# "Sydney's the capital, isn't it?": Dan wants Kit to agree, and might be wrong.
 TAG_Q = re.compile(
     r"[,\s](isn'?t|aren'?t|wasn'?t|weren'?t|doesn'?t|don'?t|didn'?t|innit|right|yeah)"
     r"(\s+(it|they|he|she|there|that|this))?\s*\?\s*$",

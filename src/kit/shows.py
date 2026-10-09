@@ -52,7 +52,7 @@ LATER = re.compile(
 # What the face draws, from the forecast's words (kit.weather.CODES).
 SKIES = (
     ("thunder", "storm"),
-    ("snow", "rain"),  # never in Perth: something falling will do
+    ("snow", "rain"),  # rare where Kit lives: something falling will do
     ("rain", "rain"),
     ("drizzle", "rain"),
     ("shower", "rain"),

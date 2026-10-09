@@ -106,7 +106,7 @@ around him: rain or a storm from a little cloud over his head, sun, a
 passing cloud, fog, or the moon and stars after dark. A dry day at 35°C or more
 (`face.hot_c`) is a scorcher, with shimmering air and a drop of sweat; a dry day
 with wind of 35 km/h or more has gusts and a leaf blowing past. Rain and storms
-win over both. Snow shows as rain; Perth doesn't need it.
+win over both. Snow shows as rain.
 
 - `kit.shows` (brain) picks a show from Dan's words and fills in the facts from
   the clock and Open-Meteo (`Weather.today`, which can also give tomorrow). It

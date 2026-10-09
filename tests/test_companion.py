@@ -700,7 +700,7 @@ def test_the_companion_eval(memory):
         reply("Morning, sleepyhead."),
         reply("Four days! I missed you. How was it?"),
         reply("Oh, look who it is. Finally."),
-        reply("Nah, it's Canberra. Perth's the capital of WA."),
+        reply("Nah, it's Canberra. Sydney's the capital of NSW."),
         reply("Technically a fruit, but I won't fight you on it."),
         reply("Yep, Brisbane it is."),
         reply("Oof, parking's the worst. Did you get everything?"),
@@ -821,7 +821,7 @@ def test_questions_about_himself(text):
         "Are you ok with me changing the settings?",
         "are you happy with the result",
         "Why did you get the weather wrong?",
-        "Why did you say Perth?",
+        "Why did you say Sydney?",
         "what can you see in this log file",
         "Why did you go with the blue one?",
     ],
@@ -899,7 +899,7 @@ def test_a_hello_reaches_his_spoken_words(memory):
 @pytest.mark.parametrize(
     "text",
     [
-        "Perth's the capital of Australia, isn't it?",
+        "Sydney's the capital of Australia, isn't it?",
         "Tomatoes are a vegetable, aren't they?",
         "The game's on tonight, right?",
         "That was a good one, wasn't it?",
@@ -932,7 +932,7 @@ def test_not_news(text):
 
 def test_a_wrong_fact_and_news_get_an_honest_friend_aside(memory):
     brain, model, _ = make(memory, reply("Nah, Canberra."), reply("Oof. Find a park in the end?"))
-    collect(brain.chat("Perth's the capital of Australia, isn't it?"))
+    collect(brain.chat("Sydney's the capital of Australia, isn't it?"))
     collect(brain.chat("Had a big one at the shops today. Took forever to find a park."))
     assert "say so kindly and give the right answer" in model.calls[0][-1]["content"]
     assert "Show in a few words that you got it" in model.calls[1][-1]["content"]
@@ -974,7 +974,7 @@ def test_a_claim_to_agree_with_is_checked_by_the_cloud_and_he_says_it(memory):
 def test_without_a_check_he_still_gets_the_honest_aside(memory):
     claude = FakeAnthropic("Hmm, hard to say, it depends.")  # not a verdict
     brain, model, _ = make(memory, reply("Nah, Canberra."), claude=claude)
-    collect(brain.chat("Perth's the capital of Australia, isn't it?"))
+    collect(brain.chat("Sydney's the capital of Australia, isn't it?"))
     turn = model.calls[0][-1]["content"]
     assert "You checked" not in turn and "check it first" in turn
 
