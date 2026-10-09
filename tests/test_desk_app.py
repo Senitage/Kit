@@ -8,12 +8,12 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", reason="desk extra (PySide6) not installed")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPointF, Qt  # noqa: E402
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QMouseEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from kit.desk import app as desk_app  # noqa: E402
-from kit.desk.chat import ChatWindow  # noqa: E402
+from kit.desk.chat import ChatWindow, place_beside  # noqa: E402
 from kit.desk.config import DeskConfig, save_token  # noqa: E402
 
 
@@ -80,7 +80,73 @@ def test_chat_shows_streamed_words_then_the_reply(qapp):
     text = chat.text()
     assert "Remembered: Dan likes tea." in text
     assert "Add to the register? Rex (pet) (yes or no)" in text
-    assert "Claude (sonnet) · $0.010" in text
+    # Who answered and the price wait for a click on the bubble.
+    assert "sonnet" not in text and "$0.010" not in text
+    assert ("Answered by", "Claude") in chat.lines[-1].meta
+    assert ("Cost", "$0.010") in chat.lines[-1].meta
+
+
+def test_bubbles_are_coloured_by_who_answered(qapp):
+    chat = ChatWindow()
+    chat.on_event(1, reply_event("Local hi."))
+    chat.on_event(2, reply_event("Haiku hi.", source="cloud", role="chat", model="haiku"))
+    chat.on_event(3, reply_event("Sonnet.", source="cloud", role="work", model="sonnet"))
+    chat.on_event(4, reply_event("Opus.", source="cloud", role="expert", model="opus"))
+    assert [line.tier for line in chat.lines] == ["chat", "chat", "work", "expert"]
+    p = chat.palette
+    styles = [row.bubble.styleSheet() for row in chat.rows]
+    assert p.bubble in styles[0] and p.bubble in styles[1]
+    assert p.work in styles[2] and p.expert in styles[3]
+
+
+def test_a_click_on_a_reply_pops_out_its_details(qapp):
+    chat = ChatWindow()
+    chat.show()
+    chat.on_event(
+        1,
+        reply_event(
+            "Sorted.",
+            source="cloud",
+            role="work",
+            label="Sonnet",
+            model="claude-sonnet",
+            cost_usd=0.0123,
+            searches=2,
+        ),
+    )
+    row = chat.rows[-1]
+    row.bubble.clicked.emit()
+    shown = [w.text() for w in chat._details.findChildren(QLabel)]
+    assert chat._details.isVisible()
+    assert {"Sonnet", "claude-sonnet", "Work", "$0.012", "2"} <= set(shown)
+    chat._details.hide()
+    chat.close()
+
+
+def test_old_replies_keep_their_colour_and_details(qapp):
+    chat = ChatWindow()
+    chat._show_history(
+        [
+            {"role": "user", "text": "Fix it"},
+            {
+                "role": "kit",
+                "text": "Fixed.",
+                "source": "cloud",
+                "at": "2026-10-08T09:30:00",
+                "meta": {"role": "expert", "label": "Opus", "model": "opus", "cost_usd": 0.2},
+            },
+            {"role": "kit", "text": "Hi.", "source": "local"},
+        ]
+    )
+    assert [line.tier for line in chat.lines] == ["chat", "expert", "chat"]
+    assert ("Answered by", "Opus") in chat.lines[1].meta
+    assert ("Time", "Thu 08 Oct, 09:30") in chat.lines[1].meta
+    assert ("Answered by", "Kit's local model") in chat.lines[2].meta
+
+
+def test_details_sit_beside_the_chat_on_the_side_with_room():
+    window = QRect(100, 100, 400, 600)
+    assert place_beside(window, QSize(200, 150), 300) == QPoint(window.right() + 8, 300)
 
 
 def test_chat_without_a_brain_says_to_set_it_up(qapp):

@@ -1299,7 +1299,8 @@ class Brain:
 
     def _said_by_cloud(self, reply: Reply, answer: CloudAnswer) -> list[Event]:
         """A line of his own from a cloud model, kept and told as a pipe-up."""
-        message_id = self._remember_reply(reply, PIPE_UP)
+        meta = {"model": answer.model, "cost_usd": round(answer.cost_usd, 4)}
+        message_id = self._remember_reply(reply, PIPE_UP, meta)
         return [
             {"type": "say", "text": reply.text, "source": "cloud"},
             {
@@ -2105,18 +2106,21 @@ class Brain:
         reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"
-        message_id = self._remember_reply(reply, "cloud")
+        meta = {
+            "role": role,
+            "model": answer.model,
+            "label": profile.name,
+            "cost_usd": round(answer.cost_usd, 4),
+            "searches": answer.searches,
+        }
+        message_id = self._remember_reply(reply, "cloud", meta)
         yield {"type": "say", "text": reply.text, "source": "cloud"}
         yield {
             "type": "reply",
             "source": "cloud",
-            "role": role,
-            "model": answer.model,
-            "label": profile.name,
+            **meta,
             "reply": reply.model_dump(),
             "message_id": message_id,
-            "cost_usd": round(answer.cost_usd, 4),
-            "searches": answer.searches,
             "month_usd": round(self.memory.month_spend(), 4),
         }
 
@@ -2363,8 +2367,16 @@ class Brain:
             "message_id": message_id,
         }
 
-    def _remember_reply(self, reply: Reply, source: str) -> int:
-        return self.memory.add_message("kit", reply.full_text, reply_json(reply), source)
+    def _remember_reply(self, reply: Reply, source: str, meta: dict | None = None) -> int:
+        """Keep a reply; ``meta`` (who answered, what it cost) goes with it for the
+        desk chat's colours and details."""
+        return self.memory.add_message(
+            "kit",
+            reply.full_text,
+            reply_json(reply),
+            source,
+            meta_json=json.dumps(meta) if meta else None,
+        )
 
     async def summarise_past_days(self) -> list[str]:
         """Summarise each finished day and learn its facts. Returns the days done."""

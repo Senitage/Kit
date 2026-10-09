@@ -207,6 +207,8 @@ def test_local_model_hands_off_with_memories(memory):
     assert handing["to"] == "Sonnet" and handing["question"] == "Kalman maths?"
     last = events[-1]
     assert last["source"] == "cloud" and last["cost_usd"] > 0 and last["label"] == "Sonnet"
+    kept = json.loads(memory.recent(1)[0].meta_json)  # for the desk chat's colours and details
+    assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_usd"] > 0
     call = claude.calls[0]
     assert call["model"] == "claude-sonnet-5-5"
     assert call["messages"][-1]["content"] == "Explain Kalman filters properly"

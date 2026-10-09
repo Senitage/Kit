@@ -29,6 +29,12 @@ def test_messages_survive_a_restart(paths, memory, clock):
     again.close()
 
 
+def test_a_reply_keeps_who_answered_it(memory):
+    memory.add_message("kit", "Done.", None, "cloud", meta_json='{"role": "work"}')
+    assert memory.recent(1)[0].meta_json == '{"role": "work"}'
+    assert memory.recent(1)[0].channel is None
+
+
 def test_recent_is_oldest_first_and_limited(memory):
     for i in range(5):
         memory.add_message("user", f"m{i}")
