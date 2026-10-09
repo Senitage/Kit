@@ -82,7 +82,7 @@ def walk_away(life, pc, clock, minutes, idle=0, step=30):
 
 
 def pastime(clock, name="weather", doing="watching the rain", minutes=40):
-    found = "Outside in Perth it's 14°C and light rain."
+    found = "Outside in Richmond it's 14°C and light rain."
     return Pastime(name, doing, found, clock.now, clock.now + timedelta(minutes=minutes))
 
 
@@ -235,7 +235,7 @@ class FakeWeather:
         self.calls += 1
         if self.fail:
             raise WeatherError("offline")
-        return Today("Perth, Western Australia", 14.0, self.sky, self.top, 9.0, 60)
+        return Today("Richmond, New South Wales", 14.0, self.sky, self.top, 9.0, 60)
 
 
 def thought(text="The rain's settled in for the arvo.", want=""):

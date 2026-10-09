@@ -69,7 +69,7 @@ class Where:
     city: str = ""
     region: str = ""
     country: str = ""  # two-letter code, e.g. AU
-    timezone: str = ""  # e.g. Australia/Perth
+    timezone: str = ""  # e.g. Australia/Sydney
 
     @classmethod
     def of(cls, persona: PersonaSettings) -> Where:
