@@ -677,6 +677,9 @@ class FaceSettings(_Section):
         description="Which character Kit is: how he looks and moves in the desk app, "
         "home_app and on his robots. Retro is the original glowing pill eyes; switch "
         "back any time.",
+        # Always a list, so settings pages show a picker even with one character
+        # (a one-value Literal comes out as "const", which they draw as a text box).
+        json_schema_extra={"enum": list(characters.presets())},
     )
     hot_c: float = Field(
         35.0,
