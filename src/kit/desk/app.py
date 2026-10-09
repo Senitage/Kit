@@ -888,6 +888,8 @@ class DeskApp(QObject):
                     after = state["last_event"]
                     if state.get("mood") == "asleep":
                         self._signals.life.emit({"type": "state", "state": "asleep"})
+                    if state.get("face"):  # the face he wears between replies
+                        self._signals.life.emit({"type": "mood", "face": state["face"]})
                 got = client.life_events(after)
                 for event in got["events"]:
                     self._signals.life.emit(event)
@@ -914,6 +916,8 @@ class DeskApp(QObject):
         elif event.get("type") == "doing":  # what he's up to while you're out
             self._doing = str(event.get("what") or "")
             self._show_doing()
+        elif event.get("type") == "mood":  # his mood: what he settles back to
+            face.rest(str(event.get("face") or "neutral"), time.monotonic())
         elif event.get("type") == "dials":
             face.set_dials(float(event.get("arousal", 0.5)), float(event.get("valence", 0.0)))
         elif event.get("type") == "quiet":  # why he's keeping quiet, in the tray's tooltip

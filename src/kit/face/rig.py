@@ -129,6 +129,7 @@ class Face:
 
     def __post_init__(self) -> None:
         self.emotion = "neutral"
+        self.resting = "neutral"  # what he settles back to between replies: his mood
         self.state = "idle"
         self._target = Pose(**self._ch.pose("neutral"))
         self._cur = {k: getattr(self._target, k) for k in _POSE_KEYS}
@@ -179,6 +180,17 @@ class Face:
         self.arousal = _clamp(arousal, 0, 1)
         self.valence = _clamp(valence, -1, 1)
 
+    def rest(self, name: str, now: float) -> None:
+        """The face he wears between replies: his mood (kit.life's ``face``). A
+        reply's emotion still plays over it and then settles back here, not to
+        neutral. Unknown names (a character without that pose) leave it alone."""
+        if name not in self._ch.emotions or name == self.resting:
+            return
+        was = self.resting
+        self.resting = name
+        if self._emotion_until is None and self.emotion == was:  # not mid-reply
+            self.set_emotion(name, now)
+
     def look_at(self, x: float, y: float, now: float) -> None:
         """Look toward a point, -1..1 each way from the face's centre."""
         self._look = (_clamp(x, -1, 1), _clamp(y, -1, 1), now + self.look_hold_s)
@@ -208,7 +220,7 @@ class Face:
         dt = 0.0 if self._last is None else max(0.0, min(now - self._last, 0.1))
         self._last = now
         if self._emotion_until is not None and now >= self._emotion_until:
-            self.set_emotion("neutral", now)
+            self.set_emotion(self.resting, now)
 
         target = self._state_pose()
         a = 1 - math.exp(-dt / self.ease_s) if dt else 0.0
