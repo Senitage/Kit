@@ -69,9 +69,10 @@ git merge origin/claude/project-thread-e6khvn
 Keep both sides of any conflict, then `pip install -e .` and restart.
 
 **The desk app** has a new tray switch, "Share what's playing", and shows the
-bubble and mood dials. Install the PR's test build with Update in the tray (see
-the PR for the build), or carry on with the one you have: everything else
-works without it.
+bubble and mood dials. Install this pull request's desk build (the "Desk app"
+check's installer) to try them, and skip the app's Update offer until it's
+merged: a newer main release would swap it back. The desk app you have keeps
+working for everything else.
 
 ## 2. Settings
 
