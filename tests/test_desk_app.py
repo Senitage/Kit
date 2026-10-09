@@ -561,3 +561,26 @@ def test_the_boop_is_a_short_wav():
 
     with wave.open(io.BytesIO(tone(SOUNDS["boop"]))) as w:
         assert w.getnchannels() == 1 and 0.1 < w.getnframes() / w.getframerate() < 0.3
+
+
+def test_a_show_plays_as_he_answers(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    desk.sounds.player = None
+    desk.performer.perform = lambda reply: None
+    time_show = {"kind": "time", "text": "3:07", "small": "pm"}
+    try:
+        desk._chat_state("heard")
+        desk.chat.on_event(1, {"type": "show", "show": time_show})
+        assert desk.face.scene is None  # waits for his answer
+        desk.chat.on_event(1, reply_event("Just after three."))
+        assert desk.face.scene is not None and desk.face.scene.show == time_show
+        desk.face.scene = None
+        desk.chat.on_event(1, {"type": "show", "show": time_show})  # a late one
+        assert desk.face.scene is not None
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

@@ -229,7 +229,7 @@ class FakeWeather:
     def __init__(self, top=30.0, sky="light rain", fail=False):
         self.top, self.sky, self.fail, self.calls = top, sky, fail, 0
 
-    async def today(self, place, country=""):
+    async def today(self, place, country="", ahead=0):
         from kit.weather import WeatherError
 
         self.calls += 1

@@ -1,6 +1,7 @@
 """Try Kit's Glow face without the brain: ``python -m kit.desk.face_preview``.
 
-Buttons set each emotion, play each gesture and switch each state, and
+Buttons set each emotion, play each gesture, switch each state and play each
+show (the time, the date, each kind of weather), and
 "Play a Kit reply" acts out sample replies the way the helper will. Add
 ``--float`` to see it as a small frameless always-on-top face you can drag.
 """
@@ -90,6 +91,26 @@ SAMPLES = [
         ],
     },
 ]
+
+
+# What the brain sends when Dan asks the time or about the weather (kit.shows).
+SHOW_SAMPLES = {
+    "time": {"kind": "time", "text": "3:07", "small": "pm"},
+    "date": {"kind": "date", "small": "FRI", "text": "9 OCT"},
+    **{
+        sky: {"kind": "weather", "sky": sky, "text": temp}
+        for sky, temp in (
+            ("sun", "31°"),
+            ("part_cloud", "22°"),
+            ("cloud", "17°"),
+            ("rain", "14°"),
+            ("storm", "24°"),
+            ("snow", "-2°"),
+            ("fog", "9°"),
+            ("moon", "12°"),
+        )
+    },
+}
 
 
 class Performer:
@@ -218,6 +239,9 @@ def main() -> int:
         )
     )
     layout.addWidget(_buttons("State", list(STATES), face.set_state))
+    layout.addWidget(
+        _buttons("Show", list(SHOW_SAMPLES), lambda n: widget.play_show(SHOW_SAMPLES[n]))
+    )
     row = QHBoxLayout()
     say = QPushButton("Play a Kit reply")
     say.clicked.connect(lambda: performer.perform(next(samples)))

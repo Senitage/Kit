@@ -402,6 +402,9 @@ class DeskApp(QObject):
         self.chat.setWindowIcon(face_icon())
         self.chat.resize(self.config.chat_width, self.config.chat_height)
         self.chat.replied.connect(self._act_out)
+        self.chat.shown.connect(self._show)
+        self._showing: dict | None = None  # a show waiting for his answer to start
+        self._answered = False  # he's answered the message just sent
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
@@ -886,6 +889,7 @@ class DeskApp(QObject):
                 self.face.face.set_state(FACE_STATES[state])
         elif state == "heard":  # a little nod as a message goes, before he thinks
             self.face.face.play("nod", time.monotonic())
+            self._showing, self._answered = None, False
         elif state == "error":
             self.face.face.play("shrug", time.monotonic())
         elif state.startswith("asking"):
@@ -902,6 +906,18 @@ class DeskApp(QObject):
         if self.config.boop:
             self.sounds.play(sound)
         self.performer.perform(reply)
+        self._answered = True
+        if self._showing is not None:
+            self.face.play_show(self._showing)
+            self._showing = None
+
+    def _show(self, show: dict) -> None:
+        """Something for his face to show (the time, the weather). It plays as he
+        answers, so the time is up while he says it; a late one plays at once."""
+        if self._answered:
+            self.face.play_show(show)
+        else:
+            self._showing = show
 
 
 def _quietly(call, *args) -> None:

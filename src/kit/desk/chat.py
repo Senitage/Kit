@@ -292,11 +292,13 @@ class _Signals(QObject):
 
 class ChatWindow(QWidget):
     """Kit's chat. ``replied`` carries each finished reply for the face to act out;
+    ``shown`` carries what his face should show (the time, the weather);
     ``state`` carries what Kit is doing ("thinking", "speaking", "idle"...).
     ``settings_wanted`` asks the app to open Kit's window; ``resized`` reports the
     new size so it can be remembered."""
 
     replied = Signal(dict)
+    shown = Signal(dict)  # something for his face to show (kit.shows)
     state = Signal(str)
     settings_wanted = Signal()
     resized = Signal(QSize)
@@ -564,6 +566,8 @@ class ChatWindow(QWidget):
             else:
                 self._add(line)
             self.replied.emit(reply)
+        elif kind == "show":
+            self.shown.emit(ev.get("show") or {})
         elif kind == "handing_off":
             self._current.pop(turn, None)
             self._set_state(f"asking {ev.get('to', 'the cloud')}")

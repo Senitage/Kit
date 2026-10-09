@@ -101,8 +101,9 @@ class Weather:
         )
         return describe(where.name, data)
 
-    async def today(self, place: str, country: str = "") -> Today:
-        """Today's weather as numbers: now, the sky, and the top and low."""
+    async def today(self, place: str, country: str = "", ahead: int = 0) -> Today:
+        """Today's weather as numbers: now, the sky, and the top and low. With
+        ``ahead`` (1 is tomorrow) that day's instead, with no "now"."""
         where = await self.find(place, country)
         data = await self._get(
             FORECAST_URL,
@@ -110,25 +111,35 @@ class Weather:
                 "latitude": where.latitude,
                 "longitude": where.longitude,
                 "timezone": "auto",
-                "forecast_days": 1,
+                "forecast_days": ahead + 1,
                 "current": "temperature_2m,weather_code",
-                "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
+                "precipitation_probability_max",
             },
         )
         cur = data.get("current") or {}
         daily = data.get("daily") or {}
 
-        def first(key: str):
-            values = daily.get(key) or [None]
-            return values[0]
+        def day(key: str):
+            values = daily.get(key) or []
+            return values[ahead] if len(values) > ahead else None
 
+        if ahead:
+            return Today(
+                where.name,
+                None,
+                _sky(day("weather_code")),
+                day("temperature_2m_max"),
+                day("temperature_2m_min"),
+                day("precipitation_probability_max"),
+            )
         return Today(
             where.name,
             cur.get("temperature_2m"),
             _sky(cur.get("weather_code")),
-            first("temperature_2m_max"),
-            first("temperature_2m_min"),
-            first("precipitation_probability_max"),
+            day("temperature_2m_max"),
+            day("temperature_2m_min"),
+            day("precipitation_probability_max"),
         )
 
     async def find(self, place: str, country: str = "") -> Place:
