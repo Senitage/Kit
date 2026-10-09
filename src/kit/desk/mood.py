@@ -366,6 +366,7 @@ class MoodPage(QWidget):
         else:
             self.feeling.setText("Nothing much on his mind.")
         self.closeness.setText(f"You two: {life['closeness']}" if life.get("closeness") else "")
+        emotion = str(life.get("face") or emotion)  # the brain's say, as the desk face shows
 
         face, now = self.face.face, time.monotonic()
         face.set_state("sleeping" if mood == "asleep" else "idle")
