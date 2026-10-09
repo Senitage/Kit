@@ -3,7 +3,8 @@
 ``paint_glow`` draws one ``FaceFrame`` with QPainter and nothing else, so the
 same frame can be painted in the helper window, in a test image, or (ported to
 C++) on the arm's round GC9A01 screen. ``FaceWidget`` runs a ``Face`` at 60 fps
-and makes the eyes follow the mouse.
+and makes the eyes follow the mouse. Colours and sizes come from the look in
+Kit's character sheet (kit.face.character), so the painter only knows shapes.
 """
 
 from __future__ import annotations
@@ -15,19 +16,16 @@ from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from kit.face import Face, FaceFrame
-
-EYE = QColor(126, 243, 230)
-EYE_OFFLINE = QColor(140, 150, 160)
-SCREEN = QColor(15, 20, 27)
-BEZEL = QColor(43, 51, 63)
-BLUSH = QColor(255, 143, 168)
+from kit.face.character import Character, current
 
 
-def _eye_path(cx: float, cy: float, w: float, h: float, s: float, f: FaceFrame, side: int):
+def _eye_path(
+    cx: float, cy: float, w: float, h: float, s: float, f: FaceFrame, side: int, corner: float
+):
     """One eye as a rounded pill, with the lids cut away by path subtraction."""
     eye = QPainterPath()
     h = max(h, s * 0.012)
-    eye.addRoundedRect(QRectF(cx - w / 2, cy - h / 2, w, h), s * 0.06, min(s * 0.06, h / 2))
+    eye.addRoundedRect(QRectF(cx - w / 2, cy - h / 2, w, h), s * corner, min(s * corner, h / 2))
     hh = max(h, s * 0.03)
     if abs(f.tilt) > 0.02:
         # Upper lid: a sloped edge. Sad lifts the inner corners; focused drops them.
@@ -55,9 +53,15 @@ def paint_glow(
     f: FaceFrame,
     background: QColor | None = None,
     eye: QColor | None = None,
+    character: Character | None = None,
 ) -> None:
     """Paint one frame of the Glow face into ``rect`` (drawn square, centred), with
-    the eyes in ``eye`` (Glow's own teal unless Dan picked another on the Look page)."""
+    the eyes in ``eye`` (the character's own colour unless Dan picked another on the
+    Look page). ``character`` defaults to the one Kit is using now."""
+    look = (character or current()).look
+    colours = {k: QColor(v) for k, v in look["colours"].items()}
+    scr, eyes, glow, blush = look["screen"], look["eyes"], look["glow"], look["blush"]
+    neck = look["neck"]
     s = min(rect.width(), rect.height())
     ox = rect.x() + (rect.width() - s) / 2
     oy = rect.y() + (rect.height() - s) / 2
@@ -67,50 +71,51 @@ def paint_glow(
         p.fillRect(rect, background)
 
     # Head motion: tilt, bob, squash and lean, pivoting below centre like a neck.
-    p.translate(ox + s / 2 + f.dx * s, oy + s * 0.55 + f.dy * s)
+    p.translate(ox + s / 2 + f.dx * s, oy + s * neck + f.dy * s)
     p.rotate(f.rot * 57.2958)
     p.scale(f.sx * f.scale, f.sy * f.scale)
-    p.translate(-s / 2, -s * 0.55)
+    p.translate(-s / 2, -s * neck)
 
-    screen = QRectF(s * 0.1, s * 0.17, s * 0.8, s * 0.66)
-    p.setPen(QPen(BEZEL, s * 0.012))
-    p.setBrush(SCREEN)
-    p.drawRoundedRect(screen, s * 0.16, s * 0.16)
+    screen = QRectF(s * scr["x"], s * scr["y"], s * scr["width"], s * scr["height"])
+    p.setPen(QPen(colours["bezel"], s * scr["bezel"]))
+    p.setBrush(colours["screen"])
+    p.drawRoundedRect(screen, s * scr["corner"], s * scr["corner"])
 
-    pulse = 1 + f.talk * 0.08
-    colour = EYE_OFFLINE if f.offline else (eye or EYE)
+    pulse = 1 + f.talk * eyes["talk_pulse"]
+    colour = colours["eye_offline"] if f.offline else (eye or colours["eye"])
     for side, open_ in ((-1, f.open_left), (1, f.open_right)):
-        cx = s / 2 + side * s * 0.155 + f.look_x * s * 0.07
-        cy = s * 0.5 + f.look_y * s * 0.055
-        w = s * 0.15 * f.size
-        h = s * 0.25 * f.size * open_ * pulse
-        eye = _eye_path(cx, cy, w, h, s, f, side)
+        cx = s / 2 + side * s * eyes["apart"] + f.look_x * s * eyes["reach_x"]
+        cy = s * eyes["y"] + f.look_y * s * eyes["reach_y"]
+        w = s * eyes["width"] * f.size
+        h = s * eyes["height"] * f.size * open_ * pulse
+        eye = _eye_path(cx, cy, w, h, s, f, side, eyes["corner"])
         # Glow: the eye's outline stroked in widening, fading rings, then the eye itself.
         p.setBrush(Qt.BrushStyle.NoBrush)
-        for i, alpha in enumerate((40, 26, 16, 9)):
+        for i, alpha in enumerate(glow["rings"]):
             halo = QColor(colour)
             halo.setAlpha(int(alpha * f.glow))
             p.setPen(
                 QPen(
                     halo,
-                    s * 0.018 * (i + 1),
+                    s * glow["ring_width"] * (i + 1),
                     c=Qt.PenCapStyle.RoundCap,
                     j=Qt.PenJoinStyle.RoundJoin,
                 )
             )
             p.drawPath(eye)
         fill = QColor(colour)
-        fill.setAlphaF(0.35 + 0.65 * f.glow)
+        fill.setAlphaF(glow["dim"] + (1 - glow["dim"]) * f.glow)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(fill)
         p.drawPath(eye)
 
-    if f.blush > 0.25 and not f.offline:
-        cheek = QColor(BLUSH)
-        cheek.setAlphaF(min(1.0, f.blush * 0.35 * f.glow))
+    if f.blush > blush["from"] and not f.offline:
+        cheek = QColor(colours["blush"])
+        cheek.setAlphaF(min(1.0, f.blush * blush["strength"] * f.glow))
         p.setBrush(cheek)
         for side in (-1, 1):
-            p.drawEllipse(QPointF(s / 2 + side * s * 0.25, s * 0.66), s * 0.055, s * 0.025)
+            centre = QPointF(s / 2 + side * s * blush["apart"], s * blush["y"])
+            p.drawEllipse(centre, s * blush["width"], s * blush["height"])
     p.restore()
 
 

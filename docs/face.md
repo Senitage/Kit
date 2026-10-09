@@ -23,6 +23,32 @@ picked it on 2026-10-05 from four styles in the
 Every emotion and gesture in `kit.reply` must have a pose and a clip. A test
 enforces this, so adding an emotion means adding its pose too.
 
+## The character sheet
+
+Everything that makes Kit look like Kit lives in one file,
+`src/kit/face/character.json`:
+
+- `look`: his colours and the size and place of his screen, eyes, glow and
+  blush, as fractions of the face's size.
+- `poses`: one per emotion. Any knob left out takes its value from
+  `pose_default`.
+- `states`: how asleep, offline, thinking and listening bend the pose, and how
+  bright he glows in each.
+- `gestures`: each gesture's length and its moves. A move is a list of terms
+  per channel, each an amount times some shapes over the clip's time
+  (`bump`, `hold`, `sin`, `abs_sin`, `line`, `jolt`); `kit.face.character`
+  explains them.
+
+The brain serves this file at `GET /api/face`. The desk app loads it each time
+it connects (keeping its own copy if the brain is older), and home_app's Kit
+page loads it the same way, so a redesign is one edit to this file and every
+app follows. `kit.face.character.check` says in plain words what is wrong with
+a broken sheet, and a broken sheet is never used.
+
+Blinks, eye darts, breathing, the reading sweep while working and the talking
+pulse are reflexes and stay in the rig's code. A new eye *shape* (not just new
+sizes or colours) needs a new painter `style` in each app.
+
 ## Try it
 
 ```
@@ -35,5 +61,6 @@ python -m kit.desk.face_preview --float   # a small always-on-top face you can d
 
 The face head gets a 1.28 in round GC9A01 screen (240×240) behind smoked
 acrylic. An ESP32 drives the screen. The painter is ported to C++ (it uses only
-rounded rectangles, two lid cut-outs and a glow), and the rig's frame numbers
-travel over the bus. The rig stays in Python on the Pi.
+rounded rectangles, two lid cut-outs and a glow) and reads its sizes and
+colours from the character sheet, and the rig's frame numbers travel over the
+bus. The rig stays in Python on the Pi.

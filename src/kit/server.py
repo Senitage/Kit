@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
+from kit.face.character import builtin as builtin_character
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
@@ -157,6 +158,11 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict:
         return {"ok": True, "name": store.current().persona.name, "version": kit.__version__}
+
+    @app.get("/api/face", dependencies=auth)
+    def face() -> dict:
+        """Kit's character sheet, so every app that draws him draws the same Kit."""
+        return builtin_character().sheet
 
     @app.get("/api/status", dependencies=auth)
     def status() -> dict:
