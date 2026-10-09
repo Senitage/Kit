@@ -369,7 +369,7 @@ AROUSAL_HALF_LIFE = 30  # minutes for liveliness to settle halfway back
 VALENCE_HALF_LIFE = 90  # happiness settles more slowly: a mood lasts hours
 # Energy as a need (``life.energy_need``): what tires him, and what restores him.
 CHAT_TIRES = 0.1  # an hour of chat
-CLOUD_TIRES = 0.1  # each job handed to a cloud model
+CLOUD_TIRES = 0.05  # each real job (work or expert) handed to a cloud model
 LATE_TIRES = 0.3  # an hour awake after 22:30
 LATE_FROM = 22.5
 SLEEP_RESTORES = 0.6  # an hour asleep
@@ -825,6 +825,7 @@ class Life:
         self.next_thought = now + self._think_gap(0.3, 1.0)
         self._to_think: deque[tuple[str, str]] = deque(maxlen=4)  # what's happened since
         self._asleep_since: datetime | None = None
+        self._talked_at: datetime | None = None  # Dan's last message, this run
         self._chat_open = False  # a conversation that hasn't been thought over yet
         # Absences: when Dan last touched the PC, went away and came back.
         self.last_seen = now
@@ -866,7 +867,8 @@ class Life:
     def note_chat(self, text: str = "") -> None:
         """Dan said something to Kit: the best cure for boredom. Answering his pipe-up
         brings you closer (and a game he suggested landed); a miff is over once he's
-        had his say; and with no desk app reporting, a message wakes him."""
+        had his say; and a message wakes him (he stays up while you're chatting, even
+        with the PC away)."""
         owner = self.settings().persona.owner
         if self.awaiting_reply:
             self.grow(0.005)
@@ -876,9 +878,10 @@ class Life:
         felt = self.feeling_now()
         if felt is not None and felt.name == "miffed":
             self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
-        if self.asleep and not self.pc.online():
-            self._wake()
         now = self.clock()
+        self._talked_at = now
+        if self.asleep:
+            self._wake()
         if self._pipe_out is not None:  # Dan answered his last pipe-up in time: it landed
             reason, at = self._pipe_out
             if now - at <= TAKEN_UP_WITHIN:
@@ -1033,7 +1036,11 @@ class Life:
         if self.away_since is None and self.doing is not None:
             self.stop_doing()  # Dan's back
             changed = True
-        if not self.asleep and (snap.locked or snap.idle_seconds >= away_s):
+        if (
+            not self.asleep
+            and (snap.locked or snap.idle_seconds >= away_s)
+            and not self.chatting(now)
+        ):
             self.stop_doing()
             self.asleep = True
             self._asleep_since = now
@@ -1140,12 +1147,18 @@ class Life:
             return "here"
         return "alone" if self.alone_life() else "away"
 
+    def chatting(self, now: datetime) -> bool:
+        """Dan's talking to him (from the desk or his phone): he stays awake for it."""
+        return self._talked_at is not None and now - self._talked_at < CHAT_ENDED_AFTER
+
     def wants_pastime(self) -> bool:
         """Alone, awake, and not doing anything (or done with it): time to find
         something to do. Never in quiet hours: then he's off to sleep."""
         now = self.clock()
         life = self.settings().life
         if self.presence() != "alone" or in_quiet_hours(now, life.quiet_from, life.quiet_until):
+            return False
+        if self.chatting(now):
             return False
         if self.doing is not None and now < self.doing.until:
             return False
@@ -1432,7 +1445,7 @@ class Life:
                     self.curious_kind = "switch"
             self._last_focus = focus
         gone = self.away_since is not None and not self.pc.online()
-        if gone and self.alone_life() and not self.asleep:
+        if gone and self.alone_life() and not self.asleep and not self.chatting(now):
             # The PC went to sleep while Dan was out: Kit dozes off in the usual time.
             if now - self.away_since >= timedelta(minutes=self.settings().life.sleep_after_minutes):
                 self.stop_doing()

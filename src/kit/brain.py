@@ -192,6 +192,20 @@ from kit.when import follow_up
 log = logging.getLogger(__name__)
 
 
+MUSING = re.compile(
+    r"^\W*(i wonder|wonder|maybe|perhaps|what if|i'?m not sure|not sure|could it be|"
+    r"is|are|does|do|can|could|would|should|will)\b",
+    re.I,
+)
+
+
+def a_view(text: str) -> bool:
+    """An opinion he can stand by: a statement, not a question or a passing musing
+    ("Is that AI thing actually smarter than me?")."""
+    text = text.strip()
+    return len(text.split()) >= 4 and "?" not in text and not MUSING.search(text)
+
+
 def temperatures(text: str) -> list[float]:
     """Plausible temperatures in ``text``, in order ("I reckon 31, you?")."""
     found = []
@@ -1529,6 +1543,7 @@ class Brain:
             for e in self.notebook.entries("opinion", 30)
             if now - parse_time(e.created, now) >= OPINION_STANDS
             and not (shared and e.meta.get("private"))
+            and a_view(e.text)
         ]
         return [e.text for e in held[:want]]
 
@@ -1933,7 +1948,8 @@ class Brain:
             profile, messages, settings, question, on_step, priority=PRIORITY.get()
         )
         self.life.react("perk_up", "the answer came back")
-        self.life.spend(CLOUD_TIRES)
+        if role != CHAT:  # a real job tires him; an everyday answer doesn't
+            self.life.spend(CLOUD_TIRES)
         if READ_ON.get() and READ.get() is None:
             READ.set(mood_read(answer.text))
         reply = parse_cloud_reply(answer.text)

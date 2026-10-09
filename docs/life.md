@@ -90,8 +90,9 @@ change that is, because it matters most the first time it's needed.
 ## Energy
 
 His energy follows the clock by default. With `life.energy_need` it's a real
-need: each chat message and each cloud job tires him a little, and staying up
-past 10:30 pm more so. Sleep restores him: 45 minutes asleep brings him back
+need: chatting tires him a little (about 0.1 an hour of chat), each real job
+handed to Sonnet or Opus a bit more, and staying up past 10:30 pm most of all.
+Everyday answers, even from the cloud, cost nothing. Sleep restores him: 45 minutes asleep brings him back
 to full, as does a night off. Below 0.4 he's sleepy: he yawns and keeps his
 replies short.
 
@@ -197,18 +198,30 @@ call to the local model; nothing goes to the cloud. A thought that fails (the
 model's down) costs nothing from the hour's allowance; he just tries again
 after the usual gap.
 
+A thought can:
+- turn into something he **wants to say or ask** you. It presses harder the
+  longer it waits, and his next pipe-up brings it up;
+- change how he **feels**, with the reason;
+- become an **opinion** he keeps.
+
+Ask "what are you thinking about?" and he tells you his actual recent thoughts,
+not an invented one. If nothing's been on his mind, he says so.
+
 With `life.week_thoughts`, the week has a shape: a thought on Monday, Friday
 and Saturday mornings, on WA public holidays, and the day before one ("a long
 weekend's coming").
 
-With `life.opinions` (1 or 2), his strongest standing opinions from his
+With `life.opinions` (1 or 2), his latest standing opinions from his
 notebook stay in front of him when he talks, so he sticks to them kindly
-instead of agreeing with whatever you say.
+instead of agreeing with whatever you say. Only real views count: a question
+or a passing musing ("I wonder if...", "Is that AI thing smarter than me?")
+stays a thought.
 
 ## While you're away
 
 By default, when you leave he waits, then dozes off after
-`life.sleep_after_minutes`. With `life.alone_thoughts_per_hour` above 0 he
+`life.sleep_after_minutes`. A message wakes him, from the desk or your phone,
+and he stays up while you're chatting even if the PC says you're away. With `life.alone_thoughts_per_hour` above 0 he
 has a life of his own meanwhile. He picks something to do by what he needs
 most: watching the weather (bored), rereading yesterday's journal (missing
 you), thinking about someone or something in his register, a person, pet,
@@ -227,15 +240,6 @@ Everything he did goes in his notebook. Ask "what did you get up to?" and he
 tells you just that; his hello when you're back mentions it; and on a day he
 spent entirely alone, the nightly journal is one plain line saying so, written
 without a model. `kit life` shows where he is: here, away, alone or asleep.
-
-A thought can:
-- turn into something he **wants to say or ask** you. It presses harder the
-  longer it waits, and his next pipe-up brings it up;
-- change how he **feels**, with the reason;
-- become an **opinion** he keeps.
-
-Ask "what are you thinking about?" and he tells you his actual recent thoughts,
-not an invented one. If nothing's been on his mind, he says so.
 
 ## Something for later
 

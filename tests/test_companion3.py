@@ -8,8 +8,8 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
-from kit.brain import MOOD_CALIBRATION, Brain, temperatures
+from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from kit.brain import MOOD_CALIBRATION, Brain, a_view, temperatures
 from kit.desk.config import DeskConfig
 from kit.desk.watch import build_snapshot, now_playing
 from kit.evals import (
@@ -610,7 +610,64 @@ def test_chats_and_cloud_jobs_spend_energy_only_with_the_setting():
     assert off.energy == 1.0 and not off.tired()
 
 
+def test_everyday_cloud_answers_dont_tire_him_but_real_jobs_do(paths):
+    """On Dan's PC (cloud-only) four midday messages took him from 1.0 to 0.61:
+    every Haiku answer counted as a cloud job."""
+    paths.ensure()
+    first = reply("Let me check with Sonnet.", action="ask_cloud", text="Write the function")
+    claude = FakeAnthropic(answer=["Morning!", "Yep.", "Ha, fair.", "Sure thing.", first, "Done."])
+    s = Settings.model_validate({"routing": {"mode": "cloud-only"}, "life": {"energy_need": True}})
+    memory = Memory(paths.state_dir / "memory.db", Clock("2026-10-08T12:00:00"))
+    try:
+        recall = Recall(memory, FakeEmbedder(), lambda: s)
+        brain = Brain(lambda: s, memory, FakeModel(), make_cloud(memory, claude, key="k"), recall)
+        for text in ("Morning", "How's it going", "Ha", "Righto"):
+            collect(brain.chat(text))
+            memory.clock.now += timedelta(minutes=2)
+        assert brain.life.energy > 0.95 and not brain.life.tired()
+        collect(brain.chat("Write the pump flag function"))
+        assert 0.9 < brain.life.energy < 0.95
+    finally:
+        memory.close()
+
+
+# A message wakes him
+
+
+def test_a_message_wakes_him_even_with_the_pc_away_and_he_stays_up_to_chat():
+    life, pc, clock = setup(alone_thoughts_per_hour=1, sleep_after_minutes=10)
+    pc.update(snap(idle=5))
+    life.on_report()
+    walk_away(life, pc, clock, 15)
+    assert life.presence() == "asleep" and pc.online()
+    life.note_chat("you awake?")
+    assert not life.asleep
+    seen = walk_away(life, pc, clock, 5, idle=15 * 60)  # still away from the PC, chatting by phone
+    assert "asleep" not in seen and not life.wants_pastime()
+    walk_away(life, pc, clock, 10, idle=20 * 60)  # the chat's over
+    assert life.presence() == "asleep"
+
+
 # Standing opinions
+
+
+def test_a_view_is_a_statement_not_a_musing():
+    assert a_view("Pineapple on pizza is underrated.")
+    assert a_view("Rainy afternoons are the best ones for a chat.")
+    assert not a_view("Is that AI thing actually smarter than my ability to spot a terrible pun?")
+    assert not a_view("I wonder whether the cat likes me")
+    assert not a_view("Maybe the weather will turn")
+    assert not a_view("Too hot.")
+
+
+def test_musings_arent_held_as_opinions(kit):
+    brain, model, _ = kit(reply("Sure."), opinions=2)
+    brain.notebook.write("opinion", "Is that AI thing actually smarter than me at puns?")
+    brain.notebook.write("opinion", "Pineapple on pizza is underrated.")
+    brain.memory.clock.now += timedelta(days=2)
+    collect(brain.chat("Pizza tonight?"))
+    held = model.calls[0][0]["content"].split("Views you hold and stand by", 1)[1]
+    assert "Pineapple" in held and "smarter" not in held.split("\n\n")[0]
 
 
 def test_standing_opinions_are_in_his_voice(kit):
