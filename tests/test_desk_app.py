@@ -506,7 +506,7 @@ def test_the_desk_draws_kit_from_the_brains_character_sheet():
     from kit.face import character
 
     sheet = copy.deepcopy(character.builtin().sheet)
-    sheet["look"]["colours"]["eye"] = "#FFB000"
+    sheet["looks"]["glow"]["colours"]["eye"] = "#FFB000"
     answers = {"/api/face": httpx.Response(200, json=sheet)}
 
     def brain(request):
@@ -515,11 +515,11 @@ def test_the_desk_draws_kit_from_the_brains_character_sheet():
     client = BrainClient("http://kit-server:8600", "t", transport=httpx.MockTransport(brain))
     try:
         assert desk_app.load_character(client)
-        assert character.current().look["colours"]["eye"] == "#FFB000"
+        assert character.current().look("desk")["colours"]["eye"] == "#FFB000"
         sheet["poses"]["happy"]["grin"] = 1  # a broken sheet keeps the face it had
         answers["/api/face"] = httpx.Response(200, json=sheet)
         assert not desk_app.load_character(client)
-        assert character.current().look["colours"]["eye"] == "#FFB000"
+        assert character.current().look("desk")["colours"]["eye"] == "#FFB000"
         answers.clear()  # an older brain without /api/face
         assert not desk_app.load_character(client)
     finally:

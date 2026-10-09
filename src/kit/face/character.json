@@ -1,29 +1,32 @@
 {
   "name": "Glow",
   "version": 1,
-  "about": "Kit's character sheet: how he looks, his mood poses and his gesture moves. Every app that draws Kit (desk app, home_app, robot screens) reads this one file, from the brain at /api/face. See docs/face.md.",
-  "look": {
-    "style": "glow",
-    "colours": {"eye": "#7EF3E6", "eye_offline": "#8C96A0", "screen": "#0F141B", "bezel": "#2B333F", "blush": "#FF8FA8"},
-    "neck": 0.55,
-    "screen": {"x": 0.1, "y": 0.17, "width": 0.8, "height": 0.66, "corner": 0.16, "bezel": 0.012},
-    "eyes": {
-      "apart": 0.155,
-      "y": 0.5,
-      "width": 0.15,
-      "height": 0.25,
-      "corner": 0.06,
-      "reach_x": 0.07,
-      "reach_y": 0.055,
-      "talk_pulse": 0.08
-    },
+  "about": "Kit's character sheet: his looks, which look each app or body uses, his mood poses and his gesture moves. Every app that draws Kit (desk app, home_app, robot screens) reads this one file, from the brain at /api/face. See docs/face.md.",
+  "use": {"default": "glow", "desk": "glow", "home_app": "glow", "robot": "glow"},
+  "looks": {
     "glow": {
-      "rings": [40, 26, 16, 9],
-      "ring_width": 0.018,
-      "blur": 0.07,
-      "dim": 0.35
-    },
-    "blush": {"apart": 0.25, "y": 0.66, "width": 0.055, "height": 0.025, "from": 0.25, "strength": 0.35}
+      "style": "glow",
+      "colours": {"eye": "#7EF3E6", "eye_offline": "#8C96A0", "screen": "#0F141B", "bezel": "#2B333F", "blush": "#FF8FA8"},
+      "neck": 0.55,
+      "screen": {"x": 0.1, "y": 0.17, "width": 0.8, "height": 0.66, "corner": 0.16, "bezel": 0.012},
+      "eyes": {
+        "apart": 0.155,
+        "y": 0.5,
+        "width": 0.15,
+        "height": 0.25,
+        "corner": 0.06,
+        "reach_x": 0.07,
+        "reach_y": 0.055,
+        "talk_pulse": 0.08
+      },
+      "glow": {
+        "rings": [40, 26, 16, 9],
+        "ring_width": 0.018,
+        "blur": 0.07,
+        "dim": 0.35
+      },
+      "blush": {"apart": 0.25, "y": 0.66, "width": 0.055, "height": 0.025, "from": 0.25, "strength": 0.35}
+    }
   },
   "pose_default": {
     "open": 1.0,

@@ -1,8 +1,16 @@
 """Kit's character sheet: the one file that says how he looks and moves.
 
-``character.json`` (next to this module) holds his look (colours and the sizes of
-his screen, eyes, glow and blush), a pose for every emotion, how each state
-bends that pose, and every gesture as a set of moves. The rig and the Glow
+``character.json`` (next to this module) holds his looks, which look each app
+or body uses, a pose for every emotion, how each state bends that pose, and
+every gesture as a set of moves.
+
+A look is 2D or 3D. The ``glow`` style is the 2D pill eyes: colours and the
+sizes of his screen, eyes, glow and blush. The ``model`` style is a 3D model
+(a glTF ``.glb`` file) whose head bone and morph targets the same poses and
+gestures drive. ``use`` picks a look per app or body (``desk``, ``home_app``,
+``robot``, falling back to ``default``), so the desk app can be 3D while a
+small robot screen stays 2D. A 3D look names a 2D ``fallback`` for anything
+that can't draw 3D. The rig and the Glow
 painter read it here; the brain serves the same file at ``/api/face`` so the
 desk app, home_app and the robot screens all draw the same Kit. Redesigning
 him is an edit to that file, not to each app.
@@ -63,7 +71,12 @@ SHAPES = {
     "line": (2, 2),
     "jolt": (1, 1),
 }
-LOOK_KEYS = ("colours", "neck", "screen", "eyes", "glow", "blush")
+# What each look style needs. Glow is 2D; a model is 3D.
+STYLES = {
+    "glow": ("colours", "neck", "screen", "eyes", "glow", "blush"),
+    "model": ("file", "fallback", "head_bone", "morphs"),
+}
+TWO_D = ("glow",)
 
 
 class CharacterError(ValueError):
@@ -119,9 +132,21 @@ class Character:
     def name(self) -> str:
         return self.sheet["name"]
 
-    @property
-    def look(self) -> dict:
-        return self.sheet["look"]
+    def look_name(self, app: str = "default") -> str:
+        """The look ``app`` (desk, home_app, robot...) is set to use."""
+        use = self.sheet["use"]
+        return use.get(app, use["default"])
+
+    def look(self, app: str = "default", styles: tuple[str, ...] = TWO_D) -> dict:
+        """The look ``app`` should draw, given the ``styles`` it can draw: the one
+        ``use`` picks for it, or that look's 2D fallback if it can't draw that."""
+        looks = self.sheet["looks"]
+        chosen = looks[self.look_name(app)]
+        if chosen["style"] not in styles and "fallback" in chosen:
+            chosen = looks[chosen["fallback"]]
+        if chosen["style"] not in styles:
+            raise CharacterError(f"this app can't draw a {chosen['style']!r} look")
+        return chosen
 
     def pose(self, emotion: str) -> dict[str, float]:
         """An emotion's pose with every key filled in from the defaults."""
@@ -164,16 +189,34 @@ class Character:
 def check(sheet: Mapping) -> list[str]:
     """Everything wrong with a character sheet, in words; empty when it's fine."""
     problems: list[str] = []
-    for key in ("name", "look", "pose_default", "poses", "states", "gestures"):
+    for key in ("name", "use", "looks", "pose_default", "poses", "states", "gestures"):
         if key not in sheet:
             problems.append(f"missing {key!r}")
     if problems:
         return problems
-    look = sheet["look"]
-    problems += [f"look is missing {k!r}" for k in LOOK_KEYS if k not in look]
-    for name, colour in look.get("colours", {}).items():
-        if not (isinstance(colour, str) and colour.startswith("#") and len(colour) in (7, 9)):
-            problems.append(f"colour {name!r} should be like #7EF3E6, not {colour!r}")
+    looks = sheet["looks"]
+    for name, look in looks.items():
+        needs = STYLES.get(look.get("style"))
+        if needs is None:
+            problems.append(f"look {name!r} needs a style: {', '.join(STYLES)}")
+            continue
+        problems += [f"look {name!r} is missing {k!r}" for k in needs if k not in look]
+        for part, colour in look.get("colours", {}).items():
+            if not (isinstance(colour, str) and colour.startswith("#") and len(colour) in (7, 9)):
+                problems.append(f"colour {part!r} should be like #7EF3E6, not {colour!r}")
+        if look["style"] == "model":
+            if not str(look.get("file", "")).lower().endswith((".glb", ".gltf")):
+                problems.append(f"look {name!r} needs a .glb (glTF) model file")
+            fallback = looks.get(look.get("fallback"), {})
+            if fallback.get("style") not in TWO_D:
+                problems.append(f"look {name!r} needs a 2D look as its fallback")
+            bad = [k for k in look.get("morphs", {}) if k not in POSE_KEYS]
+            problems += [f"look {name!r} morphs unknown {k!r}" for k in bad]
+    if "default" not in sheet["use"]:
+        problems.append("use needs a 'default' look")
+    for app, name in sheet["use"].items():
+        if name not in looks:
+            problems.append(f"use: {app!r} picks unknown look {name!r}")
     if set(sheet["pose_default"]) != set(POSE_KEYS):
         problems.append(f"pose_default needs exactly {', '.join(POSE_KEYS)}")
     poses = sheet["poses"]

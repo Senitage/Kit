@@ -67,11 +67,12 @@ def test_eye_centre_is_the_glow_colour(app):
 
 
 def test_the_eye_colour_comes_from_the_character_sheet(app):
+    import copy
+
     from kit.face import character as ch
 
-    sheet = ch.builtin().sheet
-    sheet = {**sheet, "look": {**sheet["look"], "colours": {**sheet["look"]["colours"]}}}
-    sheet["look"]["colours"]["eye"] = "#FF4000"
+    sheet = copy.deepcopy(ch.builtin().sheet)
+    sheet["looks"]["glow"]["colours"]["eye"] = "#FF4000"
     ch.use(ch.from_sheet(sheet))
     try:
         img = render(replace(neutral(), look_x=0, look_y=0))

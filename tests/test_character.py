@@ -10,6 +10,15 @@ from kit.face import Face
 from kit.face import character as ch
 from kit.reply import EMOTIONS, GESTURES
 
+# A 3D look: a glTF model whose head bone and morph targets the rig drives.
+MODEL = {
+    "style": "model",
+    "file": "kit.glb",
+    "fallback": "glow",
+    "head_bone": "head",
+    "morphs": {"open": "EyesOpen", "squint": "Squint", "blush": "Blush"},
+}
+
 
 @pytest.fixture
 def sheet():
@@ -45,7 +54,11 @@ def test_shapes_do_what_the_sheet_says():
     [
         (lambda s: s.pop("poses"), "missing 'poses'"),
         (lambda s: s["poses"]["happy"].update(grin=1), "unknown 'grin'"),
-        (lambda s: s["look"]["colours"].update(eye="teal"), "should be like #7EF3E6"),
+        (lambda s: s["looks"]["glow"]["colours"].update(eye="teal"), "should be like #7EF3E6"),
+        (lambda s: s["use"].update(desk="clay"), "unknown look 'clay'"),
+        (lambda s: s["looks"].update(clay={"style": "clay"}), "needs a style"),
+        (lambda s: s["looks"].update(kit3d={**MODEL, "file": "kit.png"}), "needs a .glb"),
+        (lambda s: s["looks"].update(kit3d={**MODEL, "fallback": "kit3d"}), "a 2D look"),
         (lambda s: s["gestures"]["nod"]["moves"].update(spin=[[1]]), "unknown 'spin'"),
         (lambda s: s["gestures"]["nod"]["moves"]["dy"].append([1, ["wobble", 2]]), "bad shape"),
         (lambda s: s["states"]["offline"].update(pose="gone"), "unknown pose 'gone'"),
@@ -80,3 +93,14 @@ def test_using_a_sheet_reaches_every_face(sheet):
 
 def test_the_sheet_is_plain_json(sheet):
     assert json.loads(json.dumps(sheet)) == sheet
+
+
+def test_each_app_or_body_picks_2d_or_3d(sheet):
+    sheet["looks"]["kit3d"] = MODEL
+    sheet["use"].update(desk="kit3d", robot="glow")
+    kit = ch.from_sheet(sheet)
+    assert kit.look("desk", styles=("glow", "model"))["file"] == "kit.glb"
+    assert kit.look("robot", styles=("glow", "model"))["style"] == "glow"
+    # An app that can only draw 2D gets the 3D look's 2D fallback.
+    assert kit.look("desk")["style"] == "glow"
+    assert kit.look("phone") == kit.look("default")  # unnamed apps use the default

@@ -57,8 +57,9 @@ def paint_glow(
 ) -> None:
     """Paint one frame of the Glow face into ``rect`` (drawn square, centred), with
     the eyes in ``eye`` (the character's own colour unless Dan picked another on the
-    Look page). ``character`` defaults to the one Kit is using now."""
-    look = (character or current()).look
+    Look page). ``character`` defaults to the one Kit is using now; its 2D look for
+    the desk is drawn (a 3D look's 2D fallback until the desk can draw 3D)."""
+    look = (character or current()).look("desk")
     colours = {k: QColor(v) for k, v in look["colours"].items()}
     scr, eyes, glow, blush = look["screen"], look["eyes"], look["glow"], look["blush"]
     neck = look["neck"]
