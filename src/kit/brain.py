@@ -2165,6 +2165,7 @@ class Brain:
                 voice,
                 heard,
                 MIND.get(),
+                settings.persona.speech,
             )
             talk = [
                 *messages,
