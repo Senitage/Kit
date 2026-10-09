@@ -77,6 +77,7 @@ class Mirror:
         self._state: str | None = None
         self._clip = self.face.clip  # a gesture already playing stays put
         self._look: tuple | None = None
+        self._dials: tuple | None = None
 
     def calls(self) -> list[str]:
         f = self.face
@@ -95,6 +96,10 @@ class Mirror:
         if look is not None and look != self._look:
             self._look = look
             out.append(_call("lookAt", round(look[0], 3), round(look[1], 3)))
+        dials = (round(f.arousal, 2), round(f.valence, 2))
+        if dials != self._dials:
+            self._dials = dials
+            out.append(_call("setDials", *dials))
         return out
 
 
