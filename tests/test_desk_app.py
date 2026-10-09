@@ -495,3 +495,33 @@ def test_a_reaction_plays_even_mid_conversation(qapp, desk_dir, monkeypatch):
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def test_the_desk_draws_kit_from_the_brains_character_sheet():
+    import copy
+
+    import httpx
+
+    from kit.desk.client import BrainClient
+    from kit.face import character
+
+    sheet = copy.deepcopy(character.builtin().sheet)
+    sheet["looks"]["glow"]["colours"]["eye"] = "#FFB000"
+    answers = {"/api/face": httpx.Response(200, json=sheet)}
+
+    def brain(request):
+        return answers.get(request.url.path, httpx.Response(404, json={"detail": "Not Found"}))
+
+    client = BrainClient("http://kit-server:8600", "t", transport=httpx.MockTransport(brain))
+    try:
+        assert desk_app.load_character(client)
+        assert character.current().look("desk")["colours"]["eye"] == "#FFB000"
+        sheet["poses"]["happy"]["grin"] = 1  # a broken sheet keeps the face it had
+        answers["/api/face"] = httpx.Response(200, json=sheet)
+        assert not desk_app.load_character(client)
+        assert character.current().look("desk")["colours"]["eye"] == "#FFB000"
+        answers.clear()  # an older brain without /api/face
+        assert not desk_app.load_character(client)
+    finally:
+        character.use(character.builtin())
+        client.close()

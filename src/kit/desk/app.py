@@ -63,7 +63,8 @@ from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
 from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
 from kit.desk.window import ConnectionForm, KitWindow, in_background
-from kit.face import Face
+from kit.face import Face, character
+from kit.face.character import CharacterError
 
 log = logging.getLogger("kit.desk")
 
@@ -90,6 +91,21 @@ def extension_folder() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent / "chrome-extension"
     return Path(__file__).parent / "browser_extension"
+
+
+def load_character(client: BrainClient) -> bool:
+    """Draw Kit from the brain's character sheet, so he looks and moves the same here
+    as in home_app and on his robot screens, and a redesign needs no reinstall.
+    Keeps the sheet built into this app if the brain is older or its sheet is broken."""
+    try:
+        character.use(character.from_sheet(client.face()))
+    except BrainError as e:
+        log.info("kept the built-in face: %s", e)
+        return False
+    except CharacterError as e:
+        log.warning("the brain's character sheet is broken, kept the built-in face: %s", e)
+        return False
+    return True
 
 
 def face_icon(offline: bool = False, size: int = 64, eye: str | None = None) -> QIcon:
@@ -261,6 +277,7 @@ class DeskApp(QObject):
         self.token = load_token()
         self.update_token = load_token(name=UPDATE_TOKEN_FILE)
         self.client: BrainClient | None = None
+        self._face_from: tuple | None = None  # (brain, character) whose sheet is in use
         self.online: bool | None = None
         self._doing = ""  # what Kit's doing on his own, shown in his bubble
         self._quiet = ""  # why he's keeping quiet, shown in the tray's tooltip
@@ -621,6 +638,12 @@ class DeskApp(QObject):
                 self._signals.online.emit(True, status.get("pc") or "online")
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
+                return
+            # Fetch his character sheet on connecting and whenever face.character changes.
+            key = (client, status.get("face"))
+            if key != self._face_from:
+                self._face_from = key
+                load_character(client)
 
         threading.Thread(target=work, name="kit-health", daemon=True).start()
 

@@ -167,3 +167,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # opinions = 0              # standing opinions he keeps in mind when he talks (0 to 2)
 # dials = false             # liveliness and happiness dials that the face shows
 # pipe_up_bar = 0.0         # score a pipe-up first and keep quiet below this (0.5)
+
+# [face]
+# character = "retro"       # which character Kit is (src/kit/face/characters); retro is
+#                           # the original glowing pill eyes, so switching back is easy

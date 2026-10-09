@@ -64,3 +64,19 @@ def test_eye_centre_is_the_glow_colour(app):
     img = render(replace(neutral(), look_x=0, look_y=0))
     c = QColor(img.pixel(int(SIZE * 0.345), int(SIZE * 0.5)))
     assert c.green() > 200 and c.blue() > 180 and c.red() < 180
+
+
+def test_the_eye_colour_comes_from_the_character_sheet(app):
+    import copy
+
+    from kit.face import character as ch
+
+    sheet = copy.deepcopy(ch.builtin().sheet)
+    sheet["looks"]["glow"]["colours"]["eye"] = "#FF4000"
+    ch.use(ch.from_sheet(sheet))
+    try:
+        img = render(replace(neutral(), look_x=0, look_y=0))
+    finally:
+        ch.use(ch.builtin())
+    c = QColor(img.pixel(int(SIZE * 0.345), int(SIZE * 0.5)))
+    assert c.red() > 200 and c.blue() < 80

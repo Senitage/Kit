@@ -49,6 +49,10 @@ class BrainClient:
     def health(self) -> dict:
         return self._call("GET", "/api/health").json()
 
+    def face(self) -> dict:
+        """Kit's character sheet (kit.face.character): how he looks and moves."""
+        return self._call("GET", "/api/face").json()
+
     def messages(self, limit: int = 40) -> list[dict]:
         return self._call("GET", "/api/messages", params={"limit": limit}).json()
 

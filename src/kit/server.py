@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
+from kit.face import character as characters
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
@@ -158,6 +159,20 @@ def create_app(
     def health() -> dict:
         return {"ok": True, "name": store.current().persona.name, "version": kit.__version__}
 
+    @app.get("/api/face", dependencies=auth)
+    def face() -> dict:
+        """The character sheet Kit is set to (face.character), so every app that draws
+        him draws the same Kit."""
+        return characters.preset(store.current().face.character).sheet
+
+    @app.get("/api/face/presets", dependencies=auth)
+    def face_presets() -> dict:
+        """Every character Kit can be, and which one he is now."""
+        return {
+            "current": store.current().face.character,
+            "presets": [{"id": n, "name": characters.preset(n).name} for n in characters.presets()],
+        }
+
     @app.get("/api/status", dependencies=auth)
     def status() -> dict:
         s = store.current()
@@ -172,6 +187,7 @@ def create_app(
             "cloud_month_usd": round(memory.month_spend(), 4),
             "cloud_cap_usd": s.cloud.monthly_cap_usd,
             "working_on": brain.busy(),
+            "face": s.face.character,
             "memory_facts": len(memory.facts()),
             "memory_items": memory.index.count(),
             "memory_search": "words only: " + brain.recall.embed_problem
