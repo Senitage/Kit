@@ -271,10 +271,15 @@ def aim_of(item: Item, owner: str, now: datetime | None = None) -> tuple[str, st
 
 
 def basis(persona: PersonaSettings) -> str:
-    """What a self-sheet was written from: the persona's backstory and traits. When
-    they change, his prompt shows the traits again beside the sheet, and his next
-    reflection brings the sheet in line with them."""
-    return f"{persona.backstory} | {'; '.join(persona.traits)}"
+    """What a self-sheet was written from: the persona's backstory, traits and (when
+    it isn't the default) how he talks. When they change, his prompt shows the traits
+    again beside the sheet, and his next reflection brings the sheet in line with
+    them. The default speech is left out so sheets written before it counted stay
+    current."""
+    written = f"{persona.backstory} | {'; '.join(persona.traits)}"
+    if persona.speech != type(persona).model_fields["speech"].default:
+        written += f" | {persona.speech}"
+    return written
 
 
 class Notebook:
