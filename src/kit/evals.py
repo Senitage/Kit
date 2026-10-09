@@ -22,6 +22,8 @@ from kit.life import (
     VOICE_LINES,
     farewell_fault,
     farewell_plans,
+    feeling_from,
+    feeling_from_read,
     homecoming_fault,
     repeats,
 )
@@ -1086,3 +1088,164 @@ def companion_report(reports: list[CompanionReport]) -> str:
                     canned = " **[canned]**" if line.canned else ""
                     lines.append(f"- **{r.model}** ({mark}){canned}: {line.text or '(nothing)'}")
     return "\n".join(lines) + "\n"
+
+
+# kit eval mood: does reading Dan by meaning beat reading his words? (life.read_mood)
+
+MOOD_LINES_FILE = "companion-lines.toml"  # in Kit's config folder: Dan's own, never the repo
+MOOD_LINES_NEEDED = 40
+# A reading is right when it lands in the same group as the hand-written label.
+MOOD_GROUPS = {
+    "none": "none",
+    "worried": "concern",
+    "sympathetic": "concern",
+    "sad": "sad",
+    "hurt": "hurt",
+    "put_out": "hurt",
+    "chuffed": "good",
+    "warm": "good",
+    "pleased": "good",
+    "proud": "good",
+    "excited": "good",
+    "amused": "good",
+}
+# A few generic lines to start the file with. Dan adds his own, the way he talks.
+MOOD_STARTER = [
+    ("Not stressed, the footy's just on late.", "none"),
+    ("Flat out today, deadline's tomorrow and nothing works.", "worried"),
+    ("You absolute legend, that worked first go.", "chuffed"),
+    ("Thanks for that.", "warm"),
+    ("My nan passed away last night.", "sad"),
+    ("Gonna grab a coffee.", "none"),
+    ("You're useless today.", "hurt"),
+    ("Got the job!", "good"),
+    ("Pretty knackered, long week.", "sympathetic"),
+    ("The car failed its inspection again.", "sympathetic"),
+    ("Not bad, not bad at all.", "none"),
+    ("I don't hate it, honestly.", "none"),
+]
+
+
+def load_mood_lines(path) -> list[tuple[str, str]]:
+    """Dan's hand-labelled lines (companion-lines.toml):
+
+    [[line]]
+    text = "Not stressed, the footy's just on late."
+    feeling = "none"   # or worried, sad, hurt, chuffed, warm, proud...
+    """
+    import tomllib
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    lines = []
+    for line in data.get("line", []):
+        label = str(line.get("feeling", "none")).strip().lower()
+        if str(line.get("text", "")).strip() and label in MOOD_GROUPS | {"good": "good"}:
+            lines.append((str(line["text"]).strip(), label))
+    return lines
+
+
+def mood_starter() -> str:
+    """The starting companion-lines.toml: how to label, and a few generic lines."""
+    head = [
+        "# Lines the way you talk, each with what Kit should feel hearing it.",
+        f"# `kit eval mood` needs {MOOD_LINES_NEEDED} before reading by meaning can switch on.",
+        "# feeling: none, worried, sympathetic, sad, hurt, chuffed, warm, pleased, proud,",
+        "# excited or amused (worried and sympathetic count as the same; so do the glad ones).",
+        "# This file stays in Kit's data folder: it's yours, never in the repo.",
+        "",
+    ]
+    body = []
+    for text, label in MOOD_STARTER:
+        body += ["[[line]]", f"text = {json.dumps(text)}", f'feeling = "{label}"', ""]
+    return "\n".join(head + body)
+
+
+@dataclass
+class MoodLine:
+    text: str
+    label: str
+    words: str  # what the word rules alone make Kit feel
+    meaning: str  # what reading by meaning makes him feel (the words as a floor)
+    seconds: float  # how long the reading took
+    plain_seconds: float | None = None  # the same plan without the reading (local only)
+
+    @property
+    def words_right(self) -> bool:
+        return MOOD_GROUPS.get(self.words) == MOOD_GROUPS.get(self.label, self.label)
+
+    @property
+    def meaning_right(self) -> bool:
+        return MOOD_GROUPS.get(self.meaning) == MOOD_GROUPS.get(self.label, self.label)
+
+
+@dataclass
+class MoodReport:
+    lines: list[MoodLine] = field(default_factory=list)
+
+    @property
+    def words(self) -> int:
+        return sum(line.words_right for line in self.lines)
+
+    @property
+    def meaning(self) -> int:
+        return sum(line.meaning_right for line in self.lines)
+
+    @property
+    def passed(self) -> bool:
+        """Enough lines, and meaning beats the words."""
+        return len(self.lines) >= MOOD_LINES_NEEDED and self.meaning > self.words
+
+    def seconds(self) -> float | None:
+        times = [line.seconds for line in self.lines]
+        return statistics.median(times) if times else None
+
+    def added_seconds(self) -> float | None:
+        """How much longer a plan takes with the reading in it (local only)."""
+        pairs = [(m.seconds, m.plain_seconds) for m in self.lines if m.plain_seconds is not None]
+        if not pairs:
+            return None
+        return statistics.median(a - b for a, b in pairs)
+
+    def as_dict(self, at: datetime, reader: str) -> dict:
+        return {
+            "at": at.isoformat(timespec="seconds"),
+            "reader": reader,
+            "lines": len(self.lines),
+            "words": self.words,
+            "meaning": self.meaning,
+            "seconds": self.seconds(),
+            "added_seconds": self.added_seconds(),
+            "passed": self.passed,
+        }
+
+
+async def run_mood_eval(
+    lines: list[tuple[str, str]],
+    read: Callable,
+    plain: Callable | None = None,
+    owner: str = "Dan",
+    on_line: Callable[[MoodLine], None] | None = None,
+) -> MoodReport:
+    """Each labelled line read two ways: Kit's word rules alone, and the model's
+    reading (``read``: async text -> the reading or None) with the word rules as a
+    floor, as a chat turn does. ``plain`` (async text -> None) times the same plan
+    without the reading, so the latency it adds is known."""
+    report = MoodReport()
+    for text, label in lines:
+        felt = feeling_from(text, owner)
+        words = felt[0] if felt else "none"
+        start = time.perf_counter()
+        reading = await read(text)
+        seconds = time.perf_counter() - start
+        plain_seconds = None
+        if plain is not None:
+            start = time.perf_counter()
+            await plain(text)
+            plain_seconds = time.perf_counter() - start
+        from_read = feeling_from_read(reading, text, owner) if reading else None
+        meaning = from_read[0] if from_read else words
+        line = MoodLine(text, label, words, meaning, seconds, plain_seconds)
+        report.lines.append(line)
+        if on_line is not None:
+            on_line(line)
+    return report

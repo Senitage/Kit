@@ -358,6 +358,10 @@ class Face:
         self._dart_at = 0.0
         self._look: tuple[float, float, float] | None = None  # x, y, until
         self._glow = 1.0
+        # The mood dials (kit.life, life.dials): 0.5 and 0 are how he's always been.
+        self.arousal, self.valence = 0.5, 0.0
+        self._dials = [0.5, 0.0]  # eased toward the values above
+        self._breath: float | None = None  # breathing phase, radians
 
     # ---- what the desk app (or the arm) tells the face ----
 
@@ -378,6 +382,13 @@ class Face:
         if state not in STATES:
             raise ValueError(f"unknown state {state!r}")
         self.state = state
+
+    def set_dials(self, arousal: float, valence: float) -> None:
+        """How lively (0 flat .. 1 up) and how happy (-1 low .. 1 happy) Kit is. The
+        face eases there over a few seconds: slower breaths, slower and heavier
+        blinks and smaller gestures when he's flat; a touch of glow when he's happy."""
+        self.arousal = _clamp(arousal, 0, 1)
+        self.valence = _clamp(valence, -1, 1)
 
     def look_at(self, x: float, y: float, now: float) -> None:
         """Look toward a point, -1..1 each way from the face's centre."""
@@ -402,9 +413,17 @@ class Face:
         glow_target = {"sleeping": 0.45, "offline": 0.3}.get(self.state, 1.0)
         self._glow += (glow_target - self._glow) * (1 - math.exp(-dt / 0.4) if dt else 0.0)
 
-        g = self._gesture(now)
+        k = 1 - math.exp(-dt / 2.0) if dt else 0.0  # the dials glide over seconds
+        self._dials[0] += (self.arousal - self._dials[0]) * k
+        self._dials[1] += (self.valence - self._dials[1]) * k
+        arousal, valence = self._dials
+        g = _scaled(self._gesture(now), 0.7 + 0.6 * arousal)  # 1 at the middle
         look_x, look_y = self._gaze(now)
-        breath = math.sin(now * 2 * math.pi / (7.0 if self.state == "sleeping" else 4.2))
+        period = 7.0 if self.state == "sleeping" else 4.2 * (1 + (0.5 - arousal) * 0.6)
+        if self._breath is None:
+            self._breath = now * 2 * math.pi / period
+        self._breath += dt * 2 * math.pi / period
+        breath = math.sin(self._breath)
         blink = self._blink(now)
         c = self._cur
         open_ = max(0.0, (c["open"] + g.open) * blink)
@@ -419,7 +438,7 @@ class Face:
             size=c["size"] + g.size,
             look_x=_clamp(look_x + g.look_x, -1, 1),
             look_y=_clamp(look_y + g.look_y, -1, 1),
-            blush=_clamp(c["blush"], 0, 1),
+            blush=_clamp(c["blush"] + 0.15 * valence, 0, 1),
             glow=self._glow,
             talk=talk,
             offline=self.state == "offline",
@@ -487,7 +506,8 @@ class Face:
         t = (now - self._blink_start) / length
         if t >= 1:
             self._blink_start = None
-            self._blink_at = now + self.rng.uniform(2.0, 6.2)
+            slower = 1 + (0.5 - self._dials[0]) * 0.8  # a flat Kit blinks less often
+            self._blink_at = now + self.rng.uniform(2.0, 6.2) * slower
             return 1.0
         phase = (t * 2) % 1 if self._double else t
         return 1 - math.sin(math.pi * phase)
@@ -495,6 +515,26 @@ class Face:
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
+
+
+def _scaled(g: Offsets, k: float) -> Offsets:
+    """A gesture made bigger or smaller (``k`` 1 leaves it as it is)."""
+    if k == 1:
+        return g
+    return Offsets(
+        dx=g.dx * k,
+        dy=g.dy * k,
+        rot=g.rot * k,
+        sx=1 + (g.sx - 1) * k,
+        sy=1 + (g.sy - 1) * k,
+        scale=1 + (g.scale - 1) * k,
+        look_x=g.look_x * k,
+        look_y=g.look_y * k,
+        open=g.open * k,
+        squint=g.squint * k,
+        size=g.size * k,
+        wink=g.wink,
+    )
 
 
 @dataclass(frozen=True)
