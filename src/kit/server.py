@@ -12,17 +12,19 @@ import contextlib
 import json
 import logging
 import secrets
+import time
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import kit
 from kit.brain import Brain
 from kit.face import character as characters
+from kit.face import serve as face_files
 from kit.knowledge import Item
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
@@ -32,12 +34,26 @@ from kit.pc_context import Snapshot
 from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
+from kit.speech.service import SpeechError, SpeechService
 from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
 
+
+class _Turn:
+    """When the latest chat message came in, so the log can say how long Kit took to
+    start writing, finish, and make his first sound."""
+
+    def __init__(self) -> None:
+        self.started = 0.0
+
+    def since(self) -> float:
+        return time.monotonic() - self.started if self.started else 0.0
+
+
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
+SPEECH_CHECK_S = 5  # how often the voice engine is started or stopped to match settings
 NOW_PINNED = "A 'now' fact can't be pinned: it's how things are lately, and goes after two weeks."
 
 
@@ -45,6 +61,13 @@ class ChatIn(BaseModel):
     text: str
     # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
+
+
+class SpeakIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    emotion: str = Field("neutral", max_length=20)
+    # The opening of a reply, where an engine may add a sound (a sigh, a chuckle).
+    first: bool = False
 
 
 class FactIn(BaseModel):
@@ -129,6 +152,8 @@ def create_app(
     paths: KitPaths | None = None,
     life_every_s: float | None = TICK_S,
     notes_every_s: float | None = NOTES_SYNC_S,
+    speech: SpeechService | None = None,
+    speech_check_s: float | None = SPEECH_CHECK_S,
 ) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -139,11 +164,17 @@ def create_app(
             tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
         if notes_every_s:
             tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
+        if speech is not None and speech_check_s:
+            tasks.append(asyncio.create_task(_speech_loop(speech, store, speech_check_s)))
         yield
         for task in tasks:
             task.cancel()
+        if speech is not None:
+            await asyncio.to_thread(speech.close)
 
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
+    if speech is not None:
+        brain.voice_quiet = speech.quiet_s  # reading ahead waits for his voice to finish
 
     def require_token(authorization: Annotated[str, Header()] = "") -> None:
         given = authorization.removeprefix("Bearer ").strip()
@@ -169,6 +200,66 @@ def create_app(
         """The character sheet Kit is set to (face.character), so every app that draws
         him draws the same Kit."""
         return characters.preset(store.current().face.character).sheet
+
+    # Kit's 3D face page and its files. No token: it's a cartoon face, and the desk
+    # app, home_app and robots open it as a plain page (kit.face.serve).
+    def _face_file(data: bytes, name: str, cache: bool = False) -> Response:
+        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache"}
+        return Response(data, media_type=face_files.content_type(name), headers=headers)
+
+    @app.get("/face/")
+    def face_page() -> Response:
+        return _face_file(face_files.page_file("index.html"), "index.html")
+
+    @app.get("/face/{name}")
+    def face_page_file(name: str) -> Response:
+        try:
+            return _face_file(face_files.page_file(name), name)
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+
+    @app.get("/face/vendor/{name}")
+    def face_vendor(name: str) -> Response:
+        try:
+            return _face_file(face_files.vendor_file(name), name, cache=True)
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+
+    def _face_character(character: str) -> str:
+        return character if character in characters.presets() else store.current().face.character
+
+    @app.get("/face/api/info")
+    def face_info(
+        app_name: Annotated[str, Query(alias="app")] = "desk", character: str = ""
+    ) -> dict:
+        s = store.current()
+        name = _face_character(character)
+        return face_files.info(name, app_name, s.face.pack_folder or None)
+
+    @app.get("/face/api/version")
+    def face_version(
+        app_name: Annotated[str, Query(alias="app")] = "desk", character: str = ""
+    ) -> dict:
+        s = store.current()
+        name = _face_character(character)
+        return {
+            "character": name,
+            "version": face_files.version(name, app_name, s.face.pack_folder or None),
+        }
+
+    @app.get("/face/model/{character}/{file}")
+    def face_model(
+        character: str, file: str, app_name: Annotated[str, Query(alias="app")] = "desk"
+    ) -> Response:
+        if character not in characters.presets():
+            raise HTTPException(404, "no such character")
+        try:
+            data = face_files.asset(
+                character, file, app_name, store.current().face.pack_folder or None
+            )
+        except face_files.FaceFileMissing as e:
+            raise HTTPException(404, "no such face file") from e
+        return _face_file(data, file)
 
     @app.get("/api/face/presets", dependencies=auth)
     def face_presets() -> dict:
@@ -236,10 +327,19 @@ def create_app(
             raise _settings_error(e) from e
         return {"settings": settings.model_dump(mode="json"), "problem": store.problem}
 
+    turn = _Turn()  # when Dan's latest message came in, for the timing lines in the log
+
     @app.post("/api/chat", dependencies=auth)
     async def chat(body: ChatIn) -> StreamingResponse:
         async def events() -> AsyncIterator[str]:
+            turn.started = time.monotonic()
+            first_words = True
             async for event in brain.chat(body.text, body.channel):
+                if first_words and event.get("type") == "say" and event.get("text"):
+                    first_words = False
+                    log.info("turn: first words %.2f s after the message", turn.since())
+                elif event.get("type") == "reply":
+                    log.info("turn: reply done %.2f s after the message", turn.since())
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -259,6 +359,7 @@ def create_app(
                 "source": m.source,
                 "channel": m.channel,
                 "reply": json.loads(m.reply_json) if m.reply_json else None,
+                "meta": json.loads(m.meta_json) if m.meta_json else None,
             }
             for m in memory.recent(min(limit, 500))
         ]
@@ -546,6 +647,40 @@ def create_app(
             brain.life.wake()
         return brain.life.state()
 
+    @app.get("/api/speech", dependencies=auth)
+    def speech_status() -> dict:
+        if speech is None:
+            return {"enabled": False, "available": False}
+        return {"available": True, **speech.status()}
+
+    @app.post("/api/speech/say", dependencies=auth)
+    async def speech_say(body: SpeakIn) -> Response:
+        """One sentence of Kit's speech as a WAV file, in the voice engine in use."""
+        if speech is None or not store.current().speech.enabled:
+            raise HTTPException(409, "speech is off; turn it on with `kit speech on`")
+        try:
+            spoken = await asyncio.to_thread(
+                speech.speak, body.text, body.emotion, None, body.first
+            )
+        except SpeechError as e:
+            raise HTTPException(503, str(e)) from e
+        if body.first:
+            log.info(
+                "turn: first sound made in %.2f s (%.1f s of speech), %.2f s after the message",
+                spoken.synth_ms / 1000,
+                spoken.audio_ms / 1000,
+                turn.since(),
+            )
+        return Response(
+            spoken.wav,
+            media_type="audio/wav",
+            headers={
+                "X-Synth-Ms": f"{spoken.synth_ms:.0f}",
+                "X-Audio-Ms": f"{spoken.audio_ms:.0f}",
+                "X-Engine": spoken.engine,
+            },
+        )
+
     @app.get("/api/spend", dependencies=auth)
     def spend(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
         return {
@@ -576,6 +711,26 @@ async def _notes_loop(brain: Brain, store: SettingsStore, every_s: float) -> Non
                 await brain.recall.index_pending(limit=5000)
         except Exception:
             log.exception("reading the notes vault failed")
+        await asyncio.sleep(every_s)
+
+
+async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: float) -> None:
+    """Load the voice engine when speech is on, so the first reply isn't kept waiting
+    while it loads; stop it when speech is off, which frees the graphics card."""
+    last_problem = ""
+    while True:
+        try:
+            if store.current().speech.enabled:
+                await asyncio.to_thread(speech.ensure)
+            elif speech.running():
+                await asyncio.to_thread(speech.stop)
+            last_problem = ""
+        except SpeechError as e:
+            if str(e) != last_problem:  # once per problem, not every few seconds
+                log.warning("voice engine: %s", e)
+            last_problem = str(e)
+        except Exception:
+            log.exception("managing the voice engine failed")
         await asyncio.sleep(every_s)
 
 

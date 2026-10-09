@@ -27,6 +27,11 @@ repeat_penalty = 1.08        # discourages reusing the same words; 1 is off
 repeat_last_n = 64           # how far back repeat_penalty looks, in tokens
 top_k = 64                   # Gemma's suggested sampling: only the likeliest 64 words
 top_p = 0.95                 # ...that make up 95% of the chance
+# Read the conversation into the model ahead of your next message, once Kit and
+# his voice have finished, so he starts answering sooner (about two seconds on
+# Gemma, which otherwise re-reads the whole prompt every message). Not in
+# cloud-only routing, where the local model only stands in.
+warm_up = false
 
 [routing]
 # How much Kit leans on the local model:
@@ -172,6 +177,9 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # [face]
 # character = "retro"       # which character Kit is (src/kit/face/characters); retro is
 #                           # the original glowing pill eyes, so switching back is easy
+# hot_c = 35.0              # a dry day this hot (°C) shows as a hot day when you ask the weather
+# pack_folder = ""          # a 3D face pack folder (face.json + .glb) to use instead of
+#                           # the built-in one, e.g. your Blender project's pack folder
 
 # Kit's eyes: the camera process (`kit eyes`, on the PC with the webcam) reads
 # these from the brain, so there's one place to change them (docs/stage-vision.md).

@@ -85,6 +85,27 @@ def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) ->
 # it stays the same between turns, so providers can reuse it from their cache.
 TURN_PART = "\n\nIt is"
 
+
+def split_turn(system: str) -> tuple[str, str]:
+    """A system prompt cut where this turn's part begins: (the part that stays the
+    same between turns, this turn's part). The second is "" if there isn't one."""
+    fixed, found, turn = system.rpartition(TURN_PART)
+    if not found:
+        return system, ""
+    return fixed, (found + turn).strip()
+
+
+def with_now(text: str, now: str, owner: str) -> str:
+    """``owner``'s message with this turn's part of the prompt (the time, what Kit
+    recalled, the PC...) in front of it. For a local model that only reuses what it
+    has read when the new prompt carries straight on from it (``ollama.warm_up``):
+    with this turn's part here rather than in the instructions, the instructions and
+    the conversation so far read the same every turn."""
+    if not now:
+        return text
+    return f"[Not from {owner}: how things stand right now, for you to use.\n{now}]\n\n{text}"
+
+
 HAND_OFF = {
     "local-heavy": "for anything you can't answer well yourself, such as hard maths, long "
     "code, detailed engineering, current information (weather, prices, news) or facts you're "
@@ -127,6 +148,27 @@ def mood_lines(owner: str) -> list[str]:
     for name, values in MOOD_FIELDS.items():
         lines.append(f"- {name}: " + "; ".join(f"{k} ({v})" for k, v in values.items()) + ".")
     return lines
+
+
+# Beside the speech style: it beats every other note on how Kit sounds. Without it
+# Haiku kept the voice of the self-sheet, the examples and the cheek style, and a
+# custom style ("talk like ...") never showed.
+VOICE_WINS = (
+    "This is how every line you say must sound, and it beats anything else here about "
+    "how you talk (your self-sheet, the examples, how you feel, your quirks, and how "
+    "your earlier lines in this conversation sounded). Keep to it even when you're cheeky "
+    "or brief. {owner} chose it."
+)
+
+
+def own_voice_default_examples(persona: PersonaSettings) -> bool:
+    """True when the owner has given Kit a voice of their own but kept the default
+    examples, which are in the default voice and pull him back to it."""
+    fields = type(persona).model_fields
+    return (
+        persona.speech != fields["speech"].default
+        and persona.examples == fields["examples"].default_factory()
+    )
 
 
 def system_prompt(
@@ -186,7 +228,7 @@ def system_prompt(
             f"Who you are, in your own words (you wrote this, and it grows as you do): {sheet}"
         )
     lines += [
-        f"How you talk: {persona.speech}",
+        f"Your voice: {persona.speech} {VOICE_WINS.format(owner=owner)}",
         f"What you know about {owner}: {persona.knows}",
     ]
     if dan:
@@ -368,7 +410,7 @@ def system_prompt(
             "Leave detail empty unless there's something new to show for this message. Never "
             "repeat detail from an earlier reply."
         )
-    if persona.examples and (voice is None or cloud):
+    if persona.examples and (voice is None or cloud) and not own_voice_default_examples(persona):
         lines += [
             "",
             "Examples of how you talk (they show the tone; never reuse their lines, and say "
@@ -376,6 +418,9 @@ def system_prompt(
         ]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
+    # Said again last, where a model weighs it most: a single line near the top lost
+    # to the self-sheet, the examples and the cheek style below it.
+    lines += ["", f"Above all, your voice: {persona.speech}"]
     # What changes every turn goes last, so the cached prefix above can be reused.
     lines += [
         "",
@@ -402,8 +447,8 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
     lines = [
         "",
         f"How you feel right now: {voice.feeling}. Let it colour how you talk, lightly; "
-        f"don't announce it. Be {voice.style}. Sound like yourself, a small character "
-        f"with opinions, not a help desk.",
+        f"don't announce it. Be {voice.style}, in your own voice. Sound like yourself, a "
+        f"small character with opinions, not a help desk.",
     ]
     if voice.close:
         lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
@@ -469,12 +514,14 @@ def speak_note(
     voice: Voice | None = None,
     heard: str = "",
     mind: str = "",
+    speech: str = "",
 ) -> str:
     """The second step of a two-pass reply: say it, in plain words, as himself. It
     follows the plan, where Dan's message would be. ``heard`` is Dan's message, said
     again here so a small model answers it rather than an earlier one. ``mind`` is the
     turn's asides (a goodbye, a hello, what's true about him), said again for the same
-    reason: two messages back, a small model loses them."""
+    reason: two messages back, a small model loses them. ``speech`` is how he talks,
+    said again for the same reason."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
@@ -485,9 +532,10 @@ def speak_note(
     feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
     mind = " ".join(mind.replace("[", "").replace("]", "").split())
     keep = f" Keep in mind: {mind}" if mind else ""
+    talk = f" Your voice: {speech}" if speech else ""
     return (
-        f"[Not from {owner}. {said}{what}{keep}{feel} Say it as yourself, in plain spoken "
-        f"words: one to three short sentences. No JSON, no quotes around it, no stage "
+        f"[Not from {owner}. {said}{what}{keep}{feel}{talk} Say it as yourself, in plain "
+        f"spoken words: one to three short sentences. No JSON, no quotes around it, no stage "
         f"directions or emojis, and nothing you've said before. If {owner} asked for "
         f"something to read (a list, steps or code), say one short line, then a blank "
         f"line, then the rest.]"

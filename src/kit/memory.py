@@ -116,6 +116,9 @@ MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN channel TEXT;",
     # 4: things about Kit himself, such as the quirks he picked (kit.life).
     "CREATE TABLE IF NOT EXISTS kit_self (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    # 5: who answered each of Kit's replies and what it cost (role, model, cost_usd...),
+    # so the desk chat can colour old replies and show their details.
+    "ALTER TABLE messages ADD COLUMN meta_json TEXT;",
 ]
 
 
@@ -128,6 +131,7 @@ class Message:
     reply_json: str | None = None
     source: str | None = None
     channel: str | None = None
+    meta_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -206,12 +210,13 @@ class Memory:
         reply_json: str | None = None,
         source: str | None = None,
         channel: str | None = None,
+        meta_json: str | None = None,
     ) -> int:
         now = self.clock()
         with self.db:
             cur = self.db.execute(
-                "INSERT INTO messages (at, day, role, text, reply_json, source, channel)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO messages (at, day, role, text, reply_json, source, channel,"
+                " meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.date().isoformat(),
@@ -220,6 +225,7 @@ class Memory:
                     reply_json,
                     source,
                     channel,
+                    meta_json,
                 ),
             )
         return int(cur.lastrowid)
@@ -230,7 +236,7 @@ class Memory:
         think...") is a working note, not a turn, so it's left out, and nothing
         from before the last new chat is."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
             " WHERE id > ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
@@ -248,7 +254,7 @@ class Memory:
         """The end of the conversation before the current one (``new_chat``), oldest
         first, recall steps left out: what a new chat picks one thing up from."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
             " WHERE id <= ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
@@ -286,7 +292,7 @@ class Memory:
     @_locked
     def messages_on(self, day: str) -> list[Message]:
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel FROM messages"
+            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
             " WHERE day = ? ORDER BY id",
             (day,),
         ).fetchall()

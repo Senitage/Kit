@@ -16,7 +16,9 @@ from __future__ import annotations
 import itertools
 import re
 import threading
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -34,6 +36,7 @@ from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QKeySequence, QSho
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -48,6 +51,7 @@ from PySide6.QtWidgets import (
 
 from kit.desk import theme
 from kit.desk.client import BrainClient, BrainError
+from kit.desk.voice import Speaker
 
 MAX_SHOWN = 200
 BUBBLE_SHARE = 0.8  # a bubble is at most this share of the window's width
@@ -57,6 +61,10 @@ LINK_COLOUR = re.compile(r"color:#0000ff;", re.IGNORECASE)  # Qt's default link 
 BODY_STYLE = re.compile(r"<body style=\"[^\"]*\">")
 PAD_X = 14  # a bubble's padding either side of its text
 INPUT_LINES = (1, 6)  # the message box grows from one line to six as Dan types
+# Words held back for his voice show anyway once it has gone quiet for this long,
+# or after this long whatever it's doing (it failed, or speech went off).
+HOLD_IDLE_S = 1.0
+HOLD_MAX_S = 12.0
 
 
 @dataclass
@@ -64,16 +72,77 @@ class Line:
     role: str  # you, kit, claude, note or error
     text: str
     detail: str = ""
-    meta: list[str] = field(default_factory=list)
+    meta: list[tuple[str, str]] = field(default_factory=list)  # shown on a click
+    tier: str = "chat"  # which model answered (theme.TIERS), for the bubble's colour
+
+
+ROLE_NAMES = {"chat": "Chat", "work": "Work", "expert": "Expert"}
+
+
+def tier_of(meta: dict | None) -> str:
+    """Which model answered a reply: chat (local or cloud), work or expert."""
+    role = (meta or {}).get("role")
+    return role if role in theme.TIERS else "chat"
+
+
+def when(at: str | None = None, now: datetime | None = None) -> str:
+    """A message's time, with the day when it wasn't today."""
+    now = now or datetime.now()
+    try:
+        then = datetime.fromisoformat(at) if at else now
+    except ValueError:
+        return ""
+    if then.date() == now.date():
+        return then.strftime("%H:%M")
+    return then.strftime("%a %d %b, %H:%M")
+
+
+def details(meta: dict | None, source: str | None, at: str | None = None) -> list[tuple]:
+    """What the details panel shows for one of Kit's replies: who answered, as what,
+    what it cost and when."""
+    m = meta or {}
+    rows: list[tuple[str, str]] = []
+    if m.get("model"):
+        rows.append(("Answered by", m.get("label") or m["model"]))
+        if m.get("label") and m["label"] != m["model"]:
+            rows.append(("Model", m["model"]))
+    elif source in (None, "local"):
+        rows.append(("Answered by", "Kit's local model"))
+    rows.append(("As", ROLE_NAMES[tier_of(m)]))
+    if source == "pipe_up":
+        rows.append(("Said", "on his own"))
+    if "cost_usd" in m:
+        rows.append(("Cost", f"${m['cost_usd']:.3f}"))
+    if m.get("searches"):
+        rows.append(("Web searches", str(m["searches"])))
+    if "month_usd" in m:
+        rows.append(("This month", f"${m['month_usd']:.2f}"))
+    if stamp := when(at):
+        rows.append(("Time", stamp))
+    return rows
+
+
+@dataclass
+class _Held:
+    """Kit's words for one reply, waiting for his voice to get to them."""
+
+    role: str
+    since: float  # when his voice last got somewhere (or the words started arriving)
+    text: str = ""
+    final: Line | None = None  # the finished reply, shown once he's said it all
+    reply: dict | None = None  # acted out (face, speech bubble) when his voice starts
 
 
 class Bubble(QFrame):
     """One message. Kit's text is markdown; Dan's is shown as typed."""
 
+    clicked = Signal()
+
     def __init__(self, line: Line, palette: theme.Palette) -> None:
         super().__init__()
         self.setObjectName("bubble")
         self.role = line.role
+        self.tier = line.tier
         self.body = QLabel()
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
@@ -83,23 +152,24 @@ class Bubble(QFrame):
             Qt.TextFormat.PlainText if line.role == "you" else Qt.TextFormat.RichText
         )
         self.link = ""
-        self.meta = QLabel()
-        self.meta.setObjectName("meta")
+        self._on_link = False  # a click on a link opens it, not the details
+        self.body.linkHovered.connect(lambda url: setattr(self, "_on_link", bool(url)))
+        self.body.installEventFilter(self)
+        if line.role != "you":
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Click for details")
         self.text = ""
         self.limit = 10_000  # the widest this bubble may be, set by Row.fit
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAD_X, 9, PAD_X, 9)
         layout.setSpacing(6)
         layout.addWidget(self.body)
-        layout.addWidget(self.meta)
         self.restyle(palette)
         self.set_line(line)
 
     def restyle(self, palette: theme.Palette) -> None:
-        self.setStyleSheet(theme.bubble_style(palette, self.role))
-        small = self.font()
-        small.setPointSizeF(max(7.0, small.pointSizeF() - 1.5))
-        self.meta.setFont(small)
+        self._palette = palette
+        self.setStyleSheet(theme.bubble_style(palette, self.role, self.tier))
         # Links in the accent colour, lightened on dark bubbles so they stay readable.
         link = QColor(palette.accent)
         self.link = (link.lighter(150) if palette.dark else link).name()
@@ -112,9 +182,27 @@ class Bubble(QFrame):
         self.text = message_text(line)
         self.body.setText(self._html(self.text))
         self.body.setVisible(bool(self.text))
-        self.meta.setText(" · ".join(line.meta))
-        self.meta.setVisible(bool(line.meta))
+        if line.tier != self.tier:
+            self.tier = line.tier
+            self.setStyleSheet(theme.bubble_style(self._palette, self.role, self.tier))
         self.fit(self.limit)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt's name)
+        # The text takes the clicks (to select and follow links), so a plain click on
+        # it counts as a click on the bubble.
+        if obj is self.body and event.type() == QEvent.Type.MouseButtonRelease:
+            self._release(event)
+        return super().eventFilter(obj, event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self._release(event)
+        super().mouseReleaseEvent(event)
+
+    def _release(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or self._on_link:
+            return
+        if not self.body.hasSelectedText():
+            self.clicked.emit()
 
     def _html(self, text: str) -> str:
         """Kit's markdown as HTML with links in the theme's colour (a label's link
@@ -175,6 +263,7 @@ class Row(QWidget):
 
     copied = Signal(str)  # text to put on the clipboard
     copy_all = Signal()
+    opened = Signal(object)  # this row: show its details
 
     def __init__(self, line: Line, palette: theme.Palette) -> None:
         super().__init__()
@@ -201,6 +290,8 @@ class Row(QWidget):
             layout.addWidget(self.note, 1)
         else:
             self.bubble = Bubble(line, palette)
+            if line.role != "you":
+                self.bubble.clicked.connect(lambda: self.opened.emit(self))
             self.bubble.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
             if line.role == "you":
                 layout.addStretch(1)
@@ -249,6 +340,68 @@ class Row(QWidget):
             self.bubble.fit(max(160, int(width * BUBBLE_SHARE)))
 
 
+class Details(QWidget):
+    """A reply's details in a small panel that pops out beside the chat window,
+    level with the bubble. Clicking anywhere else closes it."""
+
+    GAP = 8
+
+    def __init__(self) -> None:
+        super().__init__(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.card = QFrame()
+        self.card.setObjectName("details")
+        self.grid = QGridLayout(self.card)
+        self.grid.setContentsMargins(14, 12, 14, 12)
+        self.grid.setHorizontalSpacing(14)
+        self.grid.setVerticalSpacing(5)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.card)
+
+    def fill(self, rows: list[tuple[str, str]], palette: theme.Palette) -> None:
+        self.card.setStyleSheet(theme.details_style(palette))
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        title = QLabel("Details")
+        title.setObjectName("title")
+        self.grid.addWidget(title, 0, 0, 1, 2)
+        for i, (name, value) in enumerate(rows or [("", "Nothing more to show")], start=1):
+            label = QLabel(name)
+            label.setObjectName("muted")
+            shown = QLabel(value)
+            shown.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.grid.addWidget(label, i, 0)
+            self.grid.addWidget(shown, i, 1)
+        self.adjustSize()
+
+    def show_for(self, row: Row, chat: QWidget, palette: theme.Palette) -> None:
+        self.fill(row.line.meta, palette)
+        self.move(place_beside(chat.frameGeometry(), self.size(), _top_of(row), chat))
+        self.show()
+
+
+def _top_of(row: Row) -> int:
+    target = row.bubble if row.bubble is not None else row
+    return target.mapToGlobal(QPoint(0, 0)).y()
+
+
+def place_beside(window, size: QSize, top: int, widget: QWidget | None = None) -> QPoint:
+    """Where the details panel goes: just outside the chat window on whichever side
+    has room (right first), level with the bubble, kept on the screen."""
+    screen = widget.screen().availableGeometry() if widget is not None else None
+    x = window.right() + Details.GAP
+    if screen is not None and x + size.width() > screen.right():
+        x = window.left() - Details.GAP - size.width()
+    y = top
+    if screen is not None:
+        x = max(screen.left(), x)
+        y = max(screen.top(), min(y, screen.bottom() - size.height()))
+    return QPoint(x, y)
+
+
 class Typing(QFrame):
     """Three dots that rise in turn while Kit thinks."""
 
@@ -288,15 +441,18 @@ class _Signals(QObject):
     event = Signal(int, dict)
     done = Signal(int)
     history = Signal(list)
+    heard = Signal(int, str)
 
 
 class ChatWindow(QWidget):
     """Kit's chat. ``replied`` carries each finished reply for the face to act out;
+    ``shown`` carries what his face should show (the time, the weather);
     ``state`` carries what Kit is doing ("thinking", "speaking", "idle"...).
     ``settings_wanted`` asks the app to open Kit's window; ``resized`` reports the
     new size so it can be remembered."""
 
     replied = Signal(dict)
+    shown = Signal(dict)  # something for his face to show (kit.shows)
     state = Signal(str)
     settings_wanted = Signal()
     resized = Signal(QSize)
@@ -309,6 +465,8 @@ class ChatWindow(QWidget):
     ) -> None:
         super().__init__()
         self.client = client
+        self.speaker: Speaker | None = None  # says Kit's replies aloud, if speech is on
+        self.in_step = True  # with his voice on, show his words as he says them
         self.palette = palette or theme.palette()
         self.font_pt = font_pt
         self.setObjectName("root")
@@ -318,15 +476,21 @@ class ChatWindow(QWidget):
         self.lines: list[Line] = []
         self.rows: list[Row] = []
         self._current: dict[int, int] = {}  # turn -> index of Kit's line being streamed
+        self._held: dict[int, _Held] = {}  # turn -> words waiting for his voice
         self._turns = itertools.count(1)
         self._in_flight = 0
         self._loaded = False
         self._replace = False
         self._stick = True
+        self._details: Details | None = None
         self._signals = _Signals()
         self._signals.event.connect(self.on_event)
         self._signals.done.connect(self._turn_done)
         self._signals.history.connect(self._show_history)
+        self._signals.heard.connect(self._reveal)
+        self._hold_check = QTimer(self)
+        self._hold_check.setInterval(250)
+        self._hold_check.timeout.connect(self._check_held)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
 
         # Header: who and what he's doing, a fresh start, and Kit's window.
@@ -458,6 +622,10 @@ class ChatWindow(QWidget):
     def send(self, text: str) -> int:
         """Ask Kit something. Kit can be asked again before he answers."""
         turn = next(self._turns)
+        if self.speaker is not None:
+            self.speaker.stop(turn)  # Dan's talking: Kit stops, and listens for his answer
+        for held in list(self._held):
+            self._show_said(held)  # the rest of what he was saying, above Dan's message
         self._stick = True  # sending always brings the newest message into view
         self._add(Line("you", text))
         self._in_flight += 1
@@ -499,7 +667,7 @@ class ChatWindow(QWidget):
         """Show the recent conversation each time the window opens, so a new chat
         started elsewhere (the chat page, ``kit new-chat``) shows here too. Not while
         Kit is still answering, so a streaming reply isn't swept away."""
-        if self.client is None or self._in_flight:
+        if self.client is None or self._in_flight or self._held:
             return
         self._replace = self._loaded  # first time: keep anything already shown
         self._loaded = True
@@ -529,7 +697,10 @@ class ChatWindow(QWidget):
             else:
                 reply = m.get("reply") or {}
                 role = "claude" if m.get("source") == "cloud" else "kit"
-                old.append(Line(role, m.get("text", ""), reply.get("detail", "")))
+                meta = m.get("meta")
+                line = Line(role, m.get("text", ""), reply.get("detail", ""), tier=tier_of(meta))
+                line.meta = details(meta, m.get("source"), m.get("at"))
+                old.append(line)
         lines = old if self._replace and not self._in_flight else old + self.lines
         if [(x.role, x.text) for x in lines] == [(x.role, x.text) for x in self.lines]:
             return  # nothing new: leave the view (and Dan's scroll position) alone
@@ -538,32 +709,41 @@ class ChatWindow(QWidget):
 
     def on_event(self, turn: int, ev: dict) -> None:
         kind = ev.get("type")
+        if self.speaker is not None:
+            self._speak(turn, kind, ev)
+        if kind in ("handing_off", "recalled", "looked_at_pc", "notice", "error"):
+            self._show_said(turn)  # that part of the turn is over: all his words show
         if kind == "say":
             role = "claude" if ev.get("source") == "cloud" else "kit"
-            if turn not in self._current:
-                self._current[turn] = self._add(Line(role, ""))
-            index = self._current[turn]
-            self.lines[index].text += ev.get("text", "")
-            self.rows[index].update_line(self.lines[index])
+            if self._holding(turn):
+                self._hold(turn, role, ev.get("text", ""))
+            else:
+                if turn not in self._current:
+                    self._current[turn] = self._add(Line(role, ""))
+                index = self._current[turn]
+                self.lines[index].text += ev.get("text", "")
+                self.rows[index].update_line(self.lines[index])
             self._set_state("speaking")
         elif kind == "reply":
             reply = ev.get("reply") or {}
             text = " ".join(s.get("say", "") for s in reply.get("segments", []))
             cloud = ev.get("source") == "cloud"
             line = Line("claude" if cloud else "kit", text, reply.get("detail", ""))
-            if cloud:
-                line.meta = [f"{ev.get('label')} ({ev.get('model')})"]
-                if "cost_usd" in ev:
-                    line.meta.append(f"${ev['cost_usd']:.3f}")
-                if ev.get("searches"):
-                    line.meta.append(f"{ev['searches']} searches")
-            if turn in self._current:
-                index = self._current.pop(turn)
-                self.lines[index] = line
-                self.rows[index].update_line(line)
+            line.tier = tier_of(ev)
+            line.meta = details(ev, ev.get("source"))
+            held = self._held.get(turn)
+            if held is not None and held.text.strip():
+                held.final = line  # shown when his voice gets to the end
+                if turn in self._current:  # he's started talking
+                    self.replied.emit(reply)
+                else:
+                    held.reply = reply
             else:
-                self._add(line)
-            self.replied.emit(reply)
+                self._held.pop(turn, None)
+                self._show_reply(turn, line)
+                self.replied.emit(reply)
+        elif kind == "show":
+            self.shown.emit(ev.get("show") or {})
         elif kind == "handing_off":
             self._current.pop(turn, None)
             self._set_state(f"asking {ev.get('to', 'the cloud')}")
@@ -593,7 +773,124 @@ class ChatWindow(QWidget):
             self.state.emit("error")
         self._show_typing()
 
+    def pipe_up(self, reply: dict, lead_in_ms: int = 0) -> None:
+        """A line Kit came out with by himself: said aloud unless he's talking, and
+        shown as he says it (or after ``lead_in_ms``, if his voice is off)."""
+        turn = next(self._turns)
+        said = " ".join(s.get("say", "") for s in reply.get("segments", [])).strip()
+        line = Line("kit", said, reply.get("detail", ""))
+        speaker = self.speaker
+        speaking = bool(said) and speaker is not None
+        if speaking:
+            speaking = speaker.pipe_up(turn, said, reply.get("emotion") or "neutral")
+        if speaking and self._holding(turn):
+            self._hold(turn, "kit", said)
+            self._held[turn].final, self._held[turn].reply = line, reply
+        else:
+            QTimer.singleShot(lead_in_ms, lambda: self._show_pipe_up(turn, line, reply))
+
+    def _show_pipe_up(self, turn: int, line: Line, reply: dict) -> None:
+        self._show_reply(turn, line)
+        self.replied.emit(reply)
+
+    def _show_reply(self, turn: int, line: Line) -> None:
+        if turn in self._current:
+            index = self._current.pop(turn)
+            self.lines[index] = line
+            self.rows[index].update_line(line)
+        else:
+            self._add(line)
+
+    def _speak(self, turn: int, kind: str | None, ev: dict) -> None:
+        speaker = self.speaker
+        if kind == "mood":
+            speaker.mood(turn, ev.get("emotion", "neutral"))
+        elif kind == "say":
+            speaker.say(turn, ev.get("text", ""))
+        elif kind in ("spoken", "reply", "error", "handing_off"):
+            speaker.end(turn)  # "spoken": his words are complete, so the last one is said now
+
+    # Kit's words in step with his voice
+
+    def heard(self, turn: int, text: str) -> None:
+        """His voice has got to ``text`` (a sentence of the reply for ``turn``). Safe
+        to call from any thread: the speaker calls it from its own."""
+        self._signals.heard.emit(turn, text)
+
+    def _holding(self, turn: int) -> bool:
+        """Do this reply's words wait for his voice? Only while it's on, and not for
+        a reply that's already showing."""
+        if turn in self._held:
+            return True
+        speaker = self.speaker
+        live = speaker is not None and speaker.enabled and speaker.live
+        return self.in_step and live and turn not in self._current
+
+    def _hold(self, turn: int, role: str, text: str) -> None:
+        held = self._held.get(turn)
+        if held is None:
+            held = self._held[turn] = _Held(role, since=time.monotonic())
+            self._hold_check.start()
+        held.text += text
+
+    def _reveal(self, turn: int, said: str) -> None:
+        held = self._held.get(turn)
+        if held is None:
+            return
+        # The voice has the sentence with its spaces tidied, so match word by word.
+        # Not there (a sentence from before he handed over to the cloud): nothing to
+        # show yet; the next sentence, or his voice going quiet, shows the rest.
+        words = r"\s+".join(re.escape(word) for word in said.split())
+        found = re.search(words, held.text) if words else None
+        if found is not None:
+            self._show_held(turn, found.end())
+
+    def _show_said(self, turn: int) -> None:
+        """Everything held back for this turn, now."""
+        if turn in self._held:
+            self._show_held(turn, len(self._held[turn].text))
+            self._held.pop(turn, None)
+
+    def _show_held(self, turn: int, upto: int) -> None:
+        held = self._held[turn]
+        shown, held.text = held.text[:upto], held.text[upto:]
+        held.since = time.monotonic()
+        if shown.strip():
+            if turn not in self._current:
+                self._current[turn] = self._add(Line(held.role, ""))
+            index = self._current[turn]
+            line = self.lines[index]
+            line.text = (line.text + shown) if line.text else shown.lstrip()
+            self.rows[index].update_line(line)
+        finished = not held.text.strip() and held.final is not None
+        if held.reply is not None and (shown.strip() or finished):
+            reply, held.reply = held.reply, None
+            self.replied.emit(reply)  # his face acts it out as his voice starts
+        if finished:
+            del self._held[turn]
+            self._show_reply(turn, held.final)
+        self._show_typing()
+
+    def _check_held(self) -> None:
+        """Words still waiting for a voice that isn't coming (it failed, or speech
+        went off) show anyway."""
+        now = time.monotonic()
+        talking = self.speaker is not None and self.speaker.talking()
+        for turn in list(self._held):
+            held = self._held[turn]
+            waited = now - held.since
+            late = waited > HOLD_MAX_S or (not talking and waited > HOLD_IDLE_S)
+            if held.text.strip() and late:
+                self._show_said(turn)
+        if not self._held:
+            self._hold_check.stop()
+
     def _turn_done(self, turn: int) -> None:
+        if self.speaker is not None:
+            self.speaker.end(turn)
+        held = self._held.get(turn)
+        if held is not None and not held.text.strip():
+            self._show_said(turn)  # nothing left for his voice to get to
         self._current.pop(turn, None)
         self._in_flight = max(0, self._in_flight - 1)
         if self._in_flight == 0:
@@ -620,6 +917,7 @@ class ChatWindow(QWidget):
         row = Row(line, self.palette)
         row.copied.connect(self.copy_text)
         row.copy_all.connect(self.copy_conversation)
+        row.opened.connect(self.open_details)
         row.fit(self.scroll.viewport().width())
         self.rows.append(row)
         self.column.insertWidget(self.column.count() - 1, row)  # above the typing dots
@@ -638,7 +936,7 @@ class ChatWindow(QWidget):
         for row in self.rows:
             self.column.removeWidget(row)
             row.deleteLater()
-        self.lines, self.rows, self._current = [], [], {}
+        self.lines, self.rows, self._current, self._held = [], [], {}, {}
         for line in lines[-MAX_SHOWN:]:
             self._add(line, animate=False)
         QTimer.singleShot(0, self.scroll_to_end)
@@ -664,6 +962,12 @@ class ChatWindow(QWidget):
         # buffer (blurry text on some screens), so it's removed once done.
         group.finished.connect(lambda: row.setGraphicsEffect(None))
         group.start(QParallelAnimationGroup.DeletionPolicy.DeleteWhenStopped)
+
+    def open_details(self, row: Row) -> None:
+        """Pop a reply's details (who answered, what it cost) out beside the chat."""
+        if self._details is None:
+            self._details = Details()
+        self._details.show_for(row, self, self.palette)
 
     # Scrolling: stay at the bottom while Dan is there.
 
@@ -756,8 +1060,6 @@ class ChatWindow(QWidget):
             parts.append(line.text)
             if line.detail:
                 parts.append(line.detail)
-            if line.meta:
-                parts.append(" · ".join(line.meta))
         return "\n".join(parts)
 
 

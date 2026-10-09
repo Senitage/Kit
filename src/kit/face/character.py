@@ -8,8 +8,11 @@ every gesture as a set of moves.
 
 A look is 2D or 3D. The ``glow`` style is the 2D pill eyes: colours and the
 sizes of his screen, eyes, glow and blush. The ``model`` style is a 3D model
-(a glTF ``.glb`` file) whose head bone and morph targets the same poses and
-gestures drive. ``use`` picks a look per app or body (``desk``, ``home_app``,
+(a glTF ``.glb`` file) with its face pack (``pack``: moods as shape-key mixes,
+glow colours, weather props), kept in a folder named after the character next
+to its sheet. ``gestures`` maps Kit's gestures to the model's clips and face
+pulses. The brain serves the model and pack to the 3D face page (``kit.face.serve``),
+so a new model needs no new desk app. ``use`` picks a look per app or body (``desk``, ``home_app``,
 ``robot``, falling back to ``default``), so the desk app can be 3D while a
 small robot screen stays 2D. A 3D look names a 2D ``fallback`` for anything
 that can't draw 3D. The rig and the Glow
@@ -76,7 +79,7 @@ SHAPES = {
 # What each look style needs. Glow is 2D; a model is 3D.
 STYLES = {
     "glow": ("colours", "neck", "screen", "eyes", "glow", "blush"),
-    "model": ("file", "fallback", "head_bone", "morphs"),
+    "model": ("file", "fallback"),
 }
 TWO_D = ("glow",)
 
@@ -262,6 +265,12 @@ DEFAULT = "retro"
 
 def _folder():
     return resources.files("kit.face").joinpath("characters")
+
+
+def asset_folder(name: str):
+    """Where a character's own files (a 3D model and its pack) live: a folder
+    named after it next to its sheet."""
+    return _folder().joinpath(name)
 
 
 def presets() -> list[str]:

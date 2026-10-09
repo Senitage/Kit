@@ -24,10 +24,16 @@ $build = Join-Path $here "build"
 # the app's update check knows there's something new. GitHub's run number on
 # GitHub Actions, 0 for a build made by hand (which never offers itself as an update).
 $build_no = if ($env:GITHUB_RUN_NUMBER) { $env:GITHUB_RUN_NUMBER } else { "0" }
+# A pull request's build is a test build of it: the update check only offers it a
+# release that has its commit in it. The Desk app workflow says which (desk-app.yml).
+$pull = if ($env:KIT_BUILD_PULL) { [int]$env:KIT_BUILD_PULL } else { 0 }
+$commit = if ($env:KIT_BUILD_COMMIT -match '^[0-9a-f]{40}$') { $env:KIT_BUILD_COMMIT } else { "" }
 Set-Content -Path "$root\src\kit\desk\_build.py" -Encoding utf8 -Value @(
     '"""Written by packaging/windows/build.ps1: which build of the desk app this is."""',
     "",
-    "BUILD = $build_no"
+    "BUILD = $build_no",
+    "PULL = $pull",
+    "COMMIT = `"$commit`""
 )
 Run $Python @("-m", "pip", "install", "--upgrade", "$root[desk]", "pyinstaller>=6.6")
 $version = (& $Python -c "from kit.desk.update import VERSION; print(VERSION)").Trim()

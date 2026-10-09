@@ -24,10 +24,10 @@ the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee
 | His thoughts and pipe-ups can go to the cloud too | Merged | #21 |
 | Character sheets for his face (Retro first), 2D or 3D per app | Merged | #20 |
 | Desk app: words under his face, face shows, a Mood page | Built, test build in use | #18 (draft) |
-| Stage 3 part 1: Kit's voice | Built and being tested, not merged | #9 (draft) |
+| Stage 3 part 1: Kit's voice | Built and being tested, not merged | #24 (draft, was #9) |
 | Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
 
-Next up: companion stages 4 and 5, then land the voice (#9) and vision (#11),
+Next up: companion stages 4 and 5, then land the voice (#24) and vision (#11),
 then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
 Claude Code bridge). The full list and the decisions still open are at the top
 of the roadmap.
@@ -76,6 +76,14 @@ extension adds the open tabs and the site you're on. Install
 and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
 How the installer is built and published, and how the app updates itself:
 [docs/desk-app/README.md](docs/desk-app/README.md).
+
+## Stage 3: Kit's voice
+
+Kit speaks his replies through the desk PC's speakers, sentence by sentence as
+the brain writes them, in the mood he's in. The voice engine is swappable
+(Chatterbox, Chatterbox Turbo, Kokoro, Piper) with `kit speech use <name>`, and
+`kit speech bench` compares engines on the same lines. Set it up and test it with
+[docs/stage-3-voice.md](docs/stage-3-voice.md).
 
 ## Kit as a companion, stage 3
 

@@ -1,4 +1,6 @@
-"""Kit's window on the desk PC: Memory, Kit's settings, This PC, Look and Updates.
+"""Kit's window on the desk PC: Mood, Memory, Kit's settings, This PC, Look and Updates.
+
+Mood shows how Kit is, like a Sims needs panel (kit.desk.mood); it only looks.
 
 Memory and Kit's settings are the same as the brain's memory and settings pages
 (they use the same API), so a change here shows there and the other way round.
@@ -28,7 +30,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -40,18 +41,21 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from kit.desk import startup, theme
+from kit.desk import face3d, startup, theme
 from kit.desk.client import BrainClient
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
-from kit.desk.update import VERSION, Release, Updater
+from kit.desk.mood import MoodPage
+from kit.desk.update import PULL, VERSION, Release, Updater
 
 # Tests flip this so background calls finish before the next line runs.
 SYNC = False
@@ -474,6 +478,78 @@ def read_control(kind: str, widget: QWidget):
     return text
 
 
+class SettingsSection(QFrame):
+    """One section of Kit's settings that folds away: click its name to open it."""
+
+    def __init__(self, title: str, is_open: bool = False) -> None:
+        super().__init__()
+        self.setObjectName("section")
+        self.title = title
+        self.head = QToolButton()
+        self.head.setObjectName("sectionHead")
+        self.head.setText(title)
+        self.head.setCheckable(True)
+        self.head.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.head.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.head.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.head.toggled.connect(self._show_body)
+        self.body = QWidget()
+        self.form = QFormLayout(self.body)
+        self.form.setContentsMargins(14, 0, 14, 12)
+        self.words: list[tuple[str, list[int]]] = []  # each field's searchable text, rows
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.head)
+        layout.addWidget(self.body)
+        self.is_open = is_open
+        self.head.setChecked(is_open)
+        self._show_body(is_open)
+
+    def add(self, key: str, control: QWidget, description: str = "") -> None:
+        label = QLabel(key.replace("_", " "))
+        label.setToolTip(description)
+        control.setToolTip(description)
+        rows = [self.form.rowCount()]
+        self.form.addRow(label, control)
+        if description:
+            rows.append(self.form.rowCount())
+            self.form.addRow("", _label(description, "help"))
+        self.words.append((f"{key} {key.replace('_', ' ')} {description}".lower(), rows))
+
+    def _show_body(self, on: bool) -> None:
+        self.head.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+        self.body.setVisible(on)
+
+    def search(self, words: list[str]) -> bool:
+        """Show only the fields matching every word (all of them if the section's name
+        matches), opened up; no words puts it back as Dan left it. Returns whether
+        anything matched."""
+        if not words:
+            for _, rows in self.words:
+                for row in rows:
+                    self.form.setRowVisible(row, True)
+            self.head.blockSignals(True)
+            self.head.setChecked(self.is_open)
+            self.head.blockSignals(False)
+            self._show_body(self.is_open)
+            self.show()
+            return True
+        whole = all(w in self.title.lower() for w in words)
+        found = False
+        for text, rows in self.words:
+            hit = whole or all(w in text for w in words)
+            found = found or hit
+            for row in rows:
+                self.form.setRowVisible(row, hit)
+        self.setVisible(found)
+        self.head.blockSignals(True)
+        self.head.setChecked(found)
+        self.head.blockSignals(False)
+        self._show_body(found)
+        return found
+
+
 class BrainSettingsPage(QWidget):
     def __init__(self, client: Callable[[], BrainClient | None], brain_url: Callable[[], str]):
         super().__init__()
@@ -489,7 +565,18 @@ class BrainSettingsPage(QWidget):
         self.problem = _label("", "error")
         self.problem.hide()
         layout.addWidget(self.problem)
+        self.find = QLineEdit()
+        self.find.setPlaceholderText("Search settings (voice, cap, character...)")
+        self.find.setClearButtonEnabled(True)
+        self.find.textChanged.connect(self.search)
+        layout.addWidget(self.find)
+        self.nothing = _label("No setting matches that.", "muted")
+        self.nothing.hide()
+        layout.addWidget(self.nothing)
+        self.groups: list[SettingsSection] = []
+        self._opened: set[str] = set()  # sections Dan opened, kept across a reload
         self.sections = QVBoxLayout()
+        self.sections.setSpacing(8)
         layout.addLayout(self.sections)
         layout.addStretch(1)
         row = QHBoxLayout()
@@ -536,6 +623,7 @@ class BrainSettingsPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         self.fields = []
+        self.groups = []
         for section, ref in self.schema.get("properties", {}).items():
             sec = self._resolve(ref)
             extra = sec.get("additionalProperties")
@@ -547,22 +635,32 @@ class BrainSettingsPage(QWidget):
             if sec.get("type") != "object" or not sec.get("properties"):
                 continue
             self._group(section, section, None, sec, settings.get(section) or {})
+        self.search(self.find.text())
 
     def _group(self, title: str, section: str, entry: str | None, sec: dict, values: dict):
-        box = QGroupBox(title.replace("_", " "))
-        form = QFormLayout(box)
+        title = title.replace("_", " ")
+        box = SettingsSection(title.capitalize(), title in self._opened)
+        box.head.toggled.connect(lambda on, t=title, b=box: self._toggled(t, b, on))
         for key, raw in sec.get("properties", {}).items():
             prop = self._resolve(raw)
             kind = kind_of(prop)
             control = make_control(kind, prop, values.get(key))
-            control.setToolTip(prop.get("description", ""))
-            label = QLabel(key.replace("_", " "))
-            label.setToolTip(prop.get("description", ""))
-            form.addRow(label, control)
-            if prop.get("description"):
-                form.addRow("", _label(prop["description"], "help"))
+            box.add(key, control, prop.get("description", ""))
             self.fields.append((section, entry, key, kind, control))
+        self.groups.append(box)
         self.sections.addWidget(box)
+
+    def _toggled(self, title: str, box: SettingsSection, on: bool) -> None:
+        if self.find.text().strip():
+            return  # opened by a search, not by Dan
+        box.is_open = on
+        (self._opened.add if on else self._opened.discard)(title)
+
+    def search(self, text: str) -> None:
+        """Narrow the sections to the settings matching what Dan typed."""
+        words = text.lower().split()
+        found = [box.search(words) for box in self.groups]
+        self.nothing.setVisible(bool(words) and self.groups != [] and not any(found))
 
     def patch(self) -> dict:
         patch: dict = {}
@@ -654,14 +752,23 @@ class Swatches(QWidget):
 
 
 class LookPage(QWidget):
-    changed = Signal(object)  # the new DeskConfig
+    """How Kit and the chat look. Which character he is lives in the brain (so it's the
+    same everywhere); the rest is kept on this PC. The Glow-only choices hide while
+    his character is 3D."""
 
-    def __init__(self, config: DeskConfig) -> None:
+    changed = Signal(object)  # the new DeskConfig
+    character_picked = Signal(str)  # a character's id: Kit should become it
+
+    def __init__(
+        self, config: DeskConfig, client: Callable[[], BrainClient | None] | None = None
+    ) -> None:
         super().__init__()
         self.config = config
+        self.client = client or (lambda: None)
         page, layout = _page(
             "Look",
-            "Make Kit yours. Changes show straight away and are kept on this PC.",
+            "Make Kit yours. Changes show straight away; who he is goes everywhere he "
+            "appears, the rest is kept on this PC.",
         )
         self.preview = FaceWidget()
         self.preview.setFixedSize(150, 150)
@@ -679,6 +786,13 @@ class LookPage(QWidget):
         layout.addLayout(top)
 
         form = QFormLayout()
+        self.form = form
+        self.character = QComboBox()
+        self.character.setToolTip("Which character Kit is, here, in home_app and on his robots")
+        self.character.activated.connect(self._pick_character)
+        form.addRow("Character", self.character)
+        self.style_note = _label("", "help")
+        form.addRow("", self.style_note)
         self.theme = QComboBox()
         self.theme.addItem("Match Windows", "system")
         self.theme.addItem("Dark", "dark")
@@ -705,10 +819,32 @@ class LookPage(QWidget):
         self.font_pt.setValue(config.font_pt)
         self.font_pt.valueChanged.connect(self._changed)
         form.addRow("Text size", self.font_pt)
-        self.speech = QCheckBox("Say replies in a speech bubble when the chat is closed")
+        self.three_d = False
+        self.show_style(False)
+        self.speech = QCheckBox("Show what Kit says in a bubble under his face")
         self.speech.setChecked(config.speech_bubble)
         self.speech.toggled.connect(self._changed)
         form.addRow(self.speech)
+        self.movement = QComboBox()
+        for label, key in (
+            ("Lively: hops, loops and big gestures", "lively"),
+            ("Bouncy: even more", "bouncy"),
+            ("A little: small gestures only", "a_little"),
+            ("Still: hardly moves", "still"),
+        ):
+            self.movement.addItem(label, key)
+        self.movement.setCurrentIndex(max(0, self.movement.findData(config.movement)))
+        self.movement.currentIndexChanged.connect(self._changed)
+        form.addRow("How much Kit moves", self.movement)
+        self.boop = QCheckBox("Boop when Kit says something")
+        self.boop.setToolTip("A little noise so you don't miss him. Turn it off once he talks.")
+        self.boop.setChecked(config.boop)
+        self.boop.toggled.connect(self._changed)
+        form.addRow(self.boop)
+        self.in_step = QCheckBox("Show Kit's words as he says them (when his voice is on)")
+        self.in_step.setChecked(config.words_with_voice)
+        self.in_step.toggled.connect(self._changed)
+        form.addRow(self.in_step)
         layout.addLayout(form)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -720,6 +856,37 @@ class LookPage(QWidget):
         outer.addWidget(page)
         self._sample()
 
+    def refresh(self) -> None:
+        client = self.client()
+        if client is None:
+            return
+        in_background(client.face_presets, self._presets)
+
+    def _presets(self, result) -> None:
+        if isinstance(result, Exception):
+            return  # an older brain: the character is still on Kit's settings page
+        self.character.blockSignals(True)
+        self.character.clear()
+        for preset in result.get("presets", []):
+            self.character.addItem(preset.get("name") or preset["id"], preset["id"])
+        self.character.setCurrentIndex(max(0, self.character.findData(result.get("current"))))
+        self.character.blockSignals(False)
+
+    def _pick_character(self, index: int) -> None:
+        picked = self.character.itemData(index)
+        if picked:
+            self.character_picked.emit(picked)
+
+    def show_style(self, three_d: bool) -> None:
+        """Show the choices that fit his character: eye colours are for the Glow face."""
+        self.three_d = three_d
+        self.form.setRowVisible(self.eyes, not three_d)
+        self.style_note.setText(
+            "His 3D face brings its own colours, so there's no eye colour to pick."
+            if three_d
+            else "The Glow face: pick his eye colour below."
+        )
+
     def values(self) -> DeskConfig:
         return replace(
             self.config,
@@ -729,6 +896,9 @@ class LookPage(QWidget):
             face_size=self.size.value(),
             font_pt=self.font_pt.value(),
             speech_bubble=self.speech.isChecked(),
+            boop=self.boop.isChecked(),
+            movement=self.movement.currentData(),
+            words_with_voice=self.in_step.isChecked(),
         )
 
     def _changed(self, *_args) -> None:
@@ -757,6 +927,16 @@ class LookPage(QWidget):
         self.size.setValue(d.face_size)
         self.font_pt.setValue(d.font_pt)
         self.speech.setChecked(d.speech_bubble)
+        self.boop.setChecked(d.boop)
+        self.movement.setCurrentIndex(self.movement.findData(d.movement))
+        self.in_step.setChecked(d.words_with_voice)
+
+    def show_boop(self, on: bool) -> None:
+        """The tray's boop switch changed: show it here without saving again."""
+        self.boop.blockSignals(True)
+        self.boop.setChecked(on)
+        self.boop.blockSignals(False)
+        self.config = replace(self.config, boop=on)
 
 
 # Updates
@@ -783,7 +963,8 @@ class UpdatesPage(QWidget):
             "New versions of the desk app are published on GitHub. Kit checks once a day "
             "and asks before installing anything.",
         )
-        self.current = _label(f"This is Kit desk app {VERSION}.")
+        test = f", a test build from pull request #{PULL}" if PULL else ""
+        self.current = _label(f"This is Kit desk app {VERSION}{test}.")
         layout.addWidget(self.current)
         self.auto = QCheckBox("Check for updates once a day")
         self.auto.setChecked(config.check_updates)
@@ -862,7 +1043,16 @@ class UpdatesPage(QWidget):
             self.install_button.hide()
             self.notes.setText("")
             return
-        self.status.setText(f"Version {result.version} is ready ({result.size // 1_000_000} MB).")
+        if result.has_this_build:
+            size = result.size // 1_000_000
+            self.status.setText(f"Version {result.version} is ready ({size} MB).")
+            self.install_button.setText("Download and install")
+        else:  # main's newer release, still without what this test build is trying out
+            self.status.setText(
+                f"Version {result.version} is out, but it was built without this test "
+                "build's changes. Kit will offer it once they're merged."
+            )
+            self.install_button.setText("Install it anyway")
         self.notes.setText(result.notes[:3000] or f"[See it on GitHub]({result.page})")
         self.install_button.show()
 
@@ -907,7 +1097,7 @@ class _Progress(QObject):
 class KitWindow(QWidget):
     """Kit's window, opened from the tray menu or the ⚙ in the chat."""
 
-    PAGES = ["Memory", "Kit's settings", "This PC", "Look", "Updates"]
+    PAGES = ["Mood", "Memory", "Kit's settings", "This PC", "Look", "Updates"]
 
     def __init__(
         self,
@@ -925,10 +1115,15 @@ class KitWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.resize(900, 660)
         self.setMinimumSize(620, 460)
+        self.mood = MoodPage(client, in_background)
         self.memory = MemoryPage(client, brain_url)
         self.brain_settings = BrainSettingsPage(client, brain_url)
         self.pc = PcPage(config, token)
-        self.look = LookPage(config)
+        self.client = client
+        self.look = LookPage(config, client)
+        self.look.character_picked.connect(self._pick_character)
+        self._look: tuple[str | None, dict] = (None, {})
+        self._faces3d: list[face3d.Face3D | None] = [None, None]
         kwargs = {"updater": updater} if updater else {}
         self.updates = UpdatesPage(config, update_token, download_dir, **kwargs)
         self.nav = QListWidget()
@@ -936,7 +1131,7 @@ class KitWindow(QWidget):
         self.nav.setFixedWidth(180)
         self.nav.addItems(self.PAGES)
         self.stack = QStackedWidget()
-        for page in (self.memory, self.brain_settings, self.pc, self.look, self.updates):
+        for page in (self.mood, self.memory, self.brain_settings, self.pc, self.look, self.updates):
             self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self._go)
         layout = QHBoxLayout(self)
@@ -958,5 +1153,40 @@ class KitWindow(QWidget):
         if hasattr(page, "refresh"):
             page.refresh()
 
+    character_changed = Signal()  # Kit became another character from the Look page
+
+    def _pick_character(self, name: str) -> None:
+        client = self.client()
+        if client is None:
+            return
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                self.look.style_note.setText(f"Couldn't change him: {result}")
+                return
+            self.character_changed.emit()
+
+        in_background(lambda: client.save_settings({"face": {"character": name}}), done)
+
+    def use_look(self, brain_url: str | None, look: dict) -> None:
+        """Draw Kit on the Mood and Look pages as he looks on the desk: Glow, or his
+        3D face while this window is open (each 3D face is a web page, so they're
+        only kept while they can be seen)."""
+        self._look = (brain_url, look)
+        self.look.show_style(face3d.wants_3d(look))
+        self.mood.fit_gem(face3d.wants_3d(look))
+        shown = brain_url if self.isVisible() else None
+        for i, widget in enumerate((self.mood.face, self.look.preview)):
+            self._faces3d[i] = face3d.sync(widget, shown, look, self._faces3d[i])
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        super().showEvent(event)
+        self.use_look(*self._look)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        super().hideEvent(event)
+        self.use_look(*self._look)
+
     def apply_look(self, palette: theme.Palette, font_pt: float) -> None:
         self.setStyleSheet(theme.window_style(palette, font_pt))
+        self.mood.apply_look(palette)

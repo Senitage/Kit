@@ -1,0 +1,163 @@
+"""The desk app's 3D face: the brain's face page laid over Glow (kit.desk.face3d)."""
+
+import json
+
+import pytest
+
+pytest.importorskip("PySide6.QtCore", reason="desk extra (PySide6) not installed")
+
+from kit.desk import face3d  # noqa: E402
+from kit.face import Face  # noqa: E402
+
+MODEL = {"style": "model", "file": "kit_face.glb", "fallback": "glow"}
+GLOW = {"style": "glow"}
+
+
+def test_the_page_is_the_brains_face_page_for_the_desk():
+    assert face3d.page_url("http://100.1.2.3:8600/") == "http://100.1.2.3:8600/face/?app=desk"
+
+
+def test_the_mirror_sends_everything_first_then_only_what_changed():
+    face = Face()
+    mirror = face3d.Mirror(face)
+    assert mirror.calls() == [
+        'kit.setEmotion("neutral");',
+        'kit.setState("idle");',
+        "kit.setDials(0.5, 0.0);",
+    ]
+    assert mirror.calls() == []
+    face.set_dials(0.9, -0.4)  # the mood dials
+    assert mirror.calls() == ["kit.setDials(0.9, -0.4);"]
+
+    face.set_emotion("happy", 1.0)
+    face.play("laugh", 1.0)
+    face.look_at(0.5, -0.25, 1.0)
+    assert mirror.calls() == [
+        'kit.setEmotion("happy");',
+        'kit.play("laugh");',
+        "kit.lookAt(0.5, -0.25);",
+    ]
+    assert mirror.calls() == []  # the same laugh still playing isn't sent again
+    face.play("laugh", 2.0)
+    face.set_state("listening")
+    assert mirror.calls() == ['kit.setState("listening");', 'kit.play("laugh");']
+
+    mirror.reset()  # the page reloaded: send the face as it is now, but not old gestures
+    assert mirror.calls() == [
+        'kit.setEmotion("happy");',
+        'kit.setState("listening");',
+        "kit.lookAt(0.5, -0.25);",
+        "kit.setDials(0.9, -0.4);",
+    ]
+
+
+def test_shows_go_to_the_page_as_json():
+    show = {"kind": "weather", "text": "18°", "sky": "storm"}
+    call = face3d._call("show", show)
+    assert call.startswith("kit.show(") and json.loads(call[9:-2]) == show
+
+
+class FakeFace3D:
+    made = []
+
+    def __init__(self, widget, brain_url):
+        self.url = face3d.page_url(brain_url)
+        self.detached = False
+        FakeFace3D.made.append(self)
+
+    def detach(self):
+        self.detached = True
+
+
+@pytest.fixture
+def fake_view(monkeypatch):
+    FakeFace3D.made = []
+    monkeypatch.setattr(face3d, "Face3D", FakeFace3D)
+    monkeypatch.setattr(face3d, "available", lambda: True)
+    return FakeFace3D
+
+
+def test_a_3d_look_attaches_the_page_and_a_2d_look_puts_glow_back(fake_view):
+    shown = face3d.sync(None, "http://kit:8600", MODEL, None)
+    assert isinstance(shown, FakeFace3D)
+    assert face3d.sync(None, "http://kit:8600", MODEL, shown) is shown  # nothing changed
+    moved = face3d.sync(None, "http://other:8600", MODEL, shown)  # a different brain
+    assert shown.detached and moved is not shown
+    assert face3d.sync(None, "http://other:8600", GLOW, moved) is None and moved.detached
+    assert face3d.sync(None, None, MODEL, None) is None  # no brain set up yet
+
+
+def test_without_qts_web_engine_glow_stays(fake_view, monkeypatch):
+    monkeypatch.setattr(face3d, "available", lambda: False)
+    assert face3d.sync(None, "http://kit:8600", MODEL, None) is None
+    assert fake_view.made == []
+
+
+def test_a_broken_web_engine_leaves_glow(fake_view, monkeypatch):
+    def broken(widget, url):
+        raise RuntimeError("no GPU")
+
+    monkeypatch.setattr(face3d, "Face3D", broken)
+    assert face3d.sync(None, "http://kit:8600", MODEL, None) is None
+
+
+def test_glow_stops_only_while_kits_model_is_on_screen():
+    """While Kit's model is drawn the window paints the page's frames instead of
+    Glow (a web view laid in a see-through window flickers on Windows), and Glow
+    comes back while the page loads or can't draw."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QBuffer, QByteArray, QTimer
+    from PySide6.QtGui import QColor, QPixmap
+    from PySide6.QtWidgets import QApplication
+
+    from kit.desk.glow import FaceWidget
+
+    QApplication.instance() or QApplication([])
+    widget = FaceWidget()
+    widget.resize(40, 40)
+
+    def png(colour):
+        frame = QPixmap(40, 40)
+        frame.fill(colour)
+        data = QByteArray()
+        buffer = QBuffer(data)
+        frame.save(buffer, "PNG")
+        return face3d.PNG_PREFIX + bytes(data.toBase64()).decode()
+
+    class Page:  # stands in for the off-screen web view and its page
+        answer = png(QColor(255, 0, 0))
+
+        def page(self):
+            return self
+
+        def runJavaScript(self, js, world, callback):  # noqa: N802 (Qt's name)
+            assert js == face3d.FRAME_JS
+            callback(self.answer)
+
+    shown = face3d.Face3D.__new__(face3d.Face3D)  # no web engine: just the hand-over
+    shown.widget, shown.view, shown.frame = widget, Page(), None
+    shown.covering, shown._ready = False, True
+    shown.grabs = shown.blanks = 0
+    shown._told, shown._asking = 0.0, False
+    shown._paint = face3d._Paint(shown)
+    shown._frames = QTimer(widget)
+    assert widget._timer.isActive()
+
+    shown._drawn(True)
+    assert shown.covering and not widget._timer.isActive() and shown._frames.isActive()
+    assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)  # the page's frame
+    Page.answer = png(QColor(0, 0, 0, 0))  # an empty frame keeps the last good one
+    shown._grab()
+    assert shown.blanks == 0 and shown.grabs == 0  # counted, then logged and reset
+    assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)
+    widget.face.tick(0.0)
+    shown._tick_face()  # the rig still runs: moods expire, gaze follows the mouse
+    assert widget.face._last > 0.0
+
+    shown._loading()  # a reload: Glow comes back until the model is drawn again
+    assert not shown.covering and widget._timer.isActive() and not shown._frames.isActive()
+    assert widget.grab().toImage().pixelColor(20, 20) != QColor(255, 0, 0)
+    shown._drawn(True)  # not loaded yet, so it stays Glow
+    assert not shown.covering

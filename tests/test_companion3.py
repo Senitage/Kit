@@ -229,7 +229,7 @@ class FakeWeather:
     def __init__(self, top=30.0, sky="light rain", fail=False):
         self.top, self.sky, self.fail, self.calls = top, sky, fail, 0
 
-    async def today(self, place, country=""):
+    async def today(self, place, country="", ahead=0):
         from kit.weather import WeatherError
 
         self.calls += 1
@@ -596,6 +596,18 @@ def test_late_nights_tire_him_and_sleep_restores_him():
     clock.now += timedelta(hours=1)
     life._wake()
     assert life.energy == 1.0
+
+
+def test_a_rested_kit_still_winds_down_by_bedtime():
+    """Dan's Mood page at 23:20 said energy "fine": an evening nap had filled him."""
+    life, pc, clock = setup("2026-10-08T20:30:00", energy_need=True, quiet_from="23:59")
+    for _ in range(3 * 60 * 2):  # awake and chatting till 23:30
+        clock.now += timedelta(seconds=30)
+        pc.update(snap(idle=5))
+        life.tick()
+        if clock.now.hour == 22 and clock.now.minute == 0:
+            assert 0.4 < life.energy < 1.0  # winding down, not there yet
+    assert life.energy < 0.4 and life.tired() and life.mood() == "sleepy"
 
 
 def test_chats_and_cloud_jobs_spend_energy_only_with_the_setting():

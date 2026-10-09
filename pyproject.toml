@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
-desk = ["PySide6>=6.6", "psutil>=5.9"]
+desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 # Kit's eyes, on the PC with the camera. opencv-contrib is the build MediaPipe wants;
 # don't install plain opencv-python beside it. For GPU detection install PyTorch's
 # CUDA build first (docs/stage-vision.md).
@@ -43,6 +43,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["assets"]  # Blender build scripts, run inside Blender
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

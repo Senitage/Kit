@@ -7,6 +7,11 @@ of those, and when it's newer than itself it downloads the installer, checks
 it arrived whole (size and SHA-256), and, once Dan says yes, runs it quietly.
 The installer closes Kit, replaces the files and starts Kit again.
 
+A pull request's build (from its run's Artifacts) is a test build. Builds are
+numbered by run, so main's next release can outnumber a test build while still
+lacking its work: a test build is only offered a release that has its commit in
+it, which is once the pull request is merged.
+
 Kit's repo is private, so GitHub only answers with a token. A fine-grained
 token with read-only access to the Kit repo's contents is enough; it lives in
 its own file in the desk app's folder (``github_token``), never in desk.toml.
@@ -19,7 +24,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import httpx
@@ -40,8 +45,13 @@ try:  # written by packaging/windows/build.ps1; absent when running from source
     from kit.desk._build import BUILD  # type: ignore[import-not-found]
 except ImportError:
     BUILD = 0
+try:  # the pull request a test build is of (0 for main) and the commit it was built from
+    from kit.desk._build import COMMIT, PULL  # type: ignore[import-not-found]
+except ImportError:
+    COMMIT, PULL = "", 0
 
 VERSION = f"{kit.__version__}.{BUILD}"
+TEST_COMMIT = COMMIT if PULL else ""  # what a release must have in it to be offered
 
 
 class UpdateError(Exception):
@@ -59,6 +69,7 @@ class Release:
     asset_api: str  # where to download it from with the token
     size: int
     sha256: str  # from GitHub's asset digest; "" if GitHub didn't give one
+    has_this_build: bool = True  # False: built without this test build's changes
 
 
 def version_key(version: str) -> tuple[int, ...]:
@@ -77,9 +88,11 @@ class Updater:
         token: str = "",
         current: str = VERSION,
         transport: httpx.BaseTransport | None = None,
+        test_commit: str = TEST_COMMIT,
     ) -> None:
         self.repo = repo.strip().strip("/")
         self.current = current
+        self.test_commit = test_commit
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "kit-desk"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -134,8 +147,25 @@ class Updater:
         return max(found, key=lambda x: version_key(x.version), default=None)
 
     def newer(self) -> Release | None:
+        """The newest release, if it's newer than this build. On a test build, a
+        release built without its changes comes back with ``has_this_build`` False."""
         release = self.latest()
-        return release if release and is_newer(release.version, self.current) else None
+        if release is None or not is_newer(release.version, self.current):
+            return None
+        if self.test_commit and not self._has(release, self.test_commit):
+            return replace(release, has_this_build=False)
+        return release
+
+    def _has(self, release: Release, commit: str) -> bool:
+        """Whether ``release`` was built from code with ``commit`` in it. GitHub not
+        saying counts as no, so a test build is never swapped on a guess."""
+        try:
+            r = self._http.get(
+                f"/repos/{self.repo}/compare/{commit}...{release.tag}", params={"per_page": 1}
+            )
+            return r.status_code == 200 and r.json().get("status") in ("ahead", "identical")
+        except (httpx.HTTPError, ValueError):
+            return False
 
     def download(
         self, release: Release, folder: Path, progress: Callable[[int, int], None] | None = None

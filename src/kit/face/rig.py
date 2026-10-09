@@ -121,9 +121,15 @@ class Face:
     look_hold_s: float = 3.0  # how long a look_at target holds before idle gaze resumes
     # Whose poses and moves to use; None follows kit.face.character.current().
     character: Character | None = None
+    amplitude: float = 1.0  # how big his gestures are (the desk's "how much he moves")
+    # Told of each gesture and emotion as it starts, so a body can add a bigger
+    # move of its own (kit.face.body).
+    on_play: Callable[[str, float], None] | None = None
+    on_emotion: Callable[[str, float], None] | None = None
 
     def __post_init__(self) -> None:
         self.emotion = "neutral"
+        self.resting = "neutral"  # what he settles back to between replies: his mood
         self.state = "idle"
         self._target = Pose(**self._ch.pose("neutral"))
         self._cur = {k: getattr(self._target, k) for k in _POSE_KEYS}
@@ -148,14 +154,19 @@ class Face:
         """Ease toward an emotion's pose; after ``hold_s`` seconds drift back to neutral."""
         if name not in self._ch.emotions:
             raise ValueError(f"unknown emotion {name!r}")
+        changed = name != self.emotion
         self.emotion = name
         self._target = Pose(**self._ch.pose(name))
         self._emotion_until = None if hold_s is None else now + hold_s
+        if changed and self.on_emotion is not None:
+            self.on_emotion(name, now)
 
     def play(self, gesture: str, now: float) -> None:
         if gesture not in self._ch.gestures:
             raise ValueError(f"unknown gesture {gesture!r}")
         self._clip = None if gesture == "none" else (gesture, now)
+        if self._clip and self.on_play is not None:
+            self.on_play(gesture, now)
 
     def set_state(self, state: str) -> None:
         if state not in STATES:
@@ -169,6 +180,17 @@ class Face:
         self.arousal = _clamp(arousal, 0, 1)
         self.valence = _clamp(valence, -1, 1)
 
+    def rest(self, name: str, now: float) -> None:
+        """The face he wears between replies: his mood (kit.life's ``face``). A
+        reply's emotion still plays over it and then settles back here, not to
+        neutral. Unknown names (a character without that pose) leave it alone."""
+        if name not in self._ch.emotions or name == self.resting:
+            return
+        was = self.resting
+        self.resting = name
+        if self._emotion_until is None and self.emotion == was:  # not mid-reply
+            self.set_emotion(name, now)
+
     def look_at(self, x: float, y: float, now: float) -> None:
         """Look toward a point, -1..1 each way from the face's centre."""
         self._look = (_clamp(x, -1, 1), _clamp(y, -1, 1), now + self.look_hold_s)
@@ -181,13 +203,24 @@ class Face:
     def gesture(self) -> str | None:
         return self._clip[0] if self._clip else None
 
+    @property
+    def clip(self) -> tuple[str, float] | None:
+        """The gesture playing and when it started, so a copy of the face (the 3D
+        page) can tell a new one from the same one still playing."""
+        return self._clip
+
+    @property
+    def looking(self) -> tuple[float, float, float] | None:
+        """Where ``look_at`` last pointed him (x, y, until), or None."""
+        return self._look
+
     # ---- the frame loop ----
 
     def tick(self, now: float) -> FaceFrame:
         dt = 0.0 if self._last is None else max(0.0, min(now - self._last, 0.1))
         self._last = now
         if self._emotion_until is not None and now >= self._emotion_until:
-            self.set_emotion("neutral", now)
+            self.set_emotion(self.resting, now)
 
         target = self._state_pose()
         a = 1 - math.exp(-dt / self.ease_s) if dt else 0.0
@@ -200,7 +233,7 @@ class Face:
         self._dials[0] += (self.arousal - self._dials[0]) * k
         self._dials[1] += (self.valence - self._dials[1]) * k
         arousal, valence = self._dials
-        g = _scaled(self._gesture(now), 0.7 + 0.6 * arousal)  # 1 at the middle
+        g = _scaled(self._gesture(now), (0.7 + 0.6 * arousal) * self.amplitude)
         look_x, look_y = self._gaze(now)
         period = 7.0 if self.state == "sleeping" else 4.2 * (1 + (0.5 - arousal) * 0.6)
         if self._breath is None:

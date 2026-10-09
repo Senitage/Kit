@@ -33,12 +33,17 @@ def release(version, asset=True, draft=False, digest=True, tag=None):
     }
 
 
-def github(releases, status=200, body=INSTALLER, seen=None):
+def github(releases, status=200, body=INSTALLER, seen=None, compare=None):
+    """``compare``: what GitHub says of "<commit>...<tag>" (ahead, diverged...)."""
+
     def handle(request: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(request)
         if request.url.path.endswith("/releases"):
             return httpx.Response(status, json=releases if status == 200 else {})
+        if "/compare/" in request.url.path:
+            said = (compare or {}).get(request.url.path.rpartition("/compare/")[2])
+            return httpx.Response(200, json={"status": said}) if said else httpx.Response(404)
         if "/releases/assets/" in request.url.path:
             # GitHub sends the file from its own store.
             return httpx.Response(302, headers={"Location": "https://objects.example/kit.exe"})
@@ -68,6 +73,29 @@ def test_the_newest_published_desk_release_is_found():
     assert latest.version == "0.1.0.12" and latest.asset == "Kit-Desk-Setup-0.1.0.12.exe"
     assert up.newer() == latest
     assert Updater("Senitage/Kit", current="0.1.0.12", transport=github(releases)).newer() is None
+
+
+def test_a_test_build_is_only_offered_a_release_with_its_changes():
+    """Builds are numbered by run, so main's next release can outnumber a pull
+    request's test build while still lacking its work (Kit lost his voice that way)."""
+    commit = "8a08c20" + "0" * 33
+    releases = [release("0.1.0.46"), release("0.1.0.50")]
+
+    def check(said, current="0.1.0.49", test_commit=commit, seen=None):
+        compare = {f"{commit}...desk-v0.1.0.50": said} if said else {}
+        transport = github(releases, seen=seen, compare=compare)
+        return Updater("Senitage/Kit", "tok", current, transport, test_commit=test_commit).newer()
+
+    held = check("diverged")  # main moved on without the pull request
+    assert held.version == "0.1.0.50" and not held.has_this_build
+    assert not check("behind").has_this_build  # built before the test build's commit
+    assert not check(None).has_this_build  # GitHub didn't say: no swap on a guess
+    assert check("ahead").has_this_build  # the pull request is merged into it
+    assert check("identical").has_this_build
+    seen = []
+    assert check("diverged", current="0.1.0.50", seen=seen) is None  # nothing newer
+    assert check("diverged", test_commit="", seen=seen).has_this_build  # a build of main
+    assert not [r for r in seen if "/compare/" in r.url.path]  # neither asks
 
 
 def test_a_private_repo_without_a_token_says_what_to_do():

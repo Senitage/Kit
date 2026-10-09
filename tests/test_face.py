@@ -43,6 +43,20 @@ def test_emotion_eases_in_holds_then_returns_to_neutral():
     assert later.squint < 0.1
 
 
+def test_between_replies_he_settles_to_his_mood_not_neutral():
+    face = Face(rng=random.Random(3))
+    face.tick(0)
+    face.rest("curious", 0)
+    assert face.emotion == "curious"  # not mid-reply: he wears it now
+    face.set_emotion("happy", 1, hold_s=2)
+    face.rest("concerned", 1.5)
+    assert face.emotion == "happy"  # a reply's emotion isn't cut short
+    run(face, 3.1, 0.1)
+    assert face.emotion == "concerned"
+    face.rest("no_such_pose", 4)
+    assert face.resting == "concerned"
+
+
 @pytest.mark.parametrize("gesture", [g for g in GESTURES if g != "none"])
 def test_each_gesture_moves_the_face_and_hands_back(gesture):
     face = Face(rng=random.Random(4))
@@ -141,3 +155,38 @@ def test_wink_closes_only_one_eye():
     face.play("wink", 0)
     mid = run(face, 0, CLIPS["wink"].seconds / 2)[-1]
     assert mid.open_right < 0.2 < 0.8 < mid.open_left
+
+
+def test_body_moves_start_and_end_where_he_sits():
+    from kit.face.body import MOVES, step
+
+    for name, move in MOVES.items():
+        for at in (0.0, move.seconds * 0.999):
+            s = step(name, at)
+            assert abs(s.x) < 0.02 and abs(s.y) < 0.02, name
+        middle = [step(name, move.seconds * k / 10) for k in range(1, 10)]
+        assert max(abs(s.x) + abs(s.y) for s in middle) > 0.05, name  # it really moves
+        assert step(name, move.seconds) is None
+
+
+def test_moves_go_with_gestures_emotions_and_reasons():
+    from kit.face.body import EMOTION_MOVES, GESTURE_MOVES, MOVES, move_for
+    from kit.face.rig import CLIPS, POSES
+
+    assert set(GESTURE_MOVES) <= set(CLIPS) and set(EMOTION_MOVES) <= set(POSES)
+    assert set(GESTURE_MOVES.values()) | set(EMOTION_MOVES.values()) <= set(MOVES)
+    assert move_for(emotion="excited") == "loop"
+    assert move_for(reason="back") == "loop"
+    assert move_for(gesture="bounce") == "hop_hop"
+    assert move_for(gesture="wink") is None
+
+
+def test_bigger_gestures_and_the_body_is_told():
+    from kit.face import Face
+
+    told = []
+    small, big = Face(), Face(amplitude=1.8, on_play=lambda g, now: told.append(g))
+    for face in (small, big):
+        face.play("nod", 0.0)
+    assert told == ["nod"]
+    assert abs(big.tick(0.25).dy) > abs(small.tick(0.25).dy) * 1.5
