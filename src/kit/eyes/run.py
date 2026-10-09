@@ -14,7 +14,10 @@ seconds; nothing is looked at until the switch is on again.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -212,6 +215,32 @@ class Eyes:
                 self.scene.memory.forget_after = fresh.forget_after_s
 
 
+@contextlib.contextmanager
+def quiet_native_logs():
+    """Hide what native code writes to stderr while MediaPipe starts up: a dozen
+    harmless C++ warnings that no environment variable switches off. Python
+    errors still surface once it's done."""
+    fd = 2  # native code writes to the process's stderr, whatever sys.stderr is
+    try:
+        saved = os.dup(fd)
+    except OSError:  # no stderr at all (pythonw)
+        yield
+        return
+    if sys.stderr is not None:
+        sys.stderr.flush()
+    try:
+        with open(os.devnull, "w") as devnull:
+            os.dup2(devnull.fileno(), fd)
+            try:
+                yield
+            finally:
+                if sys.stderr is not None:
+                    sys.stderr.flush()
+                os.dup2(saved, fd)
+    finally:
+        os.close(saved)
+
+
 def build_eyes(
     settings: EyesSettings,
     reporter: Reporter,
@@ -230,14 +259,25 @@ def build_eyes(
     index = settings.camera if camera is None else camera
     detector = YoloDetector(settings.detector, models, settings.confidence)
     faces = body = None
-    if settings.faces:
-        from kit.eyes.faces import FaceAnalyzer
+    if settings.faces or settings.hands or settings.poses:
+        from kit.eyes.body import model_path
 
-        faces = FaceAnalyzer(models)
-    if settings.hands or settings.poses:
-        from kit.eyes.body import BodyReader
+        for name, wanted in (
+            ("face", settings.faces),
+            ("gesture", settings.hands),
+            ("pose", settings.poses),
+        ):
+            if wanted:
+                model_path(name, models)  # download first, where the log can say so
+    with quiet_native_logs():
+        if settings.faces:
+            from kit.eyes.faces import FaceAnalyzer
 
-        body = BodyReader(models, hands=settings.hands, poses=settings.poses)
+            faces = FaceAnalyzer(models)
+        if settings.hands or settings.poses:
+            from kit.eyes.body import BodyReader
+
+            body = BodyReader(models, hands=settings.hands, poses=settings.poses)
     return Eyes(
         lambda: open_camera(index, settings.width, settings.height),
         detector,

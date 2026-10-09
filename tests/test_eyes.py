@@ -538,3 +538,14 @@ def test_brain_client_reports_scenes_and_works_the_switch():
         ("POST", "/api/eyes/pause"),
     ]
     assert json.loads(calls[0][2])["camera"] == "desk"
+
+
+def test_mediapipes_start_up_chatter_is_hidden(capfd):
+    import os
+
+    from kit.eyes.run import quiet_native_logs
+
+    with quiet_native_logs():
+        os.write(2, b"W0000 feedback manager chatter\n")
+    os.write(2, b"after\n")
+    assert capfd.readouterr().err == "after\n"
