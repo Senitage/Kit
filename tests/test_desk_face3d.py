@@ -95,29 +95,44 @@ def test_a_broken_web_engine_leaves_glow(fake_view, monkeypatch):
 
 
 def test_glow_stops_only_while_kits_model_is_on_screen():
-    """Glow's 60 fps repaint makes the web view flash on Windows, so it stops while
-    the 3D face covers it, and comes back while the page loads or can't draw."""
+    """While Kit's model is drawn the window paints the page's frames instead of
+    Glow (a web view laid in a see-through window flickers on Windows), and Glow
+    comes back while the page loads or can't draw."""
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QColor, QPixmap
     from PySide6.QtWidgets import QApplication
 
     from kit.desk.glow import FaceWidget
 
     QApplication.instance() or QApplication([])
     widget = FaceWidget()
-    shown = face3d.Face3D.__new__(face3d.Face3D)  # no web view: just the hand-over
-    shown.widget, shown.covering, shown._ready = widget, False, True
-    shown._no_paint = face3d._NoPaint(widget)
+    widget.resize(40, 40)
+
+    class Page:  # stands in for the off-screen web view
+        def grab(self):
+            frame = QPixmap(40, 40)
+            frame.fill(QColor(255, 0, 0))
+            return frame
+
+    shown = face3d.Face3D.__new__(face3d.Face3D)  # no web engine: just the hand-over
+    shown.widget, shown.view, shown.frame = widget, Page(), None
+    shown.covering, shown._ready = False, True
+    shown._paint = face3d._Paint(shown)
+    shown._frames = QTimer(widget)
     assert widget._timer.isActive()
 
     shown._drawn(True)
-    assert shown.covering and not widget._timer.isActive()
+    assert shown.covering and not widget._timer.isActive() and shown._frames.isActive()
+    assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)  # the page's frame
     widget.face.tick(0.0)
     shown._tick_face()  # the rig still runs: moods expire, gaze follows the mouse
     assert widget.face._last > 0.0
 
     shown._loading()  # a reload: Glow comes back until the model is drawn again
-    assert not shown.covering and widget._timer.isActive()
+    assert not shown.covering and widget._timer.isActive() and not shown._frames.isActive()
+    assert widget.grab().toImage().pixelColor(20, 20) != QColor(255, 0, 0)
     shown._drawn(True)  # not loaded yet, so it stays Glow
     assert not shown.covering

@@ -9,7 +9,11 @@ copies each change across as a call to the page's ``kit`` API. The page, the 3D
 engine, the model and its pack all come from the brain and reload themselves when
 the brain has new ones, so a new face needs no new desk app.
 
-Clicks, drags and the menu still go to the Glow window underneath. If Qt's web
+The web view itself is never on screen. It renders off screen and each frame is
+copied into the Glow window, which paints it in place of Glow. A web view laid
+inside a see-through window flickers on Windows (the window and the page's GPU
+surface are composited separately), so this keeps the desktop window an ordinary
+painted one. Clicks, drags and the menu still go to that window. If Qt's web
 engine is missing or the page can't load, Glow stays.
 """
 
@@ -21,7 +25,7 @@ import time
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from kit.face import Face
@@ -30,6 +34,7 @@ log = logging.getLogger(__name__)
 
 APP = "desk"
 STEP_MS = 50  # how often face changes are copied to the page
+FRAME_MS = 33  # how often the page's picture is copied to the window (~30 fps)
 
 
 def available() -> bool:
@@ -93,21 +98,33 @@ class Mirror:
         return out
 
 
-class _NoPaint(QObject):
-    """Stops the Glow window painting while the 3D page covers it."""
+class _Paint(QObject):
+    """Paints the 3D page's latest frame in the Glow window instead of Glow."""
+
+    def __init__(self, face3d: Face3D) -> None:
+        super().__init__(face3d.widget)
+        self.face3d = face3d
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 (Qt's name)
-        return event.type() == QEvent.Type.Paint
+        if event.type() != QEvent.Type.Paint:
+            return False
+        frame = self.face3d.frame
+        if frame is not None and not frame.isNull():
+            p = QPainter(watched)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.drawPixmap(watched.rect(), frame)
+            p.end()
+        return True
 
 
 class Face3D:
-    """The face page laid over a Glow ``FaceWidget``. ``detach`` puts Glow back.
+    """The face page drawn in a Glow ``FaceWidget``. ``detach`` puts Glow back.
 
     Glow keeps drawing until the page says Kit's model is on screen, and again
     whenever the page is loading or can't reach the brain, so he never blinks out.
-    While the 3D face covers it, Glow's own 60 fps repaint stops: on Windows each
-    repaint of the see-through window re-composites the web view and makes it
-    flash. The face's rig still ticks here, so moods, gestures and gaze carry on."""
+    While the 3D face is shown, Glow's own 60 fps timer stops and the window paints
+    the page's frames instead. The face's rig still ticks here, so moods, gestures
+    and gaze carry on."""
 
     def __init__(self, widget: QWidget, brain_url: str) -> None:
         from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -115,14 +132,16 @@ class Face3D:
         self.widget = widget
         self.url = page_url(brain_url)
         self.mirror = Mirror(widget.face)
-        self.view = QWebEngineView(widget)
-        self.view.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        # off screen: rendered and copied, never composited over the window
+        self.view = QWebEngineView()
+        self.view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        self.view.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.view.page().setBackgroundColor(Qt.GlobalColor.transparent)
         self.view.loadStarted.connect(self._loading)
         self.view.loadFinished.connect(self._loaded)
-        self.view.setGeometry(widget.rect())
-        self._no_paint = _NoPaint(widget)
+        self.view.resize(widget.size())
+        self.frame: QPixmap | None = None  # the page's latest picture
+        self._paint = _Paint(self)
         self._resize = _Resize(self)
         widget.installEventFilter(self._resize)
         self._play_show = widget.__dict__.get("play_show")
@@ -130,6 +149,8 @@ class Face3D:
             widget.play_show = self.show  # the brain's shows play on the 3D face
         self._timer = QTimer(widget)
         self._timer.timeout.connect(self._step)
+        self._frames = QTimer(widget)
+        self._frames.timeout.connect(self._grab)
         self._ready = False  # the page has loaded
         self.covering = False  # Kit's model is drawn, so Glow is stopped
         self._steps = 0
@@ -149,13 +170,6 @@ class Face3D:
             return
         if self.loads > 1:
             log.info("Kit's 3D face reloaded (%d loads)", self.loads)
-        # the page's input widget only exists once it's loaded
-        proxy = self.view.focusProxy()
-        if proxy is not None:
-            proxy.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            # lets a see-through web view sit over a see-through window (Qt's advice
-            # for QQuickWidget, which draws the page)
-            proxy.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
         self._ready = True
         self.mirror.reset()  # a reload starts the page afresh
 
@@ -164,15 +178,25 @@ class Face3D:
         if on == self.covering:
             return
         self.covering = on
+        log.info("Kit's 3D face %s", "shown" if on else "hidden; showing Glow")
         glow_timer = getattr(self.widget, "_timer", None)
         if on:
-            self.widget.installEventFilter(self._no_paint)
+            self._grab()
+            self.widget.installEventFilter(self._paint)
+            self._frames.start(FRAME_MS)
             if glow_timer is not None:
                 glow_timer.stop()
         else:
-            self.widget.removeEventFilter(self._no_paint)
+            self._frames.stop()
+            self.widget.removeEventFilter(self._paint)
+            self.frame = None
             if glow_timer is not None:
                 glow_timer.start(16)
+        self.widget.update()
+
+    def _grab(self) -> None:
+        """Copy the page's picture and repaint the window with it."""
+        self.frame = self.view.grab()
         self.widget.update()
 
     def _drawn(self, drawn) -> None:
@@ -212,7 +236,7 @@ class Face3D:
         return True
 
     def fit(self) -> None:
-        self.view.setGeometry(self.widget.rect())
+        self.view.resize(self.widget.size())
 
     def detach(self) -> None:
         self._timer.stop()
@@ -222,7 +246,6 @@ class Face3D:
             self.widget.play_show = self._play_show
         elif "play_show" in self.widget.__dict__:
             del self.widget.play_show
-        self.view.setParent(None)
         self.view.deleteLater()
         self.widget.update()
 
