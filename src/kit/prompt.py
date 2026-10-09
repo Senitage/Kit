@@ -85,27 +85,6 @@ def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) ->
 # it stays the same between turns, so providers can reuse it from their cache.
 TURN_PART = "\n\nIt is"
 
-# Beside the speech style: it beats every other note on how Kit sounds. Without it
-# Haiku kept the voice of the self-sheet, the examples and the cheek style, and a
-# custom style ("talk like ...") never showed.
-VOICE_WINS = (
-    "This is how every line you say must sound, and it beats anything else here about "
-    "how you talk (your self-sheet, the examples, how you feel, your quirks, and how "
-    "your earlier lines in this conversation sounded). Keep to it even when you're cheeky "
-    "or brief. {owner} chose it."
-)
-
-
-def own_voice_default_examples(persona: PersonaSettings) -> bool:
-    """True when the owner has given Kit a voice of their own but kept the default
-    examples, which are in the default voice and pull him back to it."""
-    fields = type(persona).model_fields
-    return (
-        persona.speech != fields["speech"].default
-        and persona.examples == fields["examples"].default_factory()
-    )
-
-
 HAND_OFF = {
     "local-heavy": "for anything you can't answer well yourself, such as hard maths, long "
     "code, detailed engineering, current information (weather, prices, news) or facts you're "
@@ -148,6 +127,27 @@ def mood_lines(owner: str) -> list[str]:
     for name, values in MOOD_FIELDS.items():
         lines.append(f"- {name}: " + "; ".join(f"{k} ({v})" for k, v in values.items()) + ".")
     return lines
+
+
+# Beside the speech style: it beats every other note on how Kit sounds. Without it
+# Haiku kept the voice of the self-sheet, the examples and the cheek style, and a
+# custom style ("talk like ...") never showed.
+VOICE_WINS = (
+    "This is how every line you say must sound, and it beats anything else here about "
+    "how you talk (your self-sheet, the examples, how you feel, your quirks, and how "
+    "your earlier lines in this conversation sounded). Keep to it even when you're cheeky "
+    "or brief. {owner} chose it."
+)
+
+
+def own_voice_default_examples(persona: PersonaSettings) -> bool:
+    """True when the owner has given Kit a voice of their own but kept the default
+    examples, which are in the default voice and pull him back to it."""
+    fields = type(persona).model_fields
+    return (
+        persona.speech != fields["speech"].default
+        and persona.examples == fields["examples"].default_factory()
+    )
 
 
 def system_prompt(
