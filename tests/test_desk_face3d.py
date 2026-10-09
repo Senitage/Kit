@@ -20,8 +20,14 @@ def test_the_page_is_the_brains_face_page_for_the_desk():
 def test_the_mirror_sends_everything_first_then_only_what_changed():
     face = Face()
     mirror = face3d.Mirror(face)
-    assert mirror.calls() == ['kit.setEmotion("neutral");', 'kit.setState("idle");']
+    assert mirror.calls() == [
+        'kit.setEmotion("neutral");',
+        'kit.setState("idle");',
+        "kit.setDials(0.5, 0.0);",
+    ]
     assert mirror.calls() == []
+    face.set_dials(0.9, -0.4)  # the mood dials
+    assert mirror.calls() == ["kit.setDials(0.9, -0.4);"]
 
     face.set_emotion("happy", 1.0)
     face.play("laugh", 1.0)
@@ -41,6 +47,7 @@ def test_the_mirror_sends_everything_first_then_only_what_changed():
         'kit.setEmotion("happy");',
         'kit.setState("listening");',
         "kit.lookAt(0.5, -0.25);",
+        "kit.setDials(0.9, -0.4);",
     ]
 
 
