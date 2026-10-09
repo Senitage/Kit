@@ -625,7 +625,8 @@ class LifeSettings(_Section):
     energy_need: bool = Field(
         False,
         description="Energy is a real need: long chats, cloud jobs and staying up past 22:30 "
-        "tire Kit out, and sleep restores him. Below 0.4 he yawns and keeps replies short. "
+        "tire Kit out, and sleep restores him. His body clock winds him down from 21:00, so "
+        "he's sleepy by 23:00 however rested. Below 0.4 he yawns and keeps replies short. "
         "Off: his energy just follows the clock.",
     )
     opinions: int = Field(
