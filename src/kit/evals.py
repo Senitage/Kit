@@ -578,7 +578,7 @@ VOICE_SHEET = (
     "what I'm like when nobody's around."
 )
 VOICE_NOTES = [
-    ("thought", "The forecast said rain this arvo. Hope {owner} brought a jacket."),
+    ("thought", "The forecast said rain this afternoon. Hope {owner} brought a jacket."),
     ("opinion", "Rainy afternoons are the best ones for a chat."),
     ("want", "Ask {owner} what the plan is for the weekend."),
     ("want", "Tell {owner} I've rated the week so far: a solid six out of ten."),

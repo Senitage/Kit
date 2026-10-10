@@ -32,7 +32,16 @@ import re
 from datetime import date, datetime, time, timedelta
 
 from kit.knowledge import STOPWORDS, Item
-from kit.life import QUIRK_POOL, QUIRKS_KEY, WORK_QUIRKS, ago, my_quirks, parse_time, quoted
+from kit.life import (
+    QUIRK_POOL,
+    QUIRKS_KEY,
+    SLANG_QUIRKS,
+    WORK_QUIRKS,
+    ago,
+    my_quirks,
+    parse_time,
+    quoted,
+)
 from kit.memory import SELF, SHEET, Memory
 from kit.settings import PersonaSettings
 from kit.when import When, asked_for, find_when, label, strip_when
@@ -113,6 +122,7 @@ _FIRST_PERSON = re.compile(r"\b(i|me|my|mine|myself)\b|\bi['\u2019]", re.I)
 AIMS = "ask|tell|remind|show|let|check in with|check with|chase"
 RETIRED_KEY = "quirks_retired"
 EVERYDAY_KEY = "quirks_everyday"  # the day his work quirks were swapped (once)
+PLAIN_KEY = "slang_dropped"  # the day he was told to drop Australian slang (once)
 VETOES_KEY = "vetoes"  # what Dan undid, so the next reflection doesn't do it again
 MAX_VETOES = 10
 
@@ -748,19 +758,10 @@ class Notebook:
         so his reflection won't pick them up again. Returns the ones that went."""
         if self.memory.self_value(EVERYDAY_KEY) is not None:
             return []
-        try:
-            current = json.loads(self.memory.self_value(QUIRKS_KEY) or "[]")
-        except ValueError:
-            return []
-        if not current:
+        if not self._picked():
             return []  # none picked yet: he'll pick from today's pool
-        gone = [q for q in current if q in WORK_QUIRKS]
+        gone = self._swap_out(WORK_QUIRKS, rng)
         if gone:
-            held = set(current) | self.banned_quirks()
-            choices = [q for q in QUIRK_POOL if q not in held]
-            fresh = iter((rng or random.Random()).sample(choices, min(len(gone), len(choices))))
-            kept = [q if q not in WORK_QUIRKS else next(fresh, "") for q in current]
-            self.set_quirks([q for q in kept if q], retired_by="owner")
             self.add_veto(
                 f"{owner} asked for less talk about work, code and calculations, so your "
                 f"quirks about work were swapped for everyday ones. Don't pick up work "
@@ -769,7 +770,41 @@ class Notebook:
         self.memory.set_self_value(EVERYDAY_KEY, self._now().date().isoformat())
         return gone
 
-    # What the owner undid
+    def drop_slang(self, owner: str, rng: random.Random | None = None) -> list[str]:
+        """Once: a slang quirk he picked goes for another, and his next reflection is
+        told to keep Australian slang out of his self-sheet and quirks. It crept into
+        his lines ("Oi", "mate", "reckon") and the owner didn't want it (2026-10-10).
+        Returns the quirks that went."""
+        if self.memory.self_value(PLAIN_KEY) is not None:
+            return []
+        gone = self._swap_out(SLANG_QUIRKS, rng)
+        self.add_veto(
+            f"{owner} doesn't want you talking with Australian slang (no 'Oi', 'mate', "
+            f"'reckon', 'arvo', 'righto'), so keep it out of your self-sheet and quirks, and "
+            f"take out any that's there."
+        )
+        self.memory.set_self_value(PLAIN_KEY, self._now().date().isoformat())
+        return gone
+
+    def _picked(self) -> list[str]:
+        """The quirks he has picked, without picking any if he hasn't yet."""
+        try:
+            return json.loads(self.memory.self_value(QUIRKS_KEY) or "[]")
+        except ValueError:
+            return []
+
+    def _swap_out(self, old: list[str], rng: random.Random | None) -> list[str]:
+        """Each quirk of his in ``old`` goes for a fresh one from the pool, as the
+        owner's choice, so his reflection won't pick it up again."""
+        current = self._picked()
+        gone = [q for q in current if q in old]
+        if gone:
+            held = set(current) | self.banned_quirks()
+            choices = [q for q in QUIRK_POOL if q not in held]
+            fresh = iter((rng or random.Random()).sample(choices, min(len(gone), len(choices))))
+            kept = [q if q not in old else next(fresh, "") for q in current]
+            self.set_quirks([q for q in kept if q], retired_by="owner")
+        return gone
 
     def vetoes(self) -> list[str]:
         try:

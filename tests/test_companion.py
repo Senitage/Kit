@@ -101,7 +101,7 @@ def test_time_in_words():
     assert since_words(at("2026-10-12T07:30:00"), now) == "this morning"
     assert since_words(at("2026-10-11T22:00:00"), now) == "last night"
     assert since_words(at("2026-10-12T01:30:00"), now) == "last night"  # still last night
-    assert since_words(at("2026-10-11T15:00:00"), now) == "yesterday arvo"
+    assert since_words(at("2026-10-11T15:00:00"), now) == "yesterday afternoon"
     assert since_words(at("2026-10-09T18:40:00"), now) == "Friday evening"
     assert since_words(at("2026-09-26T18:40:00"), now) == "26 September"
     assert clock_words(at("2026-10-09T18:40:00"), now) == "on Friday at 6:40 pm"

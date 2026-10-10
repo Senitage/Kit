@@ -6,11 +6,12 @@ from datetime import datetime, timedelta
 import pytest
 
 from fakes import Clock
-from kit.life import QUIRK_POOL, WORK_QUIRKS
+from kit.life import QUIRK_POOL, SLANG_QUIRKS, WORK_QUIRKS
 from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
     EVERYDAY_KEY,
     FOR_LATER,
+    PLAIN_KEY,
     Notebook,
     as_aim,
     asks_later,
@@ -261,14 +262,28 @@ def test_work_quirks_are_swapped_for_everyday_ones_once(memory):
     book = Notebook(memory)
     assert book.swap_work_quirks("Dan") == []  # none picked yet: nothing to swap
     assert memory.self_value(EVERYDAY_KEY) is None
-    righto = "you say 'righto' a bit too much"
+    puns = "you love a bad pun and never apologise"
     pumps, sheets = WORK_QUIRKS[0], "you compliment tidy spreadsheets"
-    book.set_quirks([righto, pumps, sheets])
+    book.set_quirks([puns, pumps, sheets])
     assert book.swap_work_quirks("Dan", random.Random(1)) == [pumps, sheets]
     quirks = book.quirks()
-    assert len(quirks) == 3 and quirks[0] == righto and set(quirks) <= set(QUIRK_POOL)
+    assert len(quirks) == 3 and quirks[0] == puns and set(quirks) <= set(QUIRK_POOL)
     assert {pumps, sheets} <= book.banned_quirks()  # his reflection won't bring them back
     assert "less talk about work" in book.vetoes()[-1]
     # Only once: one Dan gives back stays.
     assert book.restore_quirk(pumps, "Dan")
     assert book.swap_work_quirks("Dan") == [] and pumps in book.quirks()
+
+
+def test_slang_is_dropped_once(memory):
+    # Dan didn't want Australian slang ("Oi", "mate") in Kit's lines.
+    assert not set(QUIRK_POOL) & set(SLANG_QUIRKS)
+    book = Notebook(memory)
+    puns = "you love a bad pun and never apologise"
+    book.set_quirks([puns, SLANG_QUIRKS[0]])
+    assert book.drop_slang("Dan", random.Random(1)) == [SLANG_QUIRKS[0]]
+    quirks = book.quirks()
+    assert quirks[0] == puns and len(quirks) == 2 and set(quirks) <= set(QUIRK_POOL)
+    assert "Australian slang" in book.vetoes()[-1]  # his reflection takes it out of the sheet
+    assert memory.self_value(PLAIN_KEY) is not None
+    assert book.drop_slang("Dan") == [] and len(book.vetoes()) == 1  # only once

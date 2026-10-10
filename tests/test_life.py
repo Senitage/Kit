@@ -286,7 +286,7 @@ def test_with_nothing_new_to_say_he_waits_without_expecting_an_answer():
 def test_shush_snoozes_without_asking_a_model(paths):
     brain, memory, model, _ = make_brain(paths)
     events = collect(brain.chat("shush"))
-    assert events[-1]["reply"]["segments"][0]["say"] == "Righto, zipping it for an hour."
+    assert events[-1]["reply"]["segments"][0]["say"] == "Okay, zipping it for an hour."
     assert brain.life.snoozed_until is not None and model.calls == []
     collect(brain.chat("ok you can talk again"))
     assert brain.life.snoozed_until is None
