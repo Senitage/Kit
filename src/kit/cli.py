@@ -641,7 +641,7 @@ def cmd_eyes(
             )
             return 0
         client.check()  # proves the token before loading any model
-        settings = EyesSettings.model_validate(client.settings().get("eyes", {}))
+        settings = EyesSettings.model_validate(client.settings()["settings"].get("eyes", {}))
     except BrainError as e:
         print(f"can't reach Kit's brain at {conn.url} ({e})")
         return 1

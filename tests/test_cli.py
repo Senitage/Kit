@@ -304,7 +304,13 @@ def brain_transport(paused=False, enabled=True):
         if path == "/api/status":
             return httpx.Response(200, json={"name": "Kit", "eyes_paused": paused})
         if path == "/api/settings":
-            return httpx.Response(200, json={"eyes": {"enabled": enabled, "camera": 1}})
+            return httpx.Response(
+                200,
+                json={
+                    "settings": {"eyes": {"enabled": enabled, "camera": 1, "detector": "yolo11s"}},
+                    "problem": None,
+                },
+            )
         if path == "/api/eyes/scene" and request.method == "GET":
             detail = "What you can see through the desk camera, as of 09:00 AM:\n- Person #1"
             return httpx.Response(200, json={"detail": detail, "paused": paused})
@@ -411,7 +417,13 @@ def test_eyes_run_with_the_brains_settings(paths, capsys, eyes_dirs):
     out = capsys.readouterr().out
     assert "Kit's eyes are open: camera 1, reporting to http://kit-server:8600" in out
     settings, camera, name, on_frame = built[0]
-    assert settings.camera == 1 and camera is None and name == "desk" and on_frame is None
+    assert (
+        settings.camera == 1
+        and settings.detector == "yolo11s"
+        and camera is None
+        and name == "desk"
+        and on_frame is None
+    )
     assert ("POST", "/api/eyes/scene") in [c[:2] for c in calls]
     transport, _ = brain_transport(enabled=False)
     assert cmd_eyes(paths, eyes_args(), transport=transport, build=build) == 1
