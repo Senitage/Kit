@@ -1641,7 +1641,16 @@ class Brain:
                 f"front{tabs}, how long since they touched the keyboard or mouse, and whether "
                 f"it's locked), the time and date, and the weather when you look it up."
             )
-        senses += f" You can't see or hear {owner}: you have no camera or microphone yet."
+        if self.scene.online():
+            senses += (
+                f" You can see the desk with your own eyes: who's there, what they're doing "
+                f"or holding, and the cat when it wanders in. You can't hear {owner} yet."
+            )
+        else:
+            senses += (
+                f" You can't see or hear {owner} right now: your eyes aren't open, and you "
+                f"have no microphone yet."
+            )
         feeling = self.life.feeling_line(owner)
         did = self.life.did_line(owner)
         if did:
@@ -2116,8 +2125,8 @@ class Brain:
             elif reply.action.kind == "look_around":
                 yield {"type": "looked_around", "in_view": self.scene.in_view()}
                 if job:
-                    job.steps.append("had a look through the camera")
-                look_up = f"What you can see through the camera:\n{self.scene.detail(owner)}"
+                    job.steps.append("had a look around")
+                look_up = f"What you can see:\n{self.scene.detail(owner)}"
             elif reply.action.kind == "weather" and self.weather is not None:
                 place = reply.action.text.strip() or settings.persona.location
                 try:

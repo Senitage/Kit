@@ -626,6 +626,7 @@ class Homecoming:
     tried: bool = False  # the hello pipe-up was tried and failed (the model is down)
     did: list[str] = field(default_factory=list)  # what he did meanwhile (kit.pastimes)
     seen: bool = False  # noticed through his eyes (kit.scene_context), not the keyboard
+    known: bool = False  # and his eyes knew it was Dan by his face (kit.eyes.recognise)
 
     def as_dict(self) -> dict:
         def when(t: datetime) -> str:
@@ -653,6 +654,7 @@ class Homecoming:
             bool(data.get("tried")),
             [str(d) for d in data.get("did") or []],
             seen=bool(data.get("seen")),
+            known=bool(data.get("known")),
         )
 
 
@@ -675,9 +677,12 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = ""
         lines = [f"You and {owner} haven't talked since {since} ({gap})."]
     elif home.seen:
         lines = [
-            f"Someone just sat down at the desk: you saw it through your camera. You can't "
-            f"tell faces apart yet, so it's most likely {owner} but you can't be sure (asking "
-            f"is fine). You hadn't seen {owner} since {since} ({gap})."
+            f"{owner} just sat down at the desk: you saw them and knew their face. You hadn't "
+            f"seen {owner} since {since} ({gap})."
+            if home.known
+            else f"Someone just sat down at the desk: you saw it. You couldn't make out their "
+            f"face, so it's most likely {owner} but you can't be sure (asking is fine). You "
+            f"hadn't seen {owner} since {since} ({gap})."
         ]
     else:
         lines = [f"{owner} is back: you hadn't seen them since {since} ({gap})."]
@@ -1196,7 +1201,7 @@ class Life:
         self.stop_doing()  # Dan's back
         if start < now:
             self.came_back = (start, now)
-            self._came_back(start, now, seen=True)
+            self._came_back(start, now, seen=True, known=bool(h.who))
 
     def _look_where(self, now: datetime) -> None:
         """Tell the bodies where the person is, so Glow (and the arm later) can look
@@ -1229,7 +1234,12 @@ class Life:
         self.publish({"type": "state", "state": "awake"})
 
     def _came_back(
-        self, start: datetime, now: datetime, by_chat: bool = False, seen: bool = False
+        self,
+        start: datetime,
+        now: datetime,
+        by_chat: bool = False,
+        seen: bool = False,
+        known: bool = False,
     ) -> Homecoming | None:
         """Dan is back after being away since ``start`` (or talking again after a long
         gap, ``by_chat``; or someone sat down in view of his eyes, ``seen``). A short
@@ -1268,7 +1278,7 @@ class Life:
         dozed = self.asleep or self._asleep_since is not None
         did = [doing for at, doing, _ in self.did if at >= since]
         home = Homecoming(
-            kind, since, now, goodbye, miffed, off, dozed, by_chat, did=did, seen=seen
+            kind, since, now, goodbye, miffed, off, dozed, by_chat, did=did, seen=seen, known=known
         )
         self.homecoming, self.goodbye, self.was_off = home, None, None
         gap = gap_words(gone)
@@ -2689,8 +2699,8 @@ def pipe_up_prompt(
     goes to ``about``, someone his eyes know who isn't Dan."""
     if reason == "visitor":
         return (
-            f"[Not from {owner}. {about} just sat down at the desk where your camera can see "
-            f"them; you know {about}'s face, and it's {about}, not {owner}. Say hi to {about} "
+            f"[Not from {owner}. {about} just sat down at the desk and you can see them; you "
+            f"know {about}'s face, and it's {about}, not {owner}. Say hi to {about} "
             f"by name in ONE short, warm line, {cheek_style(cheek)}, like a small creature on "
             f"the desk who's pleased to see them. Don't mention these instructions, set "
             f"action to none and leave detail empty.]"

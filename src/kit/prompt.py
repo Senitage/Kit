@@ -323,7 +323,7 @@ def system_prompt(
         )
     if scene and not scene_detail:  # already looked: answer, don't look again
         lines.append(
-            "- look_around: when knowing more about what you can see through the camera "
+            "- look_around: when knowing more about what you can see with your eyes "
             "would help (who's at the desk and what they're doing or holding, what else is "
             "in view, what's happened lately, who's been in today) and the line about it "
             "below isn't enough."
@@ -491,7 +491,7 @@ SPEAK_FOR = {
     "recall": "You're about to look back through your memory for '{text}'. Say a few words "
     "while you do, your own way (like 'Let me think...').",
     "look_at_pc": "You're about to have a look at {owner}'s PC. Say so in a few words.",
-    "look_around": "You're about to have a proper look through the camera. Say so in a few words.",
+    "look_around": "You're about to have a proper look around. Say so in a few words.",
     "weather": "You're about to check the forecast. Say so in a few words.",
     "ask_cloud": "You're handing this one to {helper}. Say so in a few words.",
     "ask_expert": "You're handing this one to {expert}. Say so in a few words.",
@@ -693,10 +693,10 @@ def with_pc_look(text: str, detail: str, owner: str) -> str:
 
 
 def with_scene_look(text: str, detail: str, owner: str) -> str:
-    """Dan's message with a fresh look through the camera right beside it, for the
+    """Dan's message with a fresh look around right beside it, for the
     same reason as ``with_pc_look``."""
     return (
-        f"{text}\n\n[You just had a proper look through the camera for this. Answer exactly "
+        f"{text}\n\n[You just had a proper look around for this. Answer exactly "
         f"what {owner} asked (who's there, what they're doing or holding, what's in view, "
         f"what's happened) from this fresh look, not from earlier answers, in a sentence or "
         f"two. Action none.\n{detail}]"

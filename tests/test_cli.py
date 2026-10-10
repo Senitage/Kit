@@ -312,7 +312,7 @@ def brain_transport(paused=False, enabled=True):
                 },
             )
         if path == "/api/eyes/scene" and request.method == "GET":
-            detail = "What you can see through the desk camera, as of 09:00 AM:\n- Person #1"
+            detail = "What you can see with your eyes, as of 09:00 AM:\n- Person #1"
             return httpx.Response(200, json={"detail": detail, "paused": paused})
         if path == "/api/eyes/scene":
             return httpx.Response(200, json={"ok": True, "paused": paused, "settings": {}})

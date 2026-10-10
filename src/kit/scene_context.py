@@ -33,6 +33,12 @@ ANIMAL_AGAIN_AFTER = timedelta(minutes=30)  # the cat is news again after this l
 MAX_EVENTS = 60
 ANIMALS = {"cat", "dog", "bird", "horse", "sheep", "cow"}
 MAX_PEOPLE = 20
+# These are Kit's own eyes, so he talks about them as anyone would: "I can see you".
+SEE = "What you can see with your own eyes right now"
+OWN_EYES = (
+    "These are your own eyes: say what you see the way anyone would ('I can see you've "
+    "got a cup'), never 'the camera shows'."
+)
 NAME_WAIT = timedelta(seconds=4)  # an arrival waits this long for the eyes to put a name to it
 
 
@@ -127,6 +133,12 @@ def _a(label: str) -> str:
     return ("an " if label[:1] in "aeiou" else "a ") + label
 
 
+def _facing(looking: str) -> str:
+    """The eyes say where someone looks relative to the camera; Kit's eyes are the
+    camera, so to him that's "facing you"."""
+    return "facing you" if looking == "facing the camera" else looking
+
+
 def _person_bits(p: SeenPerson, since: datetime | None, now: datetime) -> list[str]:
     bits = [p.position]
     if since is not None:
@@ -134,7 +146,7 @@ def _person_bits(p: SeenPerson, since: datetime | None, now: datetime) -> list[s
     if p.unknown and not p.name:
         bits.append("nobody you know")
     if p.face is not None:
-        bits += [p.looking, *p.expressions]
+        bits += [_facing(p.looking), *p.expressions]
     else:
         bits.append("face turned away or hidden")
     bits += [f"{side} hand: {g}" for side, g in p.gestures.items()]
@@ -280,14 +292,13 @@ class SceneContext:
         r = self.latest
         if r is None or self.seen is None:
             return ""
-        camera = f"the {r.camera} camera"
         if not self.online():
-            return f"Your eyes ({camera}) stopped reporting at {self.seen:%I:%M %p}."
+            return f"Your eyes stopped working at {self.seen:%I:%M %p}, so you can't see right now."
         if r.off:
             return f"{owner} has switched your eyes off, so you can't see the desk right now."
         now = self.clock()
         if not r.people:
-            line = f"Through {camera}: nobody at the desk"
+            line = f"{SEE}: nobody at the desk"
             last = self.visits[-1] if self.visits else None
             if last and not last.open:
                 line += f"; someone left {_mins((now - last.end).total_seconds() / 60)} ago"
@@ -301,14 +312,14 @@ class SceneContext:
                 for p in r.people
             ]
             if len(r.people) == 1 and not r.people[0].name:
-                line = f"Through {camera}: one person at the desk ({seen[0]})."
+                line = f"{SEE}: one person at the desk ({seen[0]})."
                 if not r.people[0].unknown:
                     line += f" You can't tell who yet; at {owner}'s desk it's most likely {owner}."
             elif len(r.people) == 1:
-                line = f"Through {camera}: {seen[0]} at the desk."
+                line = f"{SEE}: {seen[0]} at the desk."
             else:
                 count = {2: "two", 3: "three"}.get(len(r.people), str(len(r.people)))
-                line = f"Through {camera}: {count} people at the desk: " + "; ".join(seen) + "."
+                line = f"{SEE}: {count} people at the desk: " + "; ".join(seen) + "."
         if r.objects:
             things = ", ".join(
                 f"{o.name} the {o.label}" if o.name else f"{_a(o.label)} ({o.position})"
@@ -325,12 +336,12 @@ class SceneContext:
                 f"Your eyes aren't running ({owner} hasn't started `kit eyes`), so you can't see."
             )
         now = self.clock()
-        lines = [f"What you can see through the {r.camera} camera, as of {self.seen:%I:%M %p}:"]
+        lines = [f"What you can see with your eyes, as of {self.seen:%I:%M %p}:"]
         if not self.online():
             lines.append("The eyes have stopped reporting, so this is out of date.")
         if r.off:
             lines.append(
-                f"{owner} has switched your eyes off: the camera is released, nothing is seen."
+                f"{owner} has switched your eyes off, so you can't see anything right now."
             )
             return "\n".join(lines + self._today(now))
         since = self.since()
@@ -361,8 +372,8 @@ class SceneContext:
                 "Someone in view isn't anyone you've been introduced to; you could ask who "
                 f"they are ({owner} can introduce them with `kit eyes enrol NAME`)."
             )
-        side = "left in the picture is their left" if r.mirrored else "the picture isn't mirrored"
-        lines.append(f"Positions are as seen from the camera ({side}).")
+        side = "their own left and right" if r.mirrored else "left and right as you see them"
+        lines.append(f"Left, right and centre are {side}. {OWN_EYES}")
         return "\n".join(lines)
 
     def _today(self, now: datetime) -> list[str]:

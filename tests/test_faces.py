@@ -291,7 +291,9 @@ def test_an_arrival_waits_a_moment_for_a_name():
     (arrived,) = scene.update(report("Sam"))
     assert arrived.kind == "arrived" and arrived.who == ["Sam"]
     assert arrived.text.startswith("Sam is at the desk")
-    assert scene.now_line("Dan").startswith("Through the desk camera: Sam (centre")
+    assert scene.now_line("Dan").startswith(
+        "What you can see with your own eyes right now: Sam (centre"
+    )
     clock.now += timedelta(minutes=5)
     scene.update(report("Sam"))
     (left,) = scene.update(report())
@@ -348,6 +350,7 @@ def test_someone_else_kit_knows_gets_their_own_hello_and_dan_is_still_away():
     clock.now += timedelta(hours=1)
     life.on_scene(scene.update(report("Dan")))  # Dan himself: the usual hello
     assert life.homecoming is not None and life.visitor is None
+    assert life.homecoming.known  # he knew Dan's face: no "most likely Dan"
 
 
 def test_a_visitors_hello_goes_stale():
