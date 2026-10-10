@@ -19,12 +19,17 @@ talk speaking 3.8     he's saying words that take about 3.8 s
 talk done             the chat turn is over
 fidget sigh           an idle move: a body may keep it to its face
 gesture perk_up       a real reaction: a body plays it with its whole body
+look -0.40 0.12       where Kit's eyes see the person (x -1 left .. 1 right, y -1 up .. 1 down)
 last 123              ask with after=123 next time
 ```
 
 The first three lines and `last` come every time. Without `after` (a body that has
 just started) the feed answers at once with no old events. With it, the feed waits
 up to `wait` seconds for something new, so a body hears about it straight away.
+
+A pipe-up (Kit speaking up on his own) comes as its `emotion` and `talk speaking`
+lines. `look` lines come about every couple of seconds while someone's in view
+(when the eyes are running); a body decides itself whether to turn its head.
 
 Chat moments only went to the chat client before, so `kit.body.ChatMoments` copies
 them into life's events where every body hears them.

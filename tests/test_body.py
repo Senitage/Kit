@@ -59,6 +59,17 @@ def test_fidgets_and_reactions_are_told_apart(setup):
     assert not any(x.startswith("doing") for x in got)  # things a body can't show are left out
 
 
+def test_where_his_eyes_see_you_and_his_pipe_ups_reach_the_body(setup):
+    client, brain = setup
+    last = brain.life.publish({"type": "doing", "what": ""})
+    brain.life.publish({"type": "look", "x": -0.4, "y": 0.125})
+    said = {"emotion": "curious", "segments": [{"say": "What are you up to?"}]}
+    brain.life.publish({"type": "pipe_up", "reason": "bored", "reply": said})
+    got = lines(client.get(f"/api/body/feed?after={last}&wait=0", headers=AUTH).text)["all"]
+    assert "look -0.40 0.12" in got
+    assert "emotion curious" in got and "talk speaking 1.9" in got
+
+
 def test_a_pat_makes_kit_feel_warm(setup):
     client, brain = setup
     assert client.post("/api/body/touch", headers=AUTH).json() == {"ok": True}

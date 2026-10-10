@@ -4,8 +4,8 @@ The brain decides what Kit feels and does; a body only plays it (see docs/body.m
 A small body such as the Pod (an ESP32 with a screen and two servos) can't do much
 parsing, so it reads one plain-text feed: a few lines with his resting face, whether
 he's asleep, how lively he is, and what just happened (a reply's emotion, talking,
-a fidget). It long-polls ``GET /api/body/feed`` and sends pats to ``POST
-/api/body/touch``.
+a fidget, where Kit's eyes see the person). It long-polls ``GET /api/body/feed`` and
+sends pats to ``POST /api/body/touch``.
 
 Chat moments (thinking, a reply's emotion, talking) only reach the chat client, so
 :class:`ChatMoments` copies them into life's events where every body hears them.
@@ -58,16 +58,23 @@ class ChatMoments:
             self.life.publish({"type": "emotion", "emotion": emotion})
 
 
-def _line(event: dict) -> str | None:
+def _lines(event: dict) -> list[str]:
     kind = event.get("type")
     if kind in GESTURE_EVENTS and event.get("gesture"):
-        return f"{GESTURE_EVENTS[kind]} {event['gesture']}"
+        return [f"{GESTURE_EVENTS[kind]} {event['gesture']}"]
     if kind == "emotion":
-        return f"emotion {event['emotion']}"
+        return [f"emotion {event['emotion']}"]
     if kind == "talk":
         seconds = event.get("seconds")
-        return f"talk {event['state']}" + (f" {seconds}" if seconds else "")
-    return None
+        return [f"talk {event['state']}" + (f" {seconds}" if seconds else "")]
+    if kind == "look":  # Kit's eyes saw where the person is (-1..1 across, up..down)
+        return [f"look {float(event['x']):.2f} {float(event['y']):.2f}"]
+    if kind == "pipe_up":  # he spoke up on his own: show its emotion and move his mouth
+        said = event.get("reply") or {}
+        words = " ".join(s.get("say", "") for s in said.get("segments") or [])
+        out = [f"emotion {said['emotion']}"] if said.get("emotion") else []
+        return out + ([f"talk speaking {talk_seconds(words)}"] if words.strip() else [])
+    return []
 
 
 def feed(life: Life, events: list[dict]) -> str:
@@ -79,7 +86,7 @@ def feed(life: Life, events: list[dict]) -> str:
         f"asleep {1 if state['mood'] == 'asleep' else 0}",
         f"energy {round(life.arousal, 2)}",
     ]
-    lines += [line for e in events if (line := _line(e))]
+    lines += [line for e in events for line in _lines(e)]
     lines.append(f"last {state['last_event']}")
     return "\n".join(lines) + "\n"
 
