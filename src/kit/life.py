@@ -1091,6 +1091,7 @@ class Life:
                 self.present_since = last_input
         elif self.away_since is None:
             self.last_seen = max(self.last_seen, last_input)
+            changed = self.stop_missing()  # at the PC, just not typing (or Kit restarted)
         life = self.settings().life
         away_s = life.sleep_after_minutes * 60
         if self.alone_life() and in_quiet_hours(now, life.quiet_from, life.quiet_until):
@@ -1540,6 +1541,8 @@ class Life:
                 self.publish({"type": "state", "state": "asleep"})
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
+        if self.dan_here() and self.stop_missing():
+            self.save()  # he's here: missing him (from before, or a restart) is over
         unseen = now - max(self.last_seen, self.last_chat)
         if unseen >= MISSING_AFTER and not present:
             felt = self.feeling_now()

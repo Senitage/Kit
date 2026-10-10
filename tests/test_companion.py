@@ -20,6 +20,7 @@ from kit.life import (
     GAMES,
     HOME_LINES,
     NIGHT_LINES,
+    Feeling,
     Life,
     absence_kind,
     clock_words,
@@ -451,6 +452,21 @@ def test_missing_him_ends_when_hes_back_and_cant_start_while_hes_here():
     pc.update(snap(idle=1200))  # gone again: now he can miss him
     assert life.feel("missing", "Dan's gone off for a bit", 0.7)
     life.note_chat("back!")  # a message from his phone ends it too
+    assert all(f.name != "missing" for f in life.feelings_now())
+
+
+def test_missing_left_over_from_before_ends_while_hes_quietly_at_the_pc():
+    """On Dan's PC after a restart: he'd come back hours earlier, was reading (no
+    fresh come-back), and Kit's saved "missing" carried on."""
+    life, pc, clock = setup()
+    report(life, pc, snap(idle=5))
+    life._feelings = [Feeling("missing", "Dan's gone off for a bit", clock.now, 0.7)]
+    report(life, pc, snap(idle=120))  # here, reading: not back, not away
+    assert all(f.name != "missing" for f in life.feelings_now())
+    life._feelings = [Feeling("missing", "Dan's gone off for a bit", clock.now, 0.7)]
+    clock.now += timedelta(seconds=30)
+    pc.update(snap(idle=150))
+    life.tick()  # the heartbeat clears it too
     assert all(f.name != "missing" for f in life.feelings_now())
 
 
