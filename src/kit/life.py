@@ -1119,6 +1119,11 @@ class Life:
             self._show_face()
             self.save()
 
+    def _at_the_pc(self) -> bool:
+        """The PC shows recent input: Dan's at the keyboard, whatever the camera says."""
+        snap = self.pc.latest if self.pc.online() else None
+        return snap is not None and not snap.locked and snap.idle_seconds < BACK_IDLE_S
+
     def on_scene(self, happenings: list[Happening]) -> None:
         """A report from his eyes (kit.scene_context), every second or so. Someone in
         view is Dan about (he can't tell faces apart yet, and it's Dan's desk), so
@@ -1138,6 +1143,8 @@ class Life:
                 self._arrived(h, now)
                 changed = True
             elif h.kind == "left":
+                if self._at_the_pc():
+                    continue  # the camera lost him, but he's still typing: he hasn't gone
                 self._think_about("left", h.text)
                 if self.away_since is None and not self.pc.online():
                     self.away_since = now  # with no desk app reporting, his eyes keep the time

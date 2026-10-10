@@ -472,6 +472,26 @@ def test_with_someone_in_view_he_does_not_doze_off_when_the_pc_idles():
     assert not life.asleep
 
 
+def test_dropping_out_of_shot_while_typing_is_not_leaving():
+    life, pc, scene, clock = setup()
+    pc.update(snap(idle=5))
+    life.on_report()
+    keep(life, scene, clock, 120, report(1))
+    for _ in range(12):  # the camera loses him, but the keys keep going
+        clock.now += timedelta(seconds=10)
+        pc.update(snap(idle=3))
+        saw(life, scene, report(0))
+    assert not [k for k, _ in life._to_think if k == "left"]
+    assert life.away_since is None
+    pc.update(snap(idle=600))  # now he really has gone
+    life.on_report()
+    keep(life, scene, clock, 120, report(1))
+    for _ in range(12):
+        clock.now += timedelta(seconds=10)
+        saw(life, scene, report(0))
+    assert [k for k, _ in life._to_think if k == "left"]
+
+
 def test_the_cat_makes_him_curious():
     life, pc, scene, clock = setup()
     saw(life, scene, report(1))
