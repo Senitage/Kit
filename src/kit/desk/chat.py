@@ -17,6 +17,7 @@ import itertools
 import re
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -77,6 +78,16 @@ class Line:
 
 
 ROLE_NAMES = {"chat": "Chat", "work": "Work", "expert": "Expert"}
+
+
+def _said(line: Line) -> tuple[str, str] | None:
+    """Who said a line and what, as the brain's history has it: Kit's lines are his
+    whether the cloud wrote them or not. None for notes and errors, never saved."""
+    if line.role == "you":
+        return ("you", line.text.strip())
+    if line.role in ("kit", "claude"):
+        return ("kit", line.text.strip())
+    return None
 
 
 def tier_of(meta: dict | None) -> str:
@@ -701,11 +712,25 @@ class ChatWindow(QWidget):
                 line = Line(role, m.get("text", ""), reply.get("detail", ""), tier=tier_of(meta))
                 line.meta = details(meta, m.get("source"), m.get("at"))
                 old.append(line)
-        lines = old if self._replace and not self._in_flight else old + self.lines
+        lines = old if self._replace and not self._in_flight else old + self._not_in(old)
         if [(x.role, x.text) for x in lines] == [(x.role, x.text) for x in self.lines]:
             return  # nothing new: leave the view (and Dan's scroll position) alone
         self._stick = True
         self._set_lines(lines)
+
+    def _not_in(self, old: list[Line]) -> list[Line]:
+        """The lines shown so far that the brain's history doesn't already have. A
+        pipe-up or hello that came before the chat was first opened is saved in the
+        brain's conversation too, so keeping both showed every one of them twice."""
+        saved = Counter(_said(x) for x in old)
+        new = []
+        for line in self.lines:
+            key = _said(line)
+            if key is not None and saved[key]:
+                saved[key] -= 1
+            else:
+                new.append(line)
+        return new
 
     def on_event(self, turn: int, ev: dict) -> None:
         kind = ev.get("type")

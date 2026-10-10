@@ -26,7 +26,8 @@ enforces this, so adding an emotion means adding its pose too.
 ## The character sheet
 
 Everything that makes Kit look like Kit lives in one file per character in
-`src/kit/face/characters/`. `retro.json` is the original Glow pill eyes. The
+`src/kit/face/characters/`. `retro.json` is the original Glow pill eyes,
+`kit3d.json` the 3D face and `kit2d.json` the 3D face drawn flat. The
 `face.character` setting (`[face]` in settings.toml, or the settings page)
 picks which character he is, so a new design sits beside Retro and switching
 back is one setting. A character sheet holds:
@@ -38,7 +39,11 @@ back is one setting. A character sheet holds:
   `default` for anything not named. So the desk app can be 3D while a small
   robot screen stays 2D, from the same moods and gestures.
 - `poses`: one per emotion. Any knob left out takes its value from
-  `pose_default`.
+  `pose_default`. `mouth`, `mouth_open`, `mouth_o`, `brow` and `brow_up` move
+  the brows and mouth of a look that draws them; a sheet may leave them out.
+- `mood_colours` (optional): each pose's glow colour. The rig glides between
+  them as his mood changes, and a character that has them glows in his mood's
+  colour instead of the eye colour picked on the Look page, as the 3D face does.
 - `states`: how asleep, offline, thinking and listening bend the pose, and how
   bright he glows in each.
 - `gestures`: each gesture's length and its moves. A move is a list of terms
@@ -52,6 +57,39 @@ whenever `face.character` changes (keeping its own copy if the brain is older), 
 page loads it the same way, so a redesign is one new sheet and every
 app follows. `kit.face.character.check` says in plain words what is wrong with
 a broken sheet, and a broken sheet is never used.
+
+### Kit 2D: the 3D face drawn flat
+
+`kit2d` draws the 3D face (`kit3d`) as rounded 2D shapes, with the same moods,
+glow colours, brows, mouth and blush. Its poses and mood colours were made from
+the 3D face's pack (`kit3d/face.json`): eyelid shape keys became `open`,
+`squint` and `tilt`, the mouth keys `mouth`, `mouth_open` and `mouth_o`, the
+brow keys `brow` and `brow_up`. It adds three poses the replies don't use,
+`scared`, `sleepy` (his face asleep) and `dreaming`.
+
+It is a `glow` look with three optional parts, so any Glow painter that learns
+them draws it, and one that doesn't still draws the eyes and blush:
+
+- `shell`: the screen is drawn as his body, shaded from `shell_top` to
+  `screen` to `shell_bottom` (colours), with a soft white shine (`shine`, its
+  opacity) up and to the left and a ground shadow (`shadow`) that stays still
+  while he moves. `eyes.squint_lift` and `eyes.squint_round` make the lower lid
+  rise further for thin "^ ^" eyes.
+- `brows`: a thin arc `above` each eye's centre, `width` wide and `thick`
+  thick, bowed up by `arch`. `brow` slants it by up to `slant` (+ lifts the
+  inner end, - drops it) and `brow_up` raises it by up to `lift`. Drawn in the
+  eye colour at `alpha`.
+- `mouth`: at height `y`, `width` wide. A pose shows one of three shapes: a
+  round "o" when `mouth_o` > 0.2 (radius up to `round`), an open "D" when
+  `mouth_open` (or talking, times `talk`) > 0.12 (depth up to `open`), else a
+  `thick` line bowed by `mouth` times `curve` (+ smile, - frown). It follows
+  the eyes' gaze at half their reach.
+
+Every size is a fraction of the face's size. `kit2d` is the desk and home_app
+look; `kit2d_screen` is the robot look for the Pod's small screen: no shell
+(the Pod is the shell), features scaled up to fill a black screen, all of it
+rounded rectangles, arcs and ellipses that a small display library can fill.
+The desk painter is `kit.desk.glow.paint_glow`; it is the reference for a port.
 
 ### A 3D look
 

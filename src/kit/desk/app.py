@@ -1011,7 +1011,7 @@ class DeskApp(QObject):
         threading.Thread(
             target=lambda: _quietly(client.snooze, minutes), name="kit-snooze", daemon=True
         ).start()
-        self.tray.showMessage("Kit", "Righto, zipping it for an hour.", face_icon(), 2500)
+        self.tray.showMessage("Kit", "Okay, zipping it for an hour.", face_icon(), 2500)
 
     # The face
 

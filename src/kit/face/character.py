@@ -7,7 +7,10 @@ or body uses, a pose for every emotion, how each state bends that pose, and
 every gesture as a set of moves.
 
 A look is 2D or 3D. The ``glow`` style is the 2D pill eyes: colours and the
-sizes of his screen, eyes, glow and blush. The ``model`` style is a 3D model
+sizes of his screen, eyes, glow and blush. A glow look may also draw ``brows``
+and a ``mouth`` (moved by the pose keys of the same names) and a ``shell``
+(his screen shaded like a rounded body), which is how Kit 2D draws the 3D face
+flat. ``mood_colours`` gives each pose its own glow colour. The ``model`` style is a 3D model
 (a glTF ``.glb`` file) with its face pack (``pack``: moods as shape-key mixes,
 glow colours, weather props), kept in a folder named after the character next
 to its sheet. ``gestures`` maps Kit's gestures to the model's clips and face
@@ -40,7 +43,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import resources
 
-POSE_KEYS = (
+CORE_POSE_KEYS = (
     "open",
     "squint",
     "tilt",
@@ -52,6 +55,10 @@ POSE_KEYS = (
     "head_tilt",
     "head_y",
 )
+# Brows and a mouth: only a look that draws them (``brows``, ``mouth``) uses these,
+# so a sheet may leave them out of ``pose_default`` (they are then 0).
+FEATURE_POSE_KEYS = ("mouth", "mouth_open", "mouth_o", "brow", "brow_up")
+POSE_KEYS = CORE_POSE_KEYS + FEATURE_POSE_KEYS
 CHANNELS = (
     "dx",
     "dy",
@@ -155,7 +162,14 @@ class Character:
 
     def pose(self, emotion: str) -> dict[str, float]:
         """An emotion's pose with every key filled in from the defaults."""
-        return {**self.sheet["pose_default"], **self.sheet["poses"][emotion]}
+        features = dict.fromkeys(FEATURE_POSE_KEYS, 0.0)
+        return {**features, **self.sheet["pose_default"], **self.sheet["poses"][emotion]}
+
+    def mood_colour(self, pose: str) -> str | None:
+        """The glow colour of a pose (``mood_colours``), or None when the character
+        keeps one eye colour for every mood."""
+        colours = self.sheet.get("mood_colours", {})
+        return colours.get(pose, colours.get("neutral"))
 
     @property
     def emotions(self) -> list[str]:
@@ -222,13 +236,22 @@ def check(sheet: Mapping) -> list[str]:
     for app, name in sheet["use"].items():
         if name not in looks:
             problems.append(f"use: {app!r} picks unknown look {name!r}")
-    if set(sheet["pose_default"]) != set(POSE_KEYS):
-        problems.append(f"pose_default needs exactly {', '.join(POSE_KEYS)}")
+    defaults = set(sheet["pose_default"])
+    if not set(CORE_POSE_KEYS) <= defaults <= set(POSE_KEYS):
+        problems.append(
+            f"pose_default needs {', '.join(CORE_POSE_KEYS)}"
+            f" (and may have {', '.join(FEATURE_POSE_KEYS)})"
+        )
     poses = sheet["poses"]
     if "neutral" not in poses:
         problems.append("poses need a 'neutral'")
     for name, pose in poses.items():
         problems += [f"pose {name!r} has unknown {k!r}" for k in pose if k not in POSE_KEYS]
+    for mood, colour in sheet.get("mood_colours", {}).items():
+        if mood not in poses:
+            problems.append(f"mood_colours: {mood!r} isn't one of the poses")
+        if not (isinstance(colour, str) and colour.startswith("#") and len(colour) == 7):
+            problems.append(f"mood colour {mood!r} should be like #4DFFC0, not {colour!r}")
     for state, rule in sheet["states"].items():
         if "pose" in rule and rule["pose"] not in poses:
             problems.append(f"state {state!r} uses unknown pose {rule['pose']!r}")

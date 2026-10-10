@@ -172,6 +172,24 @@ def test_history_is_shown_before_new_lines(qapp):
     assert text.index("Old question") < text.index("Old answer") < text.index("New one.")
 
 
+def test_pipe_ups_before_the_chat_first_opens_show_once(qapp):
+    """They're saved in the brain's conversation too, so the first history load
+    used to show each of them twice."""
+    chat = ChatWindow()
+    chat.pipe_up({"segments": [{"say": "Did the assignment go in?"}]})
+    chat.pipe_up({"segments": [{"say": "There you are."}]})
+    pump(qapp)
+    chat._show_history(
+        [
+            {"role": "user", "text": "Morning"},
+            {"role": "kit", "text": "Did the assignment go in?", "source": "cloud"},
+            {"role": "kit", "text": "There you are.", "source": "cloud"},
+        ]
+    )
+    shown = [line.text for line in chat.lines]
+    assert shown == ["Morning", "Did the assignment go in?", "There you are."]
+
+
 def test_face_icon_and_click_versus_drag(qapp):
     assert not desk_app.face_icon().isNull()
     assert not desk_app.face_icon(offline=True).isNull()

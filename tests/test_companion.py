@@ -17,9 +17,11 @@ from kit.evals import companion_clock, companion_report, run_companion_eval, see
 from kit.life import (
     FAREWELL,
     FAREWELL_LINES,
+    FEELING_KINDS,
     GAMES,
     HOME_LINES,
     NIGHT_LINES,
+    Feeling,
     Life,
     absence_kind,
     clock_words,
@@ -101,7 +103,7 @@ def test_time_in_words():
     assert since_words(at("2026-10-12T07:30:00"), now) == "this morning"
     assert since_words(at("2026-10-11T22:00:00"), now) == "last night"
     assert since_words(at("2026-10-12T01:30:00"), now) == "last night"  # still last night
-    assert since_words(at("2026-10-11T15:00:00"), now) == "yesterday arvo"
+    assert since_words(at("2026-10-11T15:00:00"), now) == "yesterday afternoon"
     assert since_words(at("2026-10-09T18:40:00"), now) == "Friday evening"
     assert since_words(at("2026-09-26T18:40:00"), now) == "26 September"
     assert clock_words(at("2026-10-09T18:40:00"), now) == "on Friday at 6:40 pm"
@@ -435,6 +437,52 @@ def test_he_misses_dan_after_a_day_unseen():
     life.tick()
     felt = life.feeling_now()
     assert felt.name == "missing" and felt.why == "you haven't seen Dan since yesterday morning"
+
+
+def test_missing_him_ends_when_hes_back_and_cant_start_while_hes_here():
+    """Dan's Mood page: back at the PC a while, Kit still "missing, because Dan's
+    gone off for a bit" (a thought's feeling) and a sad face."""
+    life, pc, clock = setup()
+    life.feel("missing", "Dan's gone off for a bit", 0.7)
+    assert life.feeling_now().name == "missing"
+    report(life, pc, snap(idle=5))  # he's back at the PC
+    assert life.feeling_now() is None or life.feeling_now().name != "missing"
+    assert life.face() != "sad"
+    assert not life.feel("missing", "Dan's gone quiet", 0.9)  # not while he's here
+    clock.now += timedelta(minutes=20)
+    pc.update(snap(idle=1200))  # gone again: now he can miss him
+    assert life.feel("missing", "Dan's gone off for a bit", 0.7)
+    life.note_chat("back!")  # a message from his phone ends it too
+    assert all(f.name != "missing" for f in life.feelings_now())
+
+
+def test_missing_left_over_from_before_ends_while_hes_quietly_at_the_pc():
+    """On Dan's PC after a restart: he'd come back hours earlier, was reading (no
+    fresh come-back), and Kit's saved "missing" carried on."""
+    life, pc, clock = setup()
+    report(life, pc, snap(idle=5))
+    life._feelings = [Feeling("missing", "Dan's gone off for a bit", clock.now, 0.7)]
+    report(life, pc, snap(idle=120))  # here, reading: not back, not away
+    assert all(f.name != "missing" for f in life.feelings_now())
+    life._feelings = [Feeling("missing", "Dan's gone off for a bit", clock.now, 0.7)]
+    clock.now += timedelta(seconds=30)
+    pc.update(snap(idle=150))
+    life.tick()  # the heartbeat clears it too
+    assert all(f.name != "missing" for f in life.feelings_now())
+
+
+def test_good_feelings_last_as_long_as_bad_ones_and_a_chat_lifts_him():
+    longest_good = max(FEELING_KINDS[k][1] for k in ("chuffed", "proud", "glad"))
+    longest_bad = max(FEELING_KINDS[k][1] for k in ("worried", "hurt", "sad"))
+    assert longest_good >= longest_bad
+    life, pc, clock = setup()
+    life.feel("sad", "a sad thought", 0.7)
+    life.note_chat("hey")  # he only just felt it: the chat doesn't touch it yet
+    assert life.feeling_now().strength == pytest.approx(0.7)
+    clock.now += timedelta(minutes=2)
+    for _ in range(3):
+        life.note_chat("how's it going?")
+    assert life.feeling_now().strength == pytest.approx(0.7 * 0.8**3)
 
 
 def test_closeness_grows_a_little_a_day_and_is_a_word():

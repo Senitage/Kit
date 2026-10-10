@@ -1,0 +1,1295 @@
+{
+  "name": "Kit 2D",
+  "version": 1,
+  "about": "Kit's 3D face drawn flat: the same moods, glow colours, brows, mouth and blush as the kit3d character, as rounded 2D shapes every app can draw, down to the Pod's small screen. See docs/face.md.",
+  "use": {
+    "default": "kit2d",
+    "desk": "kit2d",
+    "home_app": "kit2d",
+    "robot": "kit2d_screen"
+  },
+  "looks": {
+    "kit2d": {
+      "style": "glow",
+      "colours": {
+        "eye": "#4DFFC0",
+        "eye_offline": "#8C96A0",
+        "screen": "#2E3035",
+        "bezel": "#2E3035",
+        "shell_top": "#45474E",
+        "shell_bottom": "#1B1C20",
+        "blush": "#FF8FA8"
+      },
+      "neck": 0.55,
+      "screen": {
+        "x": 0.1,
+        "y": 0.17,
+        "width": 0.8,
+        "height": 0.66,
+        "corner": 0.25,
+        "bezel": 0
+      },
+      "shell": {
+        "shine": 0.13,
+        "shadow": 0.27
+      },
+      "eyes": {
+        "apart": 0.165,
+        "y": 0.47,
+        "width": 0.115,
+        "height": 0.17,
+        "corner": 0.045,
+        "reach_x": 0.05,
+        "reach_y": 0.035,
+        "talk_pulse": 0.0,
+        "squint_lift": 1.0,
+        "squint_round": 1.05
+      },
+      "glow": {
+        "rings": [
+          34,
+          22,
+          13,
+          7
+        ],
+        "ring_width": 0.014,
+        "blur": 0.05,
+        "dim": 0.35
+      },
+      "brows": {
+        "above": 0.155,
+        "width": 0.1,
+        "thick": 0.013,
+        "arch": 0.022,
+        "slant": 0.03,
+        "lift": 0.03,
+        "alpha": 0.85
+      },
+      "mouth": {
+        "y": 0.625,
+        "width": 0.07,
+        "thick": 0.012,
+        "curve": 0.022,
+        "open": 0.05,
+        "round": 0.04,
+        "talk": 0.8
+      },
+      "blush": {
+        "apart": 0.285,
+        "y": 0.585,
+        "width": 0.034,
+        "height": 0.021,
+        "from": 0.2,
+        "strength": 0.75
+      }
+    },
+    "kit2d_screen": {
+      "style": "glow",
+      "colours": {
+        "eye": "#4DFFC0",
+        "eye_offline": "#8C96A0",
+        "screen": "#000000",
+        "bezel": "#000000",
+        "blush": "#FF8FA8"
+      },
+      "neck": 0.55,
+      "screen": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "corner": 0,
+        "bezel": 0
+      },
+      "eyes": {
+        "apart": 0.201,
+        "y": 0.437,
+        "width": 0.14,
+        "height": 0.207,
+        "corner": 0.055,
+        "reach_x": 0.061,
+        "reach_y": 0.043,
+        "talk_pulse": 0.0,
+        "squint_lift": 1.0,
+        "squint_round": 1.05
+      },
+      "glow": {
+        "rings": [
+          34,
+          22,
+          13,
+          7
+        ],
+        "ring_width": 0.016,
+        "blur": 0.05,
+        "dim": 0.35
+      },
+      "brows": {
+        "above": 0.189,
+        "width": 0.122,
+        "thick": 0.016,
+        "arch": 0.027,
+        "slant": 0.037,
+        "lift": 0.037,
+        "alpha": 0.85
+      },
+      "mouth": {
+        "y": 0.626,
+        "width": 0.085,
+        "thick": 0.015,
+        "curve": 0.027,
+        "open": 0.061,
+        "round": 0.049,
+        "talk": 0.8
+      },
+      "blush": {
+        "apart": 0.348,
+        "y": 0.578,
+        "width": 0.041,
+        "height": 0.026,
+        "from": 0.2,
+        "strength": 0.75
+      }
+    }
+  },
+  "pose_default": {
+    "open": 1.0,
+    "squint": 0.0,
+    "tilt": 0.0,
+    "asym": 0.0,
+    "size": 1.0,
+    "look_x": 0.0,
+    "look_y": 0.0,
+    "blush": 0.0,
+    "head_tilt": 0.0,
+    "head_y": 0.0,
+    "mouth": 0.55,
+    "mouth_open": 0.0,
+    "mouth_o": 0.0,
+    "brow": 0.0,
+    "brow_up": 0.0
+  },
+  "poses": {
+    "neutral": {},
+    "happy": {
+      "squint": 0.92,
+      "blush": 0.8,
+      "mouth_open": 1.0,
+      "head_y": -0.006
+    },
+    "curious": {
+      "size": 1.048,
+      "look_x": 0.3,
+      "mouth_o": 0.5,
+      "brow_up": 0.6,
+      "head_tilt": 0.16
+    },
+    "thinking": {
+      "look_x": -0.4,
+      "look_y": -0.7,
+      "mouth": 0.0,
+      "brow": -0.2,
+      "head_tilt": -0.08
+    },
+    "surprised": {
+      "size": 1.16,
+      "mouth_o": 1.0,
+      "brow_up": 1.0,
+      "head_y": -0.016
+    },
+    "concerned": {
+      "tilt": 0.7,
+      "mouth": -0.35,
+      "brow": 1.0,
+      "head_tilt": 0.05,
+      "head_y": 0.006
+    },
+    "playful": {
+      "asym": 0.5,
+      "squint": 0.92,
+      "look_x": 0.3,
+      "blush": 1.0,
+      "mouth_open": 1.0,
+      "head_tilt": -0.12
+    },
+    "tired": {
+      "open": 0.356,
+      "size": 0.952,
+      "mouth": 0.0,
+      "head_tilt": 0.06,
+      "head_y": 0.02
+    },
+    "proud": {
+      "squint": 0.552,
+      "look_y": -0.2,
+      "mouth_open": 0.5,
+      "brow_up": 0.3,
+      "head_y": -0.016
+    },
+    "excited": {
+      "size": 1.128,
+      "blush": 1.0,
+      "mouth_open": 1.0,
+      "brow_up": 0.8,
+      "head_y": -0.02
+    },
+    "sad": {
+      "tilt": 1.0,
+      "look_y": 0.5,
+      "blush": 0.4,
+      "mouth": -0.95,
+      "brow": 1.0,
+      "head_tilt": 0.08,
+      "head_y": 0.025
+    },
+    "confused": {
+      "open": 0.839,
+      "asym": 0.56,
+      "look_x": -0.2,
+      "mouth": -0.05,
+      "brow": -0.3,
+      "brow_up": 0.5,
+      "head_tilt": 0.22
+    },
+    "shy": {
+      "size": 0.968,
+      "look_x": -0.4,
+      "look_y": 0.6,
+      "blush": 1.0,
+      "mouth": 0.275,
+      "head_tilt": -0.1,
+      "head_y": 0.01
+    },
+    "grumpy": {
+      "tilt": -1.0,
+      "mouth": -0.65,
+      "brow": -1.0,
+      "head_y": 0.01
+    },
+    "focused": {
+      "tilt": -0.5,
+      "size": 0.968,
+      "mouth": 0.0,
+      "brow": -0.3
+    },
+    "relieved": {
+      "open": 0.586,
+      "squint": 0.276,
+      "mouth_open": 0.2,
+      "brow": 0.3,
+      "head_y": 0.01
+    },
+    "fond": {
+      "squint": 0.644,
+      "blush": 0.8,
+      "mouth_open": 0.3,
+      "brow": 0.3,
+      "head_tilt": 0.1
+    },
+    "scared": {
+      "tilt": 0.35,
+      "size": 0.976,
+      "look_y": -0.4,
+      "mouth": -0.35,
+      "mouth_o": 0.25,
+      "brow": 1.0
+    },
+    "sleepy": {
+      "open": 0.08,
+      "size": 0.968,
+      "mouth": 0.33
+    },
+    "dreaming": {
+      "open": 0.08,
+      "blush": 0.6,
+      "mouth_open": 0.15,
+      "brow_up": 0.2
+    }
+  },
+  "mood_colours": {
+    "neutral": "#4DFFC0",
+    "happy": "#6DFFB0",
+    "curious": "#5EF0FF",
+    "thinking": "#6FB8FF",
+    "surprised": "#C6FFFF",
+    "concerned": "#8FD0FF",
+    "playful": "#7DFFD8",
+    "tired": "#3F9A85",
+    "proud": "#FFE07A",
+    "excited": "#FFD45C",
+    "sad": "#6A9CFF",
+    "confused": "#B9A0FF",
+    "shy": "#FFB0C8",
+    "grumpy": "#FF7A5C",
+    "focused": "#40FFD0",
+    "relieved": "#9FFFD8",
+    "fond": "#FFB3D9",
+    "scared": "#8FA8FF",
+    "sleepy": "#3F5CFF",
+    "dreaming": "#A98BFF"
+  },
+  "states": {
+    "sleeping": {
+      "pose": "sleepy",
+      "set": {
+        "look_y": 0.4,
+        "head_y": 0.03
+      },
+      "glow": 0.45
+    },
+    "offline": {
+      "pose": "tired",
+      "set": {
+        "blush": 0.0
+      },
+      "glow": 0.3
+    },
+    "thinking": {
+      "pose": "thinking",
+      "only_from": "neutral"
+    },
+    "listening": {
+      "add": {
+        "open": 0.1,
+        "size": 0.03
+      }
+    }
+  },
+  "gestures": {
+    "none": {
+      "seconds": 0.0,
+      "moves": {}
+    },
+    "nod": {
+      "seconds": 0.9,
+      "moves": {
+        "dy": [
+          [
+            0.035,
+            [
+              "bump",
+              0.05,
+              0.4
+            ]
+          ],
+          [
+            0.025,
+            [
+              "bump",
+              0.45,
+              0.8
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            0.5,
+            [
+              "bump",
+              0,
+              0.85
+            ]
+          ]
+        ]
+      }
+    },
+    "shake": {
+      "seconds": 1.0,
+      "moves": {
+        "dx": [
+          [
+            0.04,
+            [
+              "sin",
+              4
+            ],
+            [
+              "line",
+              1,
+              -1
+            ]
+          ]
+        ],
+        "look_x": [
+          [
+            -0.7,
+            [
+              "sin",
+              4
+            ],
+            [
+              "line",
+              1,
+              -1
+            ]
+          ]
+        ]
+      }
+    },
+    "tilt_head": {
+      "seconds": 1.5,
+      "moves": {
+        "rot": [
+          [
+            0.28,
+            [
+              "hold",
+              0.25,
+              0.8
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.1,
+            [
+              "hold",
+              0.25,
+              0.8
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            -0.2,
+            [
+              "hold",
+              0.25,
+              0.8
+            ]
+          ]
+        ]
+      }
+    },
+    "perk_up": {
+      "seconds": 0.9,
+      "moves": {
+        "sy": [
+          [
+            -0.08,
+            [
+              "bump",
+              0,
+              0.18
+            ]
+          ],
+          [
+            0.1,
+            [
+              "bump",
+              0.15,
+              0.6
+            ]
+          ]
+        ],
+        "sx": [
+          [
+            0.06,
+            [
+              "bump",
+              0,
+              0.18
+            ]
+          ],
+          [
+            -0.05,
+            [
+              "bump",
+              0.15,
+              0.6
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.045,
+            [
+              "bump",
+              0.15,
+              0.7
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.25,
+            [
+              "bump",
+              0.12,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "droop": {
+      "seconds": 1.6,
+      "moves": {
+        "dy": [
+          [
+            0.045,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "sy": [
+          [
+            -0.06,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "sx": [
+          [
+            0.03,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "open": [
+          [
+            -0.35,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            0.6,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            0.06,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ]
+      }
+    },
+    "look_away": {
+      "seconds": 1.7,
+      "moves": {
+        "look_x": [
+          [
+            0.95,
+            [
+              "hold",
+              0.15,
+              0.8
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            -0.55,
+            [
+              "hold",
+              0.15,
+              0.8
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            -0.07,
+            [
+              "hold",
+              0.15,
+              0.8
+            ]
+          ]
+        ],
+        "dx": [
+          [
+            0.02,
+            [
+              "hold",
+              0.15,
+              0.8
+            ]
+          ]
+        ]
+      }
+    },
+    "shrug": {
+      "seconds": 1.2,
+      "moves": {
+        "dy": [
+          [
+            -0.03,
+            [
+              "bump",
+              0.1,
+              0.6
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            0.12,
+            [
+              "sin",
+              2
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "wave": {
+      "seconds": 1.3,
+      "moves": {
+        "rot": [
+          [
+            0.13,
+            [
+              "sin",
+              6
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.45,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "bounce": {
+      "seconds": 1.0,
+      "moves": {
+        "dy": [
+          [
+            -0.06,
+            [
+              "abs_sin",
+              2
+            ],
+            [
+              "line",
+              1,
+              -0.4
+            ]
+          ]
+        ],
+        "sy": [
+          [
+            -0.07,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ],
+          [
+            0.07,
+            [
+              "abs_sin",
+              2
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "sx": [
+          [
+            0.05,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ],
+          [
+            -0.05,
+            [
+              "abs_sin",
+              2
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.45,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "lean_in": {
+      "seconds": 1.6,
+      "moves": {
+        "scale": [
+          [
+            0.13,
+            [
+              "hold",
+              0.25,
+              0.8
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.12,
+            [
+              "hold",
+              0.25,
+              0.8
+            ]
+          ]
+        ]
+      }
+    },
+    "wink": {
+      "seconds": 0.8,
+      "moves": {
+        "wink": [
+          [
+            1,
+            [
+              "hold",
+              0.2,
+              0.65
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.3,
+            [
+              "hold",
+              0.2,
+              0.65
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            -0.06,
+            [
+              "hold",
+              0.2,
+              0.65
+            ]
+          ]
+        ]
+      }
+    },
+    "laugh": {
+      "seconds": 1.2,
+      "moves": {
+        "dy": [
+          [
+            0.012,
+            [
+              "sin",
+              10
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.8,
+            [
+              "bump",
+              0,
+              1,
+              3
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            0.04,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            -0.3,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "sigh": {
+      "seconds": 2.0,
+      "moves": {
+        "dy": [
+          [
+            -0.02,
+            [
+              "bump",
+              0,
+              0.35
+            ]
+          ],
+          [
+            0.03,
+            [
+              "bump",
+              0.3,
+              1
+            ]
+          ]
+        ],
+        "sy": [
+          [
+            0.05,
+            [
+              "bump",
+              0,
+              0.35
+            ]
+          ],
+          [
+            -0.05,
+            [
+              "bump",
+              0.3,
+              1
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.1,
+            [
+              "bump",
+              0,
+              0.35
+            ]
+          ],
+          [
+            -0.4,
+            [
+              "bump",
+              0.3,
+              1
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            -0.3,
+            [
+              "bump",
+              0,
+              0.35
+            ]
+          ],
+          [
+            0.4,
+            [
+              "bump",
+              0.3,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "startle": {
+      "seconds": 1.3,
+      "moves": {
+        "scale": [
+          [
+            -0.12,
+            [
+              "jolt",
+              0.1
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.03,
+            [
+              "jolt",
+              0.1
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.4,
+            [
+              "jolt",
+              0.1
+            ]
+          ]
+        ],
+        "size": [
+          [
+            0.12,
+            [
+              "jolt",
+              0.1
+            ]
+          ]
+        ],
+        "dx": [
+          [
+            0.01,
+            [
+              "sin",
+              14
+            ],
+            [
+              "jolt",
+              0.1
+            ]
+          ]
+        ]
+      }
+    },
+    "yawn": {
+      "seconds": 2.2,
+      "moves": {
+        "sy": [
+          [
+            0.09,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "sx": [
+          [
+            -0.04,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.6,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "open": [
+          [
+            -0.5,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            -0.08,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.02,
+            [
+              "hold",
+              0.3,
+              0.75
+            ]
+          ]
+        ]
+      }
+    },
+    "double_take": {
+      "seconds": 1.4,
+      "moves": {
+        "look_x": [
+          [
+            0.8,
+            [
+              "bump",
+              0,
+              0.3
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            -0.05,
+            [
+              "bump",
+              0,
+              0.3
+            ]
+          ]
+        ],
+        "open": [
+          [
+            0.35,
+            [
+              "bump",
+              0.35,
+              1
+            ]
+          ]
+        ],
+        "size": [
+          [
+            0.1,
+            [
+              "bump",
+              0.35,
+              1
+            ]
+          ]
+        ],
+        "scale": [
+          [
+            0.06,
+            [
+              "bump",
+              0.35,
+              1
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.02,
+            [
+              "bump",
+              0.35,
+              0.55
+            ]
+          ]
+        ]
+      }
+    },
+    "wiggle": {
+      "seconds": 1.4,
+      "moves": {
+        "rot": [
+          [
+            0.15,
+            [
+              "sin",
+              8
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.015,
+            [
+              "abs_sin",
+              8
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.5,
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ],
+        "dx": [
+          [
+            0.015,
+            [
+              "sin",
+              4
+            ],
+            [
+              "bump",
+              0,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    "peek": {
+      "seconds": 1.8,
+      "moves": {
+        "dx": [
+          [
+            0.05,
+            [
+              "hold",
+              0.25,
+              0.75
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            0.12,
+            [
+              "hold",
+              0.25,
+              0.75
+            ]
+          ]
+        ],
+        "look_x": [
+          [
+            0.9,
+            [
+              "hold",
+              0.25,
+              0.75
+            ]
+          ]
+        ],
+        "open": [
+          [
+            -0.15,
+            [
+              "hold",
+              0.25,
+              0.75
+            ]
+          ]
+        ],
+        "squint": [
+          [
+            0.2,
+            [
+              "hold",
+              0.25,
+              0.75
+            ]
+          ]
+        ]
+      }
+    },
+    "look_up": {
+      "seconds": 1.8,
+      "moves": {
+        "look_x": [
+          [
+            -0.5,
+            [
+              "hold",
+              0.2,
+              0.8
+            ]
+          ]
+        ],
+        "look_y": [
+          [
+            -0.9,
+            [
+              "hold",
+              0.2,
+              0.8
+            ]
+          ]
+        ],
+        "rot": [
+          [
+            -0.06,
+            [
+              "hold",
+              0.2,
+              0.8
+            ]
+          ]
+        ],
+        "dy": [
+          [
+            -0.01,
+            [
+              "hold",
+              0.2,
+              0.8
+            ]
+          ]
+        ]
+      }
+    }
+  }
+}

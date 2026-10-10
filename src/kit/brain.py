@@ -540,6 +540,7 @@ class Brain:
         self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
         self.notebook = Notebook(memory)
         self.notebook.swap_work_quirks(settings().persona.owner)
+        self.notebook.drop_slang(settings().persona.owner)
         self.daily = Daily(memory, self.notebook, self.life, settings)
         self.reflector = Reflector(memory, self.notebook, model, cloud, settings)
         self.weather = weather
@@ -1172,7 +1173,7 @@ class Brain:
         if SHUSH.search(text) and len(text) < 60:
             self.life.snooze(60)
             self.life.feel("put_out", f"{owner} told you to shush", 0.5)
-            return Reply.plain("Righto, zipping it for an hour.", "shy", "nod")
+            return Reply.plain("Okay, zipping it for an hour.", "shy", "nod")
         return None
 
     async def pipe_up(self, reason: str) -> AsyncIterator[Event]:
@@ -1226,7 +1227,9 @@ class Brain:
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             if home is not None:
-                prompt = homecoming_prompt(home, owner, self.life.cheek(), now, also)
+                prompt = homecoming_prompt(
+                    home, owner, self.life.cheek(), now, also, settings.persona.speech
+                )
             else:
                 prompt = pipe_up_prompt(
                     reason,
@@ -1237,6 +1240,7 @@ class Brain:
                     self.life.butting_in,
                     share=about,
                     aim=aim,
+                    speech=settings.persona.speech,
                 )
             messages = self._local_messages(
                 settings,

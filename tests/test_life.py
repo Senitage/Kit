@@ -9,7 +9,17 @@ from fastapi.testclient import TestClient
 
 from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, plan, reply
 from kit.brain import Brain
-from kit.life import Life, energy_at, feeling_from, in_quiet_hours, my_quirks
+from kit.life import (
+    Homecoming,
+    Life,
+    cheek_style,
+    energy_at,
+    feeling_from,
+    homecoming_prompt,
+    in_quiet_hours,
+    my_quirks,
+    pipe_up_prompt,
+)
 from kit.memory import Memory
 from kit.pc_context import PcContext, Snapshot
 from kit.recall import Recall
@@ -175,6 +185,33 @@ async def life_tick_with(brain, reason):
     await life_tick(brain)
 
 
+def test_a_pipe_up_is_said_in_the_voice_dan_chose(paths):
+    """The stage direction is the newest thing the model reads; without his voice in
+    it, its cheek style won and a custom style never showed in pipe-ups."""
+    brain, memory, model, store = make_brain(paths, reply("Question? You eat yet?"))
+    store.update({"persona": {"speech": "Short alien sentences, like Rocky."}}, "test")
+    brain.pc.update(snap())
+    asyncio.run(life_tick_with(brain, "bored"))
+    assert (
+        "Say it in your own voice: Short alien sentences, like Rocky."
+        in (model.calls[0][-1]["content"])
+    )
+    memory.close()
+
+
+def test_hellos_and_pipe_ups_carry_his_voice_and_no_slang_for_cheek():
+    now = datetime(2026, 10, 6, 9, 0)
+    home = Homecoming("overnight", now - timedelta(hours=9), now, dozed=True)
+    speech = "Short alien sentences."
+    for prompt in (
+        homecoming_prompt(home, "Dan", 0.9, now, speech=speech),
+        pipe_up_prompt("bored", "Dan", 0.9, "", 1.0, speech=speech),
+    ):
+        assert f"Say it in your own voice: {speech}" in prompt
+    assert "own voice" not in pipe_up_prompt("bored", "Dan", 0.9, "", 1.0)
+    assert "larrikin" not in cheek_style(0.9)
+
+
 def test_a_pipe_up_that_only_repeats_him_gets_two_more_goes_then_he_keeps_quiet(paths):
     old = "You got a minute? I think the weather's trying to be a drama queen."
     brain, memory, model, _ = make_brain(paths, reply(old), reply(old), old, old)
@@ -249,7 +286,7 @@ def test_with_nothing_new_to_say_he_waits_without_expecting_an_answer():
 def test_shush_snoozes_without_asking_a_model(paths):
     brain, memory, model, _ = make_brain(paths)
     events = collect(brain.chat("shush"))
-    assert events[-1]["reply"]["segments"][0]["say"] == "Righto, zipping it for an hour."
+    assert events[-1]["reply"]["segments"][0]["say"] == "Okay, zipping it for an hour."
     assert brain.life.snoozed_until is not None and model.calls == []
     collect(brain.chat("ok you can talk again"))
     assert brain.life.snoozed_until is None
@@ -437,7 +474,7 @@ def test_a_feeling_shows_fades_and_isnt_pushed_out_by_a_weaker_one():
     assert life.feeling_now().name == "chuffed"
     assert life.feeling_line("Dan") == "chuffed, because Dan called you a legend (just now)"
     assert life.state()["feeling"]["why"] == "Dan called you a legend"
-    clock.now += timedelta(minutes=85)  # chuffed lasts an hour and a half
+    clock.now += timedelta(minutes=115)  # chuffed lasts two hours
     assert life.feeling_now() is None and life.state()["feeling"] is None
     assert not life.feel("nonsense", "why") and not life.feel("sad", "  ")
 

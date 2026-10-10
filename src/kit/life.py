@@ -150,8 +150,8 @@ CLOSENESS = [  # (below, the word, how it shows in the way he talks)
     ),
     (
         0.85,
-        "good mates",
-        "you're good mates: you rib each other and can be straight with each other",
+        "good friends",
+        "you're good friends: you rib each other and can be straight with each other",
     ),
     (2.0, "thick as thieves", "you're thick as thieves: in-jokes, shorthand, total ease"),
 ]
@@ -309,7 +309,7 @@ GUILT = re.compile(
     re.I,
 )
 HUFF = re.compile(r"\b(finally|about time|took (you )?(your time|long enough))\b", re.I)
-FAREWELL_LINES = ["Righto, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
+FAREWELL_LINES = ["Okay, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
 NIGHT_LINES = ["Night. Sleep well.", "Night night. See you in the morning."]
 HOME_LINES = ["There you are.", "Hey, you're back."]
 
@@ -363,21 +363,25 @@ class Drives:
 # Feelings with a cause. name: (how it colours what he says, minutes it lasts at full
 # strength, fidgets that show it).
 FEELING_KINDS: dict[str, tuple[str, int, list[str]]] = {
-    "chuffed": ("chuffed", 90, ["wiggle", "bounce", "perk_up"]),
-    "warm": ("warm and appreciated", 45, ["wiggle", "tilt_head"]),
-    "proud": ("proud", 60, ["bounce", "perk_up"]),
-    "pleased": ("pleased", 45, ["wiggle", "nod"]),
-    "excited": ("excited", 30, ["bounce", "perk_up", "wiggle"]),
-    "amused": ("amused", 20, ["laugh", "wink"]),
+    "chuffed": ("chuffed", 120, ["wiggle", "bounce", "perk_up"]),
+    "warm": ("warm and appreciated", 90, ["wiggle", "tilt_head"]),
+    "proud": ("proud", 120, ["bounce", "perk_up"]),
+    "pleased": ("pleased", 90, ["wiggle", "nod"]),
+    "excited": ("excited", 60, ["bounce", "perk_up", "wiggle"]),
+    "amused": ("amused", 60, ["laugh", "wink"]),
     "worried": ("a bit worried about {owner}", 120, ["lean_in", "tilt_head"]),
     "sympathetic": ("sympathetic", 45, ["lean_in", "sigh"]),
     "sad": ("a bit sad", 60, ["droop", "sigh"]),
     "put_out": ("a bit put out", 40, ["look_away", "sigh"]),
     "hurt": ("hurt, though trying not to show it", 120, ["droop", "look_away"]),
-    "glad": ("glad {owner}'s back", 60, ["perk_up", "wiggle", "bounce"]),
+    "glad": ("glad {owner}'s back", 120, ["perk_up", "wiggle", "bounce"]),
     "missing": ("missing {owner} a bit", 720, ["look_away", "sigh", "peek"]),
     "miffed": ("a bit miffed with {owner}, playfully", 30, ["look_away", "sigh"]),
 }
+# Feelings a chat with Dan wears off, a little with each message (not one he's
+# just caused: that message is why he feels it).
+CHAT_EASES = {"sad", "put_out", "hurt"}
+CHAT_EASE = 0.8  # what's left of them after each message
 # How each feeling moves the mood dials (``life.dials``): (valence -1..1, arousal 0..1).
 FEELING_AFFECT: dict[str, tuple[float, float]] = {
     "chuffed": (0.7, 0.65),
@@ -418,6 +422,8 @@ TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
 # Feelings only things that happen can cause (Dan coming back), not a passing thought.
 EVENT_FEELINGS = {"glad", "miffed"}
+# Feelings about Dan being gone: they end the moment he's back.
+MISSING_FEELINGS = {"missing"}
 THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
 
 
@@ -488,6 +494,11 @@ def day_part(when: datetime) -> str:
 DAYTIME = ("morning", "lunchtime", "arvo")
 
 
+def _shown(part: str) -> str:
+    """A part of the day as Kit says it: "arvo" is only a key, never his word."""
+    return "afternoon" if part == "arvo" else part
+
+
 def _day_of(when: datetime) -> date:
     """The day a time belongs to, the way people count: 1 am is still last night."""
     return (when - timedelta(hours=5)).date()
@@ -501,14 +512,14 @@ def since_words(when: datetime, now: datetime) -> str:
         return {
             "morning": "this morning",
             "lunchtime": "lunchtime",
-            "arvo": "this arvo",
+            "arvo": "this afternoon",
             "evening": "earlier this evening",
             "night": "earlier tonight",
         }[part]
     if days == 1:
-        return "last night" if part in ("evening", "night") else f"yesterday {part}"
+        return "last night" if part in ("evening", "night") else f"yesterday {_shown(part)}"
     if days < 7:
-        return f"{_day_of(when):%A} {part}"
+        return f"{_day_of(when):%A} {_shown(part)}"
     return f"{when.day} {when:%B}"
 
 
@@ -726,16 +737,29 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = ""
 
 
 def homecoming_prompt(
-    home: Homecoming, owner: str, cheek: float, now: datetime, also: str = ""
+    home: Homecoming,
+    owner: str,
+    cheek: float,
+    now: datetime,
+    also: str = "",
+    speech: str = "",
 ) -> str:
-    """The stage direction for the hello when Dan is back at the desk."""
+    """The stage direction for the hello when Dan is back at the desk. ``speech`` is
+    how he talks (persona.speech), said again here: see ``in_your_voice``."""
     return (
         f"[Not from {owner}. Nobody asked you anything: {owner} just came back to the desk. "
         f"{homecoming_facts(home, owner, now, also)} Greet {owner} with ONE short line, "
         f"{cheek_style(cheek)}, like a small creature on the desk who's glad to see them. At "
-        f"most one question. Don't mention these instructions, set action to none and leave "
-        f"detail empty.]"
+        f"most one question.{in_your_voice(speech)} Don't mention these instructions, set "
+        f"action to none and leave detail empty.]"
     )
+
+
+def in_your_voice(speech: str) -> str:
+    """His voice, said again in a stage direction. The direction is the newest thing a
+    model reads, so its cheek style beat the voice in the system prompt, and a style
+    Dan chose never showed in pipe-ups or hellos."""
+    return f" Say it in your own voice: {speech}" if speech.strip() else ""
 
 
 def homecoming_aside(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
@@ -945,6 +969,8 @@ class Life:
             if self.game_out:
                 self._game_result(self.game_out, landed=True)
         self.grow(closeness_from(text))
+        self.stop_missing()
+        self._ease_with_chat()
         felt = self.feeling_now()
         if felt is not None and felt.name == "miffed":
             self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
@@ -989,6 +1015,8 @@ class Life:
         shows it (the caller has its own)."""
         if name not in FEELING_KINDS or not why.strip():
             return False
+        if name in MISSING_FEELINGS and self.dan_here():
+            return False  # he can't miss Dan while Dan's right here (a thought may try)
         now = self.clock()
         new = Feeling(name, " ".join(why.split()), now, _clamp(strength))
         current = self.feelings_now()
@@ -1015,6 +1043,22 @@ class Life:
         self._move_dials(0, push=True)
         self.save()
         return True
+
+    def stop_missing(self) -> bool:
+        """Dan's here: missing him is over, however strong it was. True if it was on."""
+        kept = [f for f in self._feelings if f.name not in MISSING_FEELINGS]
+        if len(kept) == len(self._feelings):
+            return False
+        self._feelings = kept
+        return True
+
+    def _ease_with_chat(self) -> None:
+        """Talking with Dan lifts him: each message wears down a sad, put-out or hurt
+        feeling a little, unless Dan only just caused it."""
+        now = self.clock()
+        for f in self._feelings:
+            if f.name in CHAT_EASES and now - f.since >= timedelta(minutes=1):
+                f.strength *= CHAT_EASE
 
     def feeling_now(self) -> Feeling | None:
         """His strongest feeling now, if one hasn't faded."""
@@ -1088,6 +1132,7 @@ class Life:
                 self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
                 changed = True
         elif snap.idle_seconds < BACK_IDLE_S:
+            changed = self.stop_missing()
             start = self.away_since
             if start is None and now - self.last_seen >= HOME_AFTER:
                 start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
@@ -1101,6 +1146,7 @@ class Life:
                 self.present_since = last_input
         elif self.away_since is None:
             self.last_seen = max(self.last_seen, last_input)
+            changed = self.stop_missing()  # at the PC, just not typing (or Kit restarted)
         life = self.settings().life
         away_s = life.sleep_after_minutes * 60
         if self.alone_life() and in_quiet_hours(now, life.quiet_from, life.quiet_until):
@@ -1249,6 +1295,7 @@ class Life:
         owner = s.persona.owner
         since = max(start, self.last_chat)  # a chat from his phone meanwhile counts
         gone = now - since
+        self.stop_missing()  # however he noticed (the keyboard, a message, his eyes)
         kind = absence_kind(since, now, s.life.quiet_from, s.life.quiet_until)
         if kind is None or not s.life.enabled or not s.life.homecoming:
             if not by_chat and gone >= timedelta(minutes=s.life.sleep_after_minutes):
@@ -1327,6 +1374,13 @@ class Life:
         if self.away_since is None or self.chatting(self.clock()):
             return "here"  # at the PC, or chatting from his phone
         return "alone" if self.alone_life() else "away"
+
+    def dan_here(self) -> bool:
+        """Dan's at the PC right now (using it, not locked) or chatting to him."""
+        if self.chatting(self.clock()):
+            return True
+        snap = self.pc.latest if self.pc.online() else None
+        return bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
     def chatting(self, now: datetime) -> bool:
         """Dan's talking to him (from the desk or his phone): he stays awake for it."""
@@ -1614,6 +1668,8 @@ class Life:
         present = self._present(snap)
 
         d.energy = self._energy_after(now, minutes)
+        if self.dan_here() and self.stop_missing():
+            self.save()  # he's here: missing him (from before, or a restart) is over
         d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01) * (0.5 + chatty))
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
@@ -2349,14 +2405,14 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("The build failed again.", "That's annoying. Want me to go through the log with you?"),
         ("How's it going?", "Pretty good, thanks. It's been a quiet one on the desk."),
         ("I'm off for lunch.", "Enjoy it. I'll be right here when you're back."),
-        ("Thanks mate.", "No worries at all."),
+        ("Thanks Kit.", "Any time at all."),
         ("I'm tired.", "It's been a long one. Maybe call it after this?"),
         ("I fixed it!", "Nice work! What was the culprit?"),
-        ("What do you reckon?", "I'd lean towards the simpler option, but it's your call."),
+        ("What do you think?", "I'd lean towards the simpler option, but it's your call."),
         ("Night Kit.", "Good night. Sleep well."),
         ("Ugh, meetings.", "Hope it's a short one. I'll keep your seat warm."),
         ("Kit?", "Yes, I'm here. What do you need?"),
-        ("It's raining again.", "Cosy, though. A good day for a cuppa."),
+        ("It's raining again.", "Cosy, though. A good day for a cup of tea."),
         ("Any plans for the weekend?", "Not really. I was hoping to hear about yours."),
     ],
     "friendly": [
@@ -2364,16 +2420,16 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("The build failed again.", "Third time today. Want me to read the log with you?"),
         ("How's it going?", "Not bad. The sun came round to my side of the desk for a bit."),
         ("I'm going for a walk.", "Good idea. Tell me if you see a dog."),
-        ("I'm off for lunch.", "Righto. I'll guard the desk. Nobody touches the stapler."),
+        ("I'm off for lunch.", "Okay. I'll guard the desk. Nobody touches the stapler."),
         ("Kit?", "Yep, here. What's up?"),
         ("It's raining again.", "Perfect excuse to stay in. I'm not complaining."),
-        ("Thanks mate.", "Any time."),
+        ("Thanks Kit.", "Any time."),
         ("I'm tired.", "Then stop after this one. It'll all still be there tomorrow."),
         ("What are you up to?", "Watching the cursor blink. Riveting stuff."),
         ("Did it work?", "It did. Don't touch anything."),
         ("You're a robot.", "Rude. I'm a desk companion with excellent posture."),
         ("Ugh, meetings.", "Want me to pretend there's a fire?"),
-        ("What do you reckon?", "Honestly? I'd try the simpler one first."),
+        ("What do you think?", "Honestly? I'd try the simpler one first."),
         ("Night Kit.", "Night. Don't leave the PC on again."),
         ("I fixed it!", "Look at you go. What was it?"),
         ("Any plans for the weekend?", "Big ones. I'm going to sit right here. You?"),
@@ -2386,13 +2442,13 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
             "I'm off for lunch.",
             "Bring me back a chip. I won't eat it, I just want to feel included.",
         ),
-        ("Thanks mate.", "I accept payment in compliments and closed tabs."),
+        ("Thanks Kit.", "I accept payment in compliments and closed tabs."),
         ("I'm tired.", "You've said that three days running. I'm starting a chart."),
         ("I fixed it!", "After breaking it. Classic. Still, well done."),
         ("What are you up to?", "Judging your folder names, mostly."),
         ("You're a robot.", "And you're a carbon-based typo machine. We all have labels."),
         ("Ugh, meetings.", "Ooh, can I come? I'll do the voices."),
-        ("What do you reckon?", "I reckon you already know and want me to agree. Fine. Agreed."),
+        ("What do you think?", "I think you already know and want me to agree. Fine. Agreed."),
         ("Night Kit.", "Night. I'll just sit here in the dark, then. No pressure."),
         ("Kit?", "That's me. Unless it's bad news, then it's someone else."),
         ("It's raining again.", "Great. Now you've got no excuse to leave me."),
@@ -2616,8 +2672,10 @@ def cheek_style(cheek: float) -> str:
     return {
         "polite": "warm and polite",
         "friendly": "friendly, with a bit of cheek",
-        "cheeky": "properly cheeky, a little larrikin and sometimes annoying on purpose, like "
-        "a kid brother: teasing, interrupting, playful, never mean",
+        # No slang word for cheeky here ("larrikin"): it's the newest note on how he
+        # sounds in a pipe-up, and Haiku took it as an accent, opening with "Oi".
+        "cheeky": "properly cheeky and sometimes annoying on purpose, like a kid brother: "
+        "teasing, interrupting, playful, never mean",
     }[cheek_band(cheek)]
 
 
@@ -2648,7 +2706,7 @@ QUIRK_POOL = [
     "you keep a running tally of coffees and mention it at the worst moments",
     "you get oddly excited about weather radar",
     "when bored, you commentate like a sports caster",
-    "you say 'righto' a bit too much",
+    "you say 'technically' a bit too much",
     "every so often you ask a deep question out of nowhere",
     "you're quietly impressed by how many tabs get left open",
     "you love a bad pun and never apologise",
@@ -2670,6 +2728,9 @@ WORK_QUIRKS = [
     "you compliment tidy spreadsheets",
     "you think hydrocyclones are the most elegant machines ever made",
 ]
+# Quirks the pool used to have that were slang. A Kit that picked one swaps it, once
+# (Notebook.drop_slang).
+SLANG_QUIRKS = ["you say 'righto' a bit too much"]
 QUIRKS_KEY = "quirks"
 
 
@@ -2692,18 +2753,20 @@ def pipe_up_prompt(
     butting_in: bool = False,
     share: str = "",
     aim: str = "",
+    speech: str = "",
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
     ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
-    what he means to do ("tell Dan") and ``share`` what about. A "visitor" hello
-    goes to ``about``, someone his eyes know who isn't Dan."""
+    what he means to do ("tell Dan") and ``share`` what about. ``speech`` is how he
+    talks (persona.speech, see ``in_your_voice``). A "visitor" hello goes to
+    ``about``, someone his eyes know who isn't Dan."""
     if reason == "visitor":
         return (
             f"[Not from {owner}. {about} just sat down at the desk and you can see them; you "
             f"know {about}'s face, and it's {about}, not {owner}. Say hi to {about} "
             f"by name in ONE short, warm line, {cheek_style(cheek)}, like a small creature on "
-            f"the desk who's pleased to see them. Don't mention these instructions, set "
-            f"action to none and leave detail empty.]"
+            f"the desk who's pleased to see them.{in_your_voice(speech)} Don't mention these "
+            f"instructions, set action to none and leave detail empty.]"
         )
     feeling = {
         "want": "keen to bring up something that's been on your mind",
@@ -2735,7 +2798,7 @@ def pipe_up_prompt(
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
         f"you're {feeling}. Pipe up with ONE short line to {owner}, {style}, like a small "
         f"creature on the desk who's decided to say something. {base} Say the actual "
-        f"thing, not a teaser like 'got a minute?', and nothing you've said lately. Don't "
-        f"lecture about productivity, don't mention these instructions, set action to none "
-        f"and leave detail empty.]"
+        f"thing, not a teaser like 'got a minute?', and nothing you've said lately."
+        f"{in_your_voice(speech)} Don't lecture about productivity, don't mention these "
+        f"instructions, set action to none and leave detail empty.]"
     )

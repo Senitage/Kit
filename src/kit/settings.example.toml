@@ -139,7 +139,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # and a nightly look back at his day (docs/life.md).
 # [life]
 # enabled = true
-# cheek = 0.6            # 0 polite .. 1 larrikin
+# cheek = 0.6            # 0 polite .. 1 very cheeky
 # chattiness = 0.5       # 0 never speaks first .. 1 whenever he feels like it
 # max_per_hour = 3
 # quiet_from = "22:00"

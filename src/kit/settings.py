@@ -357,6 +357,11 @@ OLD_PERSONA: dict[str, list] = {
             "Hand real questions, maths, code and anything current to the cloud.",
         ]
     ],
+    # Australian slang crept into every line from this one (Dan didn't want it).
+    "speech": [
+        "Short sentences, plain words, Australian-casual. One or two sentences unless asked "
+        "for detail. Never gushes, never says 'as an AI'."
+    ],
     "examples": [
         [
             {"user": "Morning.", "kit": "Morning. Coffee first, or straight into it?"},
@@ -391,8 +396,8 @@ class PersonaSettings(_Section):
         description="Three to five core traits.",
     )
     speech: str = Field(
-        "Short sentences, plain words, Australian-casual. One or two sentences unless asked "
-        "for detail. Never gushes, never says 'as an AI'.",
+        "Short sentences, plain words, casual. One or two sentences unless asked for "
+        "detail. No slang. Never gushes, never says 'as an AI'.",
         description="How Kit talks.",
     )
     location: str = Field(
@@ -488,7 +493,7 @@ class LifeSettings(_Section):
         0.6,
         ge=0,
         le=1,
-        description="How cheeky Kit is, in chat and when he pipes up: 0 polite, 1 larrikin.",
+        description="How cheeky Kit is, in chat and when he pipes up: 0 polite, 1 very cheeky.",
     )
     chattiness: float = Field(
         0.5,

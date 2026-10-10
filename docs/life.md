@@ -42,18 +42,21 @@ push out a stronger one.
 
 | What happens | He feels | Fades over (at most) |
 |---|---|---|
-| You call him a legend, say well done or nailed it | chuffed | an hour and a half |
-| You thank him | warm and appreciated | 45 minutes |
-| You say it works, it's fixed, or the tests are green; or "passed" shows on screen | proud | an hour |
+| You call him a legend, say well done or nailed it | chuffed | 2 hours |
+| You thank him | warm and appreciated | an hour and a half |
+| You say it works, it's fixed, or the tests are green; or "passed" shows on screen | proud | 2 hours |
 | You say the build or tests failed; or "failed" shows on screen | sympathetic | 45 minutes |
 | You're stressed, fed up, worried or up against a deadline | a bit worried about you | 2 hours |
 | Sad news: someone's in hospital, a pet died | a bit sad | an hour |
 | You're rude to him | hurt, though trying not to show it | 2 hours |
 | You tell him to shush, or ignore a pipe-up | a bit put out | 40 minutes |
-| "You can talk again" | pleased | 45 minutes |
-| You're back after 20 minutes or more | glad you're back (more so after days) | an hour |
-| He hasn't seen or heard from you for a day | missing you a bit | 12 hours |
+| "You can talk again" | pleased | an hour and a half |
+| You're back after 20 minutes or more | glad you're back (more so after days) | 2 hours |
+| He hasn't seen or heard from you for a day | missing you a bit | 12 hours, or until you're back at the PC or message him |
 | After his first week: gone for hours in the daytime, no goodbye | a bit miffed, playfully | until you talk |
+
+Good feelings last as long as the bad ones, and chatting with him wears a sad,
+put-out or hurt feeling down a little with each message.
 
 A strong emotion in his own reply (excited, proud, sad, fond, concerned) lingers
 a little too, and a thought of his can change how he feels. Ask him how he's
