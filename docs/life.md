@@ -52,7 +52,7 @@ push out a stronger one.
 | You tell him to shush, or ignore a pipe-up | a bit put out | 40 minutes |
 | "You can talk again" | pleased | 45 minutes |
 | You're back after 20 minutes or more | glad you're back (more so after days) | an hour |
-| He hasn't seen or heard from you for a day | missing you a bit | 12 hours |
+| He hasn't seen or heard from you for a day | missing you a bit | 12 hours, or until you're back at the PC or message him |
 | After his first week: gone for hours in the daytime, no goodbye | a bit miffed, playfully | until you talk |
 
 A strong emotion in his own reply (excited, proud, sad, fond, concerned) lingers

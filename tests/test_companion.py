@@ -437,6 +437,23 @@ def test_he_misses_dan_after_a_day_unseen():
     assert felt.name == "missing" and felt.why == "you haven't seen Dan since yesterday morning"
 
 
+def test_missing_him_ends_when_hes_back_and_cant_start_while_hes_here():
+    """Dan's Mood page: back at the PC a while, Kit still "missing, because Dan's
+    gone off for a bit" (a thought's feeling) and a sad face."""
+    life, pc, clock = setup()
+    life.feel("missing", "Dan's gone off for a bit", 0.7)
+    assert life.feeling_now().name == "missing"
+    report(life, pc, snap(idle=5))  # he's back at the PC
+    assert life.feeling_now() is None or life.feeling_now().name != "missing"
+    assert life.face() != "sad"
+    assert not life.feel("missing", "Dan's gone quiet", 0.9)  # not while he's here
+    clock.now += timedelta(minutes=20)
+    pc.update(snap(idle=1200))  # gone again: now he can miss him
+    assert life.feel("missing", "Dan's gone off for a bit", 0.7)
+    life.note_chat("back!")  # a message from his phone ends it too
+    assert all(f.name != "missing" for f in life.feelings_now())
+
+
 def test_closeness_grows_a_little_a_day_and_is_a_word():
     life, pc, clock = setup()
     assert closeness_words(life.closeness)[0] == "getting to know you"

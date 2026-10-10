@@ -415,6 +415,8 @@ TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
 # Feelings only things that happen can cause (Dan coming back), not a passing thought.
 EVENT_FEELINGS = {"glad", "miffed"}
+# Feelings about Dan being gone: they end the moment he's back.
+MISSING_FEELINGS = {"missing"}
 THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
 
 
@@ -921,6 +923,7 @@ class Life:
             if self.game_out:
                 self._game_result(self.game_out, landed=True)
         self.grow(closeness_from(text))
+        self.stop_missing()
         felt = self.feeling_now()
         if felt is not None and felt.name == "miffed":
             self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
@@ -965,6 +968,8 @@ class Life:
         shows it (the caller has its own)."""
         if name not in FEELING_KINDS or not why.strip():
             return False
+        if name in MISSING_FEELINGS and self.dan_here():
+            return False  # he can't miss Dan while Dan's right here (a thought may try)
         now = self.clock()
         new = Feeling(name, " ".join(why.split()), now, _clamp(strength))
         current = self.feelings_now()
@@ -990,6 +995,14 @@ class Life:
             self.publish({"type": "fidget", "gesture": gesture, "mood": name})
         self._move_dials(0, push=True)
         self.save()
+        return True
+
+    def stop_missing(self) -> bool:
+        """Dan's here: missing him is over, however strong it was. True if it was on."""
+        kept = [f for f in self._feelings if f.name not in MISSING_FEELINGS]
+        if len(kept) == len(self._feelings):
+            return False
+        self._feelings = kept
         return True
 
     def feeling_now(self) -> Feeling | None:
@@ -1064,6 +1077,7 @@ class Life:
                 self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
                 changed = True
         elif snap.idle_seconds < BACK_IDLE_S:
+            changed = self.stop_missing()
             start = self.away_since
             if start is None and now - self.last_seen >= HOME_AFTER:
                 start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
@@ -1195,6 +1209,13 @@ class Life:
         if self.away_since is None or self.chatting(self.clock()):
             return "here"  # at the PC, or chatting from his phone
         return "alone" if self.alone_life() else "away"
+
+    def dan_here(self) -> bool:
+        """Dan's at the PC right now (using it, not locked) or chatting to him."""
+        if self.chatting(self.clock()):
+            return True
+        snap = self.pc.latest if self.pc.online() else None
+        return bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
     def chatting(self, now: datetime) -> bool:
         """Dan's talking to him (from the desk or his phone): he stays awake for it."""
