@@ -1130,6 +1130,7 @@ class Life:
         """Dan is back after being away since ``start`` (or talking again after a long
         gap, ``by_chat``). A short absence is only worth a thought; a longer one makes
         Kit glad (or, after his first week, a bit miffed) and leaves him a hello."""
+        self.stop_missing()  # however he noticed (the keyboard, a message, his eyes)
         s = self.settings()
         owner = s.persona.owner
         since = max(start, self.last_chat)  # a chat from his phone meanwhile counts
