@@ -56,7 +56,7 @@ pip install -e ".[eyes]"
 
 `kit[eyes]` brings OpenCV (the contrib build, which MediaPipe needs; don't
 install plain `opencv-python` beside it), Ultralytics, ByteTrack's `lap` and
-MediaPipe. The models (YOLO11n, about 6 MB; MediaPipe's face, gesture and pose
+MediaPipe. The models (YOLO11s, about 20 MB; MediaPipe's face, gesture and pose
 tasks, about 30 MB) download into the eyes' folder the first time they run.
 
 On the Pi later it's the same command on Raspberry Pi OS 64-bit; Ultralytics

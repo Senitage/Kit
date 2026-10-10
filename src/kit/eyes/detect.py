@@ -53,7 +53,7 @@ class YoloDetector:
 
     def __init__(
         self,
-        weights: str = "yolo11n",
+        weights: str = "yolo11s",
         folder: Path | None = None,
         confidence: float = 0.4,
         device: int | str | None = None,

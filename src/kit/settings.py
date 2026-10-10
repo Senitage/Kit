@@ -689,10 +689,11 @@ class EyesSettings(_Section):
         "so left is your left; off for a camera on the arm.",
     )
     detector: str = Field(
-        "yolo11n",
+        "yolo11s",
         min_length=1,
-        description="The model that finds people and objects: yolo11n is fast, yolo11s more "
-        "accurate. Downloaded the first time the eyes run.",
+        description="The model that finds people and objects: yolo11s suits a PC with a "
+        "graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper "
+        "still. Downloaded the first time the eyes run.",
     )
     confidence: float = Field(
         0.4, ge=0.05, le=0.95, description="How sure the detector must be before something counts."

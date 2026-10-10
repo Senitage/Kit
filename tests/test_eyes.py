@@ -503,7 +503,7 @@ def test_connection_falls_back_to_the_desk_app_then_kits_folder(tmp_path, monkey
 
 def test_eyes_settings_have_sane_defaults():
     s = EyesSettings()
-    assert s.enabled and s.mirror and s.detector == "yolo11n" and s.report_every_s == 1.0
+    assert s.enabled and s.mirror and s.detector == "yolo11s" and s.report_every_s == 1.0
     with pytest.raises(ValueError):
         EyesSettings(confidence=2)
 
