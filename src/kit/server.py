@@ -18,10 +18,11 @@ from importlib import resources
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import kit
+from kit import body as bodies
 from kit.brain import Brain
 from kit.face import character as characters
 from kit.face import serve as face_files
@@ -327,13 +328,18 @@ def create_app(
         async def events() -> AsyncIterator[str]:
             turn.started = time.monotonic()
             first_words = True
-            async for event in brain.chat(body.text, body.channel):
-                if first_words and event.get("type") == "say" and event.get("text"):
-                    first_words = False
-                    log.info("turn: first words %.2f s after the message", turn.since())
-                elif event.get("type") == "reply":
-                    log.info("turn: reply done %.2f s after the message", turn.since())
-                yield json.dumps(event) + "\n"
+            moments = bodies.ChatMoments(brain.life)
+            try:
+                async for event in brain.chat(body.text, body.channel):
+                    moments.see(event)
+                    if first_words and event.get("type") == "say" and event.get("text"):
+                        first_words = False
+                        log.info("turn: first words %.2f s after the message", turn.since())
+                    elif event.get("type") == "reply":
+                        log.info("turn: reply done %.2f s after the message", turn.since())
+                    yield json.dumps(event) + "\n"
+            finally:
+                moments.done()
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
@@ -602,6 +608,22 @@ def create_app(
         one, so the desk app (and later the arm) hears about them at once."""
         events = await brain.life.wait_for_events(after, wait)
         return {"events": events, "last": brain.life.state()["last_event"]}
+
+    @app.get("/api/body/feed", dependencies=auth, response_class=PlainTextResponse)
+    async def body_feed(
+        after: int | None = None, wait: Annotated[float, Query(ge=0, le=60)] = 20
+    ) -> str:
+        """For a robot body (the Pod): Kit's face, sleep and liveliness now, then what
+        happened after event ``after``, one plain line each (see kit.body). Without
+        ``after`` (a body that's just started) it answers at once, with no old events."""
+        events = [] if after is None else await brain.life.wait_for_events(after, wait)
+        return bodies.feed(brain.life, events)
+
+    @app.post("/api/body/touch", dependencies=auth)
+    def body_touch() -> dict:
+        """Dan patted a body's head."""
+        bodies.touched(brain.life, store.current().persona.owner)
+        return {"ok": True}
 
     @app.post("/api/life/poke", dependencies=auth)
     async def life_poke() -> dict:
