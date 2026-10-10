@@ -360,21 +360,25 @@ class Drives:
 # Feelings with a cause. name: (how it colours what he says, minutes it lasts at full
 # strength, fidgets that show it).
 FEELING_KINDS: dict[str, tuple[str, int, list[str]]] = {
-    "chuffed": ("chuffed", 90, ["wiggle", "bounce", "perk_up"]),
-    "warm": ("warm and appreciated", 45, ["wiggle", "tilt_head"]),
-    "proud": ("proud", 60, ["bounce", "perk_up"]),
-    "pleased": ("pleased", 45, ["wiggle", "nod"]),
-    "excited": ("excited", 30, ["bounce", "perk_up", "wiggle"]),
-    "amused": ("amused", 20, ["laugh", "wink"]),
+    "chuffed": ("chuffed", 120, ["wiggle", "bounce", "perk_up"]),
+    "warm": ("warm and appreciated", 90, ["wiggle", "tilt_head"]),
+    "proud": ("proud", 120, ["bounce", "perk_up"]),
+    "pleased": ("pleased", 90, ["wiggle", "nod"]),
+    "excited": ("excited", 60, ["bounce", "perk_up", "wiggle"]),
+    "amused": ("amused", 60, ["laugh", "wink"]),
     "worried": ("a bit worried about {owner}", 120, ["lean_in", "tilt_head"]),
     "sympathetic": ("sympathetic", 45, ["lean_in", "sigh"]),
     "sad": ("a bit sad", 60, ["droop", "sigh"]),
     "put_out": ("a bit put out", 40, ["look_away", "sigh"]),
     "hurt": ("hurt, though trying not to show it", 120, ["droop", "look_away"]),
-    "glad": ("glad {owner}'s back", 60, ["perk_up", "wiggle", "bounce"]),
+    "glad": ("glad {owner}'s back", 120, ["perk_up", "wiggle", "bounce"]),
     "missing": ("missing {owner} a bit", 720, ["look_away", "sigh", "peek"]),
     "miffed": ("a bit miffed with {owner}, playfully", 30, ["look_away", "sigh"]),
 }
+# Feelings a chat with Dan wears off, a little with each message (not one he's
+# just caused: that message is why he feels it).
+CHAT_EASES = {"sad", "put_out", "hurt"}
+CHAT_EASE = 0.8  # what's left of them after each message
 # How each feeling moves the mood dials (``life.dials``): (valence -1..1, arousal 0..1).
 FEELING_AFFECT: dict[str, tuple[float, float]] = {
     "chuffed": (0.7, 0.65),
@@ -415,6 +419,8 @@ TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
 # Feelings only things that happen can cause (Dan coming back), not a passing thought.
 EVENT_FEELINGS = {"glad", "miffed"}
+# Feelings about Dan being gone: they end the moment he's back.
+MISSING_FEELINGS = {"missing"}
 THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
 
 
@@ -939,6 +945,8 @@ class Life:
             if self.game_out:
                 self._game_result(self.game_out, landed=True)
         self.grow(closeness_from(text))
+        self.stop_missing()
+        self._ease_with_chat()
         felt = self.feeling_now()
         if felt is not None and felt.name == "miffed":
             self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
@@ -983,6 +991,8 @@ class Life:
         shows it (the caller has its own)."""
         if name not in FEELING_KINDS or not why.strip():
             return False
+        if name in MISSING_FEELINGS and self.dan_here():
+            return False  # he can't miss Dan while Dan's right here (a thought may try)
         now = self.clock()
         new = Feeling(name, " ".join(why.split()), now, _clamp(strength))
         current = self.feelings_now()
@@ -1009,6 +1019,22 @@ class Life:
         self._move_dials(0, push=True)
         self.save()
         return True
+
+    def stop_missing(self) -> bool:
+        """Dan's here: missing him is over, however strong it was. True if it was on."""
+        kept = [f for f in self._feelings if f.name not in MISSING_FEELINGS]
+        if len(kept) == len(self._feelings):
+            return False
+        self._feelings = kept
+        return True
+
+    def _ease_with_chat(self) -> None:
+        """Talking with Dan lifts him: each message wears down a sad, put-out or hurt
+        feeling a little, unless Dan only just caused it."""
+        now = self.clock()
+        for f in self._feelings:
+            if f.name in CHAT_EASES and now - f.since >= timedelta(minutes=1):
+                f.strength *= CHAT_EASE
 
     def feeling_now(self) -> Feeling | None:
         """His strongest feeling now, if one hasn't faded."""
@@ -1082,6 +1108,7 @@ class Life:
                 self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
                 changed = True
         elif snap.idle_seconds < BACK_IDLE_S:
+            changed = self.stop_missing()
             start = self.away_since
             if start is None and now - self.last_seen >= HOME_AFTER:
                 start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
@@ -1095,6 +1122,7 @@ class Life:
                 self.present_since = last_input
         elif self.away_since is None:
             self.last_seen = max(self.last_seen, last_input)
+            changed = self.stop_missing()  # at the PC, just not typing (or Kit restarted)
         life = self.settings().life
         away_s = life.sleep_after_minutes * 60
         if self.alone_life() and in_quiet_hours(now, life.quiet_from, life.quiet_until):
@@ -1138,6 +1166,7 @@ class Life:
         owner = s.persona.owner
         since = max(start, self.last_chat)  # a chat from his phone meanwhile counts
         gone = now - since
+        self.stop_missing()  # however he noticed (the keyboard, a message, his eyes)
         kind = absence_kind(since, now, s.life.quiet_from, s.life.quiet_until)
         if kind is None or not s.life.enabled or not s.life.homecoming:
             if not by_chat and gone >= timedelta(minutes=s.life.sleep_after_minutes):
@@ -1213,6 +1242,13 @@ class Life:
         if self.away_since is None or self.chatting(self.clock()):
             return "here"  # at the PC, or chatting from his phone
         return "alone" if self.alone_life() else "away"
+
+    def dan_here(self) -> bool:
+        """Dan's at the PC right now (using it, not locked) or chatting to him."""
+        if self.chatting(self.clock()):
+            return True
+        snap = self.pc.latest if self.pc.online() else None
+        return bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
     def chatting(self, now: datetime) -> bool:
         """Dan's talking to him (from the desk or his phone): he stays awake for it."""
@@ -1500,6 +1536,8 @@ class Life:
         present = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
         d.energy = self._energy_after(now, minutes)
+        if self.dan_here() and self.stop_missing():
+            self.save()  # he's here: missing him (from before, or a restart) is over
         d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01) * (0.5 + chatty))
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
