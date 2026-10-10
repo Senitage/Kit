@@ -46,9 +46,10 @@ From photos instead, a folder with clear photos of just that person:
 kit eyes enrol Sam --photos "D:\Photos\Sam"
 ```
 
-Photos with more than one face, a face turned well away, or a file it can't
-open (HEIC included: export as JPEG) are skipped, and it says how many. Ten or
-twenty good photos are plenty.
+Close-ups and selfies are fine, and so is someone small in the background.
+Photos with two or more faces of about the same size, a face turned well away,
+or a file it can't open (HEIC included: export as JPEG) are skipped, and it
+names each one and why. Ten or twenty good photos are plenty.
 
 Then start `kit eyes` again. Running eyes also pick up a new introduction by
 themselves within a second.

@@ -26,6 +26,10 @@ PHOTO_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 MAX_PHOTOS = 500
 SHOT_GAP_S = 0.25  # between looks from the camera, so they differ a little
 SAME_LOOK = 0.97  # a look this like the last one adds nothing
+# YuNet only finds faces up to about 300 px across at the size it's given, and
+# misses small ones when shrunk too far, so photos are tried small, then bigger.
+PHOTO_SIZES = (640, 1280)
+MAIN_FACE = 3.0  # a face this many times bigger than the rest is who the photo is of
 
 
 Look = Callable[[object], list]  # frame (BGR) -> faces in it (kit.eyes.faces.Face)
@@ -48,16 +52,17 @@ def _one_face(faces: list, front_only: bool):
     return face
 
 
-def yunet_faces(rows) -> list:
+def yunet_faces(rows, scale: float = 1.0) -> list:
     """``Face``s from YuNet's rows: box, the five key points SFace straightens by
     (already in the order it wants), and a rough "facing the camera" from where
-    the nose sits between the eyes."""
+    the nose sits between the eyes. ``scale`` maps a shrunk picture's pixels back
+    to the photo's."""
     from kit.eyes.faces import Face
 
     faces = []
     for row in [] if rows is None else rows:
-        x, y, w, h = (float(v) for v in row[:4])
-        points = [float(v) for v in row[4:14]]
+        x, y, w, h = (float(v) * scale for v in row[:4])
+        points = [float(v) * scale for v in row[4:14]]
         ex1, ex2, nose = points[0], points[2], points[4]
         span = abs(ex2 - ex1) or 1.0
         off = (nose - min(ex1, ex2)) / span  # 0.5: square on
@@ -113,25 +118,51 @@ def photos_in(folder: Path) -> list[Path]:
     return found[:MAX_PHOTOS]
 
 
+def _main_face(faces: list):
+    """The face a photo is of: the only one, or one much bigger than the rest
+    (someone in the background doesn't spoil it). None when it can't tell."""
+    if len(faces) > 1:
+        faces = sorted(faces, key=lambda f: area(f.box), reverse=True)
+        if area(faces[0].box) < MAIN_FACE * area(faces[1].box):
+            return None
+    return faces[0] if faces else None
+
+
+def area(box) -> float:
+    x1, y1, x2, y2 = box
+    return max(x2 - x1, 0) * max(y2 - y1, 0)
+
+
 def from_photos(
     enroller: Enroller, photos: Iterable[Path], say: Callable[[str], None] = print
 ) -> list[Vector]:
-    """A look from each photo with exactly one clear face in it."""
+    """A look from each photo that's clearly of one person, facing the camera.
+    Says which photos were skipped, and why."""
     got: list[Vector] = []
-    skipped = 0
+    skipped: list[str] = []
     for path in photos:
         image = enroller.read_photo(path)
-        face = _one_face(enroller.look(image), front_only=True) if image is not None else None
-        v = enroller.embed(image, face) if face is not None else None
+        if image is None:
+            skipped.append(f"{path.name} (can't open it)")
+            continue
+        faces = enroller.look(image)
+        face = _main_face(faces)
+        if face is None:
+            why = "no face found" if not faces else f"{len(faces)} faces, none clearly theirs"
+            skipped.append(f"{path.name} ({why})")
+            continue
+        if face.align_points is None or not face.facing_camera:
+            skipped.append(f"{path.name} (face turned away)")
+            continue
+        v = enroller.embed(image, face)
         if v is None:
-            skipped += 1
+            skipped.append(f"{path.name} (couldn't read the face)")
             continue
         got.append(v)
     if skipped:
-        say(
-            f"skipped {skipped} photo(s): no face, more than one face, a face turned "
-            "away, or a file Kit can't open"
-        )
+        say(f"skipped {len(skipped)} photo(s): " + "; ".join(skipped[:12]))
+        if len(skipped) > 12:
+            say(f"...and {len(skipped) - 12} more")
     return got
 
 
@@ -150,8 +181,14 @@ def build_enroller(models: Path, photos: bool) -> Enroller:
 
         def look(frame) -> list:
             h, w = frame.shape[:2]
-            yunet.setInputSize((w, h))
-            return yunet_faces(yunet.detect(frame)[1])
+            for size in PHOTO_SIZES:
+                k = min(1.0, size / max(h, w))
+                small = cv2.resize(frame, (round(w * k), round(h * k))) if k < 1 else frame
+                yunet.setInputSize((small.shape[1], small.shape[0]))
+                faces = yunet_faces(yunet.detect(small)[1], scale=1 / k)
+                if faces:
+                    return faces
+            return []
 
     else:
         from kit.eyes.body import mp_image

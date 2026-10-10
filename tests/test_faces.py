@@ -180,7 +180,8 @@ def test_enrolling_from_photos_uses_only_clear_single_faces(tmp_path):
         (tmp_path / name).write_text("x")
     photos = enrol.photos_in(tmp_path)
     assert [p.name for p in photos] == ["a.jpg", "b.JPEG", "broken.jpg", "group.png", "side.jpg"]
-    found = {"a.jpg": [face()], "b.JPEG": [face()], "group.png": [face(), face()]}
+    found = {"a.jpg": [face()], "group.png": [face(), face()]}
+    found["b.JPEG"] = [face((0, 0, 600, 600)), face((900, 0, 950, 50))]  # someone far behind
     found["side.jpg"] = [face(yaw=70)]
     enroller = enrol.Enroller(
         look=lambda image: found.get(image, []),
@@ -189,7 +190,10 @@ def test_enrolling_from_photos_uses_only_clear_single_faces(tmp_path):
     )
     said = []
     assert len(enrol.from_photos(enroller, photos, say=said.append)) == 2
-    assert said and said[0].startswith("skipped 3 photo(s)")
+    assert said == [
+        "skipped 3 photo(s): broken.jpg (can't open it); group.png (2 faces, none clearly "
+        "theirs); side.jpg (face turned away)"
+    ]
 
 
 def test_yunet_rows_become_faces_with_the_points_sface_wants():
@@ -199,6 +203,8 @@ def test_yunet_rows_become_faces_with_the_points_sface_wants():
     assert a.box == (100, 50, 180, 150) and a.align_points == [float(v) for v in square[4:14]]
     assert a.facing_camera and not b.facing_camera
     assert enrol.yunet_faces(None) == []
+    (big,) = enrol.yunet_faces(np.array([square]), scale=2.0)  # found in a half-size copy
+    assert big.box == (200, 100, 360, 300) and big.align_points[:2] == [240.0, 180.0]
 
 
 # --- the brain keeps who's who ---------------------------------------------
