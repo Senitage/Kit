@@ -197,6 +197,42 @@ def test_waving_needs_a_raised_swinging_wrist():
     assert found == []  # hands at desk height: not a wave
 
 
+def up_hand(tip_x, wrist=(0.5, 0.6), side="right", fingers_up=True):
+    """A hand with its wrist fixed and its middle fingertip at ``tip_x``: knuckle
+    0.1 of the frame height above the wrist, tip 0.2 above (or below)."""
+    points = [Point(*wrist)] * 21
+    dy = -1 if fingers_up else 1
+    points[9] = Point(wrist[0], wrist[1] + dy * 0.1)
+    points[12] = Point(tip_x, wrist[1] + dy * 0.2)
+    return Hand(side, "open palm", points)
+
+
+def test_a_wave_from_the_wrist_counts_but_a_still_palm_doesnt():
+    frame = (1280, 720)  # a hand-length is 72 px, so the tip swinging 0.1 is 1.8 of them
+    detector = ActionDetector()
+    for i in range(12):
+        found = detector.update(1, i * 0.1, frame, hands=[up_hand(0.55 if i % 2 else 0.45)])
+    assert found == ["waving"]
+    detector = ActionDetector()
+    for i in range(12):
+        found = detector.update(1, i * 0.1, frame, hands=[up_hand(0.5 + 0.005 * (i % 2))])
+    assert found == []  # an open palm held still
+    detector = ActionDetector()
+    for i in range(12):
+        tip = 0.55 if i % 2 else 0.45
+        found = detector.update(1, i * 0.1, frame, hands=[up_hand(tip, fingers_up=False)])
+    assert found == []  # fingers down, like a hand on the mouse
+
+
+def test_the_scene_hands_each_persons_hands_to_the_wave():
+    scene = Scene()
+    box = (300, 100, 900, 719)
+    for i in range(12):
+        tip = 0.55 if i % 2 else 0.45
+        scene.update(i * 0.1, (1280, 720), [(1, "person", box)], hands=[up_hand(tip)])
+    assert "waving" in scene.people[1]["actions"]
+
+
 def test_object_actions_and_drinking_at_the_face():
     detector = ActionDetector()
     cup = SimpleNamespace(label="cup", box=(600, 300, 660, 380))

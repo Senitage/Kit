@@ -32,6 +32,8 @@ from kit.eyes.body import (
 )
 from kit.eyes.faces import Face
 
+MIDDLE_KNUCKLE, MIDDLE_TIP = 9, 12  # MediaPipe hand landmarks
+
 DRINKS = {"cup", "bottle", "wine glass"}
 
 # Holding one of these means the person is doing the matching activity.
@@ -60,6 +62,10 @@ class Sample:
     # Wrist x position in shoulder-widths from the body's centre, but only while
     # the wrist is raised above the shoulder (otherwise missing).
     raised_wrist_x: dict[str, float] | None = None
+    # Middle fingertip x in hand-lengths, per hand, while the fingers point up
+    # (a hand held up, palm out). Catches a wave from the wrist, which the pose's
+    # wrist point hardly sees.
+    fingertip_x: dict[str, float] | None = None
 
 
 def count_swings(values: list[float], min_move: float) -> int:
@@ -122,6 +128,7 @@ class ActionDetector:
         face: Face | None = None,
         pose: list[Point] | None = None,
         held: Iterable = (),
+        hands: Iterable = (),
     ) -> list[str]:
         """Record this frame for one person and return their current actions.
         ``held`` are the tracked objects (with ``label`` and ``box``) the person's
@@ -131,6 +138,7 @@ class ActionDetector:
             sample.yaw, sample.pitch, sample.jaw = face.yaw, face.pitch, face.jaw
         if pose is not None:
             sample.raised_wrist_x = self._raised_wrists(pose, frame_size)
+        sample.fingertip_x = self._fingertips(list(hands), frame_size)
 
         history = self.history.setdefault(pid, deque())
         history.append(sample)
@@ -168,6 +176,21 @@ class ActionDetector:
         return raised
 
     @staticmethod
+    def _fingertips(hands: list, frame_size: tuple[int, int]) -> dict[str, float] | None:
+        w, h = frame_size
+        tips = {}
+        for hand in hands:
+            pts = hand.points
+            if len(pts) <= MIDDLE_TIP:
+                continue
+            wrist, knuckle, tip = pts[0], pts[MIDDLE_KNUCKLE], pts[MIDDLE_TIP]
+            length = ((knuckle.x - wrist.x) * w) ** 2 + ((knuckle.y - wrist.y) * h) ** 2
+            if length < 1 or tip.y >= wrist.y:  # too small, or fingers not pointing up
+                continue
+            tips[hand.side] = tip.x * w / length**0.5
+        return tips or None
+
+    @staticmethod
     def _movement_actions(history: deque[Sample]) -> list[str]:
         actions = []
         yaws = [s.yaw for s in history if s.yaw is not None]
@@ -199,6 +222,17 @@ class ActionDetector:
             if len(xs) >= 0.7 * len(history) and count_swings(xs, 0.25) >= 2:
                 actions.append("waving")
                 break
+        else:
+            # Or a hand held up with its fingertips swinging side to side, at least
+            # half a hand-length, twice. The hand reader misses frames when a hand
+            # moves fast, so it only needs to be seen in half the window.
+            for side in ("left", "right"):
+                tips = [
+                    s.fingertip_x[side] for s in history if s.fingertip_x and side in s.fingertip_x
+                ]
+                if len(tips) >= max(6, 0.5 * len(history)) and count_swings(tips, 0.5) >= 2:
+                    actions.append("waving")
+                    break
 
         # Talking: the jaw opening and closing by 0.08+ at least 3 times.
         if len(jaws) >= 8 and count_swings(jaws, 0.08) >= 3:

@@ -219,6 +219,7 @@ class Scene:
                 "pose_points": None,
                 "pose": [],
                 "held": {},
+                "hands": [],
                 "actions": [],
             }
             for p in people
@@ -238,6 +239,7 @@ class Scene:
             person = owner(points[0], people)  # point 0 = wrist
             if person is None:
                 continue
+            self.people[person.id]["hands"].append(hand)
             if hand.gesture:
                 self.people[person.id]["gestures"][hand.side] = hand.gesture
             for obj in objects:
@@ -262,6 +264,7 @@ class Scene:
                 face=info["face"],
                 pose=info["pose_points"],
                 held=info["held"].values(),
+                hands=info["hands"],
             )
 
         # Turn changes into events, once they've been steady for a few frames.
