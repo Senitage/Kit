@@ -17,6 +17,7 @@ from kit.evals import companion_clock, companion_report, run_companion_eval, see
 from kit.life import (
     FAREWELL,
     FAREWELL_LINES,
+    FEELING_KINDS,
     GAMES,
     HOME_LINES,
     NIGHT_LINES,
@@ -468,6 +469,20 @@ def test_missing_left_over_from_before_ends_while_hes_quietly_at_the_pc():
     pc.update(snap(idle=150))
     life.tick()  # the heartbeat clears it too
     assert all(f.name != "missing" for f in life.feelings_now())
+
+
+def test_good_feelings_last_as_long_as_bad_ones_and_a_chat_lifts_him():
+    longest_good = max(FEELING_KINDS[k][1] for k in ("chuffed", "proud", "glad"))
+    longest_bad = max(FEELING_KINDS[k][1] for k in ("worried", "hurt", "sad"))
+    assert longest_good >= longest_bad
+    life, pc, clock = setup()
+    life.feel("sad", "a sad thought", 0.7)
+    life.note_chat("hey")  # he only just felt it: the chat doesn't touch it yet
+    assert life.feeling_now().strength == pytest.approx(0.7)
+    clock.now += timedelta(minutes=2)
+    for _ in range(3):
+        life.note_chat("how's it going?")
+    assert life.feeling_now().strength == pytest.approx(0.7 * 0.8**3)
 
 
 def test_closeness_grows_a_little_a_day_and_is_a_word():

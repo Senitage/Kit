@@ -437,7 +437,7 @@ def test_a_feeling_shows_fades_and_isnt_pushed_out_by_a_weaker_one():
     assert life.feeling_now().name == "chuffed"
     assert life.feeling_line("Dan") == "chuffed, because Dan called you a legend (just now)"
     assert life.state()["feeling"]["why"] == "Dan called you a legend"
-    clock.now += timedelta(minutes=85)  # chuffed lasts an hour and a half
+    clock.now += timedelta(minutes=115)  # chuffed lasts two hours
     assert life.feeling_now() is None and life.state()["feeling"] is None
     assert not life.feel("nonsense", "why") and not life.feel("sad", "  ")
 

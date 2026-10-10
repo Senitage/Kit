@@ -360,21 +360,25 @@ class Drives:
 # Feelings with a cause. name: (how it colours what he says, minutes it lasts at full
 # strength, fidgets that show it).
 FEELING_KINDS: dict[str, tuple[str, int, list[str]]] = {
-    "chuffed": ("chuffed", 90, ["wiggle", "bounce", "perk_up"]),
-    "warm": ("warm and appreciated", 45, ["wiggle", "tilt_head"]),
-    "proud": ("proud", 60, ["bounce", "perk_up"]),
-    "pleased": ("pleased", 45, ["wiggle", "nod"]),
-    "excited": ("excited", 30, ["bounce", "perk_up", "wiggle"]),
-    "amused": ("amused", 20, ["laugh", "wink"]),
+    "chuffed": ("chuffed", 120, ["wiggle", "bounce", "perk_up"]),
+    "warm": ("warm and appreciated", 90, ["wiggle", "tilt_head"]),
+    "proud": ("proud", 120, ["bounce", "perk_up"]),
+    "pleased": ("pleased", 90, ["wiggle", "nod"]),
+    "excited": ("excited", 60, ["bounce", "perk_up", "wiggle"]),
+    "amused": ("amused", 60, ["laugh", "wink"]),
     "worried": ("a bit worried about {owner}", 120, ["lean_in", "tilt_head"]),
     "sympathetic": ("sympathetic", 45, ["lean_in", "sigh"]),
     "sad": ("a bit sad", 60, ["droop", "sigh"]),
     "put_out": ("a bit put out", 40, ["look_away", "sigh"]),
     "hurt": ("hurt, though trying not to show it", 120, ["droop", "look_away"]),
-    "glad": ("glad {owner}'s back", 60, ["perk_up", "wiggle", "bounce"]),
+    "glad": ("glad {owner}'s back", 120, ["perk_up", "wiggle", "bounce"]),
     "missing": ("missing {owner} a bit", 720, ["look_away", "sigh", "peek"]),
     "miffed": ("a bit miffed with {owner}, playfully", 30, ["look_away", "sigh"]),
 }
+# Feelings a chat with Dan wears off, a little with each message (not one he's
+# just caused: that message is why he feels it).
+CHAT_EASES = {"sad", "put_out", "hurt"}
+CHAT_EASE = 0.8  # what's left of them after each message
 # How each feeling moves the mood dials (``life.dials``): (valence -1..1, arousal 0..1).
 FEELING_AFFECT: dict[str, tuple[float, float]] = {
     "chuffed": (0.7, 0.65),
@@ -924,6 +928,7 @@ class Life:
                 self._game_result(self.game_out, landed=True)
         self.grow(closeness_from(text))
         self.stop_missing()
+        self._ease_with_chat()
         felt = self.feeling_now()
         if felt is not None and felt.name == "miffed":
             self.feel("glad", f"{owner} is back and talking to you", 0.6, show=False, force=True)
@@ -1004,6 +1009,14 @@ class Life:
             return False
         self._feelings = kept
         return True
+
+    def _ease_with_chat(self) -> None:
+        """Talking with Dan lifts him: each message wears down a sad, put-out or hurt
+        feeling a little, unless Dan only just caused it."""
+        now = self.clock()
+        for f in self._feelings:
+            if f.name in CHAT_EASES and now - f.since >= timedelta(minutes=1):
+                f.strength *= CHAT_EASE
 
     def feeling_now(self) -> Feeling | None:
         """His strongest feeling now, if one hasn't faded."""
