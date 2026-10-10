@@ -1193,11 +1193,15 @@ class Brain:
         if reason == "want" and share is None:
             reason = "bored"  # it was dropped meanwhile; he's still restless
         aim, about = "", share.text if share else ""
+        if reason == "visitor":
+            if self.life.visitor is None:
+                return  # they've been greeted, or it's too late now
+            about = self.life.visitor[0]
         if share is not None and share.kind in ASKING:
             aim, about = aim_of(share, owner, self.memory.clock())  # "tell Dan", not read out
         now = self.memory.clock()
         bar = settings.life.pipe_up_bar
-        if bar > 0 and home is None and reason != "nag":
+        if bar > 0 and home is None and reason not in ("nag", "visitor"):
             score, parts = self._pipe_up_score(reason, about, history, now)
             if score < bar:
                 why = f"had something to say, but it scored {score:.2f} of {bar:.2f} ({parts})"
@@ -1231,7 +1235,7 @@ class Brain:
                     reason,
                     owner,
                     self.life.cheek(),
-                    self.life.curious_about,
+                    about if reason == "visitor" else self.life.curious_about,
                     quiet_h,
                     self.life.butting_in,
                     share=about,
@@ -1641,7 +1645,16 @@ class Brain:
                 f"front{tabs}, how long since they touched the keyboard or mouse, and whether "
                 f"it's locked), the time and date, and the weather when you look it up."
             )
-        senses += f" You can't see or hear {owner}: you have no camera or microphone yet."
+        if self.scene.online():
+            senses += (
+                f" You can see the desk with your own eyes: who's there, what they're doing "
+                f"or holding, and the cat when it wanders in. You can't hear {owner} yet."
+            )
+        else:
+            senses += (
+                f" You can't see or hear {owner} right now: your eyes aren't open, and you "
+                f"have no microphone yet."
+            )
         feeling = self.life.feeling_line(owner)
         did = self.life.did_line(owner)
         if did:
@@ -1651,6 +1664,8 @@ class Brain:
     def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
         """Why he piped up, in a few words for his next prompt, or "" when the line
         says it all."""
+        if reason == "visitor":
+            return f"you'd just said hi to {about}, who sat down at the desk"
         if aim:
             return f'you wanted to {aim}: "{about}"'
         if about:
@@ -2114,8 +2129,8 @@ class Brain:
             elif reply.action.kind == "look_around":
                 yield {"type": "looked_around", "in_view": self.scene.in_view()}
                 if job:
-                    job.steps.append("had a look through the camera")
-                look_up = f"What you can see through the camera:\n{self.scene.detail(owner)}"
+                    job.steps.append("had a look around")
+                look_up = f"What you can see:\n{self.scene.detail(owner)}"
             elif reply.action.kind == "weather" and self.weather is not None:
                 place = reply.action.text.strip() or settings.persona.location
                 try:

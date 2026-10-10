@@ -8,15 +8,18 @@ every prompt, answers the ``look_around`` action with the full picture, and
 tells ``kit.life`` what just happened (someone arrived, someone left, the cat
 wandered in) so Kit can greet, wake up or have a thought about it.
 
-Kit can't tell faces apart yet (that's stage 2), so for now it's "someone at
-the desk". Plain Python with no camera libraries, like ``kit.pc_context``.
+People Kit has been introduced to (``kit eyes enrol``) come with their names,
+recognised beside the camera (kit.eyes.recognise); anyone else is "someone".
+While the eyes can recognise people, an arrival waits a few seconds for a
+name, so the hello goes to the right person. Plain Python with no camera
+libraries, like ``kit.pc_context``.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
@@ -30,6 +33,13 @@ ANIMAL_AGAIN_AFTER = timedelta(minutes=30)  # the cat is news again after this l
 MAX_EVENTS = 60
 ANIMALS = {"cat", "dog", "bird", "horse", "sheep", "cow"}
 MAX_PEOPLE = 20
+# These are Kit's own eyes, so he talks about them as anyone would: "I can see you".
+SEE = "What you can see with your own eyes right now"
+OWN_EYES = (
+    "These are your own eyes: say what you see the way anyone would ('I can see you've "
+    "got a cup'), never 'the camera shows'."
+)
+NAME_WAIT = timedelta(seconds=4)  # an arrival waits this long for the eyes to put a name to it
 
 
 def _box() -> list[float]:
@@ -50,6 +60,7 @@ class SeenPerson(BaseModel):
     pose: list[str] = Field(default_factory=list, max_length=10)
     holding: list[str] = Field(default_factory=list, max_length=10)
     actions: list[str] = Field(default_factory=list, max_length=20)
+    unknown: bool = False  # the eyes looked closely and it's nobody Kit knows
 
 
 class SeenObject(BaseModel):
@@ -75,6 +86,7 @@ class SceneReport(BaseModel):
     off: bool = False
     frame_size: list[int] = Field(default_factory=lambda: [0, 0], max_length=2)
     fps: float | None = None
+    recognising: bool = False  # the eyes know some faces and are putting names to people
     people: list[SeenPerson] = Field(default_factory=list, max_length=MAX_PEOPLE)
     objects: list[SeenObject] = Field(default_factory=list, max_length=50)
     events: list[SceneEvent] = Field(default_factory=list, max_length=100)
@@ -88,6 +100,7 @@ class Visit:
     end: datetime
     open: bool = True  # still going
     people: int = 1  # the most people seen at once
+    names: list[str] = field(default_factory=list)  # who was recognised, in order
 
 
 @dataclass
@@ -98,6 +111,7 @@ class Happening:
     text: str  # a line for Kit's thoughts
     away_s: float = 0.0  # arrived: how long nobody was there before
     remember: bool = False  # worth keeping in the `seen` source
+    who: list[str] = field(default_factory=list)  # names recognised, if any
 
 
 def _mins(minutes: float) -> str:
@@ -108,16 +122,31 @@ def _mins(minutes: float) -> str:
     return f"{minutes / 60:.1f} h"
 
 
+def join_names(names: list[str]) -> str:
+    """ "Sam", "Dan and Sam", "Dan, Sam and Lou"."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def _a(label: str) -> str:
     return ("an " if label[:1] in "aeiou" else "a ") + label
+
+
+def _facing(looking: str) -> str:
+    """The eyes say where someone looks relative to the camera; Kit's eyes are the
+    camera, so to him that's "facing you"."""
+    return "facing you" if looking == "facing the camera" else looking
 
 
 def _person_bits(p: SeenPerson, since: datetime | None, now: datetime) -> list[str]:
     bits = [p.position]
     if since is not None:
         bits.append(f"here {_mins((now - since).total_seconds() / 60)}")
+    if p.unknown and not p.name:
+        bits.append("nobody you know")
     if p.face is not None:
-        bits += [p.looking, *p.expressions]
+        bits += [_facing(p.looking), *p.expressions]
     else:
         bits.append("face turned away or hidden")
     bits += [f"{side} hand: {g}" for side, g in p.gestures.items()]
@@ -139,6 +168,7 @@ class SceneContext:
         self.events: deque[tuple[datetime, str]] = deque(maxlen=MAX_EVENTS)
         self._empty_since: datetime | None = None  # nobody in view since
         self._animals: dict[str, datetime] = {}  # when each animal was last in view
+        self._arriving: tuple[datetime, float] | None = None  # waiting for a name: (since, away_s)
 
     def update(self, report: SceneReport) -> list[Happening]:
         """Take a report. Returns what just happened, if anything."""
@@ -163,8 +193,18 @@ class SceneContext:
                 away = (now - gone_since).total_seconds() if gone_since else 0.0
                 self.visits.append(Visit(now, now))
                 last = self.visits[-1]
-                happenings.append(self._arrival(now, away))
+                self._arriving = (now, away)
             last.people = max(last.people, len(report.people))
+            for p in report.people:
+                if p.name and p.name not in last.names:
+                    last.names.append(p.name)
+            if self._arriving is not None:
+                since, away = self._arriving
+                named = bool(last.names) or all(p.unknown for p in report.people)
+                if not report.recognising or named or now - since >= NAME_WAIT:
+                    self._arriving = None
+                    unknown = not last.names and all(p.unknown for p in report.people)
+                    happenings.append(self._arrival(now, away, list(last.names), unknown))
             self._empty_since = None
         else:
             left = self._close_visit(now)
@@ -183,22 +223,32 @@ class SceneContext:
                 happenings.append(Happening("animal", text, remember=True))
         return happenings
 
-    def _arrival(self, now: datetime, away_s: float) -> Happening:
+    def _arrival(
+        self, now: datetime, away_s: float, who: list[str], unknown: bool = False
+    ) -> Happening:
+        name = join_names(who) or ("Someone you don't know" if unknown else "Someone")
         if away_s <= 0:
-            text = "Someone is at the desk (the first your eyes have seen today)."
-            return Happening("arrived", text)
+            text = f"{name} {'are' if len(who) > 1 else 'is'} at the desk (the first your eyes "
+            text += "have seen today)."
+            return Happening("arrived", text, who=who)
         gone = _mins(away_s / 60)
-        text = f"Someone just sat down at the desk after {gone} with nobody there."
+        text = f"{name} just sat down at the desk after {gone} with nobody there."
         remember = away_s >= REMEMBER_AWAY_AFTER.total_seconds()
-        return Happening("arrived", text, away_s=away_s, remember=remember)
+        return Happening("arrived", text, away_s=away_s, remember=remember, who=who)
 
     def _close_visit(self, now: datetime) -> Happening | None:
         last = self.visits[-1] if self.visits else None
         if last is None or not last.open:
             return None
         last.open = False
+        if self._arriving is not None:  # gone before anyone was told they'd come
+            self._arriving = None
+            return None
         stayed = _mins((last.end - last.start).total_seconds() / 60)
-        return Happening("left", f"The desk is empty: whoever was there left after {stayed}.")
+        who = join_names(last.names) or "whoever was there"
+        return Happening(
+            "left", f"The desk is empty: {who} left after {stayed}.", who=list(last.names)
+        )
 
     # What Kit is told
 
@@ -242,14 +292,13 @@ class SceneContext:
         r = self.latest
         if r is None or self.seen is None:
             return ""
-        camera = f"the {r.camera} camera"
         if not self.online():
-            return f"Your eyes ({camera}) stopped reporting at {self.seen:%I:%M %p}."
+            return f"Your eyes stopped working at {self.seen:%I:%M %p}, so you can't see right now."
         if r.off:
             return f"{owner} has switched your eyes off, so you can't see the desk right now."
         now = self.clock()
         if not r.people:
-            line = f"Through {camera}: nobody at the desk"
+            line = f"{SEE}: nobody at the desk"
             last = self.visits[-1] if self.visits else None
             if last and not last.open:
                 line += f"; someone left {_mins((now - last.end).total_seconds() / 60)} ago"
@@ -263,11 +312,14 @@ class SceneContext:
                 for p in r.people
             ]
             if len(r.people) == 1 and not r.people[0].name:
-                line = f"Through {camera}: one person at the desk ({seen[0]})."
-                line += f" You can't tell who yet; at {owner}'s desk it's most likely {owner}."
+                line = f"{SEE}: one person at the desk ({seen[0]})."
+                if not r.people[0].unknown:
+                    line += f" You can't tell who yet; at {owner}'s desk it's most likely {owner}."
+            elif len(r.people) == 1:
+                line = f"{SEE}: {seen[0]} at the desk."
             else:
                 count = {2: "two", 3: "three"}.get(len(r.people), str(len(r.people)))
-                line = f"Through {camera}: {count} people at the desk: " + "; ".join(seen) + "."
+                line = f"{SEE}: {count} people at the desk: " + "; ".join(seen) + "."
         if r.objects:
             things = ", ".join(
                 f"{o.name} the {o.label}" if o.name else f"{_a(o.label)} ({o.position})"
@@ -284,12 +336,12 @@ class SceneContext:
                 f"Your eyes aren't running ({owner} hasn't started `kit eyes`), so you can't see."
             )
         now = self.clock()
-        lines = [f"What you can see through the {r.camera} camera, as of {self.seen:%I:%M %p}:"]
+        lines = [f"What you can see with your eyes, as of {self.seen:%I:%M %p}:"]
         if not self.online():
             lines.append("The eyes have stopped reporting, so this is out of date.")
         if r.off:
             lines.append(
-                f"{owner} has switched your eyes off: the camera is released, nothing is seen."
+                f"{owner} has switched your eyes off, so you can't see anything right now."
             )
             return "\n".join(lines + self._today(now))
         since = self.since()
@@ -309,13 +361,19 @@ class SceneContext:
                 "In the last ten minutes: " + "; ".join(f"{t:%H:%M} {e}" for t, e in recent) + "."
             )
         lines += self._today(now)
-        if any(not p.name for p in r.people):
+        if any(not p.name and not p.unknown for p in r.people):
             lines.append(
-                f"You can't tell faces apart yet, so you don't know who this is; at {owner}'s "
-                f"desk it's most likely {owner}."
+                f"You can't tell who someone is until you've had a good look at their face "
+                f"(and only people you've been introduced to); at {owner}'s desk it's most "
+                f"likely {owner}."
             )
-        side = "left in the picture is their left" if r.mirrored else "the picture isn't mirrored"
-        lines.append(f"Positions are as seen from the camera ({side}).")
+        if any(p.unknown and not p.name for p in r.people):
+            lines.append(
+                "Someone in view isn't anyone you've been introduced to; you could ask who "
+                f"they are ({owner} can introduce them with `kit eyes enrol NAME`)."
+            )
+        side = "their own left and right" if r.mirrored else "left and right as you see them"
+        lines.append(f"Left, right and centre are {side}. {OWN_EYES}")
         return "\n".join(lines)
 
     def _today(self, now: datetime) -> list[str]:
@@ -326,7 +384,7 @@ class SceneContext:
         spans = []
         for v in today:
             end = "still here" if v.open else f"to {v.end:%I:%M %p}"
-            who = "someone" if v.people == 1 else f"{v.people} people"
+            who = join_names(v.names) or ("someone" if v.people == 1 else f"{v.people} people")
             spans.append(f"{who} from {v.start:%I:%M %p} {end}")
         return ["At the desk today: " + "; ".join(spans) + "."]
 

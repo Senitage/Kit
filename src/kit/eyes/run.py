@@ -46,6 +46,8 @@ class Eyes:
         settings: EyesSettings | None = None,
         faces=None,
         body=None,
+        recogniser=None,
+        load_faces: Callable[[], dict] | None = None,
         camera_name: str = "desk",
         clock: Callable[[], float] = time.perf_counter,
         wall: Callable[[], datetime] = datetime.now,
@@ -58,6 +60,9 @@ class Eyes:
         self.reporter = reporter
         self.faces = faces
         self.body = body
+        self.recogniser = recogniser  # kit.eyes.recognise: names for the faces
+        self.load_faces = load_faces  # the people Kit knows, from the brain
+        self.faces_version: int | None = None
         self.camera_name = camera_name
         self.clock = clock
         self.sleep = sleep
@@ -109,6 +114,8 @@ class Eyes:
             if self.body is not None:
                 hands, poses = self.body.read(image, ts)
         events = self.scene.update(now, (w, h), detections, faces, hands, poses)
+        if self.recogniser is not None:
+            self.recogniser.update(frame, self.scene, now)
         for event in events:
             log.info("%s", event)
         dt, self._last_frame = now - self._last_frame, now
@@ -193,6 +200,9 @@ class Eyes:
             self.paused = paused
             if paused:
                 self._release()  # straight away, not on the next pass
+        version = answer.get("faces_version")
+        if version is not None and version != self.faces_version:
+            self._known_faces(version)
         raw = answer.get("settings")
         if isinstance(raw, dict):
             try:
@@ -200,7 +210,16 @@ class Eyes:
             except ValueError:
                 return
             if fresh != self.settings:
-                restart = {"camera", "width", "height", "detector", "faces", "hands", "poses"}
+                restart = {
+                    "camera",
+                    "width",
+                    "height",
+                    "detector",
+                    "faces",
+                    "hands",
+                    "poses",
+                    "recognise",
+                }
                 changed = {
                     k
                     for k in EyesSettings.model_fields
@@ -213,6 +232,26 @@ class Eyes:
                     )
                 self.settings = fresh
                 self.scene.memory.forget_after = fresh.forget_after_s
+                if self.recogniser is not None:
+                    self.recogniser.gallery.threshold = fresh.match
+
+    def _known_faces(self, version: int) -> None:
+        """The people Kit knows changed (someone was introduced or forgotten): fetch them."""
+        if self.recogniser is None or self.load_faces is None:
+            self.faces_version = version
+            return
+        from kit.eyes.recognise import Gallery
+
+        try:
+            known = self.load_faces()
+        except Exception as e:  # try again with the next report
+            log.warning("can't fetch the faces Kit knows: %s", e)
+            return
+        self.recogniser.gallery = Gallery(known.get("people", {}), self.settings.match)
+        self.scene.recognising = bool(self.recogniser.gallery)
+        self.faces_version = version
+        names = sorted(self.recogniser.gallery.people)
+        log.info("knows %s", ", ".join(names) if names else "nobody's face yet")
 
 
 @contextlib.contextmanager
@@ -271,6 +310,7 @@ def build_eyes(
     camera_name: str = "desk",
     on_frame=None,
     folder=None,
+    load_faces: Callable[[], dict] | None = None,
 ) -> Eyes:
     """The real eyes: OpenCV camera, YOLO detector, MediaPipe readers. Imports the
     camera and model libraries here, so only this needs them installed."""
@@ -291,7 +331,9 @@ def build_eyes(
             ("pose", settings.poses),
         ):
             if wanted:
-                model_path(name, models)  # download first, where the log can say so
+                model_path(name, models)
+        if settings.faces and settings.recognise:
+            model_path("sface", models)  # download first, where the log can say so
     with quiet_native_logs():
         if settings.faces:
             from kit.eyes.faces import FaceAnalyzer
@@ -301,6 +343,11 @@ def build_eyes(
             from kit.eyes.body import BodyReader
 
             body = BodyReader(models, hands=settings.hands, poses=settings.poses)
+    recogniser = None
+    if faces is not None and settings.recognise:
+        from kit.eyes.recognise import Recogniser, SFaceEmbedder
+
+        recogniser = Recogniser(SFaceEmbedder(models).embed)
     return Eyes(
         lambda: open_camera(index, settings.width, settings.height),
         detector,
@@ -308,6 +355,8 @@ def build_eyes(
         settings,
         faces=faces,
         body=body,
+        recogniser=recogniser,
+        load_faces=load_faces,
         camera_name=camera_name,
         on_frame=on_frame,
     )

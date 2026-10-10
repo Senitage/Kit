@@ -1,12 +1,12 @@
-"""Faces: where someone is looking and their expression (and, from stage 2,
-who they are).
+"""Faces: where someone is looking and their expression (and, with
+``kit.eyes.recognise``, who they are).
 
 MediaPipe's Face Landmarker gives 478 points per face, 52 "blendshape" scores
 that measure facial movements (smile, jaw open, brows raised...) and the
 head's 3D rotation. ``Face``, ``read_expressions`` and ``head_direction`` are
 plain Python; only ``FaceAnalyzer`` needs MediaPipe.
 
-Nothing here stores an image. Recognition (stage 2) keeps embeddings only.
+Nothing here stores an image. Recognition keeps embeddings only.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class Face:
     pitch: float = 0.0  # degrees; + = looking up
     scores: dict[str, float] = field(default_factory=dict)  # the 52 blendshapes, 0-1
     expressions: list[str] = field(default_factory=list)
-    name: str | None = None  # set by recognition (stage 2)
+    name: str | None = None  # set by recognition (kit.eyes.recognise)
     similarity: float = 0.0
     checked: bool = False  # True once recognition has been run on it
     align_points: object = None  # the 5 key points recognition straightens by

@@ -12,3 +12,9 @@ model library (OpenCV, Ultralytics, MediaPipe) import them only when they're
 built, so the brain, the tests and ``kit check`` never need them. Install them
 with ``pip install "kit[eyes]"`` on the machine with the camera.
 """
+
+import os
+
+# OpenCV's own warnings ("Targets are not supported by the new graph engine") are
+# harmless and only clutter the terminal; set before cv2 is first imported.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")

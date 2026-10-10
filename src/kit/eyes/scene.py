@@ -206,7 +206,9 @@ class Scene:
         self._unsent: list[tuple[datetime, str]] = []  # events since the last report
         self.people: dict[int, dict] = {}  # track id -> what's known this frame
         self.stable: dict[tuple[int, str], Stable] = {}
-        self.names: dict[int, str | None] = {}  # track id -> agreed name (stage 2)
+        self.names: dict[int, str | None] = {}  # track id -> agreed name (kit.eyes.recognise)
+        self.recognising = False  # kit.eyes.recognise knows some faces
+        self.unknown: set[int] = set()  # people checked often enough to say Kit doesn't know them
         self.labels: dict[int, str] = {}
         self.actions = ActionDetector()
         self.frame_size = (1, 1)
@@ -310,6 +312,7 @@ class Scene:
         alive = self.memory.tracks
         self.stable = {k: v for k, v in self.stable.items() if k[0] in alive}
         self.names = {k: v for k, v in self.names.items() if k in alive}
+        self.unknown &= set(alive)
         self.labels = {k: v for k, v in self.labels.items() if k in alive}
         self.actions.forget(alive)
 
@@ -318,6 +321,15 @@ class Scene:
         self.events.extend(stamped)
         self._unsent.extend(stamped)
         return events
+
+    def recognise(self, track_id: int, name: str) -> None:
+        """``kit.eyes.recognise`` has agreed who this person is."""
+        self.names[track_id] = name
+        self.unknown.discard(track_id)
+        self.labels.setdefault(track_id, "person")
+        stamped = (self.clock(), f"recognised {name} (#{track_id})")
+        self.events.append(stamped)
+        self._unsent.append(stamped)
 
     def name_of(self, track_id: int) -> str | None:
         """The recognised name for a track, or None."""
@@ -368,6 +380,7 @@ class Scene:
                 entry["pose"] = list(info.get("pose", []))
                 entry["holding"] = sorted({obj.label for obj in info.get("held", {}).values()})
                 entry["actions"] = list(info.get("actions", []))
+                entry["unknown"] = track.id in self.unknown
                 people.append(entry)
             else:
                 objects.append(entry)
@@ -378,6 +391,7 @@ class Scene:
             "mirrored": mirrored,
             "frame_size": list(size),
             "fps": round(fps, 1) if fps else None,
+            "recognising": self.recognising,
             "people": people,
             "objects": objects,
             "events": events,
@@ -398,6 +412,8 @@ def describe(report: dict, max_events: int = 5) -> list[str]:
         if p.get("holding"):
             details.append("holding " + ", ".join(p["holding"]))
         who = f"{p['name']} (#{p['id']})" if p.get("name") else f"Person #{p['id']}"
+        if p.get("unknown"):
+            who += " (not anyone Kit knows)"
         lines.append(f"{who}: " + "; ".join(d for d in details if d))
     for o in report["objects"]:
         who = (

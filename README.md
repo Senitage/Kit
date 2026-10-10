@@ -171,7 +171,11 @@ kit eyes cameras         # which cameras this PC has
 kit eyes connect URL TOKEN   # where the brain is (the desk app's settings do too)
 kit eyes show            # what Kit can see right now, as he's told it
 kit eyes pause | resume  # the "Let Kit see me" switch, from the terminal
+kit eyes enrol NAME      # introduce someone (`me` for you), from the camera or --photos DIR
+kit eyes faces | forget NAME   # who his eyes know; forget someone's face completely
 ```
+
+Who's who (vision stage 2): [docs/stage-vision-2.md](docs/stage-vision-2.md).
 
 ## How Kit is laid out
 

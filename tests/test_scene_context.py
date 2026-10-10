@@ -96,9 +96,9 @@ def test_now_line_says_who_is_there_and_what_they_are_doing():
     scene.update(report(1, cat=True))
     line = scene.now_line("Dan")
     assert line.startswith(
-        "Through the desk camera: one person at the desk (centre, here under a minute, "
-        "facing the camera, smiling, right hand: thumbs up, typing, right hand raised, "
-        "holding cup)."
+        "What you can see with your own eyes right now: one person at the desk (centre, "
+        "here under a minute, facing you, smiling, right hand: thumbs up, typing, right hand "
+        "raised, holding cup)."
     )
     assert "You can't tell who yet; at Dan's desk it's most likely Dan." in line
     assert line.endswith("Also in view: a cat (left).")
@@ -106,7 +106,9 @@ def test_now_line_says_who_is_there_and_what_they_are_doing():
     assert "here 12 min" in scene.now_line("Dan")
     scene.update(report(2, face=False))
     line = scene.now_line("Dan")
-    assert line.startswith("Through the desk camera: two people at the desk: ")
+    assert line.startswith(
+        "What you can see with your own eyes right now: two people at the desk: "
+    )
     assert "face turned away or hidden" in line and "most likely" not in line
 
 
@@ -115,39 +117,43 @@ def test_detail_has_everything_and_the_days_visits():
     scene = SceneContext(clock)
     watch(scene, clock, 90, report(1, cat=True, events=["person #1 is typing"]))
     detail = scene.detail("Dan")
-    assert detail.startswith("What you can see through the desk camera, as of 09:01 AM:")
-    assert (
-        "- Person #1: centre; here 1 min; facing the camera; smiling; right hand: thumbs up"
-        in detail
-    )
+    assert detail.startswith("What you can see with your eyes, as of 09:01 AM:")
+    assert "- Person #1: centre; here 1 min; facing you; smiling; right hand: thumbs up" in detail
     assert "- Cat #9: left, in view under a minute." in detail
     assert "In the last ten minutes: 09:01 person #1 is typing; 09:01 person #1 is typing" in detail
     assert "At the desk today: someone from 09:00 AM still here." in detail
-    assert "You can't tell faces apart yet" in detail
-    assert "left in the picture is their left" in detail
+    assert "You can't tell who someone is until" in detail
+    assert "their own left and right" in detail
+    assert "camera" not in detail.replace("never 'the camera shows'", "")  # his own eyes
     scene.update(report(1, mirrored=False))
-    assert "isn't mirrored" in scene.detail("Dan")
+    assert "left and right as you see them" in scene.detail("Dan")
 
 
 def test_empty_desk_stale_eyes_and_the_switch():
     clock = Clock()
     scene = SceneContext(clock)
     scene.update(report(0))
-    assert scene.now_line("Dan") == "Through the desk camera: nobody at the desk."
+    assert (
+        scene.now_line("Dan")
+        == "What you can see with your own eyes right now: nobody at the desk."
+    )
     assert "Nothing in view: the desk is empty." in scene.detail("Dan")
     watch(scene, clock, 60, report(1))
     watch(scene, clock, 5 * 60, report(0))
     assert scene.now_line("Dan").endswith("nobody at the desk; someone left 5 min ago.")
     assert scene.empty_for_s() == 299  # since the first empty report, a second in
     clock.now += timedelta(seconds=40)
-    assert scene.now_line("Dan") == "Your eyes (the desk camera) stopped reporting at 09:06 AM."
+    assert (
+        scene.now_line("Dan")
+        == "Your eyes stopped working at 09:06 AM, so you can't see right now."
+    )
     assert "stopped reporting, so this is out of date" in scene.detail("Dan")
     assert not scene.online() and not scene.in_view()
     scene.update(report(0, off=True))
     assert scene.now_line("Dan") == (
         "Dan has switched your eyes off, so you can't see the desk right now."
     )
-    assert "camera is released" in scene.detail("Dan")
+    assert "switched your eyes off" in scene.detail("Dan")
 
 
 def test_arrivals_departures_and_the_story_of_the_day():
@@ -259,7 +265,7 @@ def test_questions_about_what_kit_sees_get_a_fresh_look_locally(paths, question)
     asked = brain.model.calls[0][-1]["content"]
     assert asked.startswith(question) and "fresh look" in asked
     assert "- Person #1: centre" in asked and "- Cat #9: left" in asked
-    assert "Through the desk camera: one person" in system
+    assert "What you can see with your own eyes right now: one person" in system
     assert "- look_around:" not in system  # already looked, so one answer, not two
     assert "ask_cloud" not in system  # what the camera sees stays at home
     assert not claude.calls
@@ -277,7 +283,7 @@ def test_look_around_action_shows_the_detail_then_answers(paths):
     assert "looked_around" in [e["type"] for e in events]
     system = brain.model.calls[0][0]["content"]
     assert "- look_around:" in system
-    assert "What you can see through the camera:" in brain.model.calls[1][-1]["content"]
+    assert "What you can see:" in brain.model.calls[1][-1]["content"]
     assert "- Cat #9: left" in brain.model.calls[1][-1]["content"]
     assert [m.text for m in memory.recent(5)][-1] == "Just you and the cat."
     memory.close()
@@ -556,9 +562,12 @@ def test_the_hello_is_a_pipe_up_in_kits_words(paths):
     brain.life.last_chat = memory.clock.now - timedelta(hours=2)
     collect_tick(brain)
     prompt = brain.model.calls[0][-1]["content"]
-    assert "Someone just sat down at the desk: you saw it through your camera" in prompt
+    assert "Someone just sat down at the desk: you saw it" in prompt
     assert "most likely Dan" in prompt and "hadn't seen Dan since" in prompt
-    assert "Through the desk camera: one person" in brain.model.calls[0][0]["content"]
+    assert (
+        "What you can see with your own eyes right now: one person"
+        in brain.model.calls[0][0]["content"]
+    )
     events = brain.life.events_after(0)
     pipe = [e for e in events if e["type"] == "pipe_up"]
     assert pipe and pipe[0]["reason"] == "back"
@@ -592,7 +601,9 @@ def test_the_eyes_report_through_the_api_and_the_switch_reaches_them(paths):
         assert seen["in_view"] and seen["look"] == [-0.05, -0.35] and seen["paused"] is False
         assert seen["report"]["objects"][0]["label"] == "cat"
         status = client.get("/api/status", headers=AUTH).json()
-        assert status["eyes"].startswith("Through the desk camera: one person")
+        assert status["eyes"].startswith(
+            "What you can see with your own eyes right now: one person"
+        )
         assert status["eyes_paused"] is False
         assert client.post("/api/eyes/pause", json={"paused": True}, headers=AUTH).json() == {
             "paused": True
