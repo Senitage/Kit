@@ -5,6 +5,8 @@ same frame can be painted in the helper window, in a test image, or (ported to
 C++) on the arm's round GC9A01 screen. ``FaceWidget`` runs a ``Face`` at 60 fps
 and makes the eyes follow the mouse. Colours and sizes come from the look in
 Kit's character sheet (kit.face.character), so the painter only knows shapes.
+A look can add brows, a mouth and a shaded shell (Kit 2D, the 3D face drawn
+flat); docs/face.md lays out the shapes for other painters.
 """
 
 from __future__ import annotations
@@ -14,7 +16,15 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRadialGradient,
+)
 from PySide6.QtWidgets import QWidget
 
 from kit.desk.scenes import Scene, scene_for
@@ -23,9 +33,20 @@ from kit.face.character import Character, current
 
 
 def _eye_path(
-    cx: float, cy: float, w: float, h: float, s: float, f: FaceFrame, side: int, corner: float
+    cx: float,
+    cy: float,
+    w: float,
+    h: float,
+    s: float,
+    f: FaceFrame,
+    side: int,
+    corner: float,
+    lift: float = 0.85,
+    round_: float = 1.15,
 ):
-    """One eye as a rounded pill, with the lids cut away by path subtraction."""
+    """One eye as a rounded pill, with the lids cut away by path subtraction.
+    ``lift`` is how far the lower lid rises at full squint and ``round_`` its size
+    against the eye's width (Kit 2D's thinner "^ ^" eyes rise further)."""
     eye = QPainterPath()
     h = max(h, s * 0.012)
     eye.addRoundedRect(QRectF(cx - w / 2, cy - h / 2, w, h), s * corner, min(s * corner, h / 2))
@@ -43,9 +64,9 @@ def _eye_path(
         eye = eye.subtracted(lid)
     if f.squint > 0.02:
         # Lower lid: a big circle rising from below gives happy "^ ^" eyes.
-        r = w * 1.15
+        r = w * round_
         lid = QPainterPath()
-        lid.addEllipse(QPointF(cx, cy + hh / 2 + r - hh * f.squint * 0.85), r, r)
+        lid.addEllipse(QPointF(cx, cy + hh / 2 + r - hh * f.squint * lift), r, r)
         eye = eye.subtracted(lid)
     return eye
 
@@ -78,6 +99,12 @@ def paint_glow(
     if background is not None:
         p.fillRect(rect, background)
 
+    if "shell" in look:
+        p.save()
+        p.translate(ox, oy)
+        _paint_shadow(p, s, scr, look["shell"])
+        p.restore()
+
     # Head motion: tilt, bob, squash and lean, pivoting below centre like a neck.
     p.translate(ox + s / 2 + f.dx * s, oy + s * neck + f.dy * s)
     p.rotate(f.rot * 57.2958)
@@ -85,12 +112,19 @@ def paint_glow(
     p.translate(-s / 2, -s * neck)
 
     screen = QRectF(s * scr["x"], s * scr["y"], s * scr["width"], s * scr["height"])
-    p.setPen(QPen(colours["bezel"], s * scr["bezel"]))
-    p.setBrush(colours["screen"])
-    p.drawRoundedRect(screen, s * scr["corner"], s * scr["corner"])
+    if "shell" in look:
+        _paint_shell(p, screen, s * scr["corner"], look["shell"], colours, s)
+    else:
+        bezel = s * scr["bezel"]
+        p.setPen(QPen(colours["bezel"], bezel) if bezel > 0 else Qt.PenStyle.NoPen)
+        p.setBrush(colours["screen"])
+        p.drawRoundedRect(screen, s * scr["corner"], s * scr["corner"])
 
     pulse = 1 + f.talk * eyes["talk_pulse"]
-    colour = colours["eye_offline"] if f.offline else (eye or colours["eye"])
+    # A character with mood colours glows in the mood's colour, like the 3D face;
+    # otherwise the eye colour picked on the Look page (or the look's own).
+    mood = QColor(f.colour) if f.colour and character_moods(character) else None
+    colour = colours["eye_offline"] if f.offline else (mood or eye or colours["eye"])
     if inside is not None:
         inside(p, s, colour)
     for side, open_ in ((-1, f.open_left), (1, f.open_right)) if shown > 0.01 else ():
@@ -98,7 +132,18 @@ def paint_glow(
         cy = s * eyes["y"] + f.look_y * s * eyes["reach_y"]
         w = s * eyes["width"] * f.size
         h = s * eyes["height"] * f.size * open_ * pulse
-        eye = _eye_path(cx, cy, w, h, s, f, side, eyes["corner"])
+        eye = _eye_path(
+            cx,
+            cy,
+            w,
+            h,
+            s,
+            f,
+            side,
+            eyes["corner"],
+            eyes.get("squint_lift", 0.85),
+            eyes.get("squint_round", 1.15),
+        )
         # Glow: the eye's outline stroked in widening, fading rings, then the eye itself.
         p.setBrush(Qt.BrushStyle.NoBrush)
         for i, alpha in enumerate(glow["rings"]):
@@ -118,8 +163,19 @@ def paint_glow(
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(fill)
         p.drawPath(eye)
+        if "brows" in look:
+            _paint_brow(p, cx, cy, w, s, f, side, look["brows"], fill)
+
+    if "mouth" in look and shown > 0.01:
+        fill = QColor(colour)
+        fill.setAlphaF((glow["dim"] + (1 - glow["dim"]) * f.glow) * shown)
+        reach_x, reach_y = eyes["reach_x"] * 0.5, eyes["reach_y"] * 0.5
+        mx = s / 2 + f.look_x * s * reach_x
+        my = s * look["mouth"]["y"] + f.look_y * s * reach_y
+        _paint_mouth(p, mx, my, s, f, look["mouth"], fill)
 
     if f.blush > blush["from"] and not f.offline:
+        p.setPen(Qt.PenStyle.NoPen)
         cheek = QColor(colours["blush"])
         cheek.setAlphaF(min(1.0, f.blush * blush["strength"] * f.glow * shown))
         p.setBrush(cheek)
@@ -127,6 +183,100 @@ def paint_glow(
             centre = QPointF(s / 2 + side * s * blush["apart"], s * blush["y"])
             p.drawEllipse(centre, s * blush["width"], s * blush["height"])
     p.restore()
+
+
+def character_moods(character: Character | None) -> bool:
+    return bool((character or current()).sheet.get("mood_colours"))
+
+
+def _paint_shell(p: QPainter, body: QRectF, corner: float, shell: dict, colours: dict, s: float):
+    """His screen shaded like a rounded body: dark from top to bottom and a soft
+    shine up and to the left."""
+    p.setPen(Qt.PenStyle.NoPen)
+    fill = QLinearGradient(0, body.top(), 0, body.bottom())
+    fill.setColorAt(0, colours.get("shell_top", colours["screen"]))
+    fill.setColorAt(0.45, colours["screen"])
+    fill.setColorAt(1, colours.get("shell_bottom", colours["screen"]))
+    p.setBrush(fill)
+    p.drawRoundedRect(body, corner, corner)
+    centre = QPointF(body.x() + body.width() * 0.33, body.y() + body.height() * 0.15)
+    shine = QRadialGradient(centre, s * 0.32)
+    shine.setColorAt(0, QColor(255, 255, 255, int(255 * shell.get("shine", 0.13))))
+    shine.setColorAt(1, QColor(255, 255, 255, 0))
+    p.setBrush(shine)
+    p.drawRoundedRect(body, corner, corner)
+
+
+def _paint_shadow(p: QPainter, s: float, screen: dict, shell: dict) -> None:
+    """A soft shadow on the ground under the shell. It stays put while he moves."""
+    x = screen["x"] + screen["width"] / 2
+    centre = QPointF(s * x, s * (screen["y"] + screen["height"] + 0.07))
+    shadow = QRadialGradient(centre, s * 0.4)
+    shadow.setColorAt(0, QColor(0, 0, 0, int(255 * shell.get("shadow", 0.27))))
+    shadow.setColorAt(1, QColor(0, 0, 0, 0))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(shadow)
+    p.drawEllipse(centre, s * screen["width"] * 0.47, s * 0.045)
+
+
+def _paint_brow(p: QPainter, cx, cy, w, s, f: FaceFrame, side: int, brows: dict, colour: QColor):
+    """A thin arched brow above an eye. ``brow`` + lifts the inner end (sad or
+    worried), - drops it (cross); ``brow_up`` raises both."""
+    y = cy - s * brows["above"] * max(1.0, f.size) - f.brow_up * s * brows["lift"]
+    half = s * brows["width"] / 2
+    slant = f.brow * s * brows["slant"]
+    inner = -side  # the inner end points toward the nose
+    start = QPointF(cx - inner * half, y + slant * 0.4)
+    end = QPointF(cx + inner * half, y - slant)
+    path = QPainterPath(start)
+    path.quadTo(QPointF(cx, y - s * brows["arch"] + slant * 0.2), end)
+    c = QColor(colour)
+    c.setAlphaF(c.alphaF() * brows.get("alpha", 0.85))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(c, s * brows["thick"], c=Qt.PenCapStyle.RoundCap))
+    p.drawPath(path)
+
+
+def mouth_shape(f: FaceFrame, mouth: dict) -> tuple[str, float]:
+    """Which mouth to draw and how much: ("o", size) for a round mouth, ("open",
+    depth) for an open "D", or ("line", curve) for a smile, flat line or frown.
+    Talking opens it a little, on and off."""
+    talk = f.talk * mouth.get("talk", 0.8)
+    if f.mouth_o > 0.2:
+        return "o", f.mouth_o
+    opened = max(f.mouth_open, talk)
+    if opened > 0.12:
+        return "open", opened
+    return "line", f.mouth
+
+
+def _paint_mouth(p: QPainter, mx, my, s, f: FaceFrame, mouth: dict, colour: QColor):
+    kind, amount = mouth_shape(f, mouth)
+    w = s * mouth["width"]
+    p.setPen(Qt.PenStyle.NoPen)
+    if kind == "o":
+        r = s * mouth["round"] * (0.45 + 0.55 * amount)
+        p.setBrush(colour)
+        p.drawEllipse(QPointF(mx, my), r * 0.85, r)
+    elif kind == "open":
+        d = s * mouth["open"] * amount
+        w *= 0.8 + 0.4 * amount
+        path = QPainterPath(QPointF(mx - w / 2, my - d * 0.25))
+        path.quadTo(QPointF(mx, my - d * 0.05), QPointF(mx + w / 2, my - d * 0.25))
+        path.cubicTo(
+            QPointF(mx + w / 2, my + d * 0.9),
+            QPointF(mx - w / 2, my + d * 0.9),
+            QPointF(mx - w / 2, my - d * 0.25),
+        )
+        p.setBrush(colour)
+        p.drawPath(path)
+    else:
+        c = amount * s * mouth["curve"]
+        path = QPainterPath(QPointF(mx - w / 2, my - c * 0.3))
+        path.quadTo(QPointF(mx, my + c), QPointF(mx + w / 2, my - c * 0.3))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(colour, s * mouth["thick"], c=Qt.PenCapStyle.RoundCap))
+        p.drawPath(path)
 
 
 class FaceWidget(QWidget):

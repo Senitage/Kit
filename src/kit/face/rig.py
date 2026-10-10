@@ -45,6 +45,12 @@ class Pose:
     blush: float = 0.15  # cheek glow, 0..1
     head_tilt: float = 0.0  # radians, + leans right
     head_y: float = 0.0  # head height offset, + lower (fraction of face size)
+    # Brows and mouth, for a look that draws them (Kit 2D); the rest ignore them.
+    mouth: float = 0.0  # + smile .. - frown
+    mouth_open: float = 0.0  # an open "D" mouth, 0..1
+    mouth_o: float = 0.0  # a round "o" mouth, 0..1
+    brow: float = 0.0  # + sad or worried (inner ends up) .. - cross (inner ends down)
+    brow_up: float = 0.0  # brows raised, 0..1
 
 
 # Every emotion's pose, from the default character's sheet (characters/retro.json).
@@ -74,6 +80,12 @@ class FaceFrame:
     sx: float  # squash and stretch
     sy: float
     scale: float  # leaning in makes the face bigger
+    mouth: float = 0.0
+    mouth_open: float = 0.0
+    mouth_o: float = 0.0
+    brow: float = 0.0
+    brow_up: float = 0.0
+    colour: str | None = None  # the mood's glow colour ("#rrggbb"), if the character has them
 
 
 @dataclass
@@ -147,6 +159,7 @@ class Face:
         self.arousal, self.valence = 0.5, 0.0
         self._dials = [0.5, 0.0]  # eased toward the values above
         self._breath: float | None = None  # breathing phase, radians
+        self._colour: list[float] | None = None  # the glow colour, eased between moods
 
     # ---- what the desk app (or the arm) tells the face ----
 
@@ -226,6 +239,7 @@ class Face:
         a = 1 - math.exp(-dt / self.ease_s) if dt else 0.0
         for k in _POSE_KEYS:
             self._cur[k] += (getattr(target, k) - self._cur[k]) * a
+        self._ease_colour(dt)
         glow_target = self._ch.state_glow(self.state)
         self._glow += (glow_target - self._glow) * (1 - math.exp(-dt / 0.4) if dt else 0.0)
 
@@ -264,7 +278,31 @@ class Face:
             sx=g.sx * (1 - breath * 0.006),
             sy=g.sy * (1 + breath * 0.012),
             scale=g.scale,
+            mouth=c["mouth"],
+            mouth_open=c["mouth_open"],
+            mouth_o=c["mouth_o"],
+            brow=c["brow"],
+            brow_up=c["brow_up"],
+            colour=_hex(self._colour) if self._colour else None,
         )
+
+    def _ease_colour(self, dt: float) -> None:
+        """Glide the glow toward the colour of the mood on show (the state's pose
+        when a state picks one, as asleep or offline do)."""
+        rule = self._ch.sheet["states"].get(self.state, {})
+        shown = self.emotion
+        if "pose" in rule and rule.get("only_from") in (None, self.emotion):
+            shown = rule["pose"]
+        colour = self._ch.mood_colour(shown)
+        if colour is None:
+            self._colour = None
+            return
+        rgb = [int(colour[i : i + 2], 16) for i in (1, 3, 5)]
+        if self._colour is None or not dt:
+            self._colour = [float(v) for v in rgb] if self._colour is None else self._colour
+            return
+        a = 1 - math.exp(-dt / 0.35)
+        self._colour = [c + (t - c) * a for c, t in zip(self._colour, rgb, strict=True)]
 
     def _state_pose(self) -> Pose:
         """The emotion's pose as the state bends it (asleep, offline, listening...)."""
@@ -319,6 +357,10 @@ class Face:
             return 1.0
         phase = (t * 2) % 1 if self._double else t
         return 1 - math.sin(math.pi * phase)
+
+
+def _hex(rgb: list[float]) -> str:
+    return "#" + "".join(f"{round(_clamp(v, 0, 255)):02x}" for v in rgb)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:

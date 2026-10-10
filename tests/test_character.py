@@ -114,3 +114,44 @@ def test_kit_ships_named_characters_with_retro_first():
         assert ch.check(ch.preset(name).sheet) == []
     with pytest.raises(ch.CharacterError, match="no character called 'nope'"):
         ch.preset("nope")
+
+
+def test_kit2d_is_the_3d_face_drawn_flat_for_every_app_and_body():
+    kit2d = ch.preset("kit2d")
+    pack = json.loads(ch.asset_folder("kit3d").joinpath("face.json").read_text(encoding="utf-8"))
+    assert set(EMOTIONS) <= set(kit2d.emotions)
+    assert set(kit2d.gestures) == set(GESTURES)
+    # The same glow colour per mood as the 3D face.
+    for mood in kit2d.emotions:
+        assert kit2d.mood_colour(mood).lower() == pack["moods"][mood]["glow_colour"].lower()
+    for app in ("desk", "home_app", "robot"):
+        look = kit2d.look(app)
+        assert look["style"] == "glow" and {"brows", "mouth"} <= set(look)
+    assert "shell" in kit2d.look("desk")
+    assert "shell" not in kit2d.look("robot")  # the Pod is the shell
+    assert kit2d.pose("happy")["mouth_open"] == 1 and kit2d.pose("sad")["mouth"] < 0
+    assert kit2d.pose("grumpy")["brow"] < 0 < kit2d.pose("concerned")["brow"]
+
+
+def test_sheets_without_brows_or_a_mouth_still_check_and_mood_colours_are_checked(sheet):
+    assert "mouth" not in sheet["pose_default"] and ch.from_sheet(sheet).pose("happy")["mouth"] == 0
+    assert ch.from_sheet(sheet).mood_colour("happy") is None
+    sheet["mood_colours"] = {"happy": "#6DFFB0", "gloomy": "blue"}
+    problems = ch.check(sheet)
+    assert "mood_colours: 'gloomy' isn't one of the poses" in problems
+    assert any("mood colour 'gloomy' should be like" in p for p in problems)
+
+
+def test_the_glow_glides_to_each_moods_colour_and_the_states_pose():
+    face = Face(rng=random.Random(1), character=ch.preset("kit2d"))
+    assert face.tick(0.0).colour == "#4dffc0"  # neutral
+    face.set_emotion("grumpy", 0.0)
+    assert face.tick(0.1).colour not in ("#4dffc0", "#ff7a5c")  # on its way
+    for i in range(2, 40):
+        frame = face.tick(i * 0.1)
+    assert frame.colour == "#ff7a5c"
+    face.set_state("sleeping")
+    for i in range(40, 80):
+        frame = face.tick(i * 0.1)
+    assert frame.colour == "#3f5cff" and frame.open_left < 0.2  # asleep: the sleepy pose
+    assert Face(character=ch.builtin()).tick(0.0).colour is None  # Retro keeps one colour

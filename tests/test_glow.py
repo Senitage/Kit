@@ -80,3 +80,62 @@ def test_the_eye_colour_comes_from_the_character_sheet(app):
         ch.use(ch.builtin())
     c = QColor(img.pixel(int(SIZE * 0.345), int(SIZE * 0.5)))
     assert c.red() > 200 and c.blue() < 80
+
+
+def render_kit2d(frame, robot=False):
+    from kit.face import character as ch
+
+    kit2d = ch.preset("kit2d")
+    img = QImage(SIZE, SIZE, QImage.Format.Format_ARGB32)
+    img.fill(QColor(0, 0, 0, 0))
+    p = QPainter(img)
+    paint_glow(p, QRectF(0, 0, SIZE, SIZE), frame, character=kit2d)
+    p.end()
+    return img
+
+
+def kit2d_frame(emotion, **change):
+    from kit.face import character as ch
+
+    face = Face(character=ch.preset("kit2d"))
+    face.set_emotion(emotion, 0.0)
+    for i in range(40):
+        frame = face.tick(i * 0.05)
+    return replace(frame, look_x=0, look_y=0, open_left=1, open_right=1, **change)
+
+
+def mouth_lit(img):
+    """Glowing pixels in the mouth's strip, under the eyes."""
+    return sum(
+        1
+        for y in range(int(SIZE * 0.58), int(SIZE * 0.69))
+        for x in range(int(SIZE * 0.4), int(SIZE * 0.6))
+        if QColor(img.pixel(x, y)).alpha() > 0 and QColor(img.pixel(x, y)).green() > 150
+    )
+
+
+def test_kit2d_draws_a_shaded_shell_brows_and_a_mood_coloured_mouth(app):
+    img = render_kit2d(kit2d_frame("neutral"))
+    top = QColor(img.pixel(SIZE // 2, int(SIZE * 0.2)))
+    bottom = QColor(img.pixel(SIZE // 2, int(SIZE * 0.8)))
+    assert top.lightness() > bottom.lightness()  # the shell is lit from above
+    assert QColor(img.pixel(int(SIZE * 0.335), int(SIZE * 0.47))).green() > 200  # mint eye
+    brow = QColor(img.pixel(int(SIZE * 0.335), int(SIZE * 0.305)))
+    assert brow.green() > brow.red() + 40  # a brow above the eye
+    shut = mouth_lit(render_kit2d(kit2d_frame("neutral")))
+    opened = mouth_lit(render_kit2d(kit2d_frame("happy")))
+    assert 0 < shut < opened  # a small smile, then an open "D"
+    talking = mouth_lit(render_kit2d(kit2d_frame("neutral", talk=0.8)))
+    assert talking > shut  # he moves his mouth as he talks
+    red = QColor(render_kit2d(kit2d_frame("grumpy")).pixel(int(SIZE * 0.335), int(SIZE * 0.49)))
+    assert red.red() > 200 and red.blue() < 140  # grumpy glows orange-red
+
+
+def test_a_mouth_is_a_line_an_open_d_or_an_o():
+    from kit.desk.glow import mouth_shape
+
+    look = {"talk": 0.8}
+    assert mouth_shape(kit2d_frame("neutral"), look) == ("line", 0.55)
+    assert mouth_shape(kit2d_frame("happy"), look)[0] == "open"
+    assert mouth_shape(kit2d_frame("surprised"), look)[0] == "o"
+    assert mouth_shape(kit2d_frame("sad"), look)[1] < 0  # a frown
