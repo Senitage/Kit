@@ -1505,6 +1505,8 @@ class Life:
         present = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
 
         d.energy = self._energy_after(now, minutes)
+        if self.dan_here() and self.stop_missing():
+            self.save()  # he's here: missing him (from before, or a restart) is over
         d.boredom = _clamp(d.boredom + minutes * (0.03 if present else 0.01) * (0.5 + chatty))
         d.social = _clamp(d.social + minutes / 240)
         d.curiosity = _clamp(d.curiosity * 0.9**minutes)
@@ -1541,8 +1543,6 @@ class Life:
                 self.publish({"type": "state", "state": "asleep"})
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
-        if self.dan_here() and self.stop_missing():
-            self.save()  # he's here: missing him (from before, or a restart) is over
         unseen = now - max(self.last_seen, self.last_chat)
         if unseen >= MISSING_AFTER and not present:
             felt = self.feeling_now()
