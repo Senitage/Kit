@@ -734,10 +734,22 @@ async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: flo
         await asyncio.sleep(every_s)
 
 
-async def _life_loop(brain: Brain, every_s: float) -> None:
-    """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up."""
+async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
+    """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up. A
+    hello waiting to be said (Dan just sat down, or came back to the keyboard)
+    gets a beat straight away rather than at the next one, so he says hi while
+    Dan's still sitting down."""
+    loop = asyncio.get_running_loop()
+    last = loop.time()
+    greeted = None
     while True:
-        await asyncio.sleep(every_s)
+        await asyncio.sleep(min(step_s, every_s))
+        home = brain.life.homecoming
+        due = loop.time() - last >= every_s
+        if not due and (home is None or home is greeted):
+            continue
+        greeted = home  # one early beat per hello: quiet hours or a snooze can hold it
+        last = loop.time()
         try:
             await life_tick(brain)
         except Exception:

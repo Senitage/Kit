@@ -560,3 +560,30 @@ def test_the_eyes_report_through_the_api_and_the_switch_reaches_them(paths):
         bad = {"people": [{"id": 1, "box": [0.1]}]}
         assert client.post("/api/eyes/scene", json=bad, headers=AUTH).status_code == 422
     memory.close()
+
+
+def test_a_waiting_hello_gets_a_heartbeat_straight_away(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from kit import server
+
+    ticks = []
+    brain = SimpleNamespace(life=SimpleNamespace(homecoming=None))
+
+    async def tick(b):
+        ticks.append(b.life.homecoming)
+
+    monkeypatch.setattr(server, "life_tick", tick)
+
+    async def run():
+        task = asyncio.create_task(server._life_loop(brain, every_s=60, step_s=0.01))
+        await asyncio.sleep(0.05)
+        assert ticks == []  # nothing waiting: the usual slow heartbeat
+        hello = object()
+        brain.life.homecoming = hello
+        await asyncio.sleep(0.05)
+        assert ticks == [hello]  # at once, and only once for that hello
+        task.cancel()
+
+    asyncio.run(run())
