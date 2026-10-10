@@ -207,6 +207,16 @@ def up_hand(tip_x, wrist=(0.5, 0.6), side="right", fingers_up=True):
     return Hand(side, "open palm", points)
 
 
+def test_furniture_coming_and_going_is_not_news():
+    memory = TrackMemory(confirm_frames=2, forget_after=1.0)
+    events = []
+    for i in range(3):
+        events += memory.update([(1, "chair", (0, 0, 9, 9)), (2, "cup", (0, 0, 9, 9))], i * 0.1)
+    events += memory.update([], 5.0)
+    assert events == ["cup #2 entered", "cup #2 left after 0s"]
+    assert [t.label for t in memory.visible(0.2)] == []  # long gone by now
+
+
 def test_a_wave_from_the_wrist_counts_but_a_still_palm_doesnt():
     frame = (1280, 720)  # a hand-length is 72 px, so the tip swinging 0.1 is 1.8 of them
     detector = ActionDetector()

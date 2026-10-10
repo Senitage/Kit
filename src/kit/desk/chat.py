@@ -711,7 +711,7 @@ class ChatWindow(QWidget):
         kind = ev.get("type")
         if self.speaker is not None:
             self._speak(turn, kind, ev)
-        if kind in ("handing_off", "recalled", "looked_at_pc", "notice", "error"):
+        if kind in ("handing_off", "recalled", "looked_at_pc", "looked_around", "notice", "error"):
             self._show_said(turn)  # that part of the turn is over: all his words show
         if kind == "say":
             role = "claude" if ev.get("source") == "cloud" else "kit"
@@ -753,6 +753,9 @@ class ChatWindow(QWidget):
         elif kind == "looked_at_pc":
             self._current.pop(turn, None)
             self._set_state("looking at your PC")
+        elif kind == "looked_around":
+            self._current.pop(turn, None)
+            self._set_state("looking around")
         elif kind == "notice":
             self._current.pop(turn, None)
             self._add(Line("note", ev.get("message", "")))

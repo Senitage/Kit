@@ -25,6 +25,24 @@ from kit.eyes.faces import Face
 Box = tuple[int, int, int, int]
 Detection = tuple[int, str, Box]  # track id, label, box in pixels
 
+# Furniture and fittings: always there, and a detector loses and finds them as
+# people move in front of them, so their comings and goings aren't news.
+FIXTURES = {
+    "chair",
+    "couch",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "potted plant",
+    "bench",
+    "sink",
+    "refrigerator",
+    "oven",
+    "microwave",
+    "clock",
+}
+
 # Things a hand can rest on but not hold, so they never count as "holding".
 NOT_HOLDABLE = {
     "chair",
@@ -95,10 +113,11 @@ class TrackMemory:
                 track.frames_seen += 1
             if not track.confirmed and track.frames_seen >= self.confirm_frames:
                 track.confirmed = True
-                events.append(f"{label} #{track_id} entered")
+                if label not in FIXTURES:
+                    events.append(f"{label} #{track_id} entered")
         for track_id, track in list(self.tracks.items()):
             if now - track.last_seen > self.forget_after:
-                if track.confirmed:
+                if track.confirmed and track.label not in FIXTURES:
                     stayed = track.last_seen - track.first_seen
                     events.append(f"{track.label} #{track_id} left after {stayed:.0f}s")
                 del self.tracks[track_id]

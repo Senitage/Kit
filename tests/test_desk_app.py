@@ -69,6 +69,8 @@ def test_chat_shows_streamed_words_then_the_reply(qapp):
     assert acted[0]["emotion"] == "happy"
     chat.on_event(2, {"type": "looked_at_pc"})
     assert states[-1] == "looking at your PC"
+    chat.on_event(2, {"type": "looked_around", "in_view": 1})
+    assert states[-1] == "looking around"
     chat.on_event(2, {"type": "remembered", "decision": "new", "fact": "Dan likes tea."})
     chat.on_event(2, {"type": "thing_suggested", "thing": {"line": "Rex (pet)"}})
     chat.on_event(
