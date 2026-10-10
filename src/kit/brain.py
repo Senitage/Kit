@@ -1192,11 +1192,15 @@ class Brain:
         if reason == "want" and share is None:
             reason = "bored"  # it was dropped meanwhile; he's still restless
         aim, about = "", share.text if share else ""
+        if reason == "visitor":
+            if self.life.visitor is None:
+                return  # they've been greeted, or it's too late now
+            about = self.life.visitor[0]
         if share is not None and share.kind in ASKING:
             aim, about = aim_of(share, owner, self.memory.clock())  # "tell Dan", not read out
         now = self.memory.clock()
         bar = settings.life.pipe_up_bar
-        if bar > 0 and home is None and reason != "nag":
+        if bar > 0 and home is None and reason not in ("nag", "visitor"):
             score, parts = self._pipe_up_score(reason, about, history, now)
             if score < bar:
                 why = f"had something to say, but it scored {score:.2f} of {bar:.2f} ({parts})"
@@ -1228,7 +1232,7 @@ class Brain:
                     reason,
                     owner,
                     self.life.cheek(),
-                    self.life.curious_about,
+                    about if reason == "visitor" else self.life.curious_about,
                     quiet_h,
                     self.life.butting_in,
                     share=about,
@@ -1647,6 +1651,8 @@ class Brain:
     def _why_piped(self, reason: str, aim: str, about: str, owner: str) -> str:
         """Why he piped up, in a few words for his next prompt, or "" when the line
         says it all."""
+        if reason == "visitor":
+            return f"you'd just said hi to {about}, who sat down at the desk"
         if aim:
             return f'you wanted to {aim}: "{about}"'
         if about:

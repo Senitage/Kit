@@ -196,3 +196,5 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # faces = true             # where each person is looking, and their expression
 # hands = true             # hand gestures
 # poses = 1                # people to read body pose for; 0 turns it off
+# recognise = true         # tell people apart once introduced (`kit eyes enrol NAME`)
+# match = 0.4              # how alike a face must be to count; higher is stricter

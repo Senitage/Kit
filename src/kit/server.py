@@ -26,6 +26,7 @@ from kit.brain import Brain
 from kit.face import character as characters
 from kit.face import serve as face_files
 from kit.knowledge import Item
+from kit.known_faces import FACES_FILE, Enrolment, KnownFaces
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
@@ -154,7 +155,11 @@ def create_app(
     notes_every_s: float | None = NOTES_SYNC_S,
     speech: SpeechService | None = None,
     speech_check_s: float | None = SPEECH_CHECK_S,
+    faces: KnownFaces | None = None,
 ) -> FastAPI:
+    if faces is None:
+        faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
@@ -508,7 +513,34 @@ def create_app(
         The answer carries the switch and the eyes' settings, so a running pair
         of eyes follows changes to either."""
         brain.saw(report)
-        return {"ok": True, "paused": _eyes_paused(), "settings": store.current().eyes.model_dump()}
+        return {
+            "ok": True,
+            "paused": _eyes_paused(),
+            "settings": store.current().eyes.model_dump(),
+            "faces_version": faces.version,
+        }
+
+    @app.get("/api/eyes/faces", dependencies=auth)
+    def known_faces() -> dict:
+        """The people Kit's eyes know (kit.known_faces): names and face numbers."""
+        return faces.as_dict()
+
+    @app.post("/api/eyes/faces", dependencies=auth)
+    def enrol_face(body: Enrolment) -> dict:
+        """More looks at someone, from `kit eyes enrol NAME`."""
+        try:
+            name, count = faces.add(body.name, body.embeddings)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"name": name, "count": count, "version": faces.version}
+
+    @app.delete("/api/eyes/faces/{name}", dependencies=auth)
+    def forget_face(name: str) -> dict:
+        """Forget someone's face completely (`kit eyes forget NAME`)."""
+        gone = faces.forget(name)
+        if gone is None:
+            raise HTTPException(404, f"Kit's eyes don't know anyone called {name}")
+        return {"forgot": gone, "version": faces.version}
 
     @app.get("/api/eyes/scene", dependencies=auth)
     def eyes_scene() -> dict:
@@ -738,13 +770,15 @@ async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
     """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up. A
     hello waiting to be said (Dan just sat down, or came back to the keyboard)
     gets a beat straight away rather than at the next one, so he says hi while
-    Dan's still sitting down. The same goes for the cat just spotted."""
+    Dan's still sitting down. The same goes for the cat just spotted, and for
+    someone else Kit knows sitting down."""
     loop = asyncio.get_running_loop()
     last = loop.time()
     greeted = None
     while True:
         await asyncio.sleep(min(step_s, every_s))
-        home = brain.life.homecoming or getattr(brain.life, "spotted", None)
+        life = brain.life
+        home = life.homecoming or getattr(life, "visitor", None) or getattr(life, "spotted", None)
         due = loop.time() - last >= every_s
         if not due and (home is None or home is greeted):
             continue

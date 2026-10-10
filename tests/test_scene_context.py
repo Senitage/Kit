@@ -123,7 +123,7 @@ def test_detail_has_everything_and_the_days_visits():
     assert "- Cat #9: left, in view under a minute." in detail
     assert "In the last ten minutes: 09:01 person #1 is typing; 09:01 person #1 is typing" in detail
     assert "At the desk today: someone from 09:00 AM still here." in detail
-    assert "You can't tell faces apart yet" in detail
+    assert "You can't tell who someone is until" in detail
     assert "left in the picture is their left" in detail
     scene.update(report(1, mirrored=False))
     assert "isn't mirrored" in scene.detail("Dan")

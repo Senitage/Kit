@@ -119,8 +119,9 @@ GPU is untouched; the 2070 Super keeps its memory for the local model.
 - No frame leaves the PC. The brain only ever gets words and numbers: boxes
   as fractions of the frame, "smiling", "thumbs up", "holding cup". The preview
   window is local.
-- Nothing is stored about faces yet. Stage 2 keeps embeddings only (numbers,
-  never images), in Kit's data folder, for people who said yes.
+- Faces are only remembered for people introduced with `kit eyes enrol`
+  ([stage 2](stage-vision-2.md)): numbers worked out from the face, never
+  images, in Kit's data folder, and `kit eyes forget NAME` deletes them.
 - What goes into memory is small: "someone sat down at the desk after 45 min",
   "a cat wandered in". Kit's memory page shows it under `seen`, and it can be
   forgotten like anything else.
@@ -187,6 +188,4 @@ GPU is untouched; the 2070 Super keeps its memory for the local model.
   Kit's conventions (settings from the brain, the eyes' own folder, fakes in
   tests, mirroring as a setting).
 
-Next: stage 2, who's who. `kit eyes enrol NAME` from the camera or photos,
-named arrivals and greetings, the cat by name in the register, "who's that?"
-for an unknown face, and sightings by name in memory and the day summary.
+Next: stage 2, who's who ([stage-vision-2.md](stage-vision-2.md)).

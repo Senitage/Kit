@@ -718,6 +718,18 @@ class EyesSettings(_Section):
         description="How many people to read body pose for (each adds about 13 ms a frame). "
         "0 turns it off.",
     )
+    recognise: bool = Field(
+        True,
+        description="Tell people apart by their faces, once they've been introduced with "
+        "`kit eyes enrol NAME`. Kit keeps numbers worked out from a face, never pictures.",
+    )
+    match: float = Field(
+        0.4,
+        ge=0.25,
+        le=0.8,
+        description="How alike a face must be to someone Kit knows to count as them. Higher "
+        "is stricter: fewer mix-ups, but more 'someone I don't know'.",
+    )
 
 
 CharacterName = Literal[tuple(characters.presets())]  # type: ignore[valid-type]

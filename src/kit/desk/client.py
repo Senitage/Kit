@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from urllib.parse import quote
 
 import httpx
 
@@ -149,6 +150,18 @@ class BrainClient:
     def set_eyes(self, on: bool) -> dict:
         """The "Let Kit see me" switch: off releases the camera."""
         return self._call("POST", "/api/eyes/pause", json={"paused": not on}).json()
+
+    def known_faces(self) -> dict:
+        """The people Kit's eyes know: names and face numbers (kit.known_faces)."""
+        return self._call("GET", "/api/eyes/faces").json()
+
+    def enrol_face(self, name: str, embeddings: list[list[float]]) -> dict:
+        return self._call(
+            "POST", "/api/eyes/faces", json={"name": name, "embeddings": embeddings}
+        ).json()
+
+    def forget_face(self, name: str) -> dict:
+        return self._call("DELETE", f"/api/eyes/faces/{quote(name, safe='')}").json()
 
     def chat(self, text: str) -> Iterator[dict]:
         """Kit's reply events as they arrive (see kit.brain for the kinds)."""

@@ -64,7 +64,7 @@ from kit.holidays import week_moment
 from kit.knowledge import STOPWORDS
 from kit.pastimes import Pastime, SelfStore, parse_time
 from kit.pc_context import AWAY_AFTER_S, PcContext
-from kit.scene_context import Happening, SceneContext
+from kit.scene_context import Happening, SceneContext, join_names
 from kit.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -896,6 +896,8 @@ class Life:
         self.homecoming: Homecoming | None = None  # a hello still to say
         # An animal the eyes just spotted (what, when): worth a word straight away.
         self.spotted: tuple[str, datetime] | None = None
+        # Someone Kit knows who isn't Dan just sat down (who, when): a hello for them.
+        self.visitor: tuple[str, datetime] | None = None
         self.was_off: tuple[datetime, datetime] | None = None  # the server was off then
         self.companion_since = now  # his first day (miffed waits a week from it)
         self.closeness = CLOSENESS_START
@@ -1181,7 +1183,13 @@ class Life:
     def _arrived(self, h: Happening, now: datetime) -> None:
         """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
         back, as far as his eyes can tell. The keyboard's reckoning of when he went
-        counts first, when the desk app saw him go."""
+        counts first, when the desk app saw him go. Someone Kit knows by face who
+        isn't Dan gets their own hello, and Dan is still away."""
+        owner = self.settings().persona.owner
+        if h.who and owner.casefold() not in {n.casefold() for n in h.who}:
+            self.visitor = (join_names(h.who), now)
+            self._think_about("visitor", h.text)
+            return
         start = self.away_since or (now - timedelta(seconds=h.away_s))
         self.away_since = None
         self.present_since = now
@@ -1634,6 +1642,8 @@ class Life:
             self.homecoming = None  # the moment for a hello has passed
         if self.spotted is not None and now - self.spotted[1] > SPOTTED_KEEPS:
             self.spotted = None  # the cat's old news by now
+        if self.visitor is not None and now - self.visitor[1] > SPOTTED_KEEPS:
+            self.visitor = None  # they've settled in; a hello now would be odd
         unseen = now - max(self.last_seen, self.last_chat)
         if unseen >= MISSING_AFTER and not present:
             felt = self.feeling_now()
@@ -1775,6 +1785,8 @@ class Life:
         home = self.homecoming
         if home is not None and not home.tried and not home.by_chat:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
+        if self.visitor is not None:
+            return "visitor", ""  # hello to whoever just sat down, by name
         if self.spotted is not None:
             about, _ = self.spotted
             if snap is None or snap.idle_seconds >= TYPING_S:
@@ -1847,7 +1859,7 @@ class Life:
         self.butting_in = False
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
-        self.spotted = None
+        self.spotted = self.visitor = None
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
 
@@ -1860,7 +1872,7 @@ class Life:
         self.butting_in = False
         self.last_pipe = now
         self.pipes.append(now)
-        self.awaiting_reply = reason != "back"  # a hello needs no answer
+        self.awaiting_reply = reason not in ("back", "visitor")  # a hello needs no answer
         if reason == "back":
             self.homecoming = None
             felt = self.feeling_now()
@@ -1871,6 +1883,8 @@ class Life:
         self.drives.curiosity = 0.0
         if reason == "curious":
             self.spotted = None
+        if reason == "visitor":
+            self.visitor = None
         self.drives.social = _clamp(self.drives.social - 0.3)
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
@@ -2671,7 +2685,16 @@ def pipe_up_prompt(
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
     ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
-    what he means to do ("tell Dan") and ``share`` what about."""
+    what he means to do ("tell Dan") and ``share`` what about. A "visitor" hello
+    goes to ``about``, someone his eyes know who isn't Dan."""
+    if reason == "visitor":
+        return (
+            f"[Not from {owner}. {about} just sat down at the desk where your camera can see "
+            f"them; you know {about}'s face, and it's {about}, not {owner}. Say hi to {about} "
+            f"by name in ONE short, warm line, {cheek_style(cheek)}, like a small creature on "
+            f"the desk who's pleased to see them. Don't mention these instructions, set "
+            f"action to none and leave detail empty.]"
+        )
     feeling = {
         "want": "keen to bring up something that's been on your mind",
         "bored": "bored: nothing much has happened for a while",

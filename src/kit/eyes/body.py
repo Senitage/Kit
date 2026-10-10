@@ -5,6 +5,7 @@ file, downloaded into the eyes' models folder the first time:
   - Gesture recognizer: 21 points per hand plus a named gesture (thumbs up, fist...)
   - Pose landmarker:    33 body points (shoulders, elbows, wrists, hips...)
   - Face landmarker:    used by ``kit.eyes.faces``
+  - SFace and YuNet:    OpenCV models for ``kit.eyes.recognise`` and ``kit.eyes.enrol``
 
 ``Point``, ``Hand``, ``describe_pose`` and ``read_hands`` are plain Python, so
 the scene and the tests never need MediaPipe; only ``BodyReader`` does.
@@ -21,6 +22,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 MEDIAPIPE_MODELS = "https://storage.googleapis.com/mediapipe-models"
+OPENCV_ZOO = "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models"
 MODEL_URLS = {
     "gesture": f"{MEDIAPIPE_MODELS}/gesture_recognizer/gesture_recognizer/float16/latest/"
     "gesture_recognizer.task",
@@ -28,6 +30,10 @@ MODEL_URLS = {
     "pose_landmarker_lite.task",
     "face": f"{MEDIAPIPE_MODELS}/face_landmarker/face_landmarker/float16/latest/"
     "face_landmarker.task",
+    # Telling faces apart (kit.eyes.recognise): SFace from the OpenCV Zoo, Apache 2.0.
+    "sface": f"{OPENCV_ZOO}/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+    # Finding faces in photos for `kit eyes enrol --photos` (small faces too): YuNet, MIT.
+    "yunet": f"{OPENCV_ZOO}/face_detection_yunet/face_detection_yunet_2023mar.onnx",
 }
 
 # The recognizer's built-in gestures, with friendlier names.
