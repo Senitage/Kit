@@ -64,7 +64,7 @@ QUESTIONS = [
         r"\b(sister|brother|mum|mother|dad|father|parents|family)\b",
         True,
     ),
-    Question("mates", "who are the mates you see most?", r"\b(mates?|friends?)\b", True),
+    Question("mates", "who are the friends you see most?", r"\b(mates?|friends?)\b", True),
     Question("weekend", "what's your idea of a good weekend?", r"\bweekends?\b"),
     Question("food", "what's your go-to dinner?", r"\b(dinner|favourite food|meal|cook)"),
     Question("music", "what music have you got on most?", r"\b(music|band|songs?|listens? to)\b"),

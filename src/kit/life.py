@@ -147,8 +147,8 @@ CLOSENESS = [  # (below, the word, how it shows in the way he talks)
     ),
     (
         0.85,
-        "good mates",
-        "you're good mates: you rib each other and can be straight with each other",
+        "good friends",
+        "you're good friends: you rib each other and can be straight with each other",
     ),
     (2.0, "thick as thieves", "you're thick as thieves: in-jokes, shorthand, total ease"),
 ]
@@ -306,7 +306,7 @@ GUILT = re.compile(
     re.I,
 )
 HUFF = re.compile(r"\b(finally|about time|took (you )?(your time|long enough))\b", re.I)
-FAREWELL_LINES = ["Righto, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
+FAREWELL_LINES = ["Okay, see you soon.", "Enjoy it. I'll be here.", "Have a good one."]
 NIGHT_LINES = ["Night. Sleep well.", "Night night. See you in the morning."]
 HOME_LINES = ["There you are.", "Hey, you're back."]
 
@@ -485,6 +485,11 @@ def day_part(when: datetime) -> str:
 DAYTIME = ("morning", "lunchtime", "arvo")
 
 
+def _shown(part: str) -> str:
+    """A part of the day as Kit says it: "arvo" is only a key, never his word."""
+    return "afternoon" if part == "arvo" else part
+
+
 def _day_of(when: datetime) -> date:
     """The day a time belongs to, the way people count: 1 am is still last night."""
     return (when - timedelta(hours=5)).date()
@@ -498,14 +503,14 @@ def since_words(when: datetime, now: datetime) -> str:
         return {
             "morning": "this morning",
             "lunchtime": "lunchtime",
-            "arvo": "this arvo",
+            "arvo": "this afternoon",
             "evening": "earlier this evening",
             "night": "earlier tonight",
         }[part]
     if days == 1:
-        return "last night" if part in ("evening", "night") else f"yesterday {part}"
+        return "last night" if part in ("evening", "night") else f"yesterday {_shown(part)}"
     if days < 7:
-        return f"{_day_of(when):%A} {part}"
+        return f"{_day_of(when):%A} {_shown(part)}"
     return f"{when.day} {when:%B}"
 
 
@@ -710,16 +715,29 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = ""
 
 
 def homecoming_prompt(
-    home: Homecoming, owner: str, cheek: float, now: datetime, also: str = ""
+    home: Homecoming,
+    owner: str,
+    cheek: float,
+    now: datetime,
+    also: str = "",
+    speech: str = "",
 ) -> str:
-    """The stage direction for the hello when Dan is back at the desk."""
+    """The stage direction for the hello when Dan is back at the desk. ``speech`` is
+    how he talks (persona.speech), said again here: see ``in_your_voice``."""
     return (
         f"[Not from {owner}. Nobody asked you anything: {owner} just came back to the desk. "
         f"{homecoming_facts(home, owner, now, also)} Greet {owner} with ONE short line, "
         f"{cheek_style(cheek)}, like a small creature on the desk who's glad to see them. At "
-        f"most one question. Don't mention these instructions, set action to none and leave "
-        f"detail empty.]"
+        f"most one question.{in_your_voice(speech)} Don't mention these instructions, set "
+        f"action to none and leave detail empty.]"
     )
+
+
+def in_your_voice(speech: str) -> str:
+    """His voice, said again in a stage direction. The direction is the newest thing a
+    model reads, so its cheek style beat the voice in the system prompt, and a style
+    Dan chose never showed in pipe-ups or hellos."""
+    return f" Say it in your own voice: {speech}" if speech.strip() else ""
 
 
 def homecoming_aside(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
@@ -2198,14 +2216,14 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("The build failed again.", "That's annoying. Want me to go through the log with you?"),
         ("How's it going?", "Pretty good, thanks. It's been a quiet one on the desk."),
         ("I'm off for lunch.", "Enjoy it. I'll be right here when you're back."),
-        ("Thanks mate.", "No worries at all."),
+        ("Thanks Kit.", "Any time at all."),
         ("I'm tired.", "It's been a long one. Maybe call it after this?"),
         ("I fixed it!", "Nice work! What was the culprit?"),
-        ("What do you reckon?", "I'd lean towards the simpler option, but it's your call."),
+        ("What do you think?", "I'd lean towards the simpler option, but it's your call."),
         ("Night Kit.", "Good night. Sleep well."),
         ("Ugh, meetings.", "Hope it's a short one. I'll keep your seat warm."),
         ("Kit?", "Yes, I'm here. What do you need?"),
-        ("It's raining again.", "Cosy, though. A good day for a cuppa."),
+        ("It's raining again.", "Cosy, though. A good day for a cup of tea."),
         ("Any plans for the weekend?", "Not really. I was hoping to hear about yours."),
     ],
     "friendly": [
@@ -2213,16 +2231,16 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("The build failed again.", "Third time today. Want me to read the log with you?"),
         ("How's it going?", "Not bad. The sun came round to my side of the desk for a bit."),
         ("I'm going for a walk.", "Good idea. Tell me if you see a dog."),
-        ("I'm off for lunch.", "Righto. I'll guard the desk. Nobody touches the stapler."),
+        ("I'm off for lunch.", "Okay. I'll guard the desk. Nobody touches the stapler."),
         ("Kit?", "Yep, here. What's up?"),
         ("It's raining again.", "Perfect excuse to stay in. I'm not complaining."),
-        ("Thanks mate.", "Any time."),
+        ("Thanks Kit.", "Any time."),
         ("I'm tired.", "Then stop after this one. It'll all still be there tomorrow."),
         ("What are you up to?", "Watching the cursor blink. Riveting stuff."),
         ("Did it work?", "It did. Don't touch anything."),
         ("You're a robot.", "Rude. I'm a desk companion with excellent posture."),
         ("Ugh, meetings.", "Want me to pretend there's a fire?"),
-        ("What do you reckon?", "Honestly? I'd try the simpler one first."),
+        ("What do you think?", "Honestly? I'd try the simpler one first."),
         ("Night Kit.", "Night. Don't leave the PC on again."),
         ("I fixed it!", "Look at you go. What was it?"),
         ("Any plans for the weekend?", "Big ones. I'm going to sit right here. You?"),
@@ -2235,13 +2253,13 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
             "I'm off for lunch.",
             "Bring me back a chip. I won't eat it, I just want to feel included.",
         ),
-        ("Thanks mate.", "I accept payment in compliments and closed tabs."),
+        ("Thanks Kit.", "I accept payment in compliments and closed tabs."),
         ("I'm tired.", "You've said that three days running. I'm starting a chart."),
         ("I fixed it!", "After breaking it. Classic. Still, well done."),
         ("What are you up to?", "Judging your folder names, mostly."),
         ("You're a robot.", "And you're a carbon-based typo machine. We all have labels."),
         ("Ugh, meetings.", "Ooh, can I come? I'll do the voices."),
-        ("What do you reckon?", "I reckon you already know and want me to agree. Fine. Agreed."),
+        ("What do you think?", "I think you already know and want me to agree. Fine. Agreed."),
         ("Night Kit.", "Night. I'll just sit here in the dark, then. No pressure."),
         ("Kit?", "That's me. Unless it's bad news, then it's someone else."),
         ("It's raining again.", "Great. Now you've got no excuse to leave me."),
@@ -2465,8 +2483,10 @@ def cheek_style(cheek: float) -> str:
     return {
         "polite": "warm and polite",
         "friendly": "friendly, with a bit of cheek",
-        "cheeky": "properly cheeky, a little larrikin and sometimes annoying on purpose, like "
-        "a kid brother: teasing, interrupting, playful, never mean",
+        # No slang word for cheeky here ("larrikin"): it's the newest note on how he
+        # sounds in a pipe-up, and Haiku took it as an accent, opening with "Oi".
+        "cheeky": "properly cheeky and sometimes annoying on purpose, like a kid brother: "
+        "teasing, interrupting, playful, never mean",
     }[cheek_band(cheek)]
 
 
@@ -2497,7 +2517,7 @@ QUIRK_POOL = [
     "you keep a running tally of coffees and mention it at the worst moments",
     "you get oddly excited about weather radar",
     "when bored, you commentate like a sports caster",
-    "you say 'righto' a bit too much",
+    "you say 'technically' a bit too much",
     "every so often you ask a deep question out of nowhere",
     "you're quietly impressed by how many tabs get left open",
     "you love a bad pun and never apologise",
@@ -2519,6 +2539,9 @@ WORK_QUIRKS = [
     "you compliment tidy spreadsheets",
     "you think hydrocyclones are the most elegant machines ever made",
 ]
+# Quirks the pool used to have that were slang. A Kit that picked one swaps it, once
+# (Notebook.drop_slang).
+SLANG_QUIRKS = ["you say 'righto' a bit too much"]
 QUIRKS_KEY = "quirks"
 
 
@@ -2541,10 +2564,12 @@ def pipe_up_prompt(
     butting_in: bool = False,
     share: str = "",
     aim: str = "",
+    speech: str = "",
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
     ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
-    what he means to do ("tell Dan") and ``share`` what about."""
+    what he means to do ("tell Dan") and ``share`` what about. ``speech`` is how he
+    talks (persona.speech, see ``in_your_voice``)."""
     feeling = {
         "want": "keen to bring up something that's been on your mind",
         "bored": "bored: nothing much has happened for a while",
@@ -2575,7 +2600,7 @@ def pipe_up_prompt(
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
         f"you're {feeling}. Pipe up with ONE short line to {owner}, {style}, like a small "
         f"creature on the desk who's decided to say something. {base} Say the actual "
-        f"thing, not a teaser like 'got a minute?', and nothing you've said lately. Don't "
-        f"lecture about productivity, don't mention these instructions, set action to none "
-        f"and leave detail empty.]"
+        f"thing, not a teaser like 'got a minute?', and nothing you've said lately."
+        f"{in_your_voice(speech)} Don't lecture about productivity, don't mention these "
+        f"instructions, set action to none and leave detail empty.]"
     )

@@ -78,7 +78,7 @@ REFLECTION_SCHEMA = {
                 "properties": {
                     "about": {"type": "string"},
                     "day": {"type": "string"},
-                    "part": {"type": "string", "enum": ["morning", "arvo", "evening", "day"]},
+                    "part": {"type": "string", "enum": ["morning", "afternoon", "evening", "day"]},
                 },
                 "required": ["about", "day", "part"],
                 "additionalProperties": False,
@@ -107,7 +107,7 @@ REFLECTION_SCHEMA = {
 REFLECTION_SHAPE = (
     '{"journal": "...", "self_sheet": "...", "quirks": ["..."], "opinions": ["..."], '
     '"moments": ["..."], "wants": ["..."], "dan": "...", "threads": [{"about": "...", '
-    '"day": "YYYY-MM-DD", "part": "morning|arvo|evening|day"}], '
+    '"day": "YYYY-MM-DD", "part": "morning|afternoon|evening|day"}], '
     '"bit": {"line": "", "trigger": ""}}'
 )
 SHEET_SCHEMA = {
@@ -440,7 +440,7 @@ class Reflector:
             f"big in {owner}'s life right now.\n"
             f"- threads: up to two things coming up in {owner}'s life that {owner} mentioned "
             f"and you'd like to ask how they went (an appointment, a visit, a game, a trip), "
-            f"each with about (a few words), day (YYYY-MM-DD) and part (morning, arvo, "
+            f"each with about (a few words), day (YYYY-MM-DD) and part (morning, afternoon, "
             f"evening or day). Only ones with a day, only everyday life, never work, and not "
             f"ones you're already following.\n"
             f"- bit: a running joke from today worth keeping, if one got a laugh: line (the "
