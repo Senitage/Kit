@@ -156,8 +156,10 @@ GPU is untouched; the 2070 Super keeps its memory for the local model.
 - [ ] Untick **Let Kit see me** in the tray. The eyes log "paused: the camera
       is off", the webcam light goes out, `kit eyes show` says they're off, and
       Kit says he can't see when asked. Tick it again: the light comes back.
-- [ ] Change `eyes.mirror` on the settings page. The running eyes log the
-      change and Glow's follow reverses; change it back.
+- [ ] Change `eyes.mirror` on the settings page. Within a second the preview
+      window flips and `kit eyes show` swaps your left and right, while Glow
+      keeps following you the right way (the look allows for the mirroring);
+      change it back.
 - [ ] Stop the brain for a minute with the eyes running. They say so once,
       keep looking, and carry on when it's back.
 - [ ] Unplug the webcam. The eyes say so and try again every few seconds; plug
