@@ -229,7 +229,7 @@ def quiet_native_logs():
     if sys.stderr is not None:
         sys.stderr.flush()
     try:
-        with open(os.devnull, "w") as devnull:
+        with open(os.devnull, "w") as devnull, _windows_stderr(devnull.fileno()):
             os.dup2(devnull.fileno(), fd)
             try:
                 yield
@@ -239,6 +239,29 @@ def quiet_native_logs():
                 os.dup2(saved, fd)
     finally:
         os.close(saved)
+
+
+@contextlib.contextmanager
+def _windows_stderr(fd: int):
+    """On Windows, MediaPipe's DLL has its own C runtime, which takes the process's
+    stderr handle when it loads rather than Python's file descriptor 2, so point
+    that handle at ``fd`` too while MediaPipe loads. Nothing elsewhere."""
+    if sys.platform != "win32":
+        yield
+        return
+    import ctypes
+    import msvcrt
+
+    kernel32 = ctypes.windll.kernel32
+    std_error = -12  # STD_ERROR_HANDLE
+    kernel32.GetStdHandle.restype = ctypes.c_void_p
+    kernel32.SetStdHandle.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
+    before = kernel32.GetStdHandle(std_error)
+    kernel32.SetStdHandle(std_error, msvcrt.get_osfhandle(fd))
+    try:
+        yield
+    finally:
+        kernel32.SetStdHandle(std_error, before)
 
 
 def build_eyes(
