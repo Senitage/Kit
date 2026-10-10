@@ -674,6 +674,57 @@ class LifeSettings(_Section):
         return f"{int(h):02d}:{m}"
 
 
+class EyesSettings(_Section):
+    """Kit's eyes: the camera process (`kit eyes`) on the PC with the webcam. It
+    fetches these from the brain, so there's one place to change them."""
+
+    enabled: bool = Field(
+        True,
+        description="Kit uses a camera to see who's at the desk, when `kit eyes` is running "
+        "on the PC with the webcam.",
+    )
+    camera: int = Field(
+        0, ge=0, le=15, description="Which camera the eyes use (`kit eyes cameras` lists them)."
+    )
+    width: int = Field(1280, ge=160, le=4096, description="Frame width to ask the camera for.")
+    height: int = Field(720, ge=120, le=2160, description="Frame height to ask the camera for.")
+    mirror: bool = Field(
+        True,
+        description="Flip the picture like a mirror. On for a webcam facing you at the desk, "
+        "so left is your left; off for a camera on the arm.",
+    )
+    detector: str = Field(
+        "yolo11s",
+        min_length=1,
+        description="The model that finds people and objects: yolo11s suits a PC with a "
+        "graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper "
+        "still. Downloaded the first time the eyes run.",
+    )
+    confidence: float = Field(
+        0.4, ge=0.05, le=0.95, description="How sure the detector must be before something counts."
+    )
+    forget_after_s: float = Field(
+        3.0,
+        ge=0.5,
+        le=60,
+        description="Seconds out of view before someone or something has left.",
+    )
+    report_every_s: float = Field(
+        1.0, ge=0.2, le=10, description="How often the eyes tell the brain what they see."
+    )
+    faces: bool = Field(
+        True, description="Read faces: where each person is looking and their expression."
+    )
+    hands: bool = Field(True, description="Read hand gestures: thumbs up, open palm, a wave.")
+    poses: int = Field(
+        1,
+        ge=0,
+        le=4,
+        description="How many people to read body pose for (each adds about 13 ms a frame). "
+        "0 turns it off.",
+    )
+
+
 CharacterName = Literal[tuple(characters.presets())]  # type: ignore[valid-type]
 
 
@@ -946,6 +997,7 @@ class Settings(_Section):
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
+    eyes: EyesSettings = Field(default_factory=EyesSettings)
     speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
 

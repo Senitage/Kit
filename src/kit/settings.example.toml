@@ -145,6 +145,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # quiet_from = "22:00"
 # quiet_until = "07:00"  # also when things he means to bring up "tomorrow" are due
 # sleep_after_minutes = 10
+#                           # after the desk has been empty this long; 0 never
 # think_every_minutes = 8   # a private thought in a quiet moment while you're around
 # thoughts_per_hour = 6     # each is a quick local model call; 0 stops them
 # reflect_with = "cloud"    # who writes his journal and self-sheet each night:
@@ -179,3 +180,19 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # hot_c = 35.0              # a dry day this hot (°C) shows as a hot day when you ask the weather
 # pack_folder = ""          # a 3D face pack folder (face.json + .glb) to use instead of
 #                           # the built-in one, e.g. your Blender project's pack folder
+
+# Kit's eyes: the camera process (`kit eyes`, on the PC with the webcam) reads
+# these from the brain, so there's one place to change them (docs/stage-vision.md).
+# [eyes]
+# enabled = true
+# camera = 0               # `kit eyes cameras` lists them
+# width = 1280
+# height = 720
+# mirror = true            # like a mirror, for a webcam facing you; false on the arm
+# detector = "yolo11s"     # yolo11n is faster, yolo11m sharper; downloaded on first run
+# confidence = 0.4
+# forget_after_s = 3.0     # seconds out of view before someone has left
+# report_every_s = 1.0
+# faces = true             # where each person is looking, and their expression
+# hands = true             # hand gestures
+# poses = 1                # people to read body pose for; 0 turns it off

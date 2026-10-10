@@ -64,6 +64,7 @@ from kit.holidays import week_moment
 from kit.knowledge import STOPWORDS
 from kit.pastimes import Pastime, SelfStore, parse_time
 from kit.pc_context import AWAY_AFTER_S, PcContext
+from kit.scene_context import Happening, SceneContext
 from kit.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -114,6 +115,8 @@ AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
 CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
 NAG_AFTER = timedelta(minutes=3)
 MAX_NAGS = 2
+SPOTTED_KEEPS = timedelta(minutes=5)  # how long a sighting stays worth mentioning
+LOOK_EVERY = timedelta(seconds=2.5)  # a body's look_at holds about 3 s: refresh it
 MAX_EVENTS = 200
 LIFE_KEY = "life"  # kit_self key: drives, feeling and timings, so a restart keeps them
 THINK_GAP = timedelta(minutes=2)  # the least time between two thoughts
@@ -633,6 +636,7 @@ class Homecoming:
     by_chat: bool = False  # no desk app: noticed from a message after a long gap
     tried: bool = False  # the hello pipe-up was tried and failed (the model is down)
     did: list[str] = field(default_factory=list)  # what he did meanwhile (kit.pastimes)
+    seen: bool = False  # noticed through his eyes (kit.scene_context), not the keyboard
 
     def as_dict(self) -> dict:
         def when(t: datetime) -> str:
@@ -659,6 +663,7 @@ class Homecoming:
             bool(data.get("by_chat")),
             bool(data.get("tried")),
             [str(d) for d in data.get("did") or []],
+            seen=bool(data.get("seen")),
         )
 
 
@@ -679,6 +684,12 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = ""
     since = since_words(home.since, now)
     if home.by_chat:
         lines = [f"You and {owner} haven't talked since {since} ({gap})."]
+    elif home.seen:
+        lines = [
+            f"Someone just sat down at the desk: you saw it through your camera. You can't "
+            f"tell faces apart yet, so it's most likely {owner} but you can't be sure (asking "
+            f"is fine). You hadn't seen {owner} since {since} ({gap})."
+        ]
     else:
         lines = [f"{owner} is back: you hadn't seen them since {since} ({gap})."]
     if home.goodbye and farewell_plans(home.goodbye):
@@ -858,9 +869,11 @@ class Life:
         clock: Callable[[], datetime],
         rng: random.Random | None = None,
         store: SelfStore | None = None,
+        scene: SceneContext | None = None,
     ) -> None:
         self.settings = settings
         self.pc = pc
+        self.scene = scene  # his eyes (kit.scene_context), when he has them
         self.clock = clock
         self.rng = rng or random.Random()
         self.store = store
@@ -878,7 +891,9 @@ class Life:
         self.snoozed_until: datetime | None = None
         self.held_until: datetime | None = None  # had nothing new to say: waits till then
         self.curious_about = ""
-        self.curious_kind = "new"  # "new" (first time today) or "switch" (Dan moved on)
+        self.curious_kind = "new"  # "new" (first time today), "switch" (Dan moved on), "seen"
+        self._last_look: tuple[float, float] | None = None  # where the bodies were told to look
+        self._look_at: datetime | None = None
         self._last_focus: tuple[str, str] | None = None
         self.quiet_because = "just started"  # why Kit isn't piping up, for kit life
         self.asleep = False
@@ -903,6 +918,8 @@ class Life:
         self.came_back: tuple[datetime, datetime] | None = None  # (gone since, back at)
         self.goodbye: tuple[datetime, str] | None = None  # when Dan said bye, and how
         self.homecoming: Homecoming | None = None  # a hello still to say
+        # An animal the eyes just spotted (what, when): worth a word straight away.
+        self.spotted: tuple[str, datetime] | None = None
         self.was_off: tuple[datetime, datetime] | None = None  # the server was off then
         self.companion_since = now  # his first day (miffed waits a week from it)
         self.closeness = CLOSENESS_START
@@ -1102,7 +1119,7 @@ class Life:
         now = self.clock()
         last_input = now - timedelta(seconds=max(0, snap.idle_seconds))
         changed = False
-        if snap.locked or snap.idle_seconds >= AWAY_AFTER_S:
+        if (snap.locked or snap.idle_seconds >= AWAY_AFTER_S) and not self._in_view():
             self.present_since = None
             if self.away_since is None:
                 self.away_since = self.last_seen if snap.locked else max(self.last_seen, last_input)
@@ -1134,6 +1151,7 @@ class Life:
             not self.asleep
             and (snap.locked or snap.idle_seconds >= away_s)
             and not self.chatting(now)
+            and not self._in_view()  # someone's at the desk, keyboard or not
         ):
             self.stop_doing()
             self.asleep = True
@@ -1147,6 +1165,98 @@ class Life:
             self._show_face()
             self.save()
 
+    def _at_the_pc(self) -> bool:
+        """The PC shows recent input: Dan's at the keyboard, whatever the camera says."""
+        snap = self.pc.latest if self.pc.online() else None
+        return snap is not None and not snap.locked and snap.idle_seconds < BACK_IDLE_S
+
+    def on_scene(self, happenings: list[Happening]) -> None:
+        """A report from his eyes (kit.scene_context), every second or so. Someone in
+        view is Dan about (he can't tell faces apart yet, and it's Dan's desk), so
+        he doesn't doze off while Dan reads or is on the phone; someone sitting down
+        after the desk was empty a while is Dan back, with a hello to say
+        (``Homecoming``, noticed through the camera); an animal wandering in makes
+        him curious. The bodies are told where to look."""
+        now = self.clock()
+        changed = False
+        in_view = self._in_view()
+        if in_view:
+            self.last_seen = now
+            if self.present_since is None:
+                self.present_since = now
+        for h in happenings:
+            if h.kind == "arrived":
+                self._arrived(h, now)
+                changed = True
+            elif h.kind == "left":
+                if self._at_the_pc():
+                    continue  # the camera lost him, but he's still typing: he hasn't gone
+                self._think_about("left", h.text)
+                if self.away_since is None and not self.pc.online():
+                    self.away_since = now  # with no desk app reporting, his eyes keep the time
+                    changed = True
+            elif h.kind == "animal":
+                self.drives.curiosity = _clamp(self.drives.curiosity + 0.5)
+                self.curious_about = h.text.rstrip(".").replace(" just wandered into view", "")
+                self.curious_kind = "seen"
+                self.spotted = (self.curious_about, now)
+                self._think_about("seen", h.text)
+                changed = True
+        if self.asleep and in_view:
+            self._wake()
+            changed = True
+        elif (
+            not self.asleep
+            and not in_view
+            and not self.pc.online()
+            and self.scene is not None
+            and self.scene.online()
+        ):
+            # Only his eyes to go on: nobody in view for the usual time, and he dozes off.
+            empty = self.scene.empty_for_s()
+            away_s = self.settings().life.sleep_after_minutes * 60
+            if empty is not None and empty >= away_s and not self.chatting(now):
+                self.stop_doing()
+                self.asleep, self._asleep_since = True, now
+                self.publish({"type": "state", "state": "asleep"})
+                changed = True
+        self._look_where(now)
+        if changed:
+            self.save()
+
+    def _arrived(self, h: Happening, now: datetime) -> None:
+        """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
+        back, as far as his eyes can tell. The keyboard's reckoning of when he went
+        counts first, when the desk app saw him go."""
+        start = self.away_since or (now - timedelta(seconds=h.away_s))
+        self.away_since = None
+        self.present_since = now
+        self.stop_doing()  # Dan's back
+        if start < now:
+            self.came_back = (start, now)
+            self._came_back(start, now, seen=True)
+
+    def _look_where(self, now: datetime) -> None:
+        """Tell the bodies where the person is, so Glow (and the arm later) can look
+        at them: when the target moves, and every couple of seconds while it holds."""
+        look = self.scene.look() if self.scene is not None else None
+        if look is None:
+            self._last_look = None
+            return
+        last = self._last_look
+        moved = last is None or max(abs(a - b) for a, b in zip(look, last, strict=True)) >= 0.05
+        if moved or self._look_at is None or now - self._look_at >= LOOK_EVERY:
+            self._last_look, self._look_at = look, now
+            self.publish({"type": "look", "x": look[0], "y": look[1]})
+
+    def _in_view(self) -> bool:
+        return self.scene is not None and self.scene.in_view()
+
+    def _present(self, snap) -> bool:
+        """Someone's about: Dan's at the keyboard, or his eyes see someone."""
+        at_pc = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
+        return at_pc or self._in_view()
+
     def _wake(self) -> None:
         slept = self.clock() - self._asleep_since if self._asleep_since else timedelta(0)
         if slept >= SLEPT_ENOUGH:
@@ -1157,11 +1267,12 @@ class Life:
         self.publish({"type": "state", "state": "awake"})
 
     def _came_back(
-        self, start: datetime, now: datetime, by_chat: bool = False
+        self, start: datetime, now: datetime, by_chat: bool = False, seen: bool = False
     ) -> Homecoming | None:
         """Dan is back after being away since ``start`` (or talking again after a long
-        gap, ``by_chat``). A short absence is only worth a thought; a longer one makes
-        Kit glad (or, after his first week, a bit miffed) and leaves him a hello."""
+        gap, ``by_chat``; or someone sat down in view of his eyes, ``seen``). A short
+        absence is only worth a thought; a longer one makes Kit glad (or, after his
+        first week, a bit miffed) and leaves him a hello."""
         s = self.settings()
         owner = s.persona.owner
         since = max(start, self.last_chat)  # a chat from his phone meanwhile counts
@@ -1170,8 +1281,9 @@ class Life:
         kind = absence_kind(since, now, s.life.quiet_from, s.life.quiet_until)
         if kind is None or not s.life.enabled or not s.life.homecoming:
             if not by_chat and gone >= timedelta(minutes=s.life.sleep_after_minutes):
+                where = "the desk" if seen else "the PC"
                 self._think_about(
-                    "back", f"{owner} just came back to the PC after {gap_words(gone)} away."
+                    "back", f"{owner} just came back to {where} after {gap_words(gone)} away."
                 )
             return None
         said = self.goodbye
@@ -1194,7 +1306,9 @@ class Life:
         )
         dozed = self.asleep or self._asleep_since is not None
         did = [doing for at, doing, _ in self.did if at >= since]
-        home = Homecoming(kind, since, now, goodbye, miffed, off, dozed, by_chat, did=did)
+        home = Homecoming(
+            kind, since, now, goodbye, miffed, off, dozed, by_chat, did=did, seen=seen
+        )
         self.homecoming, self.goodbye, self.was_off = home, None, None
         gap = gap_words(gone)
         if miffed:
@@ -1533,7 +1647,7 @@ class Life:
         d = self.drives
         chatty = self.settings().life.chattiness
         snap = self.pc.latest if self.pc.online() else None
-        present = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
+        present = self._present(snap)
 
         d.energy = self._energy_after(now, minutes)
         if self.dan_here() and self.stop_missing():
@@ -1574,6 +1688,8 @@ class Life:
                 self.publish({"type": "state", "state": "asleep"})
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
+        if self.spotted is not None and now - self.spotted[1] > SPOTTED_KEEPS:
+            self.spotted = None  # the cat's old news by now
         unseen = now - max(self.last_seen, self.last_chat)
         if unseen >= MISSING_AFTER and not present:
             felt = self.feeling_now()
@@ -1705,9 +1821,9 @@ class Life:
             return None, f"snoozed until {self.snoozed_until:%H:%M}"
         if in_quiet_hours(now, life.quiet_from, life.quiet_until):
             return None, f"quiet hours ({life.quiet_from} to {life.quiet_until})"
-        if not present or snap is None:
+        if not present:
             return None, "you're away, or the desk app isn't reporting"
-        focus = snap.focus
+        focus = snap.focus if snap is not None else None
         if focus and (
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
@@ -1715,6 +1831,13 @@ class Life:
         home = self.homecoming
         if home is not None and not home.tried and not home.by_chat:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
+        if self.spotted is not None:
+            about, _ = self.spotted
+            if snap is None or snap.idle_seconds >= TYPING_S:
+                # The cat just walked in: that's news now, whatever his drives or the
+                # usual gaps say. He only waits for Dan to stop typing.
+                self.curious_about, self.curious_kind = about, "seen"
+                return "curious", ""
         if self.held_until and now < self.held_until:
             return None, f"had nothing new to say: next chance {self.held_until:%H:%M}"
         chatty = life.chattiness >= CHATTY
@@ -1729,7 +1852,7 @@ class Life:
         if self.awaiting_reply:
             return None, "waiting for you to answer his last pipe-up"
         self.butting_in = False
-        if snap.idle_seconds < TYPING_S:
+        if snap is not None and snap.idle_seconds < TYPING_S:
             if not (chatty and self.rng.random() < 0.04 * life.chattiness):
                 return None, "you're typing or clicking: waiting for a pause"
             self.butting_in = True  # now and then he just can't help himself
@@ -1780,6 +1903,7 @@ class Life:
         self.butting_in = False
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
+        self.spotted = None
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
 
@@ -1801,6 +1925,8 @@ class Life:
                 self.feel("glad", f"{owner} is back", 0.6, show=False, force=True)
         self.drives.boredom = 0.2
         self.drives.curiosity = 0.0
+        if reason == "curious":
+            self.spotted = None
         self.drives.social = _clamp(self.drives.social - 0.3)
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
@@ -1865,7 +1991,7 @@ class Life:
         if life.thoughts_per_hour <= 0:
             return None
         snap = self.pc.latest if self.pc.online() else None
-        present = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
+        present = self._present(snap)
         if not present and now - self.last_chat > THINK_NEAR_CHAT:
             return None  # nobody around: he dozes rather than muses
         week = week_moment(now, self.settings().persona.owner) if life.week_thoughts else None
@@ -2227,6 +2353,7 @@ class Life:
             if self.last_pipe
             else None,
             "ignored_in_a_row": self.ignored,
+            "in_view": self._in_view(),
             "quiet_because": self.quiet_because,
             "thoughts_this_hour": sum(1 for t in self.thoughts if now - t < timedelta(hours=1)),
             "next_thought": self.next_thought.isoformat(timespec="minutes"),

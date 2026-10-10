@@ -153,6 +153,26 @@ kit life notebook    # his self-sheet, quirks, thoughts, opinions and journal
 kit eval voice --models qwen3:8b gemma4:e4b   # which local model sounds most alive?
 ```
 
+## Now: Kit's eyes (vision, stage 1 of 5)
+
+Kit gets eyes: a small camera process (`kit eyes`) that runs on the PC with the
+webcam and tells the brain, in words, who's at the desk and what they're
+doing, never sending video. He knows when someone's there even if they're only
+reading, says hello when you sit down after a while, follows your face with
+Glow's eyes, notices the cat, and can have a proper look when you ask ("what
+am I holding?"). What he sees goes into his thoughts and, when it's worth it,
+his memory. The same package will run on the Raspberry Pi at the arm later.
+Set it up and test it with [docs/stage-vision.md](docs/stage-vision.md).
+
+```
+kit eyes                 # on the PC with the webcam: open Kit's eyes (Ctrl+C closes them)
+kit eyes --show          # the same, with a window showing what he sees
+kit eyes cameras         # which cameras this PC has
+kit eyes connect URL TOKEN   # where the brain is (the desk app's settings do too)
+kit eyes show            # what Kit can see right now, as he's told it
+kit eyes pause | resume  # the "Let Kit see me" switch, from the terminal
+```
+
 ## How Kit is laid out
 
 - **Code** lives in this repo (`src/kit`). The server runs on Linux: Ubuntu under

@@ -287,3 +287,160 @@ def test_kit_life_reflect_says_when_its_off(paths, capsys):
     paths.ensure()
     assert cmd_life(paths, "reflect", httpx.MockTransport(handler)) == 1
     assert "reflection is off" in capsys.readouterr().out
+
+
+# --- kit eyes --------------------------------------------------------------
+
+
+def brain_transport(paused=False, enabled=True):
+    """A brain for the eyes to talk to; ``calls`` records what they asked."""
+    import httpx
+
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path, request.content))
+        path = request.url.path
+        if path == "/api/status":
+            return httpx.Response(200, json={"name": "Kit", "eyes_paused": paused})
+        if path == "/api/settings":
+            return httpx.Response(
+                200,
+                json={
+                    "settings": {"eyes": {"enabled": enabled, "camera": 1, "detector": "yolo11s"}},
+                    "problem": None,
+                },
+            )
+        if path == "/api/eyes/scene" and request.method == "GET":
+            detail = "What you can see through the desk camera, as of 09:00 AM:\n- Person #1"
+            return httpx.Response(200, json={"detail": detail, "paused": paused})
+        if path == "/api/eyes/scene":
+            return httpx.Response(200, json={"ok": True, "paused": paused, "settings": {}})
+        if path == "/api/eyes/pause":
+            return httpx.Response(200, json={"paused": json.loads(request.content)["paused"]})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler), calls
+
+
+def eyes_args(action=None, **over):
+    import argparse
+
+    base = {
+        "eyes_action": action,
+        "brain": None,
+        "token": None,
+        "camera": None,
+        "name": "desk",
+        "show": False,
+        "frames": None,
+    }
+    return argparse.Namespace(**{**base, **over})
+
+
+@pytest.fixture
+def eyes_dirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("KIT_EYES_DIR", str(tmp_path / "eyes"))
+    monkeypatch.setenv("KIT_DESK_DIR", str(tmp_path / "desk"))
+    return tmp_path
+
+
+def test_eyes_cameras_lists_them_or_says_what_to_install(paths, capsys, eyes_dirs):
+    from kit.cli import cmd_eyes
+
+    cams = [{"index": 0, "backend": "DSHOW", "width": 1280, "height": 720, "fps": 30.0}]
+    assert cmd_eyes(paths, eyes_args("cameras"), cameras=lambda: cams) == 0
+    assert "[0] 1280x720 at 30 fps via DSHOW" in capsys.readouterr().out
+
+    def no_cv2():
+        raise ImportError("cv2")
+
+    assert cmd_eyes(paths, eyes_args("cameras"), cameras=no_cv2) == 1
+    assert 'pip install "kit[eyes]"' in capsys.readouterr().out
+    assert cmd_eyes(paths, eyes_args("cameras"), cameras=list) == 1
+    assert "No cameras found" in capsys.readouterr().out
+
+
+def test_eyes_need_to_know_where_the_brain_is(paths, capsys, eyes_dirs):
+    from kit.cli import cmd_eyes
+
+    assert cmd_eyes(paths, eyes_args("show")) == 1
+    assert "kit eyes connect URL TOKEN" in capsys.readouterr().out
+    assert main(["eyes", "connect", "http://kit-server:8600", "tok"]) == 0
+    assert "saved" in capsys.readouterr().out
+    assert (eyes_dirs / "eyes" / "api_token").read_text() == "tok\n"
+
+
+def test_eyes_show_pause_and_resume_talk_to_the_brain(paths, capsys, eyes_dirs):
+    from kit.cli import cmd_eyes
+
+    main(["eyes", "connect", "http://kit-server:8600", "tok"])
+    capsys.readouterr()
+    transport, calls = brain_transport(paused=True)
+    assert cmd_eyes(paths, eyes_args("show"), transport=transport) == 0
+    out = capsys.readouterr().out
+    assert "- Person #1" in out and "kit eyes resume" in out
+    assert cmd_eyes(paths, eyes_args("resume"), transport=transport) == 0
+    assert "eyes are on" in capsys.readouterr().out
+    assert cmd_eyes(paths, eyes_args("pause"), transport=transport) == 0
+    assert "camera is released" in capsys.readouterr().out
+    assert [c[:2] for c in calls] == [
+        ("GET", "/api/eyes/scene"),
+        ("POST", "/api/eyes/pause"),
+        ("POST", "/api/eyes/pause"),
+    ]
+    assert json.loads(calls[1][2]) == {"paused": False}
+
+
+class FakeEyes:
+    def __init__(self):
+        self.steps = None
+
+    def run(self, stop=None, max_steps=None):
+        self.steps = max_steps
+
+
+def test_eyes_run_with_the_brains_settings(paths, capsys, eyes_dirs):
+    from kit.cli import cmd_eyes
+
+    main(["eyes", "connect", "http://kit-server:8600", "tok"])
+    capsys.readouterr()
+    transport, calls = brain_transport()
+    built = []
+
+    def build(settings, reporter, camera=None, camera_name="desk", on_frame=None, **kw):
+        built.append((settings, camera, camera_name, on_frame))
+        reporter({"camera": camera_name, "people": []})
+        return FakeEyes()
+
+    assert cmd_eyes(paths, eyes_args(frames=3), transport=transport, build=build) == 0
+    out = capsys.readouterr().out
+    assert "Kit's eyes are open: camera 1, reporting to http://kit-server:8600" in out
+    settings, camera, name, on_frame = built[0]
+    assert (
+        settings.camera == 1
+        and settings.detector == "yolo11s"
+        and camera is None
+        and name == "desk"
+        and on_frame is None
+    )
+    assert ("POST", "/api/eyes/scene") in [c[:2] for c in calls]
+    transport, _ = brain_transport(enabled=False)
+    assert cmd_eyes(paths, eyes_args(), transport=transport, build=build) == 1
+    assert "eyes.enabled is false" in capsys.readouterr().out
+
+    def no_libs(*a, **kw):
+        raise ImportError("No module named ultralytics")
+
+    transport, _ = brain_transport()
+    assert cmd_eyes(paths, eyes_args(), transport=transport, build=no_libs) == 1
+    assert 'pip install "kit[eyes]"' in capsys.readouterr().out
+
+
+def test_check_includes_the_eyes(paths, capsys):
+    main(["init"])
+    main(["check", *OFFLINE])
+    out = capsys.readouterr().out
+    assert "] eyes" in out and "[FAIL] eyes" not in out  # no camera here is a warning at most
+    main(["check", *OFFLINE, "--skip", "eyes"])
+    assert "] eyes" not in capsys.readouterr().out
