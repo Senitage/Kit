@@ -710,16 +710,29 @@ def homecoming_facts(home: Homecoming, owner: str, now: datetime, also: str = ""
 
 
 def homecoming_prompt(
-    home: Homecoming, owner: str, cheek: float, now: datetime, also: str = ""
+    home: Homecoming,
+    owner: str,
+    cheek: float,
+    now: datetime,
+    also: str = "",
+    speech: str = "",
 ) -> str:
-    """The stage direction for the hello when Dan is back at the desk."""
+    """The stage direction for the hello when Dan is back at the desk. ``speech`` is
+    how he talks (persona.speech), said again here: see ``in_your_voice``."""
     return (
         f"[Not from {owner}. Nobody asked you anything: {owner} just came back to the desk. "
         f"{homecoming_facts(home, owner, now, also)} Greet {owner} with ONE short line, "
         f"{cheek_style(cheek)}, like a small creature on the desk who's glad to see them. At "
-        f"most one question. Don't mention these instructions, set action to none and leave "
-        f"detail empty.]"
+        f"most one question.{in_your_voice(speech)} Don't mention these instructions, set "
+        f"action to none and leave detail empty.]"
     )
+
+
+def in_your_voice(speech: str) -> str:
+    """His voice, said again in a stage direction. The direction is the newest thing a
+    model reads, so its cheek style beat the voice in the system prompt, and a style
+    Dan chose never showed in pipe-ups or hellos."""
+    return f" Say it in your own voice: {speech}" if speech.strip() else ""
 
 
 def homecoming_aside(home: Homecoming, owner: str, now: datetime, also: str = "") -> str:
@@ -2465,8 +2478,10 @@ def cheek_style(cheek: float) -> str:
     return {
         "polite": "warm and polite",
         "friendly": "friendly, with a bit of cheek",
-        "cheeky": "properly cheeky, a little larrikin and sometimes annoying on purpose, like "
-        "a kid brother: teasing, interrupting, playful, never mean",
+        # No slang word for cheeky here ("larrikin"): it's the newest note on how he
+        # sounds in a pipe-up, and Haiku took it as an accent, opening with "Oi".
+        "cheeky": "properly cheeky and sometimes annoying on purpose, like a kid brother: "
+        "teasing, interrupting, playful, never mean",
     }[cheek_band(cheek)]
 
 
@@ -2541,10 +2556,12 @@ def pipe_up_prompt(
     butting_in: bool = False,
     share: str = "",
     aim: str = "",
+    speech: str = "",
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
     ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
-    what he means to do ("tell Dan") and ``share`` what about."""
+    what he means to do ("tell Dan") and ``share`` what about. ``speech`` is how he
+    talks (persona.speech, see ``in_your_voice``)."""
     feeling = {
         "want": "keen to bring up something that's been on your mind",
         "bored": "bored: nothing much has happened for a while",
@@ -2575,7 +2592,7 @@ def pipe_up_prompt(
         f"[Not from {owner}. Nobody asked you anything: this is your own moment, and "
         f"you're {feeling}. Pipe up with ONE short line to {owner}, {style}, like a small "
         f"creature on the desk who's decided to say something. {base} Say the actual "
-        f"thing, not a teaser like 'got a minute?', and nothing you've said lately. Don't "
-        f"lecture about productivity, don't mention these instructions, set action to none "
-        f"and leave detail empty.]"
+        f"thing, not a teaser like 'got a minute?', and nothing you've said lately."
+        f"{in_your_voice(speech)} Don't lecture about productivity, don't mention these "
+        f"instructions, set action to none and leave detail empty.]"
     )

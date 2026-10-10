@@ -1155,7 +1155,9 @@ class Brain:
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
             if home is not None:
-                prompt = homecoming_prompt(home, owner, self.life.cheek(), now, also)
+                prompt = homecoming_prompt(
+                    home, owner, self.life.cheek(), now, also, settings.persona.speech
+                )
             else:
                 prompt = pipe_up_prompt(
                     reason,
@@ -1166,6 +1168,7 @@ class Brain:
                     self.life.butting_in,
                     share=about,
                     aim=aim,
+                    speech=settings.persona.speech,
                 )
             messages = self._local_messages(
                 settings,
