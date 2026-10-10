@@ -481,6 +481,34 @@ def test_the_cat_makes_him_curious():
     assert ("seen", "A cat just wandered into view (left).") in list(life._to_think)
 
 
+def test_the_cat_is_news_straight_away_once_dan_stops_typing():
+    life, pc, scene, clock = setup()
+    saw(life, scene, report(1))
+    life.piped_up("bored")  # he only just spoke, so the usual gap would hold him
+    life.awaiting_reply = False
+    pc.update(snap(idle=1))
+    saw(life, scene, report(1, cat=True))
+    assert life.spotted is not None
+    assert life.tick() is None  # Dan's typing: wait for a pause
+    clock.now += timedelta(seconds=30)
+    pc.update(snap(idle=20))
+    assert life.tick() == "curious" and life.curious_kind == "seen"
+    life.piped_up("curious")
+    assert life.spotted is None
+    saw(life, scene, report(1, cat=True))  # still there: not news again
+    assert life.spotted is None
+
+
+def test_a_sighting_not_mentioned_in_time_is_dropped():
+    life, pc, scene, clock = setup()
+    saw(life, scene, report(1))
+    pc.update(snap(idle=1))
+    saw(life, scene, report(1, cat=True))
+    clock.now += timedelta(minutes=6)
+    life.tick()
+    assert life.spotted is None
+
+
 def test_the_bodies_are_told_where_to_look():
     life, pc, scene, clock = setup()
     saw(life, scene, report(1))

@@ -738,13 +738,13 @@ async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
     """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up. A
     hello waiting to be said (Dan just sat down, or came back to the keyboard)
     gets a beat straight away rather than at the next one, so he says hi while
-    Dan's still sitting down."""
+    Dan's still sitting down. The same goes for the cat just spotted."""
     loop = asyncio.get_running_loop()
     last = loop.time()
     greeted = None
     while True:
         await asyncio.sleep(min(step_s, every_s))
-        home = brain.life.homecoming
+        home = brain.life.homecoming or getattr(brain.life, "spotted", None)
         due = loop.time() - last >= every_s
         if not due and (home is None or home is greeted):
             continue

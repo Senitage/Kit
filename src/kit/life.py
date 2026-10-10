@@ -115,6 +115,7 @@ AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
 CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
 NAG_AFTER = timedelta(minutes=3)
 MAX_NAGS = 2
+SPOTTED_KEEPS = timedelta(minutes=5)  # how long a sighting stays worth mentioning
 LOOK_EVERY = timedelta(seconds=2.5)  # a body's look_at holds about 3 s: refresh it
 MAX_EVENTS = 200
 LIFE_KEY = "life"  # kit_self key: drives, feeling and timings, so a restart keeps them
@@ -893,6 +894,8 @@ class Life:
         self.came_back: tuple[datetime, datetime] | None = None  # (gone since, back at)
         self.goodbye: tuple[datetime, str] | None = None  # when Dan said bye, and how
         self.homecoming: Homecoming | None = None  # a hello still to say
+        # An animal the eyes just spotted (what, when): worth a word straight away.
+        self.spotted: tuple[str, datetime] | None = None
         self.was_off: tuple[datetime, datetime] | None = None  # the server was off then
         self.companion_since = now  # his first day (miffed waits a week from it)
         self.closeness = CLOSENESS_START
@@ -1143,6 +1146,7 @@ class Life:
                 self.drives.curiosity = _clamp(self.drives.curiosity + 0.5)
                 self.curious_about = h.text.rstrip(".").replace(" just wandered into view", "")
                 self.curious_kind = "seen"
+                self.spotted = (self.curious_about, now)
                 self._think_about("seen", h.text)
                 changed = True
         if self.asleep and in_view:
@@ -1621,6 +1625,8 @@ class Life:
                 self.publish({"type": "state", "state": "asleep"})
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
+        if self.spotted is not None and now - self.spotted[1] > SPOTTED_KEEPS:
+            self.spotted = None  # the cat's old news by now
         unseen = now - max(self.last_seen, self.last_chat)
         if unseen >= MISSING_AFTER and not present:
             felt = self.feeling_now()
@@ -1762,6 +1768,13 @@ class Life:
         home = self.homecoming
         if home is not None and not home.tried and not home.by_chat:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
+        if self.spotted is not None:
+            about, _ = self.spotted
+            if snap is None or snap.idle_seconds >= TYPING_S:
+                # The cat just walked in: that's news now, whatever his drives or the
+                # usual gaps say. He only waits for Dan to stop typing.
+                self.curious_about, self.curious_kind = about, "seen"
+                return "curious", ""
         if self.held_until and now < self.held_until:
             return None, f"had nothing new to say: next chance {self.held_until:%H:%M}"
         chatty = life.chattiness >= CHATTY
@@ -1827,6 +1840,7 @@ class Life:
         self.butting_in = False
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
+        self.spotted = None
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
 
@@ -1848,6 +1862,8 @@ class Life:
                 self.feel("glad", f"{owner} is back", 0.6, show=False, force=True)
         self.drives.boredom = 0.2
         self.drives.curiosity = 0.0
+        if reason == "curious":
+            self.spotted = None
         self.drives.social = _clamp(self.drives.social - 0.3)
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
