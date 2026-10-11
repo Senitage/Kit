@@ -50,6 +50,7 @@ pic_dx = (pic_left - pic_right) / 2      # -0.3: picture centre a little left of
 pic_dz = (pic_bottom - pic_top) / 2      # +3.05: picture centre above the board centre
 spline_above_tab = 12.2   # top of the tabs to the top of the output shaft
 tab_top_to_bottom = 20.0  # top of the tabs to the bottom of the servo (Dan, 2026-10-11)
+horn_single_len, horn_double_len = 22.0, 36.0   # servo horns, end to end (Dan, 2026-10-11)
 
 # ---------- estimates ----------
 win = 28.5                # window (the picture is 27.2 x 27.5)
@@ -185,8 +186,11 @@ def sg90_screw_holes(z0, z1, d=servo_screw):
     return out
 
 
+HUB_D, TIP_D = 7.5, 4.2   # servo horn hub and arm-tip widths (estimates)
+
+
 def _arm(length, clear):
-    r1, r2 = (7.5 + clear) / 2, (4.2 + clear) / 2
+    r1, r2 = (HUB_D + clear) / 2, (TIP_D + clear) / 2
     t = horn_t + clear
     hub = cyl(2 * r1, t, (0, 0, 0))
     tip = cyl(2 * r2, t, (length, 0, 0))
@@ -194,12 +198,15 @@ def _arm(length, clear):
     return hub.union(tip).union(web)
 
 
-def horn_single(clear=0.3):
-    return _arm(15.0, clear)
+def horn_single(clear=0.5):
+    """Single-arm horn, 22 mm end to end (Dan measured)."""
+    return _arm(horn_single_len - HUB_D / 2 - TIP_D / 2, clear)
 
 
-def horn_double(clear=0.3):
-    return _arm(15.5, clear).union(_arm(15.5, clear).rotate((0, 0, 0), (0, 0, 1), 180))
+def horn_double(clear=0.5):
+    """Two-arm horn, 36 mm tip to tip (Dan measured)."""
+    arm = horn_double_len / 2 - TIP_D / 2
+    return _arm(arm, clear).union(_arm(arm, clear).rotate((0, 0, 0), (0, 0, 1), 180))
 
 
 def to_tilt(shape):
@@ -352,8 +359,14 @@ def neck():
     disc = cyl(2 * DISC_R, DISC_Z1 - DISC_Z0, (0, 0, DISC_Z0)).edges(">Z").fillet(1.5)
     plane = cq.Plane(origin=(0, 0, 0), xDir=(0, 1, 0), normal=(1, 0, 0))
 
+    # The arms reach a little past the turntable's edge (the cap's opening limits how big it can be), so
+    # their outer underside flares out from the edge at 45 degrees: fully joined on, and it prints without support.
+    flare = cone(2 * DISC_R, 2 * (DISC_R + 8.0), 8.0, (0, 0, DISC_Z1)).union(cyl(2 * DISC_R, 2.0, (0, 0, DISC_Z1 - 1.9)))
+    outside = cyl(90, 9.5, (0, 0, DISC_Z1 - 1.5)).cut(flare)
+
     def arm(x0, x1):
         a = box(x0, TILT_Y - ARM_HALF_Y, DISC_Z1 - 0.5, x1, TILT_Y + ARM_HALF_Y, TILT_Z).edges("|Z").fillet(1.8)
+        a = a.cut(outside)
         return a.union(cq.Workplane(plane).workplane(offset=x0).center(TILT_Y, TILT_Z)
                        .circle(ARM_HALF_Y).extrude(x1 - x0))
 

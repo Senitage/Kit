@@ -26,7 +26,7 @@ Total height is about 132 mm.
 | face (black glass round the screen), studs option | black | front down | 48 x 40 x 5 |
 | face_pins, the other option | black | front down | 48 x 40 x 8 |
 | ear x2 | orange | flat side down | 20 x 20 x 2.4 |
-| neck | dark grey | disc down | 44 x 44 x 29 |
+| neck | dark grey | disc down | 48 x 44 x 29 |
 | cap (dome on top of the body) | white | as laid | 63 x 63 x 9 |
 | top (plate; its edge is the grey band) | grey | as laid | 64 x 64 x 4 |
 | body | white | upright, open bottom down | 70 x 70 x 47 |
@@ -87,3 +87,7 @@ Dan's measurements (2026-10-10) are in the model:
 - Screen glass sits 1.9 mm in front of the blue board (3.4 glass + board, 1.5 board).
 - The lit picture is 27.2 x 27.5 mm and sits near the top of the board (gaps: top 1.7, left 8.6, right 9.2, bottom 7.8). The face plate puts the picture in the middle of the window.
 - Servo shaft top is 12.2 mm above the top of the tabs.
+- Servo is 20 mm from the top of its tabs to its bottom (2026-10-11).
+- Servo horns, end to end: the cross horn 36 mm, the single horn 22 mm (2026-10-11). Their pockets in the neck are 0.5 mm bigger all round.
+
+The neck arms reach a little past the round base (the cap's opening limits its size), so their outer undersides flare out at 45 degrees from the base's edge.
