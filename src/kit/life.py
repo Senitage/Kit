@@ -1423,7 +1423,8 @@ class Life:
             minutes = life.nap_minutes * (DOZE_LONGER if kind == "doze" else 1)
             wakes = now + timedelta(minutes=minutes * self.rng.uniform(0.67, 1.33))
         self.stop_doing()
-        self.holding = None  # what he was saving to say fades as he drifts off
+        self.holding = self.delivering = None  # what he was saving to say fades as he drifts off
+        self._busy = None  # what he last saw Dan busy with is old news by the time he wakes
         self.asleep, self._asleep_since = True, now
         self.sleep_kind, self._slept_beside = kind, beside
         self.wakes_at = wakes.replace(microsecond=0)
