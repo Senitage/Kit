@@ -419,7 +419,7 @@ def test_a_hello_not_said_in_time_is_dropped_and_short_absences_earn_a_thought()
 
 
 def test_the_keyboard_and_the_camera_agree_on_one_hello():
-    life, pc, scene, clock = setup()
+    life, pc, scene, clock = setup(sleep_after_minutes=60)  # still awake when Dan's back
     pc.update(snap(idle=5))
     life.on_report()
     saw(life, scene, report(1))
@@ -455,10 +455,25 @@ def test_eyes_alone_make_him_present_and_let_him_doze_and_wake():
         life.asleep
         and {"type": "state", "state": "asleep"}.items() <= life.events_after(0)[-1].items()
     )
-    saw(life, scene, report(1))
+    saw(life, scene, report(1))  # asleep, his eyes are shut: seeing someone doesn't wake him
+    assert life.asleep
+    life.note_chat("morning")  # talking to him does
     states = [e for e in life.events_after(0) if e["type"] == "state"]
-    assert not life.asleep and states[-1]["state"] == "awake"
-    assert any(k == "back" and "the desk" in line for k, line in life._to_think)
+    assert not life.asleep and states[-1]["state"] == "awake" and states[-1]["why"] == "chat"
+
+
+def test_waking_from_a_nap_beside_dan_is_not_dan_arriving():
+    life, pc, scene, clock = setup(sleep_after_minutes=10)
+    saw(life, scene, report(1))
+    life._fall_asleep(clock.now, beside=True, kind="nap")
+    for _ in range(50):  # the eyes say they're off while he sleeps
+        clock.now += timedelta(seconds=30)
+        saw(life, scene, SceneReport(off=True, asleep=True))
+        life.tick()
+    assert not life.asleep  # he woke by himself
+    clock.now += timedelta(seconds=5)
+    saw(life, scene, report(1))  # eyes open: Dan's been there all along
+    assert life.homecoming is None and life.came_back is None
 
 
 def test_with_someone_in_view_he_does_not_doze_off_when_the_pc_idles():
@@ -489,7 +504,7 @@ def test_dropping_out_of_shot_while_typing_is_not_leaving():
         saw(life, scene, report(0))
     assert not [k for k, _ in life._to_think if k == "left"]
     assert life.away_since is None
-    pc.update(snap(idle=600))  # now he really has gone
+    pc.update(snap(idle=400))  # now he really has gone (not long enough to doze)
     life.on_report()
     keep(life, scene, clock, 120, report(1))
     for _ in range(12):

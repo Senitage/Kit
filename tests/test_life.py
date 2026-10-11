@@ -600,3 +600,117 @@ def test_a_pressing_want_makes_him_pipe_up():
     assert life.tick() == "want"
     life.piped_up("want")
     assert life.wanting == 0.0
+
+
+# --- sleep: naps, bedtime, waking by himself ---------------------------------
+
+
+def states(life):
+    return [e for e in life.events_after(0) if e["type"] == "state"]
+
+
+def test_ignored_and_bored_with_nothing_going_on_he_naps_then_wakes_by_himself():
+    life, pc, clock = setup(chattiness=0, nap_minutes=20)
+    life.note_chat("hi")
+    run(life, pc, clock, 29, snap(idle=3))  # Dan's busy typing, not talking to him
+    assert not life.asleep  # too soon since they talked
+    for _ in range(240):
+        run(life, pc, clock, 0.5, snap(idle=3))
+        if life.asleep:
+            break
+    assert life.asleep and life.sleep_kind == "nap" and states(life)[0]["sleep"] == "nap"
+    assert life.state()["naps_today"] == 1
+    assert 13 <= (life.wakes_at - life._asleep_since).total_seconds() / 60 <= 27
+    run(life, pc, clock, 10, snap(idle=3))  # typing beside him doesn't wake him
+    assert life.asleep
+    run(life, pc, clock, 18, snap(idle=3))
+    assert not life.asleep and states(life)[-1]["why"] == "himself"
+    assert life.groggy() and life.mood() == "sleepy"
+    assert "just woken from a nap" in life.feeling_line("Dan")
+    clock.now += timedelta(minutes=11)
+    assert not life.groggy()
+
+
+def test_no_naps_mid_conversation_at_night_or_when_turned_off():
+    life, pc, clock = setup(chattiness=0)
+    for _ in range(120):  # chatting away all afternoon
+        life.note_chat("and another thing")
+        run(life, pc, clock, 1, snap(idle=3))
+    assert not life.asleep
+    life, pc, clock = setup(chattiness=0, naps=False)
+    run(life, pc, clock, 120, snap(idle=3))
+    assert not life.asleep and life.state()["naps_today"] == 0
+
+
+def test_at_most_two_naps_a_day_with_a_gap_between():
+    life, pc, clock = setup(chattiness=0, nap_minutes=5)
+    run(life, pc, clock, 11 * 60, snap(idle=3))  # 10:00 to 21:00, ignored all day
+    assert len(life.naps) == 2 and life.state()["naps_today"] == 2
+    assert life.naps[1] - life.naps[0] >= timedelta(hours=2)
+
+
+def test_past_bedtime_he_turns_in_even_with_dan_up_and_gets_up_in_the_morning():
+    life, pc, clock = setup("2026-10-06T22:40:00", chattiness=0)
+    run(life, pc, clock, 60, snap(idle=3))  # Dan's still at the PC, not talking to him
+    assert life.asleep and life.sleep_kind == "night"
+    assert life.wakes_at.date() == clock.now.date() + timedelta(days=1)
+    assert life.wakes_at.hour == 7
+    run(life, pc, clock, 30, snap(idle=3))  # still typing: he sleeps on
+    assert life.asleep
+    life.note_chat("you awake?")  # talking to him wakes him, groggy
+    assert not life.asleep and life.groggy() and states(life)[-1]["why"] == "chat"
+    assert "night's sleep" in life.feeling_line("Dan")
+
+
+def test_turning_in_can_be_switched_off():
+    life, pc, clock = setup("2026-10-06T22:40:00", chattiness=0, turns_in=False)
+    run(life, pc, clock, 60, snap(idle=3))
+    assert not life.asleep
+
+
+def test_dan_coming_back_to_the_pc_wakes_him_but_stepping_off_mid_nap_does_not():
+    life, pc, clock = setup(sleep_after_minutes=10)
+    pc.update(snap(idle=700))  # Dan left: Kit dozes
+    life.on_report()
+    assert life.asleep and life.sleep_kind == "doze"
+    pc.update(snap(idle=2))
+    life.on_report()
+    assert not life.asleep and states(life)[-1]["why"] == "back"
+    life, pc, clock = setup()
+    pc.update(snap(idle=2))
+    life.on_report()
+    life._fall_asleep(clock.now, beside=True, kind="nap")
+    clock.now += timedelta(minutes=10)
+    pc.update(snap(idle=360))  # Dan reads something for six minutes
+    life.on_report()
+    pc.update(snap(idle=2))
+    life.on_report()
+    assert life.asleep  # back at the keys after a few minutes: no wake
+
+
+def test_dozing_while_dan_is_out_he_wakes_himself_and_gets_up_a_while():
+    life, pc, clock = setup(sleep_after_minutes=10, nap_minutes=20)
+    away = snap(idle=3600)
+    for _ in range(2 * 120):  # two hours with Dan out
+        clock.now += timedelta(seconds=30)
+        pc.update(away)
+        life.on_report()
+        life.tick()
+    kinds = [(e["state"], e.get("sleep") or e.get("why")) for e in states(life)]
+    assert ("asleep", "doze") in kinds and ("awake", "himself") in kinds
+    woke = [i for i, k in enumerate(kinds) if k == ("awake", "himself")][0]
+    assert len(kinds) > woke + 1  # and dozed off again after getting up a while
+
+
+def test_a_sleep_survives_a_restart(paths):
+    paths.ensure()
+    memory = Memory(paths.state_dir / "memory.db", Clock("2026-10-06T10:00:00"))
+    clock = Clock("2026-10-06T10:00:00")
+    s = Settings()
+    life = Life(lambda: s, PcContext(clock), clock, random.Random(1), store=memory)
+    life._fall_asleep(clock.now, beside=True, kind="nap")
+    life.save()
+    wakes = life.wakes_at
+    again = Life(lambda: s, PcContext(clock), clock, random.Random(1), store=memory)
+    assert again.asleep and again.sleep_kind == "nap" and again.wakes_at == wakes
+    memory.close()

@@ -410,6 +410,19 @@ LATE_FROM = 22.5
 SLEEP_RESTORES = 0.6  # an hour asleep
 SLEPT_ENOUGH = timedelta(minutes=45)  # a sleep this long sets him back to full
 TIRED = 0.4  # below this he yawns and keeps it short
+# Sleep: naps, bedtime and waking by himself (``life.naps``, ``life.turns_in``).
+NAP_QUIET = timedelta(minutes=30)  # nobody's talked to him this long before he naps
+NAP_BORED = 0.6  # this bored (or tired) before he naps
+NAP_CHANCE = 0.05  # a minute, once he'd nap: so he nods off in twenty minutes or so
+NAPS_A_DAY = 2
+NAP_GAP = timedelta(hours=2)  # awake at least this long between naps
+TURN_IN_QUIET = timedelta(minutes=15)  # past bedtime, this long without a word and he turns in
+TURN_IN_CHANCE = 0.1  # a minute, once he'd turn in
+DOZE_LONGER = 2  # dozing while Dan's out lasts this many naps
+MORNING_LIE_IN = 20  # minutes past the end of quiet hours he may sleep on
+GROGGY_FOR = timedelta(minutes=10)  # dozy this long after waking
+GROGGY_AFTER = timedelta(minutes=10)  # a sleep shorter than this leaves him bright
+EYES_OPENING = timedelta(minutes=2)  # his eyes come back on after a sleep within this
 NIGHT_CAP = 0.35  # his body clock's limit at night: under TIRED, so he's sleepy
 WIND_DOWN = (21.0, 23.0)  # hours over which the limit falls to NIGHT_CAP
 WAKE_UP = (5.0, 7.0)  # and rises back to full
@@ -914,6 +927,13 @@ class Life:
         self.next_thought = now + self._think_gap(0.3, 1.0)
         self._to_think: deque[tuple[str, str]] = deque(maxlen=4)  # what's happened since
         self._asleep_since: datetime | None = None
+        self.sleep_kind = ""  # "nap", "doze" (Dan's out) or "night", while asleep
+        self.wakes_at: datetime | None = None  # when he'll wake by himself
+        self._slept_beside = False  # dozed off with Dan still about (a nap, or turning in)
+        self._woke_at: datetime | None = None
+        self._woke_from = ""  # the sleep he last woke from, for the groggy line
+        self.groggy_until: datetime | None = None
+        self.naps: list[datetime] = []  # today's naps
         self._talked_at: datetime | None = None  # Dan's last message, this run
         self._chat_open = False  # a conversation that hasn't been thought over yet
         # Absences: when Dan last touched the PC, went away and came back.
@@ -977,7 +997,7 @@ class Life:
         now = self.clock()
         self._talked_at = now
         if self.asleep:
-            self._wake()
+            self._wake("chat")
         if self._pipe_out is not None:  # Dan answered his last pipe-up in time: it landed
             reason, at = self._pipe_out
             if now - at <= TAKEN_UP_WITHIN:
@@ -1119,13 +1139,15 @@ class Life:
         """A report from the desk app (every few seconds). Kit keeps track of when Dan
         last touched the PC and when he went away; back after a while, Kit is glad
         and has a hello to say (``Homecoming``). He dozes off once Dan's been gone
-        long enough and wakes when he's back. Every body (desk face, arm) follows."""
+        long enough, and wakes when he hears Dan come back to the PC (not when Dan
+        types beside him while he naps). Every body (desk face, arm) follows."""
         snap = self.pc.latest
         if snap is None:
             return
         now = self.clock()
         last_input = now - timedelta(seconds=max(0, snap.idle_seconds))
         changed = False
+        back_from: datetime | None = None  # Dan just came back to the PC, gone since then
         if (snap.locked or snap.idle_seconds >= AWAY_AFTER_S) and not self._in_view():
             self.present_since = None
             if self.away_since is None:
@@ -1136,6 +1158,7 @@ class Life:
             start = self.away_since
             if start is None and now - self.last_seen >= HOME_AFTER:
                 start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
+            back_from = start
             self.away_since = None
             self.last_seen = last_input
             if start is not None:
@@ -1159,14 +1182,12 @@ class Life:
             and (snap.locked or snap.idle_seconds >= away_s)
             and not self.chatting(now)
             and not self._in_view()  # someone's at the desk, keyboard or not
+            and self._up_a_while(now)
         ):
-            self.stop_doing()
-            self.asleep = True
-            self._asleep_since = now
-            self.publish({"type": "state", "state": "asleep"})
+            self._fall_asleep(now)
             changed = True
-        elif self.asleep and not snap.locked and snap.idle_seconds < BACK_IDLE_S:
-            self._wake()
+        elif self.asleep and self._hears_dan_back(back_from, now):
+            self._wake("back")
             changed = True
         if changed:
             self._show_face()
@@ -1183,7 +1204,10 @@ class Life:
         he doesn't doze off while Dan reads or is on the phone; someone sitting down
         after the desk was empty a while is Dan back, with a hello to say
         (``Homecoming``, noticed through the camera); an animal wandering in makes
-        him curious. The bodies are told where to look."""
+        him curious. The bodies are told where to look. Asleep, his eyes are shut:
+        nothing they report wakes him or counts."""
+        if self.asleep:
+            return
         now = self.clock()
         changed = False
         in_view = self._in_view()
@@ -1209,23 +1233,17 @@ class Life:
                 self.spotted = (self.curious_about, now)
                 self._think_about("seen", h.text)
                 changed = True
-        if self.asleep and in_view:
-            self._wake()
-            changed = True
-        elif (
-            not self.asleep
-            and not in_view
-            and not self.pc.online()
-            and self.scene is not None
-            and self.scene.online()
-        ):
+        if not in_view and not self.pc.online() and self.scene is not None and self.scene.online():
             # Only his eyes to go on: nobody in view for the usual time, and he dozes off.
             empty = self.scene.empty_for_s()
             away_s = self.settings().life.sleep_after_minutes * 60
-            if empty is not None and empty >= away_s and not self.chatting(now):
-                self.stop_doing()
-                self.asleep, self._asleep_since = True, now
-                self.publish({"type": "state", "state": "asleep"})
+            if (
+                empty is not None
+                and empty >= away_s
+                and not self.chatting(now)
+                and self._up_a_while(now)
+            ):
+                self._fall_asleep(now)
                 changed = True
         self._look_where(now)
         if changed:
@@ -1237,6 +1255,10 @@ class Life:
         counts first, when the desk app saw him go. Someone Kit knows by face who
         isn't Dan gets their own hello, and Dan is still away."""
         owner = self.settings().persona.owner
+        if self._eyes_opening(now) and self.away_since is None:
+            # He napped beside Dan: his eyes coming back on isn't Dan arriving.
+            self.present_since = self.present_since or now
+            return
         if h.who and owner.casefold() not in {n.casefold() for n in h.who}:
             self.visitor = (join_names(h.who), now)
             self._think_about("visitor", h.text)
@@ -1270,14 +1292,113 @@ class Life:
         at_pc = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
         return at_pc or self._in_view()
 
-    def _wake(self) -> None:
-        slept = self.clock() - self._asleep_since if self._asleep_since else timedelta(0)
+    # Sleep (life.sleep_after_minutes, life.naps, life.turns_in)
+
+    def _fall_asleep(self, now: datetime, beside: bool = False, kind: str = "") -> None:
+        """He dozes off: a nap (``beside`` Dan, bored), a doze (Dan's out) or the
+        night (quiet hours, or he turned in). He'll wake by himself at ``wakes_at``;
+        his eyes shut meanwhile (kit.eyes unloads its models)."""
+        life = self.settings().life
+        if not kind:
+            quiet = in_quiet_hours(now, life.quiet_from, life.quiet_until)
+            kind = "night" if quiet else "nap" if beside else "doze"
+        if kind == "night":
+            wakes = self._morning(now) + timedelta(minutes=self.rng.uniform(0, MORNING_LIE_IN))
+        else:
+            minutes = life.nap_minutes * (DOZE_LONGER if kind == "doze" else 1)
+            wakes = now + timedelta(minutes=minutes * self.rng.uniform(0.67, 1.33))
+        self.stop_doing()
+        self.asleep, self._asleep_since = True, now
+        self.sleep_kind, self._slept_beside = kind, beside
+        self.wakes_at = wakes.replace(microsecond=0)
+        self.publish({"type": "state", "state": "asleep", "sleep": kind})
+
+    def _morning(self, now: datetime) -> datetime:
+        """The next end of quiet hours: when he gets up after a night's sleep."""
+        h, _, m = self.settings().life.quiet_until.partition(":")
+        at = now.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+        return at if at > now else at + timedelta(days=1)
+
+    def _up_a_while(self, now: datetime) -> bool:
+        """Awake long enough to doze off again: after waking by himself he gets up
+        for ``life.sleep_after_minutes`` before he dozes again, Dan or no Dan."""
+        wait = timedelta(minutes=self.settings().life.sleep_after_minutes)
+        return self._woke_at is None or now - self._woke_at >= wait
+
+    def _hears_dan_back(self, gone_since: datetime | None, now: datetime) -> bool:
+        """Dan's back at the keyboard after being away: the keyboard and mouse are
+        what Kit hears until he has ears. Dan typing beside him while he naps, or
+        stepping off for a few minutes, doesn't wake him."""
+        if gone_since is None:
+            return False
+        before = self._asleep_since is None or gone_since <= self._asleep_since
+        return before or now - gone_since >= HOME_AFTER
+
+    def _eyes_opening(self, now: datetime) -> bool:
+        return (
+            self._slept_beside and self._woke_at is not None and now - self._woke_at < EYES_OPENING
+        )
+
+    def _wake(self, why: str = "") -> None:
+        """He wakes: Dan talked to him ("chat"), came back ("back"), or he's slept
+        enough ("himself"). After a proper sleep he's groggy a little while."""
+        now = self.clock()
+        slept = now - self._asleep_since if self._asleep_since else timedelta(0)
         if slept >= SLEPT_ENOUGH:
             self.energy = 1.0  # a proper sleep sets him right (life.energy_need)
+        if slept >= GROGGY_AFTER:
+            self.groggy_until, self._woke_from = now + GROGGY_FOR, self.sleep_kind
         self.asleep = False
         self._asleep_since = None
-        self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
-        self.publish({"type": "state", "state": "awake"})
+        self._woke_at = now
+        self.drives.boredom = min(self.drives.boredom, 0.3)  # a fresh start
+        self.sleep_kind, self.wakes_at = "", None
+        if why != "himself":
+            self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
+        self.publish({"type": "state", "state": "awake", "why": why or "back"})
+
+    def groggy(self) -> bool:
+        """Just woken from a proper sleep: dozy and short for a few minutes."""
+        return self.groggy_until is not None and self.clock() < self.groggy_until
+
+    def _sleepy_now(self, now: datetime, present: bool, minutes: float) -> None:
+        """Each tick: wake by himself when he's slept enough, or nod off for a nap
+        (bored, ignored, nothing going on) or turn in for the night (past bedtime,
+        nobody talking to him), even with Dan still at the PC."""
+        life = self.settings().life
+        if self.asleep:
+            if self.wakes_at is None:  # saved by a Kit without waking times
+                self.wakes_at = now + timedelta(minutes=life.nap_minutes)
+            if now >= self.wakes_at:
+                self._wake("himself")
+            return
+        if not life.enabled or self.chatting(now) or self.doing is not None:
+            return
+        quiet = now - self.last_chat
+        self.naps = [t for t in self.naps if t.date() == now.date()]
+        if life.turns_in and in_quiet_hours(now, life.bedtime, life.quiet_until):
+            if quiet >= TURN_IN_QUIET and self.rng.random() < TURN_IN_CHANCE * minutes:
+                self.publish({"type": "fidget", "gesture": "yawn", "mood": "sleepy"})
+                self._fall_asleep(now, beside=present, kind="night")
+            return
+        if (
+            life.naps
+            and present
+            and not in_quiet_hours(now, life.quiet_from, life.quiet_until)
+            and quiet >= NAP_QUIET
+            and (self.drives.boredom >= NAP_BORED or self.tired())
+            and self.drives.curiosity < 0.4  # something's caught his eye
+            and not self.awaiting_reply
+            and self.homecoming is None
+            and self.spotted is None
+            and self.visitor is None
+            and len(self.naps) < NAPS_A_DAY
+            and (self._woke_at is None or now - self._woke_at >= NAP_GAP)
+            and self.rng.random() < NAP_CHANCE * minutes
+        ):
+            self.naps.append(now)
+            self.publish({"type": "fidget", "gesture": "yawn", "mood": "sleepy"})
+            self._fall_asleep(now, beside=True, kind="nap")
 
     def _came_back(
         self,
@@ -1626,6 +1747,8 @@ class Life:
             return "asleep"
         if self.sulky:
             return "sulky"
+        if self.groggy():
+            return "sleepy"
         if d.energy < (TIRED if self.settings().life.energy_need else 0.5):
             return "sleepy"
         if d.curiosity > 0.4:
@@ -1700,10 +1823,11 @@ class Life:
         gone = self.away_since is not None and not self.pc.online()
         if gone and self.alone_life() and not self.asleep and not self.chatting(now):
             # The PC went to sleep while Dan was out: Kit dozes off in the usual time.
-            if now - self.away_since >= timedelta(minutes=self.settings().life.sleep_after_minutes):
-                self.stop_doing()
-                self.asleep, self._asleep_since = True, now
-                self.publish({"type": "state", "state": "asleep"})
+            gone_for = now - self.away_since
+            if gone_for >= timedelta(minutes=self.settings().life.sleep_after_minutes):
+                if self._up_a_while(now):
+                    self._fall_asleep(now)
+        self._sleepy_now(now, present, minutes)
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
         if self.spotted is not None and now - self.spotted[1] > SPOTTED_KEEPS:
@@ -2105,6 +2229,13 @@ class Life:
             "seen": sorted(self._seen),
             "asleep": self.asleep,
             "asleep_since": when(self._asleep_since),
+            "sleep_kind": self.sleep_kind,
+            "wakes_at": when(self.wakes_at),
+            "slept_beside": self._slept_beside,
+            "woke_at": when(self._woke_at),
+            "woke_from": self._woke_from,
+            "groggy_until": when(self.groggy_until),
+            "naps": [when(t) for t in self.naps if t.date() == now.date()],
             "last_seen": when(self.last_seen),
             "away_since": when(self.away_since),
             "came_back": [when(t) for t in self.came_back] if self.came_back else None,
@@ -2220,6 +2351,14 @@ class Life:
             self._grown = (str(data["grown"][0]), float(data["grown"][1]))
         self.asleep = bool(data.get("asleep"))
         self._asleep_since = when("asleep_since") if self.asleep else None
+        if self.asleep:
+            self.sleep_kind = str(data.get("sleep_kind") or "doze")
+            self.wakes_at = when("wakes_at")
+            self._slept_beside = bool(data.get("slept_beside"))
+        self._woke_at = when("woke_at")
+        self._woke_from = str(data.get("woke_from", ""))
+        self.groggy_until = when("groggy_until")
+        self.naps = [parse_time(t, now) for t in data.get("naps") or []]
         self.last_seen = when("last_seen") or saved  # an older Kit's save: he was there
         self.away_since = when("away_since")
         if data.get("came_back"):
@@ -2303,7 +2442,7 @@ class Life:
         if self.bad_night():
             style = BAD_NIGHT_STYLE
             quirk = ""
-        elif self.tired():
+        elif self.tired() or self.groggy():
             style += TIRED_STYLE
         voice = Voice(feeling, style, examples, said, quirk, list(mind or []), close, when)
         voice.opinions = list(opinions or [])
@@ -2319,6 +2458,8 @@ class Life:
             owner=owner,
             hours=gap_words(quiet) if quiet >= timedelta(hours=1.5) else "a while",
         )
+        if self.groggy():
+            feeling = GROGGY[self._woke_from or "nap"]
         felt = self.feelings_now()
         if not felt:
             return feeling
@@ -2343,6 +2484,10 @@ class Life:
             "mood": self.mood(),
             "face": self.face(),
             "presence": self.presence(),
+            "sleep": self.sleep_kind or None,
+            "wakes_at": self.wakes_at.isoformat(timespec="minutes") if self.wakes_at else None,
+            "groggy": self.groggy(),
+            "naps_today": sum(1 for t in self.naps if t.date() == now.date()),
             "doing": self.doing.doing if self.doing else None,
             "did_today": [
                 f"{at:%H:%M} {doing}" for at, doing, _ in self.did if at.date() == now.date()
@@ -2470,6 +2615,12 @@ FEELINGS = {
     "sleepy": "a bit sleepy",
     "sulky": "a little sulky: {owner} ignored you earlier, though you're warming up again",
     "asleep": "just woken up, still a bit dozy",
+}
+# Just woken from each kind of sleep (``Life.groggy``).
+GROGGY = {
+    "nap": "just woken from a nap, still a bit dozy",
+    "doze": "just woken from a doze, still a bit dozy",
+    "night": "just woken from a night's sleep, still groggy",
 }
 
 

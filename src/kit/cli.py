@@ -479,6 +479,11 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
     if state.get("presence") and state["presence"] != "here":
         doing = f", {state['doing']}" if state.get("doing") else ""
         print(f"where:    {state['presence']}{doing}")
+    if state.get("sleep"):
+        wakes = state.get("wakes_at") or ""
+        print(f"sleep:    {state['sleep']}, wakes by himself about {wakes[11:16] or 'soon'}")
+    elif state.get("groggy"):
+        print("sleep:    just woken up, still groggy")
     felt = state.get("feeling")
     if felt:
         print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")

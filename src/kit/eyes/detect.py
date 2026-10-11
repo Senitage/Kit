@@ -9,7 +9,9 @@ a Hailo chip or a MediaPipe detector can stand in behind the same shape.
 
 from __future__ import annotations
 
+import gc
 import logging
+import sys
 from pathlib import Path
 from typing import Protocol
 
@@ -32,6 +34,20 @@ def pick_device() -> int | str:
     except ImportError:
         return "cpu"
     return 0 if torch.cuda.is_available() else "cpu"
+
+
+def free_gpu() -> None:
+    """Hand the memory of models just dropped back to the graphics card: PyTorch
+    keeps freed memory cached for itself otherwise. Nothing without PyTorch."""
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return
+    gc.collect()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:  # a driver hiccup isn't worth stopping the eyes for
+        log.debug("couldn't empty the GPU cache: %s", e)
 
 
 def device_name(device: int | str) -> str:
@@ -88,4 +104,4 @@ class YoloDetector:
         ]
 
     def close(self) -> None:
-        pass
+        self.model = None  # dropped, so free_gpu can hand its memory back

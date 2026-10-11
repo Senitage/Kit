@@ -372,9 +372,10 @@ class FakeDetector:
 class FakeBrain:
     """What the brain answers each report with."""
 
-    def __init__(self, paused=False, settings=None, fail=False):
+    def __init__(self, paused=False, settings=None, fail=False, asleep=False):
         self.reports = []
         self.paused = paused
+        self.asleep = asleep
         self.settings = settings
         self.fail = fail
 
@@ -382,13 +383,13 @@ class FakeBrain:
         self.reports.append(report)
         if self.fail:
             raise RuntimeError("Can't reach Kit")
-        answer = {"ok": True, "paused": self.paused}
+        answer = {"ok": True, "paused": self.paused, "asleep": self.asleep}
         if self.settings is not None:
             answer["settings"] = self.settings
         return answer
 
 
-def make_eyes(brain, cameras=None, detector=None, **settings):
+def make_eyes(brain, cameras=None, detector=None, load_parts=None, **settings):
     clock = Clock()
     ticks = {"t": 0.0}
 
@@ -414,6 +415,7 @@ def make_eyes(brain, cameras=None, detector=None, **settings):
         clock=tick,
         wall=clock,
         sleep=lambda s: None,
+        load_parts=load_parts,
     )
     return eyes, opened, detector
 
@@ -451,12 +453,52 @@ def test_paused_eyes_let_the_camera_go_and_check_back():
         eyes.step()
     assert len(opened) == 1
     off = [r for r in brain.reports if r.get("off")]
-    assert off and off[0] == {"camera": "desk", "off": True}
+    assert off and off[0] == {"camera": "desk", "off": True, "asleep": False}
     brain.paused = False
     brain.reports.clear()
     for _ in range(40):
         eyes.step()
     assert not eyes.paused and len(opened) == 2 and brain.reports[-1]["people"]
+
+
+def test_while_kit_sleeps_his_eyes_shut_and_their_models_unload(monkeypatch):
+    freed = []
+    monkeypatch.setattr("kit.eyes.detect.free_gpu", lambda: freed.append(True))
+    loaded = []
+
+    def load():
+        loaded.append(FakeDetector((1, "person", (40, 10, 90, 70))))
+        return {"detector": loaded[-1]}
+
+    brain = FakeBrain(asleep=True)
+    first = FakeDetector((1, "person", (40, 10, 90, 70)))
+    eyes, opened, _ = make_eyes(
+        brain, cameras=[FakeCamera(), FakeCamera()], detector=first, load_parts=load
+    )
+    eyes.step()  # first report: the brain says Kit's asleep
+    assert eyes.asleep and opened[0].released and eyes.camera is None
+    assert first.closed and eyes.detector is None and freed
+    for _ in range(40):  # 4 s asleep: "off" check-ins, no camera, no models
+        eyes.step()
+    assert len(opened) == 1 and not loaded
+    assert brain.reports[-1] == {"camera": "desk", "off": True, "asleep": True}
+    brain.asleep = False  # he woke up
+    brain.reports.clear()
+    for _ in range(40):
+        eyes.step()
+    assert len(loaded) == 1 and eyes.detector is loaded[0] and len(opened) == 2
+    assert brain.reports[-1]["people"] and loaded[0].frames
+
+
+def test_eyes_without_a_loader_keep_their_models_while_kit_sleeps():
+    brain = FakeBrain(asleep=True)
+    eyes, opened, detector = make_eyes(brain, cameras=[FakeCamera(), FakeCamera()])
+    eyes.step()
+    assert eyes.camera is None and eyes.detector is detector and not detector.closed
+    brain.asleep = False
+    for _ in range(40):
+        eyes.step()
+    assert len(opened) == 2 and detector.frames
 
 
 def test_settings_from_the_brain_apply_to_a_running_pair_of_eyes(caplog):

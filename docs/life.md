@@ -255,6 +255,45 @@ tells you just that; his hello when you're back mentions it; and on a day he
 spent entirely alone, the nightly journal is one plain line saying so, written
 without a model. `kit life` shows where he is: here, away, alone or asleep.
 
+## Sleep, naps and waking up
+
+Kit sleeps when he feels like it, not only when you leave:
+
+- **You go away.** After `life.sleep_after_minutes` with the PC idle or locked
+  (and nobody in view of his eyes) he dozes off. In quiet hours that's his
+  night's sleep; in the daytime it's a doze of about two naps' length, then he
+  gets up by himself and stays up for `life.sleep_after_minutes` before dozing
+  again, so a day out is a few naps with time awake between.
+- **He's bored and ignored.** With `life.naps` on, when he's bored (or tired),
+  nobody's talked to him for half an hour, nothing has caught his eye and no
+  hello or sighting is waiting, he may yawn and nod off for about
+  `life.nap_minutes` (give or take a third), even with you at the PC. Never in
+  quiet hours or mid-conversation, at most twice a day and two hours apart.
+- **Bedtime.** With `life.turns_in` on, once it's past `life.bedtime` and
+  nobody's talked to him for a quarter of an hour, he turns in himself, even if
+  you're still up.
+
+What wakes him:
+
+- **Talking to him**, from the desk, the voice window or your phone.
+- **You coming back to the PC.** The keyboard and mouse are what he hears until
+  he has ears: input after you'd gone (from before he fell asleep, or for 20
+  minutes or more) wakes him. Typing beside him while he naps, or stepping off
+  for a few minutes, doesn't.
+- **Himself.** A nap or doze ends on its own; a night's sleep ends at the end of
+  quiet hours, give or take twenty minutes.
+
+His eyes never wake him. While he sleeps they're shut: the brain tells the eyes
+he's asleep in its answer to each report, and they let the camera go and
+unload the detector and face and body models, handing their memory back to
+the graphics card. They load again when he wakes, which takes a few seconds,
+and his eyes opening after a nap beside you isn't taken for you arriving.
+
+After a sleep of ten minutes or more he's groggy for ten minutes: his mood
+shows sleepy, he knows he's just woken from a nap, a doze or a night's sleep,
+and he keeps his replies short. `kit life` shows the sleep he's in and when
+he'll wake by himself.
+
 ## Something for later
 
 "Ask me tomorrow how the shutdown went", "check in after my 2 pm" or "remind me
@@ -442,14 +481,13 @@ tooltip says why.
 Everything above lives in the brain (`kit.life` on the server), including when
 Kit falls asleep and wakes up. The desk app, the chat and later the arm are
 bodies: they listen to `/api/life/events` and act out what he decides, so
-they always agree. The brain decides he's asleep after
-`life.sleep_after_minutes` away (10 by default) or when the PC is locked, and
-awake the moment the desk app reports you're back.
+they always agree. The brain decides when he's asleep and when he wakes (see
+"Sleep, naps and waking up" above).
 
 With his eyes on ([stage-vision.md](stage-vision.md)), presence comes from the
 camera as well as the keyboard: someone in view counts as "about" even while
-they're reading, he doesn't doze off while someone's there, he wakes the moment
-someone sits down, and the brain sends `look` events saying where the person
+they're reading, he doesn't doze off while someone's there (a bored nap aside),
+and the brain sends `look` events saying where the person
 is so Glow (and the arm later) can look at them. Someone sitting down after the
 desk has been empty twenty minutes or more is a homecoming like any other (the
 hello above, with the keyboard's reckoning of when you went if the desk app

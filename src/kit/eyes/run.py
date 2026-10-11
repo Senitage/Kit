@@ -10,6 +10,10 @@ The brain answers each report with whether the eyes are paused (the tray's
 settings, so changes made on the settings page reach a running pair of eyes.
 Paused eyes let the camera go and tell the brain they're off every few
 seconds; nothing is looked at until the switch is on again.
+
+While Kit is asleep his eyes are shut the same way, and with ``load_parts``
+(the real eyes) they also unload the detector and face and body models, so the
+GPU isn't holding them or working all night. They load again when he wakes.
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ class Eyes:
         wall: Callable[[], datetime] = datetime.now,
         sleep: Callable[[float], None] = time.sleep,
         on_frame: Callable[[object, Scene, dict | None], bool] | None = None,
+        load_parts: Callable[[], dict] | None = None,
     ) -> None:
         self.settings = settings or EyesSettings()
         self.open_camera = open_camera
@@ -67,9 +72,11 @@ class Eyes:
         self.clock = clock
         self.sleep = sleep
         self.on_frame = on_frame  # the preview: returns False to stop
+        self.load_parts = load_parts  # loads detector, faces, body, recogniser afresh
         self.scene = Scene(forget_after=self.settings.forget_after_s, clock=wall)
         self.camera = None
         self.paused = False
+        self.asleep = False  # Kit's asleep: eyes shut, models unloaded (with load_parts)
         self.error = ""  # the last trouble reaching the brain, for the log and `kit eyes`
         self.reports = 0
         self.fps = 0.0
@@ -77,6 +84,7 @@ class Eyes:
         self._last_frame = self._start
         self._last_report = self._start - 1e9
         self._camera_failed_at: float | None = None
+        self._load_failed_at: float | None = None
         self._error_at: float | None = None
 
     # One pass of the loop
@@ -85,11 +93,16 @@ class Eyes:
         """Look at one frame (or, paused, check in with the brain). Returns the
         scene's new event lines."""
         now = self.clock()
-        if self.paused:
+        if self.paused or self.asleep:
             self._release()
+            if self.asleep:
+                self._unload()
             if now - self._last_report >= PAUSED_POLL_S:
-                self._send({"camera": self.camera_name, "off": True}, now)
+                self._send({"camera": self.camera_name, "off": True, "asleep": self.asleep}, now)
             self.sleep(0.2)
+            return []
+        if self.detector is None and not self._load(now):
+            self.sleep(0.5)
             return []
         if self.camera is None and not self._open(now):
             self.sleep(0.5)
@@ -171,6 +184,41 @@ class Eyes:
         self._camera_failed_at = None
         return True
 
+    def _unload(self) -> None:
+        """Kit's asleep: let the models go, and their GPU memory with them."""
+        if self.load_parts is None or self.detector is None:
+            return
+        for part in (self.detector, self.faces, self.body):
+            if part is not None and hasattr(part, "close"):
+                part.close()
+        self.detector = self.faces = self.body = self.recogniser = None
+        self.faces_version = None  # fetched again with the recogniser
+        self.scene.recognising = False
+        from kit.eyes.detect import free_gpu
+
+        free_gpu()
+        log.info("Kit's asleep: eyes shut and models unloaded")
+
+    def _load(self, now: float) -> bool:
+        """Kit's awake again: load the models (a few seconds)."""
+        if self.load_parts is None:
+            return False
+        if self._load_failed_at is not None and now - self._load_failed_at < CAMERA_RETRY_S:
+            return False
+        try:
+            parts = self.load_parts()
+        except Exception as e:  # a missing model file, a GPU hiccup: try again shortly
+            log.error("can't load the eyes' models: %s", e)
+            self._load_failed_at = now
+            return False
+        self._load_failed_at = None
+        self.detector = parts["detector"]
+        self.faces = parts.get("faces")
+        self.body = parts.get("body")
+        self.recogniser = parts.get("recogniser")
+        log.info("Kit's awake: eyes open")
+        return True
+
     def _release(self) -> None:
         if self.camera is not None:
             self.camera.release()
@@ -200,6 +248,12 @@ class Eyes:
             self.paused = paused
             if paused:
                 self._release()  # straight away, not on the next pass
+        asleep = bool(answer.get("asleep", False))
+        if asleep != self.asleep:
+            self.asleep = asleep
+            if asleep:
+                self._release()
+                self._unload()
         version = answer.get("faces_version")
         if version is not None and version != self.faces_version:
             self._known_faces(version)
@@ -320,43 +374,50 @@ def build_eyes(
 
     models = models_dir(folder)
     index = settings.camera if camera is None else camera
-    detector = YoloDetector(settings.detector, models, settings.confidence)
-    faces = body = None
-    if settings.faces or settings.hands or settings.poses:
-        from kit.eyes.body import model_path
 
-        for name, wanted in (
-            ("face", settings.faces),
-            ("gesture", settings.hands),
-            ("pose", settings.poses),
-        ):
-            if wanted:
-                model_path(name, models)
-        if settings.faces and settings.recognise:
-            model_path("sface", models)  # download first, where the log can say so
-    with quiet_native_logs():
-        if settings.faces:
-            from kit.eyes.faces import FaceAnalyzer
+    def load() -> dict:
+        """The models, loaded now and again each time Kit wakes up."""
+        detector = YoloDetector(settings.detector, models, settings.confidence)
+        faces = body = None
+        if settings.faces or settings.hands or settings.poses:
+            from kit.eyes.body import model_path
 
-            faces = FaceAnalyzer(models)
-        if settings.hands or settings.poses:
-            from kit.eyes.body import BodyReader
+            for name, wanted in (
+                ("face", settings.faces),
+                ("gesture", settings.hands),
+                ("pose", settings.poses),
+            ):
+                if wanted:
+                    model_path(name, models)
+            if settings.faces and settings.recognise:
+                model_path("sface", models)  # download first, where the log can say so
+        with quiet_native_logs():
+            if settings.faces:
+                from kit.eyes.faces import FaceAnalyzer
 
-            body = BodyReader(models, hands=settings.hands, poses=settings.poses)
-    recogniser = None
-    if faces is not None and settings.recognise:
-        from kit.eyes.recognise import Recogniser, SFaceEmbedder
+                faces = FaceAnalyzer(models)
+            if settings.hands or settings.poses:
+                from kit.eyes.body import BodyReader
 
-        recogniser = Recogniser(SFaceEmbedder(models).embed)
+                body = BodyReader(models, hands=settings.hands, poses=settings.poses)
+        recogniser = None
+        if faces is not None and settings.recognise:
+            from kit.eyes.recognise import Recogniser, SFaceEmbedder
+
+            recogniser = Recogniser(SFaceEmbedder(models).embed)
+        return {"detector": detector, "faces": faces, "body": body, "recogniser": recogniser}
+
+    parts = load()
     return Eyes(
         lambda: open_camera(index, settings.width, settings.height),
-        detector,
+        parts["detector"],
         reporter,
         settings,
-        faces=faces,
-        body=body,
-        recogniser=recogniser,
+        faces=parts["faces"],
+        body=parts["body"],
+        recogniser=parts["recogniser"],
         load_faces=load_faces,
         camera_name=camera_name,
         on_frame=on_frame,
+        load_parts=load,
     )

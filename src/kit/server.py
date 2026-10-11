@@ -510,12 +510,13 @@ def create_app(
     @app.post("/api/eyes/scene", dependencies=auth)
     def eyes_report(report: SceneReport) -> dict:
         """The eyes' report (kit.eyes): who and what is in view, what just happened.
-        The answer carries the switch and the eyes' settings, so a running pair
-        of eyes follows changes to either."""
+        The answer carries the switch, whether Kit's asleep and the eyes' settings,
+        so a running pair of eyes follows changes to any of them."""
         brain.saw(report)
         return {
             "ok": True,
             "paused": _eyes_paused(),
+            "asleep": brain.life.asleep,  # shut eyes let the camera and their models go
             "settings": store.current().eyes.model_dump(),
             "faces_version": faces.version,
         }

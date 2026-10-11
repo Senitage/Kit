@@ -143,14 +143,18 @@ GPU is untouched; the 2070 Super keeps its memory for the local model.
 - [ ] Ask Kit "can you see me?" and "what am I holding?". The chat shows
       "looking around", the answer comes from the local model and is right.
 - [ ] Ask "who's here?" with nobody at the desk. He says the desk is empty.
-- [ ] Walk away for half an hour, hands off the PC. When you sit back down,
-      before you touch the keyboard, he says hello within a minute or so, in
-      his own words, and doesn't sulk when you don't answer.
+- [ ] With `life.sleep_after_minutes` at 45, walk away for half an hour, hands
+      off the PC. When you sit back down, before you touch the keyboard, he
+      says hello within a minute or so, in his own words, and doesn't sulk when
+      you don't answer. (If he'd dozed off, his eyes would be shut: see below.)
 - [ ] With Glow on screen, move left and right in front of the camera. Glow's
       eyes follow you (left when you go to your left: `eyes.mirror` is right).
 - [ ] Stay at the desk reading, hands off the keyboard, for longer than
       `life.sleep_after_minutes`. He stays awake; `kit life` shows him present.
-      Leave the desk and he dozes off after that long; come back and he wakes.
+      Leave the desk and he dozes off after that long. Asleep, his eyes are
+      shut: the webcam light goes out and the eyes log "eyes shut and models
+      unloaded". Sitting in view doesn't wake him; touching the keyboard or
+      talking to him does, and the eyes log "eyes open" a few seconds later.
 - [ ] Let the cat in (or show the camera a photo of one). The terminal says
       "cat #N entered", `kit life` shows him curious, and the memory page has a
       `seen` entry for it.

@@ -509,7 +509,25 @@ class LifeSettings(_Section):
     quiet_from: str = Field("22:00", description="Kit doesn't pipe up from this time...")
     quiet_until: str = Field("07:00", description="...until this time.")
     sleep_after_minutes: int = Field(
-        10, ge=1, le=240, description="Kit dozes off after you've been away this long."
+        10,
+        ge=1,
+        le=240,
+        description="Kit dozes off after you've been away this long. Dozing while you're out "
+        "lasts about two naps, then he gets up for this long before dozing again.",
+    )
+    naps: bool = Field(
+        True,
+        description="Kit sometimes nods off for a nap when he's bored, nobody's talked to him "
+        "for half an hour and nothing's going on, even with you at the PC. Never mid-"
+        "conversation or in quiet hours, at most twice a day. Talking to him wakes him.",
+    )
+    nap_minutes: int = Field(
+        20, ge=5, le=120, description="Roughly how long a nap lasts (give or take a third)."
+    )
+    turns_in: bool = Field(
+        True,
+        description="Past bedtime, once nobody's talked to him for a quarter of an hour, Kit "
+        "goes to bed himself, even if you're still up. He gets up around the end of quiet hours.",
     )
     think_every_minutes: int = Field(
         8,
@@ -589,7 +607,9 @@ class LifeSettings(_Section):
         "and toward getting outside or seeing someone after a long stretch at the desk.",
     )
     bedtime: str = Field(
-        "22:30", description="When Kit starts nudging you toward bed (with nudges on)."
+        "22:30",
+        description="When Kit starts nudging you toward bed (with nudges on), and from when "
+        "he may turn in himself (with turns_in on).",
     )
     desk_hours: float = Field(
         3.0,

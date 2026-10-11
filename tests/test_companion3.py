@@ -583,7 +583,9 @@ def test_winning_the_bet_and_a_forecast_thats_down():
 
 
 def test_late_nights_tire_him_and_sleep_restores_him():
-    life, pc, clock = setup("2026-10-08T22:30:00", energy_need=True, quiet_from="23:59")
+    life, pc, clock = setup(
+        "2026-10-08T22:30:00", energy_need=True, quiet_from="23:59", turns_in=False
+    )
     pc.update(snap(idle=5))
     for _ in range(6 * 60 * 2):  # up till 04:30, chatting
         clock.now += timedelta(seconds=30)
@@ -600,7 +602,9 @@ def test_late_nights_tire_him_and_sleep_restores_him():
 
 def test_a_rested_kit_still_winds_down_by_bedtime():
     """Dan's Mood page at 23:20 said energy "fine": an evening nap had filled him."""
-    life, pc, clock = setup("2026-10-08T20:30:00", energy_need=True, quiet_from="23:59")
+    life, pc, clock = setup(
+        "2026-10-08T20:30:00", energy_need=True, quiet_from="23:59", turns_in=False
+    )
     for _ in range(3 * 60 * 2):  # awake and chatting till 23:30
         clock.now += timedelta(seconds=30)
         pc.update(snap(idle=5))
