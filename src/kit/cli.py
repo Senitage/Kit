@@ -186,7 +186,8 @@ def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
         return 1
     s = store.current().speech
     if action == "show":
-        print(f"speech: {'on' if s.enabled else 'off'}   engine: {s.engine}\n")
+        fallback = f"   fallback: {s.fallback}" if s.fallback else ""
+        print(f"speech: {'on' if s.enabled else 'off'}   engine: {s.engine}{fallback}\n")
         print(f"  {'name':<18} {'kind':<17} {'python':<28} voice")
         for name, e in s.engines.items():
             mark = "*" if name == s.engine else " "

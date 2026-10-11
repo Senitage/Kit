@@ -279,7 +279,8 @@ def test_cloud_first_skips_the_local_model(memory):
     brain, model, claude = make(memory, settings=settings_with(routing={"mode": "cloud-first"}))
     events = collect(brain.chat("Morning"))
     assert model.calls == [] and len(claude.calls) == 1
-    assert [e["type"] for e in events] == ["say", "reply"]
+    # The answer isn't the usual JSON, so nothing streamed: his mood, then his words.
+    assert [e["type"] for e in events] == ["mood", "say", "reply"]
     assert events[-1]["reply"]["segments"][0]["say"] == "The answer is 42."
 
 

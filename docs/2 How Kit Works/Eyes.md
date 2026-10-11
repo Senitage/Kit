@@ -26,6 +26,29 @@ related: ["[[Vision Stage 1]]", "[[Vision Stage 2]]", "[[Inner Life]]"]
   (`seen`), so "when did I get in this morning?" has an answer.
 - **Have a proper look** when you ask ("what am I holding?") with the
   `look_around` action.
+- **Mind his manners**: no pipe-ups while you're on your phone or talking to
+  someone, and nothing said out loud to an empty room.
+
+## Moments he feels
+
+With `life.seen_feelings` on, a few small moments become feelings with a
+cause, the way something you say does. They have to be held long enough to
+be real, and each has a wait before it can come again, so a long smile is one
+moment, not sixty:
+
+| You | He | Feels |
+|---|---|---|
+| Wave | Waves back | Pleased |
+| Thumbs up (two reports running) | Nods | Proud |
+| Thumbs down | Droops | A bit put out |
+| Smile at him for two seconds | A little wiggle; brightens with the mood dials | Pleased |
+| Frown in four of five reports | Leans in, and has a thought about it | Sympathetic |
+| Eyes closing late at night | Yawns; bed is on his mind an hour sooner | |
+
+Only you count: by name, or the one person in view his eyes can't put a name
+to (it's your desk). While he's asleep his eyes are shut, so nothing does.
+More in [[Inner Life In Depth#Busy and held pipe-ups]] and
+[[Companion Stage 4]].
 
 ## How it works
 
@@ -76,6 +99,7 @@ kit eyes faces          # who his eyes know
 - [[Vision Stage 1]]: installing the eyes, privacy and the test checklist.
 - [[Vision Stage 2]]: introducing people, and how recognition works.
 - [[Inner Life]]: what the brain does with arrivals and sightings.
+- [[Companion Stage 4]]: moments he feels, and keeping quiet while you're busy.
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/eyes/`: the camera side: `camera`, `detect`, `faces`, `body`,
@@ -83,3 +107,4 @@ kit eyes faces          # who his eyes know
 > - `src/kit/scene_context.py`: the brain's side: the latest scene, the day's
 >   comings and goings, the prompt line and `look_around`.
 > - `src/kit/known_faces.py`: the people Kit has been introduced to.
+> - `src/kit/noticing.py`: the moments he feels (waves, smiles, frowns).

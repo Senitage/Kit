@@ -73,7 +73,8 @@ sequenceDiagram
    recalled memories and things, and the recent conversation.
 8. **The answer.** The local model answers in two passes: a quick plan in JSON
    (emotion, gesture, action), then his words in plain text, streamed as they
-   come. A cloud model answers in one piece, in the same shape. Either way the
+   come. A cloud model answers in the same shape, streamed too, so he starts
+   talking as soon as its first words arrive (`cloud.stream`). Either way the
    reply has **words**, an **emotion**, **gestures**, maybe an **action**, and
    maybe some **detail** to read on screen (code, steps, a link).
 9. **Actions.** If the plan says so, Kit does something and answers again
