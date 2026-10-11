@@ -1362,7 +1362,7 @@ def cmd_notes(paths: KitPaths) -> int:
     paths.ensure()
     nas = SettingsStore(paths).current().nas
     if not nas.vault:
-        print("no notes vault set; see docs/notes.md (kit config set nas.vault ...)")
+        print("no notes vault set; see docs/4 Guides/Notes Setup.md (kit config set nas.vault ...)")
         return 1
     memory = Memory(paths.state_dir / "memory.db")
     try:
@@ -1523,7 +1523,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("notes", help="read the notes vault now and list what Kit sees")
     eyes = sub.add_parser(
-        "eyes", help="Kit's eyes: run them beside the camera (docs/stage-vision.md)"
+        "eyes", help="Kit's eyes: run them beside the camera (docs/4 Guides/Vision Stage 1.md)"
     )
     eyes.add_argument("--camera", type=int, help="camera index (default: eyes.camera in settings)")
     eyes.add_argument("--brain", help="the brain's address, e.g. http://kit-server:8600")

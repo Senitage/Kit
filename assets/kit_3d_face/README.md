@@ -14,4 +14,4 @@ stay in Dan's Blender folder, not in the repo.
 
 The shipped pack is in `src/kit/face/characters/kit3d/`. To try a rebuild
 without copying it in, point `face.pack_folder` at the pack folder; see
-docs/face.md.
+docs/3 Deep Dives/Face In Depth.md.

@@ -1,0 +1,67 @@
+filters:
+  and:
+    - file.ext == "md"
+    - not:
+        - file.inFolder("Templates")
+properties:
+  file.name:
+    displayName: Note
+  file.folder:
+    displayName: Layer
+  note.summary:
+    displayName: What it's about
+  note.related:
+    displayName: Read next
+  note.tags:
+    displayName: Tags
+views:
+  - type: table
+    name: Every note
+    groupBy:
+      property: file.folder
+      direction: ASC
+    order:
+      - file.name
+      - summary
+  - type: cards
+    name: How Kit works
+    filters:
+      and:
+        - file.hasTag("how-it-works")
+    order:
+      - file.name
+      - summary
+  - type: table
+    name: Guides
+    filters:
+      and:
+        - file.hasTag("guide")
+    order:
+      - file.name
+      - summary
+  - type: table
+    name: Deep dives
+    filters:
+      and:
+        - file.hasTag("deep-dive")
+    order:
+      - file.name
+      - summary
+      - related
+  - type: table
+    name: Reference
+    filters:
+      and:
+        - file.hasTag("reference")
+    order:
+      - file.name
+      - summary
+  - type: table
+    name: The Pod
+    filters:
+      and:
+        - file.hasTag("topic/pod")
+    order:
+      - file.name
+      - summary
+      - related

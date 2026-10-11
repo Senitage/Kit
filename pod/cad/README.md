@@ -1,0 +1,89 @@
+# Kit Pod v2
+
+A cute pill-head Pod built around your parts: the 1.5" OLED, two SG90 servos and the ESP32.
+
+The model is code: `kit_pod_v2.py` (CadQuery) builds every part. The STEP and STL
+files it makes aren't kept in the repo; make them with:
+
+```
+pip install cadquery
+python3 kit_pod_v2.py          # writes the files below next to this one
+python3 kit_pod_v2.py check    # reports anything that hits, head level and nodded fully up and down
+```
+
+- **Open in Fusion 360:** `kit_pod_v2_assembly.step` (every part in place, with the screen, servos and ESP32 as see-through reference blocks).
+- **Print:** one `kit_pod_v2_<part>.stl` per part, already laid the way it prints. STEP copies of each are there too.
+- **Pictures:** `render_pod.py` draws the renders and `render_steps.py` the assembly guide (`assembly/`). The docs show them: `docs/4 Guides/Building the Pod.md`.
+
+Total height is about 132 mm.
+
+## Parts
+
+| Part | Colour | How to print | Size (mm) |
+|---|---|---|---|
+| head | white | back opening down | 68 x 56 x 43 |
+| cover (back of head) | white | flat side down | 65 x 53 x 9 |
+| face (black glass round the screen), studs option | black | front down | 48 x 40 x 5 |
+| face_pins, the other option | black | front down | 48 x 40 x 8 |
+| ear x2 | orange | flat side down | 20 x 20 x 2.4 |
+| neck | dark grey | disc down | 44 x 44 x 29 |
+| cap (dome on top of the body) | white | as laid | 63 x 63 x 9 |
+| top (plate; its edge is the grey band) | grey | as laid | 64 x 64 x 4 |
+| body | white | upright, open bottom down | 70 x 70 x 47 |
+| base | grey | as laid | 67 x 67 x 11 |
+| foot x4 | dark grey | as laid | 12 x 12 x 4 |
+
+## Printing (Ender 3 V2)
+
+Every STL is already turned the way it prints, so just drop them on the bed. Everything fits on the 220 x 220 bed.
+
+**Settings (PLA):** 0.2 mm layers (0.16 mm for the head, body and cap if you want smoother curves), 3 walls, 4 top and bottom layers, 15-20% gyroid infill, brim on the head and body.
+
+**Supports:**
+- head: yes, tree supports. It prints with the back opening down, so the front of the head is a roof over the hollow inside.
+- neck: supports touching the bed only, for the little pin on the left arm.
+- everything else: none.
+
+**Order: test pieces first.** These three are small and check the fits that depend on your measurements, before you spend hours on the big parts.
+1. `face`: screw the screen onto its four posts. The picture should sit in the middle of the square window.
+2. `top`: the turn servo should drop into its cutout and its tab holes should line up.
+3. `neck`: the servo's cross horn should press into the pocket underneath, and the single horn into the pocket on the right arm.
+
+If those are good, print `head`, `body`, `cap`, `base`, `cover`, then the small bits: 2 x `ear`, 4 x `foot`.
+
+**Colours:** white for head, cover, cap and body; black for the face; grey for the top plate and base; dark grey for the neck and feet; orange for the ears. Use what you have; one colour plus paint works too.
+
+## Screws
+
+- 4 x M3 x 10 countersunk + 4 x M3 nuts for the screen board (studs option; the pins option needs none)
+- 4 x M3 x 10 for the back cover
+- 3 x M3 x 16 for the body, plate and cap
+- 3 x M3 x 8 countersunk for the base
+- The screws and horns that come with the SG90s
+
+## Putting it together
+
+Pictures for every step: `assembly/kit_pod_v2_assembly_guide.pdf` (one PNG per step in `assembly/` too).
+
+1. Turn servo up through the top plate; tab screws from below.
+2. Sandwich the plate between body and cap with the three long screws from below.
+3. Press the cross horn into the pocket under the neck (drop of glue). Push the neck onto the turn servo and fit the horn screw through the centre hole from above.
+4. Press the single horn into the pocket on the inside of the horn arm (the arm on your right as Kit faces you), arm pointing down, drop of glue.
+5. Lower the head onto the neck arms; the pin on the other arm drops into the notch.
+6. Drop the tilt servo in through the back of the head, pushed over toward the pin side, lower it into the U-shaped wall, then slide it across so its shaft goes into the horn. There's 4.5 mm of room for this.
+7. Two tab screws into the wall, then the horn screw through the small hole below the ear on the horn side. The horn is then trapped between the shaft and the arm, so the head can't come off.
+8. Screen, two options (print both and pick):
+   - **studs** (`face`): push 4 countersunk M3 x 10 screws in from the front of the face plate, glue the plate into the head (keep glue off the screws), put the screen over the screw ends and add an M3 nut to each. The nuts come off from inside the head, so the screen can still come out.
+   - **pins** (`face_pins`): glue the plate in, push the screen onto the four pins, a dab of hot glue on each pin end. Hot glue peels off if the screen needs to come out.
+9. Glue the ear rings into the side grooves. Back cover on with four screws.
+10. ESP32 stands in the base slots, USB to the hole at the back left. Base on with three screws, feet glued in.
+
+Wires run from the head through the neck slot and the curved slot in the plate.
+
+## Measured
+
+Dan's measurements (2026-10-10) are in the model:
+
+- Screen glass sits 1.9 mm in front of the blue board (3.4 glass + board, 1.5 board).
+- The lit picture is 27.2 x 27.5 mm and sits near the top of the board (gaps: top 1.7, left 8.6, right 9.2, bottom 7.8). The face plate puts the picture in the middle of the window.
+- Servo shaft top is 12.2 mm above the top of the tabs.
