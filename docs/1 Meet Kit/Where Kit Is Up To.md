@@ -17,7 +17,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Desk app, face and chat (stage 2) | Done, updates itself | [[Desk App]] |
 | Inner life: feelings, thoughts, notebook, nightly reflection | Done | [[Inner Life]] |
 | Notes in the NAS vault, only when asked | Done | [[Notes on the NAS]] |
-| Companion stages 1 to 3 | Done | [[Companion]] |
+| Companion stages 1 to 4 | Done | [[Companion]], [[Companion Stage 4]] |
 | Cloud-only routing: Haiku chats, Sonnet works, ask before Opus | Done | [[Models and Routing]] |
 | Character sheets: Retro, Kit 3D, Kit 2D | Done | [[Face]] |
 | Voice, part 1 of stage 3: Kit talks | Done | [[Voice]] |
@@ -25,13 +25,12 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | The Pod: program, printed parts, build guide | Done, in `pod/` | [[The Pod]] |
 | Body feed and knowing who can hear him (the Pod's link to the brain) | Open, pull request #36 | [[Pod In Depth#The body feed]] |
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
-| Companion stage 4: his voice and eyes carry it | Open, pull request #40 | [[Companion Stage 4]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
 ## What's next
 
-1. Companion stage 4 (#40), then stage 5: hearing, with tone.
+1. Companion stage 5: hearing, with tone.
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
 3. Hearing: the microphone, wake word and speech to text.
@@ -70,6 +69,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 10 Oct | Eyes stage 1: Kit sees you | #22 |
 | 10 Oct | Eyes stage 2: who's who | #35 |
 | 11 Oct | These docs as an Obsidian vault; the Pod's program, printed parts and build guide in the repo | #38 |
+| 11 Oct | Companion stage 4: his voice and eyes carry it | #40 |
 
 ## Keeping this note true
 

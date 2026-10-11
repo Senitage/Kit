@@ -46,9 +46,9 @@ Some work runs beside the main line because it makes Kit feel alive sooner:
 
 - **Inner life**: feelings, thoughts, a notebook, nightly reflection. Done:
   [[Side Stage - Inner Life]].
-- **Companion**: stages 1 to 3 done ([[Companion Stage 1]],
-  [[Companion Stage 2]], [[Companion Stage 3]]); stage 4 open
-  ([[Companion Stage 4]]); stage 5, hearing, next.
+- **Companion**: stages 1 to 4 done ([[Companion Stage 1]],
+  [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]]);
+  stage 5, hearing, next.
 - **Eyes**: stages 1 and 2 done ([[Vision Stage 1]], [[Vision Stage 2]]).
   Still to come: gestures and moods, a proper look at a still frame with a
   vision model, and eyes on a Raspberry Pi at the arm.
