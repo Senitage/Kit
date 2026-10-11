@@ -135,6 +135,43 @@ def test_the_tone_engine_runs_in_its_own_program_and_says_a_line(tone):
     assert service.status()["loaded"] == "tone"
 
 
+def test_engines_without_sounds_leave_them_out(tone):
+    service, _ = tone
+    assert service.speak("[chuckle] Oh, nice one", "happy").audio_ms == pytest.approx(360)
+    assert service.speak("[sigh]", "tired").audio_ms == pytest.approx(150)  # a breath
+    assert service.speak("[1] is a footnote", "neutral").audio_ms == pytest.approx(480)
+
+
+def test_turbo_makes_the_sound_and_skips_the_moods_own_opener(monkeypatch):
+    from kit.speech import worker
+
+    made = []
+
+    class Turbo(worker.ChatterboxTurboEngine):
+        def __init__(self):
+            self.mood_tags, self.sample_rate = {"playful": "[chuckle]"}, 24000
+            self.tts = self
+
+        def generate(self, text):
+            made.append(text)
+            return self
+
+        def squeeze(self, _):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return worker.np.zeros(10)
+
+    turbo = Turbo()
+    turbo.speak("[sigh] Fine.", "playful", first=True)
+    turbo.speak("Fine.", "playful", first=True)
+    turbo.speak("Fine.", "playful")
+    assert made == ["[sigh] Fine.", "[chuckle] Fine.", "Fine."]
+
+
 def test_changing_the_engines_settings_restarts_it_and_off_stops_it(tone):
     service, box = tone
     service.speak("one")
@@ -186,6 +223,104 @@ def test_an_engine_that_cant_start_says_why_and_isnt_retried_straight_away(paths
     with pytest.raises(SpeechError):
         service.speak("and again")
     assert launcher.started == 2
+
+
+# A fallback voice (speech.fallback)
+
+
+class Running:
+    """An engine's program that's up, as the service sees it."""
+
+    def __init__(self, name):
+        self.name, self.alive = name, True
+
+    def poll(self):
+        return None if self.alive else 0
+
+    def terminate(self):
+        self.alive = False
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def engines_that(say):
+    """Engines (fake programs) answering /speak with ``say(engine)``: a response."""
+    started: list[Running] = []
+
+    def launcher(command, log_file):
+        started.append(Running(command[command.index("--engine") + 1]))
+        return started[-1]
+
+    def answer(request):
+        engine = started[-1].name
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"engine": engine, "device": "cuda"})
+        return say(engine)
+
+    return started, launcher, httpx.Client(transport=httpx.MockTransport(answer))
+
+
+def spoke(engine):
+    return httpx.Response(200, content=b"RIFFwav", headers={"X-Audio-Ms": "900"})
+
+
+def test_out_of_graphics_memory_he_switches_to_the_fallback_and_stays(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "chatterbox-turbo", "fallback": "kokoro"}})
+
+    def say(engine):
+        if engine == "chatterbox-turbo":
+            return httpx.Response(500, json={"error": "CUDA out of memory. Tried to allocate"})
+        return spoke(engine)
+
+    started, launcher, http = engines_that(say)
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    assert service.speak("Still here.").engine == "kokoro"
+    assert [p.name for p in started] == ["chatterbox-turbo", "kokoro"] and not started[0].alive
+    service.speak("And again.")
+    assert len(started) == 2  # he stays on it
+    status = service.status()
+    assert status["using"] == "kokoro" and "out of memory" in status["fell_back"]
+
+
+def test_other_mistakes_dont_switch_and_without_a_fallback_nothing_does(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "chatterbox-turbo", "fallback": "kokoro"}})
+    started, launcher, http = engines_that(lambda e: httpx.Response(500, json={"error": "odd"}))
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    with pytest.raises(SpeechError, match="odd"):
+        service.speak("Hm.")
+    assert service.in_use() == "chatterbox-turbo"
+    plain = Settings.model_validate({"speech": {"engine": "chatterbox-turbo"}})
+    oom = httpx.Response(500, json={"error": "CUDA out of memory"})
+    started, launcher, http = engines_that(lambda e: oom)
+    service = SpeechService(lambda: plain.speech, paths, launcher, http)
+    with pytest.raises(SpeechError, match="out of memory"):
+        service.speak("Hm.")
+    assert [p.name for p in started] == ["chatterbox-turbo"]
+
+
+def test_an_engine_that_wont_start_hands_over_until_the_settings_change(paths):
+    paths.ensure()
+    box = {"s": Settings.model_validate({"speech": {"engine": "chatterbox", "fallback": "tone"}})}
+    dead = DeadProcess()
+    started, alive, http = engines_that(spoke)
+
+    def launcher(command, log_file):
+        if command[command.index("--engine") + 1] == "chatterbox":
+            return dead(command, log_file)
+        return alive(command, log_file)
+
+    service = SpeechService(lambda: box["s"].speech, paths, launcher, http)
+    assert service.speak("Still here.").engine == "tone"
+    assert "ModuleNotFoundError" in service.status()["fell_back"]
+    service.speak("And again.")
+    assert dead.started == 1
+    box["s"] = Settings.model_validate({"speech": {**box["s"].speech.model_dump(), "port": 8700}})
+    assert service.in_use() == "chatterbox"  # new settings: his usual voice gets another go
+    with pytest.raises(SettingsError, match="isn't an engine"):
+        validate_settings({"speech": {"fallback": "nope"}})
 
 
 class LoadingProcess:
@@ -276,6 +411,23 @@ def test_bench_writes_clips_timings_and_a_page(tone):
     assert json.loads((out / "results.json").read_text())[0]["engine"] == "tone"
     assert "starts talking after" in shown[-1]
     assert not service.running()  # stopped, so the next engine has the memory
+
+
+def test_the_bench_says_whether_an_engine_fits_the_graphics_card(tone):
+    service, _ = tone
+    out = service.paths.state_dir / "speech" / "bench" / "gpu"
+    lines = [("playful", "You burnt the toast? [chuckle] Classic.")]
+    shown = []
+    [roomy] = run_bench(
+        service, ["tone"], out, lines, gpu=lambda: 6200, show=shown.append, total=lambda: 8192
+    )
+    assert roomy.fits() and "fits the graphics card (6.1 of 8.0 GB at the peak)" in shown[-1]
+    [tight] = run_bench(
+        service, ["tone"], out, lines, gpu=lambda: 7900, show=shown.append, total=lambda: 8192
+    )
+    assert tight.fits() is False and "too tight" in shown[-1] and "speech.fallback" in shown[-1]
+    [unknown] = run_bench(service, ["tone"], out, lines, gpu=lambda: None, total=lambda: None)
+    assert unknown.fits() is None
 
 
 # The server

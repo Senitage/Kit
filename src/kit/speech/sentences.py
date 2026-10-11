@@ -12,6 +12,15 @@ from __future__ import annotations
 import re
 
 ABBREVIATIONS = {"e.g.", "i.e.", "etc.", "vs.", "dr.", "mr.", "mrs.", "ms.", "st.", "approx."}
+# A sound for his voice to make ("[chuckle]", speech.sounds): said, never shown.
+SOUND = re.compile(r"\[[a-z]+(?: [a-z]+)?\]\s*")
+
+
+def without_sounds(text: str) -> str:
+    """His words as shown, with any sounds his voice makes taken out."""
+    return SOUND.sub("", text).strip()
+
+
 _END = re.compile(r"[.!?…]+[\"'”’)\]]*(?=\s)|\n+")
 _CLAUSE = re.compile(r"[,;:–—](?=\s)")
 _JOIN = re.compile(r"\s(?=(?:and|but|so|because|though|which|or)\s)", re.IGNORECASE)

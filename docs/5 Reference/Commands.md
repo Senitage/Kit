@@ -109,11 +109,11 @@ See [[Register of Things]].
 
 | Command | What it does |
 |---|---|
-| `kit speech` (`kit speech show`) | The voice engines, which one's in use, on or off |
+| `kit speech` (`kit speech show`) | The voice engines, which one's in use and the fallback, on or off |
 | `kit speech use ENGINE` | Switch engine, e.g. `kit speech use chatterbox-turbo` |
 | `kit speech on` / `off` | Speak replies in the desk app, or stop (frees the engine's memory) |
 | `kit speech say TEXT` | Say a line and show how long it took (`--engine`, `--mood`) |
-| `kit speech bench` | Compare engines on the same lines (`--engines`) |
+| `kit speech bench` | Compare engines on the same lines (`--engines`), with whether each fits the graphics card |
 
 See [[Voice]].
 

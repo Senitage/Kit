@@ -259,6 +259,24 @@ class SceneContext:
         """Someone is in view right now."""
         return bool(self.online() and self.latest and not self.latest.off and self.latest.people)
 
+    def busy(self) -> str:
+        """What someone in view is busy with that Kit mustn't talk over: "phone" (one
+        in hand) or "talking" (their mouth is going). Empty if nothing, or the eyes
+        aren't working."""
+        r = self.latest
+        if r is None or r.off or not self.online():
+            return ""
+        if any("using a phone" in p.actions or "cell phone" in p.holding for p in r.people):
+            return "phone"
+        if any("talking" in p.actions for p in r.people):
+            return "talking"
+        return ""
+
+    def nobody_here(self) -> bool:
+        """His eyes are working and see nobody: there's no one to hear him."""
+        r = self.latest
+        return bool(self.online() and r is not None and not r.off and not r.people)
+
     def empty_for_s(self) -> float | None:
         """How long nobody has been in view, or None while someone is."""
         if self._empty_since is None:

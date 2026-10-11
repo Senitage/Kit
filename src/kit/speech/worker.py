@@ -11,6 +11,9 @@ GET  /health  -> {"engine", "kind", "sample_rate", "device", "ready"}
 POST /speak   {"text": "...", "mood": "happy", "first": true} -> audio/wav (16-bit mono), with
               X-Synth-Ms (time to make it) and X-Audio-Ms (how long it plays)
 
+A sound in square brackets in the text ("[chuckle] Told you.") is made by Chatterbox
+Turbo and left out by the other engines.
+
 Engines (``kind``):
   tone              beeps, one per word: for tests and checking the plumbing
   kokoro            kokoro-onnx; fast on a CPU; mood changes the speed
@@ -27,6 +30,7 @@ import io
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
@@ -38,6 +42,17 @@ from pathlib import Path
 import numpy as np
 
 KOKORO_FILES = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+# The sounds Chatterbox Turbo knows (its tokenizer's tags); other engines would read
+# them out as words, so they're taken out first.
+SOUNDS = (
+    "advertisement|angry|chuckle|clear throat|cough|crying|dramatic|fear|gasp|groan|happy|"
+    "laugh|narration|sarcastic|shush|sigh|sniff|surprised|whispering"
+)
+SOUND_TAG = re.compile(rf"\[(?:{SOUNDS})\]\s*", re.IGNORECASE)
+
+
+def without_sounds(text: str) -> str:
+    return " ".join(SOUND_TAG.sub(" ", text).split())
 
 
 def wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
@@ -176,7 +191,9 @@ class ChatterboxTurboEngine:
         self.sample_rate = self.tts.sr
 
     def speak(self, text: str, mood: str, first: bool = False) -> np.ndarray:
-        tag = self.mood_tags.get(mood, "") if first else ""
+        # A reply that opens with a sound of its own doesn't get the mood's one too.
+        opens = text.lstrip().startswith("[")
+        tag = self.mood_tags.get(mood, "") if first and not opens else ""
         return self.tts.generate(f"{tag} {text}".strip()).squeeze(0).cpu().numpy()
 
 
@@ -209,9 +226,14 @@ class Worker:
         }
 
     def speak(self, text: str, mood: str, first: bool = False) -> tuple[bytes, float, float]:
+        if self.kind != "chatterbox-turbo":
+            text = without_sounds(text)
         with self.lock:
             start = time.perf_counter()
-            audio = self.engine.speak(text, mood, first)
+            if text:
+                audio = self.engine.speak(text, mood, first)
+            else:  # only a sound, which this engine can't make: a breath of silence
+                audio = np.zeros(int(0.15 * self.engine.sample_rate), dtype=np.float32)
             synth_ms = (time.perf_counter() - start) * 1000
         audio_ms = 1000 * len(np.asarray(audio).reshape(-1)) / self.engine.sample_rate
         return wav_bytes(audio, self.engine.sample_rate), synth_ms, audio_ms

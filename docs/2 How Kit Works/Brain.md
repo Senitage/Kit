@@ -42,7 +42,9 @@ steps: a quick plan in JSON (emotion, gesture, action), then his words in
 plain text at a livelier temperature. Small models sound stiff when they
 write speech inside JSON; in plain text they sound like themselves. His
 opening is checked against what he said lately, so he doesn't repeat himself.
-Cloud models answer in one piece. More in [[Inner Life In Depth]], under "Two passes".
+Cloud models answer in the same JSON, read as it streams in, so he starts
+talking as soon as the first words arrive. More in [[Inner Life In Depth]],
+under "Two passes".
 
 ## What he can do mid-answer
 

@@ -34,6 +34,7 @@ ASK_FROM, ASK_UNTIL = 9, 21  # hours he asks in
 LATE_UNTIL = 4  # past bedtime until this hour counts as the night before
 ANSWER_WORDS = 8  # an answer to "what's the cat called?" this short is the name
 TALKING = timedelta(hours=1)  # he asks while you two are talking, never out of the blue
+EYES_EARLIER = timedelta(hours=1)  # Dan's eyes keep closing: the bed nudge can come this early
 
 
 @dataclass(frozen=True)
@@ -215,15 +216,19 @@ class Daily:
             bedtime += timedelta(days=1)
         until = datetime.combine(night + timedelta(days=1), datetime.min.time())
         until = until.replace(hour=LATE_UNTIL, tzinfo=now.tzinfo)
-        if not bedtime <= now < until:
+        # His eyes saw Dan's eyes keep closing (life.seen_feelings): bed's on his mind
+        # an hour before bedtime too.
+        dozy = self.life.eyes_closing(now)
+        if not (bedtime - (EYES_EARLIER if dozy else timedelta(0)) <= now < until):
             return False
         recent_chat = now - self.life.last_chat < timedelta(minutes=15)
         if not (self._present() or recent_chat):
             return False
         owner = self.settings().persona.owner
+        why = f"{owner}'s eyes keep closing" if dozy else "it's late"
         self.notebook.write(
             "want",
-            f"Tell {owner} to get to bed: it's late.",
+            f"Tell {owner} to get to bed: {why}.",
             again=True,
             nudge="sleep",
             strength=NUDGE_PRESS,
