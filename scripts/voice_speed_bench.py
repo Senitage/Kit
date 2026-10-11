@@ -48,7 +48,7 @@ LINES = [
 ]
 OOV = 6561  # speech tokens at or above this aren't sounds
 TOKEN_SAMPLES = 960  # 25 speech tokens a second at 24 kHz
-LOOKAHEAD = 3  # tokens the decoder holds back until it sees what follows
+LOOKAHEAD = 3  # tokens whose sound isn't settled until the decoder sees what follows
 FADE = 480  # 20 ms crossfade where streamed pieces meet
 
 
@@ -97,14 +97,16 @@ def speech_tokens(tts: ChatterboxTurboTTS, text: str, fp16: bool):
 
 
 def to_audio(tts: ChatterboxTurboTTS, tokens: list[int], final: bool, noise, fp16: bool):
-    """Speech tokens so far -> audio, as Chatterbox's own decoder does it. Not
-    final: the last few tokens are left out until what follows them is known."""
+    """Speech tokens so far -> audio, as Chatterbox's own decoder does it. The
+    decoder's own not-final mode doesn't work in this version (its mask keeps the
+    tokens it drops), so it always decodes everything and the caller holds back the
+    end until what follows is known."""
     s3 = tts.s3gen
     toks = [t for t in tokens if t < OOV]
     if final:
         toks += [S3GEN_SIL] * 3
     t = torch.tensor([toks], dtype=torch.long, device=tts.device)
-    frames = 2 * (len(toks) if final else len(toks) - LOOKAHEAD)
+    frames = 2 * len(toks)
     with torch.inference_mode(), half(fp16):
         mels = S3Token2Mel.forward(
             s3,
@@ -113,7 +115,7 @@ def to_audio(tts: ChatterboxTurboTTS, tokens: list[int], final: bool, noise, fp1
             ref_sr=None,
             ref_dict=tts.conds.gen,
             n_cfm_timesteps=2,
-            finalize=final,
+            finalize=True,
             noised_mels=noise[:, :, :frames],
         )
         wav, _ = s3.hift_inference(mels.to(s3.dtype), None)
@@ -146,7 +148,7 @@ def streamed(tts: ChatterboxTurboTTS, text: str, fp16: bool, first: int, chunk: 
 
     def emit(wav: np.ndarray, final: bool) -> None:
         nonlocal out_at, tail
-        end = len(wav) if final else len(wav) - TOKEN_SAMPLES
+        end = len(wav) if final else len(wav) - (LOOKAHEAD + 1) * TOKEN_SAMPLES
         seg = wav[out_at:end].copy()
         if len(seg) <= 2 * FADE and not final:
             return
