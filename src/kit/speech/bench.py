@@ -3,7 +3,11 @@
 For each engine it records how long it takes to load, how soon Kit could start
 talking (the first sentence of each line), whether speech keeps up once it has
 started (gaps while the next sentence is still being made), and graphics card
-memory if ``nvidia-smi`` is there. The clips and a page to compare them go in
+memory if ``nvidia-smi`` is there, with a verdict: an engine fits if the card
+still has ``HEADROOM_MIB`` spare at its peak (about 7.5 GB used on an 8 GB card).
+Run it with everything else Kit keeps on the card loaded (after a chat), so the
+peak is the real one. One line has a sound in it ([chuckle]), for Chatterbox
+Turbo; other engines leave it out. The clips and a page to compare them go in
 Kit's data folder.
 """
 
@@ -23,16 +27,15 @@ from kit.speech.sentences import SentenceSplitter
 from kit.speech.service import SpeechError, SpeechService
 
 LINES: list[tuple[str, str]] = [
-    (
-        "neutral",
-        "The pump curve's ready. The duty point sits at about eighty percent of best efficiency.",
-    ),
-    ("happy", "Oh, nice! The flotation model finally behaved. Told you it would."),
-    ("excited", "Wait, it passed? All forty tests? That's brilliant! Let's ship it!"),
-    ("grumpy", "Ugh. The build failed again. Same import error, third time today."),
-    ("tired", "It's getting late, Dan. I'll keep the notes, and we can pick it up tomorrow."),
-    ("curious", "Hmm. That's odd. Why would the cyclone pressure drop like that?"),
+    ("neutral", "Morning. It's meant to rain after lunch, so maybe wash the car tomorrow."),
+    ("happy", "Oh, nice! The cake actually rose this time. Told you it would."),
+    ("excited", "Wait, they won? In extra time? That's brilliant!"),
+    ("grumpy", "Ugh. The printer jammed again. Third time today."),
+    ("tired", "It's getting late, Dan. I'll remember where we were. Pick it up tomorrow?"),
+    ("curious", "Hmm. That's odd. Why would the cat sit in the sink like that?"),
+    ("playful", "You burnt the toast again? [chuckle] Classic."),
 ]
+HEADROOM_MIB = 512  # graphics card memory left spare at the peak for an engine to fit
 
 
 @dataclass
@@ -55,12 +58,20 @@ class EngineResult:
     load_s: float = 0
     gpu_before_mib: int | None = None
     gpu_peak_mib: int | None = None
+    gpu_total_mib: int | None = None
     lines: list[LineResult] = field(default_factory=list)
     error: str = ""
 
     def median_first_ms(self) -> float | None:
         values = sorted(x.first_ms for x in self.lines if not x.error)
         return values[len(values) // 2] if values else None
+
+    def fits(self) -> bool | None:
+        """Does the graphics card keep ``HEADROOM_MIB`` spare at the peak? None if
+        there's no ``nvidia-smi`` to ask."""
+        if self.gpu_peak_mib is None or not self.gpu_total_mib:
+            return None
+        return self.gpu_peak_mib <= self.gpu_total_mib - HEADROOM_MIB
 
     def speed(self) -> float | None:
         """Seconds of speech per second of work (above 1 keeps up)."""
@@ -70,9 +81,17 @@ class EngineResult:
 
 
 def gpu_used_mib() -> int | None:
+    return _nvidia_smi("memory.used")
+
+
+def gpu_total_mib() -> int | None:
+    return _nvidia_smi("memory.total")
+
+
+def _nvidia_smi(query: str) -> int | None:
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+            ["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -114,9 +133,11 @@ def bench_engine(
     folder: Path,
     lines: list[tuple[str, str]] = LINES,
     gpu: Callable[[], int | None] = gpu_used_mib,
+    total: Callable[[], int | None] = gpu_total_mib,
 ) -> EngineResult:
     result = EngineResult(engine=name)
     result.gpu_before_mib = gpu()
+    result.gpu_total_mib = total()
     peak = result.gpu_before_mib
     try:
         health = service.ensure(name)
@@ -158,12 +179,13 @@ def run_bench(
     lines: list[tuple[str, str]] = LINES,
     gpu: Callable[[], int | None] = gpu_used_mib,
     show: Callable[[str], None] = print,
+    total: Callable[[], int | None] = gpu_total_mib,
 ) -> list[EngineResult]:
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     for name in engines:
         show(f"{name}: loading")
-        result = bench_engine(service, name, out_dir, lines, gpu)
+        result = bench_engine(service, name, out_dir, lines, gpu, total)
         service.stop()  # free the memory before the next engine loads
         show(summary_line(result))
         results.append(result)
@@ -181,6 +203,15 @@ def summary_line(r: EngineResult) -> str:
     gpu = ""
     if r.gpu_before_mib is not None and r.gpu_peak_mib is not None:
         gpu = f", graphics card {r.gpu_before_mib} -> {r.gpu_peak_mib} MiB"
+    fits = r.fits()
+    if fits is not None:
+        of = f"{r.gpu_peak_mib / 1024:.1f} of {r.gpu_total_mib / 1024:.1f} GB at the peak"
+        gpu += (
+            f"; fits the graphics card ({of})"
+            if fits
+            else f"; too tight for the graphics card ({of}): use another engine, or set "
+            "speech.fallback (kokoro) so Kit switches if it runs out"
+        )
     keeps_up = "keeps up" if all(x.gap_ms < 50 for x in r.lines if not x.error) else "has gaps"
     return (
         f"{r.engine}: loaded in {r.load_s:.1f} s on {r.device}; starts talking after "

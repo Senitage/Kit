@@ -14,6 +14,7 @@ Up: [[Home]] · Reference
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
+| **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
@@ -27,6 +28,7 @@ Up: [[Home]] · Reference
 | **Eval** | A repeatable check of how the real models behave | [[Evals]] |
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
+| **Held pipe-up** | Something he wanted to say while you were busy, saved till you're free | [[Inner Life In Depth#Busy and held pipe-ups]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |
 | **Key moment** | A moment that matters, where a stronger model writes his words | [[Models and Routing]] |
@@ -43,8 +45,10 @@ Up: [[Home]] · Reference
 | **Role** | A job a model does: chat, work, expert | [[Models and Routing]] |
 | **Routing** | Deciding which model answers a message | [[Models and Routing]] |
 | **Scene** | What the eyes see right now, in words and numbers | [[Eyes]] |
+| **Seen moment** | A small thing his eyes catch that he feels: a wave, a smile, a frown | [[Eyes#Moments he feels]] |
 | **Self-sheet** | Who Kit thinks he is, in his own words, rewritten nightly | [[Inner Life#Each night he looks back]] |
 | **Show** | Something his face shows instead of his eyes: the time, the date, the weather | [[Face#Shows for the time, date and weather]] |
+| **Sound** | A chuckle, sigh or gasp in his voice, inside his words | [[Voice#Sounds in his voice]] |
 | **Source** | A kind of thing in the memory index: facts, days, conversations, things, notes, his notebook | [[Memory#What's in it]] |
 | **Thread** | Something coming up in your life that he'll ask about after | [[Companion#He follows your life]] |
 | **Token** | The password every app uses to talk to the brain (`kit token`) | [[Privacy#Tokens and secrets]] |

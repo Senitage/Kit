@@ -273,8 +273,9 @@ Kit sleeps when he feels like it, not only when you leave:
   gets up by himself and stays up for `life.sleep_after_minutes` before dozing
   again, so a day out is a few naps with time awake between.
 - **He's bored and ignored.** With `life.naps` on, when he's bored (or tired),
-  nobody's talked to him for half an hour, nothing has caught his eye and no
-  hello or sighting is waiting, he may yawn and nod off for about
+  nobody's talked to him for half an hour, nothing has caught his eye, you're
+  not on your phone or talking to someone, and no hello, sighting or held-back
+  pipe-up is waiting, he may yawn and nod off for about
   `life.nap_minutes` (give or take a third), even with you at the PC. Never in
   quiet hours or mid-conversation, at most twice a day and two hours apart.
 - **Bedtime.** With `life.turns_in` on, once it's past `life.bedtime` and
@@ -291,7 +292,8 @@ What wakes him:
 - **Himself.** A nap or doze ends on its own; a night's sleep ends at the end of
   quiet hours, give or take twenty minutes.
 
-His eyes never wake him. While he sleeps they're shut: the brain tells the eyes
+He never pipes up in his sleep, and anything he was saving to say fades as he
+drifts off. His eyes never wake him. While he sleeps they're shut: the brain tells the eyes
 he's asleep in its answer to each report, and they let the camera go and
 unload the detector and face and body models, handing their memory back to
 the graphics card. They load again when he wakes, which takes a few seconds,
@@ -465,6 +467,8 @@ piped up about and why, so he tells you rather than saying the line again.
 He never pipes up:
 - in quiet hours (`life.quiet_from` to `life.quiet_until`, 10 pm to 7 am by default);
 - while you're on a call (Teams, Zoom, Meet...) or presenting;
+- while his eyes see you on your phone or someone talking (`life.eyes_manners`,
+  below);
 - while you're typing or clicking away. He waits for a natural pause;
 - when you're away or the PC is locked;
 - within 10 minutes of a chat, or more than `life.max_per_hour` times an hour.
@@ -483,6 +487,50 @@ already, and how pressing it is, nudged up or down by how often you've taken
 his recent pipe-ups up (`kit life` shows the rate). Below the bar he keeps it
 to himself. 0.5 is a sensible bar. When he's keeping quiet, the desk tray's
 tooltip says why.
+
+## Busy and held pipe-ups
+
+One rule from his eyes ([[Eyes]]): **talking or on the phone means never**.
+When they see a phone in your hand, or anyone in view talking (their mouth
+going over a few seconds), he doesn't pipe up, not even a hello as you sit
+down. His bubble says so ("keeping quiet, you're on your phone"), and so does
+the tray tooltip and `kit life`. Busy lasts 20 seconds past the last sighting,
+so a phone dipping out of view doesn't flick it on and off. A pipe-up of his
+you didn't answer while you were busy doesn't count as ignoring him. This is
+`life.eyes_manners`, on by default.
+
+With `life.hold_pipe_ups` on, what he'd have said while you were busy is
+**held**: his bubble says he's saving something ("saving something till
+you're off your phone"), and once you're free he says it, opening with why he
+waited ("8 minutes, while Dan was on the phone" goes into his prompt, and he
+puts it his way: "didn't want to interrupt, but..."). A held pipe-up goes
+stale after half an hour, and talking to him meanwhile clears it: the moment
+has passed.
+
+When his eyes see nobody at the desk, a pipe-up isn't said out loud
+(`aloud` is false on its event): it shows in the chat for when you're back.
+
+### Moments he feels
+
+With `life.seen_feelings` on, `kit.noticing` watches each report from the eyes
+for a few moments worth a feeling, held long enough to be real:
+
+| Moment | Needs | Reaction | Feeling (cause) |
+|---|---|---|---|
+| Wave | the eyes' "waving" | `react` wave | pleased, 0.3 ("Dan waved at you") |
+| Thumbs up | two reports running | `react` nod | proud, 0.5 |
+| Thumbs down | two reports running | `react` droop | put out, 0.3 |
+| Smile | smiling and facing him, 2 seconds | `react` wiggle | pleased, 0.4 ("Dan smiled at you") |
+| Frown | frowning in 4 of the last 5 reports | the feeling's fidget | sympathetic, 0.4, and a thought |
+| Eyes closing | eyes shut in 4 of the last 5 reports, late | `react` yawn | none; a thought, and the bed nudge can come an hour before bedtime |
+
+Each moment waits before it can come again: a minute for a wave or a thumb, ten
+minutes for a smile, twenty for a frown, half an hour for sleepy eyes. "Late"
+is from an hour before `life.bedtime`, or from `life.quiet_from`, until 4 am.
+Only you count: the person the eyes name as you, or the one person in view
+they can't name. The feeling pushes the mood dials at once (`life.dials`), so
+a smile brightens Glow. With seen feelings on he also droops a little when the
+desk empties. Asleep, nothing counts.
 
 ## One brain, many bodies
 
@@ -512,12 +560,15 @@ brain. They're instant and need nothing from the server:
 
 Pipe-ups appear in his speech bubble and in the chat, so you can answer them.
 With his voice on (stage 3) he says them out loud too, unless he's already
-talking. If his face is hidden, they show as a Windows notification.
+talking or his eyes see nobody there to hear (the event's `aloud`), with any
+sound in his voice in place (its `voice`, with `speech.sounds`). If his face is
+hidden, they show as a Windows notification.
 
 Some things get a **reaction** the moment they happen, before any answer, so
 you can see he heard: he perks up when you're back, waves when you say goodbye,
 wiggles at praise, droops when the cloud doesn't answer and perks up when its
-answer arrives. These come as `react` events and play even mid-conversation,
+answer starts coming back. With `life.seen_feelings` he also waves back, nods at
+a thumbs up and wiggles at a smile (above). These come as `react` events and play even mid-conversation,
 where fidgets wait. While you type to him in the chat window, his face leans in
 and listens.
 
@@ -560,7 +611,9 @@ into each other, so no two look the same.
 - `GET /api/life`: mood, feeling and why, drives, what he's thinking, what he
   wants to bring up now and later, quirks, snooze, and the life settings.
 - `GET /api/life/events?after=N&wait=25`: fidgets, reactions, sleep and wake,
-  resting-face changes (`mood`), and pipe-ups after event N; waits up to `wait` seconds for one.
+  resting-face changes (`mood`), why he's quiet (`quiet`, with a `bubble` while
+  you're busy), and pipe-ups (with `voice` and `aloud`) after event N; waits up
+  to `wait` seconds for one.
 - `POST /api/life/snooze {"minutes": 60}`: quiet for a while (0 lifts it).
 - `look` events (`{"type": "look", "x": -0.2, "y": 0.1}`, each way -1 to 1
   from the centre) say where the person his eyes see is, every couple of
@@ -656,7 +709,10 @@ another line of chat there is dropped, since in the box it looked like he was
 answering himself. If he writes his plan again where his words should be
 (`{"emotion": ..., "gesture": ...}`), it's dropped, never shown, and he's asked
 again for plain words; JSON that got into earlier lines is kept out of what he
-sees of the chat, so he doesn't copy it. Cloud models still answer in one piece.
+sees of the chat, so he doesn't copy it. Cloud models write the same JSON, read
+as it streams in (`cloud.stream`): his mood as soon as it's written, then his
+words, so he starts talking within about a second. A goodbye or hello that's
+checked for guilt is still read whole first.
 
 `kit eval voice` compares local models on this: see
 [[Side Stage - Inner Life]]. `kit eval companion` checks the

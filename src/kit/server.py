@@ -32,6 +32,7 @@ from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
+from kit.reply import Reply, voiced
 from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
@@ -821,18 +822,23 @@ async def life_tick(brain: Brain) -> None:
 
 
 async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
-    """Kit says something unprompted, and every body (desk app, arm) is told."""
+    """Kit says something unprompted, and every body (desk app, arm) is told: the
+    line, the line as his voice says it (``voice``, with any sounds) and whether to
+    say it out loud (``aloud``: not when his eyes see nobody there to hear it)."""
     reply = None
     async for event in brain.pipe_up(reason):
         if event["type"] == "reply":
             reply = event
     if reply:
+        sounds = brain.settings().speech.sounds
         brain.life.publish(
             {
                 "type": "pipe_up",
                 "reason": reason,
                 "reply": reply["reply"],
                 "message_id": reply["message_id"],
+                "voice": voiced(Reply.model_validate(reply["reply"]), sounds) if sounds else "",
+                "aloud": not brain.scene.nobody_here(),
             }
         )
         return reply["reply"]

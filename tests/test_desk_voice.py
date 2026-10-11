@@ -348,8 +348,14 @@ class Voice:
     def say(self, turn, text):
         self.calls.append(("say", turn, text))
 
+    def sound(self, turn, name):
+        self.calls.append(("sound", turn, name))
+
     def end(self, turn):
         self.calls.append(("end", turn))
+
+    def saying(self, turn):
+        return self.enabled and self.live
 
     def stop(self, turn=None):
         self.calls.append(("stop", turn))
@@ -467,3 +473,149 @@ def test_a_pipe_up_is_said_and_shown_as_he_says_it(chat):
     chat.speaker.enabled = False
     chat.pipe_up({"segments": [{"say": "Quiet one."}]}, lead_in_ms=0)
     wait_for(lambda: QApplication.processEvents() or "Quiet one." in chat.text())
+
+
+# Sounds in his voice, and his face keeping time with it (companion stage 4)
+
+
+def test_a_sound_is_said_before_its_words_and_never_shown():
+    asked, heard, spoke = [], [], []
+
+    def fetch(text, emotion, first):
+        asked.append(text)
+        return wav(text)
+
+    out = FakeOutput(expect=2)
+    speaker = Speaker(
+        fetch,
+        out,
+        heard=lambda turn, text: heard.append(text),
+        spoke=lambda turn, text, seconds: spoke.append((turn, text, seconds)),
+    )
+    speaker.say(1, "You burnt the toast? ")
+    speaker.sound(1, "chuckle")
+    speaker.say(1, "Classic.")
+    speaker.end(1)
+    assert out.done.wait(5)
+    wait_for(lambda: len(spoke) == 2)
+    assert asked == ["You burnt the toast?", "[chuckle] Classic."]
+    assert heard == ["You burnt the toast?", "Classic."]
+    # His face hears how long each sentence plays, from the sound itself.
+    assert spoke[1][:2] == (1, "Classic.") and spoke[1][2] == pytest.approx(18 / 48000)
+
+
+def test_the_chat_passes_sounds_to_his_voice(chat):
+    chat.on_event(1, {"type": "sound", "sound": "chuckle"})
+    assert chat.speaker.calls[-1] == ("sound", 1, "chuckle")
+
+
+def test_a_pipe_up_with_nobody_to_hear_it_is_only_shown(chat):
+    from PySide6.QtWidgets import QApplication
+
+    chat.pipe_up({"segments": [{"say": "Ha."}]}, lead_in_ms=0, aloud=False)
+    assert not [c for c in chat.speaker.calls if c[0] == "pipe_up"]
+    wait_for(lambda: QApplication.processEvents() or "Ha." in chat.text())
+    chat.pipe_up({"segments": [{"say": "Burnt it?"}]}, voice="[chuckle] Burnt it?")
+    assert chat.speaker.calls[-1][2] == "[chuckle] Burnt it?"
+
+
+def test_the_face_hears_whether_his_voice_is_saying_the_reply(chat):
+    voicing = []
+    chat.replied.connect(lambda reply: voicing.append(chat.voicing))
+    chat.on_event(1, {"type": "say", "text": "Hi."})
+    chat.on_event(1, {"type": "reply", "reply": {"segments": [{"say": "Hi."}]}})
+    chat.heard(1, "Hi.")
+    chat.speaker.live = False
+    chat.on_event(2, {"type": "say", "text": "Bye."})
+    chat.on_event(2, {"type": "reply", "reply": {"segments": [{"say": "Bye."}]}})
+    assert voicing == [True, False] and chat.voicing is False
+
+
+class FakeFace:
+    def __init__(self):
+        self.calls: list[tuple] = []
+        self.state = "idle"
+
+    def set_emotion(self, emotion, now, hold_s=0.0):
+        self.calls.append(("emotion", emotion))
+
+    def play(self, gesture, now):
+        self.calls.append(("gesture", gesture))
+
+    def set_state(self, state):
+        self.state = state
+
+
+class Caption:
+    def __init__(self):
+        self.shown = ""
+
+    def setText(self, text):  # noqa: N802 (Qt's name)
+        self.shown = text
+
+    def text(self):
+        return self.shown
+
+
+@pytest.fixture
+def performer():
+    pytest.importorskip("PySide6")
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication
+
+    from kit.desk.face_preview import Performer
+
+    QApplication.instance() or QApplication([])
+    face = FakeFace()
+    return Performer(SimpleNamespace(face=face), Caption()), face
+
+
+def run_qt(seconds):
+    from PySide6.QtWidgets import QApplication
+
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        QApplication.processEvents()
+        time.sleep(0.01)
+
+
+REPLY = {
+    "emotion": "playful",
+    "segments": [
+        {"say": "You burnt the toast?", "gesture": "tilt_head"},
+        {"say": "Classic.", "gesture": "laugh"},
+    ],
+}
+
+
+def test_his_face_talks_exactly_as_long_as_his_voice(performer):
+    act, face = performer
+    act.perform(REPLY, voiced=True)
+    assert face.calls == [("emotion", "playful"), ("gesture", "tilt_head")]
+    assert face.state == "idle"  # his mouth waits for his voice
+    act.spoken(1, "You burnt the toast?", 0.3)
+    assert face.state == "speaking" and act.caption.text() == "You burnt the toast?"
+    run_qt(0.2)
+    act.spoken(1, "Classic.", 0.3)  # the next sentence: his gesture for it, as it starts
+    assert face.calls[-1] == ("gesture", "laugh")
+    assert act.caption.text() == "You burnt the toast? Classic."
+    run_qt(0.35)
+    assert face.state == "speaking"  # the second sentence is still playing
+    run_qt(0.3)
+    assert face.state == "idle"  # his voice stopped, and so did his mouth
+
+
+def test_a_streamed_answer_his_voice_started_gets_its_gestures_when_the_reply_lands(performer):
+    act, face = performer
+    act.spoken(4, "You burnt the toast?", 1.0)
+    act.perform(REPLY, voiced=True)
+    assert ("gesture", "tilt_head") in face.calls and face.state == "speaking"
+
+
+def test_a_voice_that_never_comes_falls_back_to_acting_it_out(performer):
+    act, face = performer
+    act.NO_VOICE_S = 0.1
+    act.perform(REPLY, voiced=True)
+    run_qt(0.6)
+    assert act.caption.text().startswith("You burnt the toast?")

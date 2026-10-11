@@ -409,6 +409,10 @@ class SayExtractor:
     the chat page can show (and later the voice can speak) the first words
     before the whole reply has arrived. Sentences from separate segments are
     joined with a space.
+
+    ``segments`` lists the gesture of each segment whose words have begun, and
+    ``words_done`` turns true once the words are over (a field after the segments,
+    such as the action, has begun), so his voice needn't wait for written detail.
     """
 
     def __init__(self) -> None:
@@ -421,6 +425,9 @@ class SayExtractor:
         self._said_any = False
         self._pending_space = False
         self._high_surrogate = ""
+        self._gesture = ""  # the gesture of the segment being read, once it's written
+        self.segments: list[str] = []
+        self.words_done = False
 
     def feed(self, chunk: str) -> str:
         out: list[str] = []
@@ -432,10 +439,14 @@ class SayExtractor:
                 self._string = ""
                 self._capturing = self._expect_value and self._last_key == "say"
                 self._pending_space = self._capturing and self._said_any
+                if self._capturing:
+                    self.segments.append(self._gesture)
             elif ch == ":":
                 self._expect_value = True
             elif ch in ",{}[]":
                 self._expect_value = False
+                if ch == "{":
+                    self._gesture = ""  # a new segment: no gesture till it says one
         return "".join(out)
 
     def _string_char(self, ch: str, out: list[str]) -> None:
@@ -458,6 +469,10 @@ class SayExtractor:
                 self._capturing = False
             elif not self._expect_value:
                 self._last_key = self._string
+                if self._said_any and self._string not in ("say", "gesture"):
+                    self.words_done = True
+            elif self._last_key == "gesture":
+                self._gesture = self._string
             self._expect_value = False
         else:
             self._emit(ch, out)
@@ -490,6 +505,111 @@ class SayExtractor:
             self._said_any = True
         else:
             self._string += ch
+
+
+# Sounds his voice can make inside his words (``speech.sounds``), for the gestures
+# that come with one: a chuckle on the punchline, a sigh, a gasp. Chatterbox Turbo
+# makes them; other engines leave them out.
+GESTURE_SOUNDS: dict[str, str] = {
+    "laugh": "chuckle",
+    "sigh": "sigh",
+    "startle": "gasp",
+    "double_take": "gasp",
+}
+_EMOTION = re.compile(r'"emotion"\s*:\s*"([a-z_]+)"')
+
+
+class Sounds:
+    """Which segments get a sound in his voice: one whose gesture comes with a sound,
+    at most every other sentence (so no two in a row)."""
+
+    def __init__(self, on: bool) -> None:
+        self.on = on
+        self._last = -2  # the segment that last had one
+
+    def at(self, n: int, gesture: str) -> str:
+        """The sound for segment ``n`` (from 0), or ""."""
+        sound = GESTURE_SOUNDS.get(gesture, "") if self.on else ""
+        if not sound or n - self._last < 2:
+            return ""
+        self._last = n
+        return sound
+
+
+class StreamedReply:
+    """A reply in JSON (a cloud model's) read as it streams in, as chat events: how he
+    feels as soon as it's written (so his voice speaks in that mood), his words as they
+    come with a sound before a segment whose gesture has one (``sounds``), and
+    ``spoken`` once the words are over, ahead of any written detail. A segment's
+    gesture comes before its words (as the schema and prompt have it); one written
+    after them is too late for a sound."""
+
+    def __init__(self, source: str = "", sounds: bool = False) -> None:
+        self.source = source
+        self.raw = ""
+        self.said = ""
+        self.mood = ""
+        self._extractor = SayExtractor()
+        self._sounds = Sounds(sounds)
+        self._segments = 0
+        self._spoken = False
+
+    def feed(self, piece: str) -> list[dict]:
+        self.raw += piece
+        events: list[dict] = []
+        if not self.mood and (found := _EMOTION.search(self.raw)) and found[1] in EMOTIONS:
+            self.mood = found[1]
+            if not self.said:  # his voice takes the mood before his first word
+                events.append({"type": "mood", "emotion": self.mood})
+        extractor = self._extractor
+        for ch in piece:  # a character at a time, so a sound lands right before its words
+            text = extractor.feed(ch)
+            while self._segments < len(extractor.segments):
+                sound = self._sounds.at(self._segments, extractor.segments[self._segments])
+                self._segments += 1
+                if sound:
+                    events.append({"type": "sound", "sound": sound})
+            if text:
+                self.said += text
+                if events and events[-1]["type"] == "say":
+                    events[-1]["text"] += text
+                else:
+                    events.append(self._say(text))
+        if extractor.words_done and self.said and not self._spoken:
+            self._spoken = True
+            events.append({"type": "spoken"})
+        return events
+
+    def _say(self, text: str) -> dict:
+        return {"type": "say", "text": text, **({"source": self.source} if self.source else {})}
+
+
+def reply_events(reply: Reply, source: str = "", sounds: bool = False) -> list[dict]:
+    """A whole reply as the chat events a streamed one gives: his mood, then each
+    segment's words, with a sound before a segment whose gesture has one."""
+    events: list[dict] = [{"type": "mood", "emotion": reply.emotion}]
+    chosen = Sounds(sounds)
+    said = [seg for seg in reply.segments if seg.say.strip()]
+    for n, seg in enumerate(said):
+        if sound := chosen.at(n, seg.gesture):
+            events.append({"type": "sound", "sound": sound})
+        text = (" " if n else "") + seg.say.strip()
+        if events[-1]["type"] == "say":
+            events[-1]["text"] += text
+        else:
+            events.append({"type": "say", "text": text, **({"source": source} if source else {})})
+    return events
+
+
+def voiced(reply: Reply, sounds: bool = False) -> str:
+    """A reply's words as his voice says them, with any sounds in place
+    ("[chuckle] Told you."), for a line said whole (a pipe-up)."""
+    chosen = Sounds(sounds)
+    parts = []
+    for n, seg in enumerate(s for s in reply.segments if s.say.strip()):
+        sound = chosen.at(n, seg.gesture)
+        parts.append(f"[{sound}] {seg.say.strip()}" if sound else seg.say.strip())
+    return " ".join(parts)
 
 
 def reply_json(reply: Reply) -> str:

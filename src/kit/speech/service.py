@@ -4,6 +4,10 @@ The engine runs in its own process (``worker.py``) with whichever Python has it
 installed, so engines with clashing libraries can each have their own virtual
 environment. Switching ``speech.engine`` stops the old program, which also frees
 the graphics card memory it held, and starts the new one on the next line.
+
+If his usual engine can't start or runs out of graphics card memory, and
+``speech.fallback`` names another (Kokoro on the CPU), Kit switches to it and
+stays on it until his speech settings change, so his voice carries on.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -29,6 +34,7 @@ log = logging.getLogger(__name__)
 
 WORKER = Path(__file__).with_name("worker.py")
 RETRY_S = 60  # after an engine fails to start, wait this long before trying again
+OUT_OF_MEMORY = re.compile(r"out of memory|cuda", re.IGNORECASE)
 
 
 class SpeechError(Exception):
@@ -94,6 +100,8 @@ class SpeechService:
         self._made_at = float("-inf")  # when the last one was done
         self._making_lock = threading.Lock()
         self._closing = False  # Kit is shutting down: no more starting engines
+        # On the fallback engine: (the speech settings it happened under, why).
+        self.fell_back: tuple[str, str] | None = None
 
     @property
     def url(self) -> str:
@@ -215,6 +223,46 @@ class SpeechService:
             return 0.0 if self._making else max(0.0, self.clock() - self._made_at)
 
     def _speak(self, text: str, mood: str, engine: str | None, first: bool) -> Spoken:
+        try:
+            return self._say(text, mood, engine or self.in_use(), first)
+        except SpeechError as e:
+            if engine is not None or not self._fall_back(e):
+                raise
+            return self._say(text, mood, self.in_use(), first)
+
+    def in_use(self) -> str:
+        """The engine Kit speaks with: ``speech.engine``, or ``speech.fallback`` once
+        that has had to take over (until his speech settings change)."""
+        s = self.settings()
+        if self.fell_back is not None:
+            if self.fell_back[0] == self._settings_key(s) and s.fallback:
+                return s.fallback
+            self.fell_back = None  # the settings changed: his usual engine gets another go
+        return s.engine
+
+    def _fall_back(self, error: SpeechError) -> bool:
+        """His usual engine failed: switch to the fallback, if there is one and the
+        failure is one it can help with (couldn't start, or out of memory)."""
+        s = self.settings()
+        why = str(error)
+        started = self.running() and self._key is not None and self._key[0] == s.engine
+        if (
+            self.fell_back is not None
+            or not s.fallback
+            or s.fallback == s.engine
+            or (started and not OUT_OF_MEMORY.search(why))
+        ):
+            return False
+        log.warning("voice engine %s failed (%s): switching to %s", s.engine, why, s.fallback)
+        self.stop()  # frees the graphics card memory it held
+        self.fell_back = (self._settings_key(s), why)
+        return True
+
+    @staticmethod
+    def _settings_key(s: SpeechSettings) -> str:
+        return json.dumps(s.model_dump(mode="json"), sort_keys=True)
+
+    def _say(self, text: str, mood: str, engine: str, first: bool) -> Spoken:
         health = self.ensure(engine)
         payload = {"text": text, "mood": mood, "first": first}
         try:
@@ -239,10 +287,13 @@ class SpeechService:
 
     def status(self) -> dict:
         s = self.settings()
+        using = self.in_use()
         return {
             "enabled": s.enabled,
             "engine": s.engine,
-            "kind": s.profile.kind,
+            "using": using,
+            "fell_back": self.fell_back[1] if self.fell_back and using != s.engine else None,
+            "kind": s.engines[using].kind,
             "running": self.running(),
             "loaded": self.health.get("engine") if self.running() else None,
             "device": self.health.get("device") if self.running() else None,

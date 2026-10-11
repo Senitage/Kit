@@ -44,7 +44,8 @@ he's **a bit put out**. A feeling colours what he says and how he fidgets,
 then fades. Ask how he's feeling and he can tell you why. With
 `life.mixed_feelings` he can feel two things at once, and with
 `life.read_mood = meaning` the model reads how you are from what you mean,
-not only your words.
+not only your words. With `life.seen_feelings` his eyes count too: a smile
+at him, a wave, a thumbs up or a frown that stays ([[Eyes#Moments he feels]]).
 
 ## Thoughts and his notebook
 
@@ -63,8 +64,11 @@ the memory page's notebook tab, where you can forget any of it.
 
 When a want gets strong enough he says something of his own accord, written
 fresh by the model from what you're doing and what he's been thinking. He
-never pipes up in quiet hours (10 pm to 7 am), on a call, while you're typing,
-when you're away, right after a chat, or more than a few times an hour.
+never pipes up in quiet hours (10 pm to 7 am), on a call, while his eyes see
+you on your phone or talking to someone, while you're typing, when you're
+away, right after a chat, or more than a few times an hour. With
+`life.hold_pipe_ups` what he wanted to say waits till you're free, and he says
+why he waited.
 Ignore him and he sulks a little and waits longer next time. Say **"shush"**
 or **"not now"** and he's quiet for an hour. `life.chattiness` turns him up
 or down.

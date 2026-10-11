@@ -95,6 +95,7 @@ The monthly budget for cloud models. See [[Models and Routing#The budget]].
 |---|---|---|
 | `monthly_cap_usd` | `40.0` | Kit stops using cloud models once this month's spend reaches this. |
 | `reserve_usd` | `3.0` | As the budget runs low, cloud calls give way in order, each this much sooner than the last: evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same. |
+| `stream` | on | A Claude answer comes in as it's written, so Kit starts saying the first words (in the answer's mood) while the rest is still on its way. Goodbyes are still checked whole first. Off: each answer arrives in one piece. |
 
 ## nas
 
@@ -196,6 +197,9 @@ His inner life and the companion habits. See [[Inner Life]] and [[Companion]].
 | `opinions` | `0` | How many of his standing opinions (from his notebook) Kit keeps in mind when he talks, so he sticks to them. |
 | `dials` | off | Kit's mood also runs as two slow dials (how lively, how happy) that bodies show: slower breathing and blinks when he's flat or tired, bigger gestures when he's up. |
 | `pipe_up_bar` | `0.0` | Before Kit brings something up unprompted, he scores it for relevance, originality and urgency (helped by how often you take his pipe-ups up) and keeps quiet below this. 0 turns the scoring off; 0.5 is a sensible bar. |
+| `eyes_manners` | on | With his eyes on, Kit doesn't pipe up while you're on your phone or talking to someone, and his bubble says why. |
+| `hold_pipe_ups` | off | Something Kit wanted to say while you were on your phone or talking to someone waits until you're done (up to half an hour), and he says why he waited. |
+| `seen_feelings` | off | Kit feels what his eyes catch: a wave (he waves back), a thumbs up, a smile at him for a couple of seconds (he brightens), a frown that stays (he's sympathetic), and your eyes closing late at night (he yawns and thinks of bed). See [[Eyes#Moments he feels]]. |
 
 ## eyes
 
@@ -229,6 +233,8 @@ His voice. See [[Voice]].
 | `engines` | built in | Voice engines Kit can use, by name. Built-in profiles are always there; change their fields or add your own (e.g. a second kokoro voice). |
 | `port` | `8611` | Local port for the voice engine's program. |
 | `load_timeout_s` | `240` | How long a voice engine may take to load (the first Chatterbox start downloads its model). |
+| `sounds` | off | Sounds in his voice where a gesture calls for one: a chuckle on the punchline, a sigh, a gasp. At most one every other sentence. Only Chatterbox Turbo makes them; other engines leave them out. |
+| `fallback` | (none) | A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops. |
 
 ### Voice engine profiles
 
