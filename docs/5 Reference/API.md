@@ -110,7 +110,7 @@ nobody there).
 
 | Method and path | What it does |
 |---|---|
-| `GET /api/speech` | Voice engine status: the engine set, the one he's `using`, and why if he `fell_back` |
+| `GET /api/speech` | Voice engine status: the engine set, the one he's `using`, why if he `fell_back`, and whether Turbo runs as a `cuda_graph` |
 | `POST /api/speech/say` | One sentence as a WAV file, in his voice and mood |
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |

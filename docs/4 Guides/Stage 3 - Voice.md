@@ -175,6 +175,9 @@ The engine's own messages go to `<data>/logs/speech.log`.
       line takes about a second.
 - [ ] `kit speech bench --engines chatterbox-turbo kokoro` writes the compare page;
       Turbo "keeps up".
+- [ ] With Turbo on the graphics card, `GET /api/speech` shows `cuda_graph: true`,
+      and `<data>/logs/speech.log` has no "no CUDA graph" line. Turbo is well
+      over twice as fast as real time in the bench.
 - [ ] `kit speech use chatterbox-turbo` and `kit speech on`, then in the desk app's
       chat, ask something. Kit starts speaking after his first sentence and the
       rest follows without gaps.
