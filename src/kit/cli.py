@@ -485,6 +485,8 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
         print(f"sleep:    {state['sleep']}, wakes by himself about {wakes[11:16] or 'soon'}")
     elif state.get("groggy"):
         print("sleep:    just woken up, still groggy")
+    for line in state.get("slept_lately", [])[-6:]:
+        print(f"slept:    {line}")
     felt = state.get("feeling")
     if felt:
         print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")

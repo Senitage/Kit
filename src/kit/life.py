@@ -424,6 +424,8 @@ MORNING_LIE_IN = 20  # minutes past the end of quiet hours he may sleep on
 GROGGY_FOR = timedelta(minutes=10)  # dozy this long after waking
 GROGGY_AFTER = timedelta(minutes=10)  # a sleep shorter than this leaves him bright
 EYES_OPENING = timedelta(minutes=2)  # his eyes come back on after a sleep within this
+SLEEPS_KEPT = 12  # sleeps in his diary (``kit life``, the Mood page)
+WOKE_BY = {"himself": "woke by himself", "back": "you came back", "chat": "you talked to him"}
 NIGHT_CAP = 0.35  # his body clock's limit at night: under TIRED, so he's sleepy
 WIND_DOWN = (21.0, 23.0)  # hours over which the limit falls to NIGHT_CAP
 WAKE_UP = (5.0, 7.0)  # and rises back to full
@@ -953,6 +955,8 @@ class Life:
         self._woke_from = ""  # the sleep he last woke from, for the groggy line
         self.groggy_until: datetime | None = None
         self.naps: list[datetime] = []  # today's naps
+        # His sleep diary: (fell asleep, woke or None, kind, what woke him), latest last.
+        self.slept: list[tuple[datetime, datetime | None, str, str]] = []
         self._talked_at: datetime | None = None  # Dan's last message, this run
         self._chat_open = False  # a conversation that hasn't been thought over yet
         # Absences: when Dan last touched the PC, went away and came back.
@@ -1428,6 +1432,8 @@ class Life:
         self.asleep, self._asleep_since = True, now
         self.sleep_kind, self._slept_beside = kind, beside
         self.wakes_at = wakes.replace(microsecond=0)
+        self.slept = [*self.slept[-(SLEEPS_KEPT - 1) :], (now, None, kind, "")]
+        log.info("Kit fell asleep (%s), waking by himself about %s", kind, f"{wakes:%H:%M}")
         self.publish({"type": "state", "state": "asleep", "sleep": kind})
 
     def _morning(self, now: datetime) -> datetime:
@@ -1469,10 +1475,28 @@ class Life:
         self._asleep_since = None
         self._woke_at = now
         self.drives.boredom = min(self.drives.boredom, 0.3)  # a fresh start
+        why = why or "back"
+        if self.slept and self.slept[-1][1] is None:
+            start, _, kind, _ = self.slept[-1]
+            self.slept[-1] = (start, now, kind, why)
+        log.info("Kit woke up (%s) after %s asleep", why, gap_words(slept))
         self.sleep_kind, self.wakes_at = "", None
         if why != "himself":
             self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
-        self.publish({"type": "state", "state": "awake", "why": why or "back"})
+        self.publish({"type": "state", "state": "awake", "why": why})
+
+    def sleep_diary(self, now: datetime | None = None) -> list[str]:
+        """His sleeps over the last day, oldest first, in words: "13:05 to 13:47,
+        a doze (woke by himself)"."""
+        now = now or self.clock()
+        out = []
+        for start, end, kind, why in self.slept:
+            if now - start > timedelta(days=1):
+                continue
+            until = f"{end:%H:%M}" if end else "now"
+            woke = f" ({WOKE_BY.get(why, why)})" if end else ""
+            out.append(f"{start:%H:%M} to {until}, a {kind}{woke}")
+        return out
 
     def groggy(self) -> bool:
         """Just woken from a proper sleep: dozy and short for a few minutes."""
@@ -2377,6 +2401,7 @@ class Life:
             "woke_from": self._woke_from,
             "groggy_until": when(self.groggy_until),
             "naps": [when(t) for t in self.naps if t.date() == now.date()],
+            "slept": [[when(a), when(b), kind, why] for a, b, kind, why in self.slept],
             "last_seen": when(self.last_seen),
             "away_since": when(self.away_since),
             "came_back": [when(t) for t in self.came_back] if self.came_back else None,
@@ -2500,6 +2525,10 @@ class Life:
         self._woke_from = str(data.get("woke_from", ""))
         self.groggy_until = when("groggy_until")
         self.naps = [parse_time(t, now) for t in data.get("naps") or []]
+        self.slept = [
+            (parse_time(a, now), parse_time(b, now) if b else None, str(kind), str(why))
+            for a, b, kind, why in data.get("slept") or []
+        ][-SLEEPS_KEPT:]
         self.last_seen = when("last_seen") or saved  # an older Kit's save: he was there
         self.away_since = when("away_since")
         if data.get("came_back"):
@@ -2629,6 +2658,7 @@ class Life:
             "wakes_at": self.wakes_at.isoformat(timespec="minutes") if self.wakes_at else None,
             "groggy": self.groggy(),
             "naps_today": sum(1 for t in self.naps if t.date() == now.date()),
+            "slept_lately": self.sleep_diary(now),
             "doing": self.doing.doing if self.doing else None,
             "did_today": [
                 f"{at:%H:%M} {doing}" for at, doing, _ in self.did if at.date() == now.date()

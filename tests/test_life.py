@@ -714,3 +714,16 @@ def test_a_sleep_survives_a_restart(paths):
     again = Life(lambda: s, PcContext(clock), clock, random.Random(1), store=memory)
     assert again.asleep and again.sleep_kind == "nap" and again.wakes_at == wakes
     memory.close()
+
+
+def test_his_sleep_diary_says_when_he_slept_and_what_woke_him():
+    life, pc, clock = setup(sleep_after_minutes=10, nap_minutes=20)
+    pc.update(snap(idle=700))
+    life.on_report()  # Dan's out: a doze
+    start = clock.now
+    run(life, pc, clock, 60, snap(idle=4300))
+    diary = life.state()["slept_lately"]
+    assert diary[0].startswith(f"{start:%H:%M} to ") and "a doze (woke by himself)" in diary[0]
+    pc.update(snap(idle=2))
+    life.on_report()
+    assert life.sleep_diary()[-1].endswith("(you came back)") or not life.asleep

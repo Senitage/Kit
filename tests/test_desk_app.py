@@ -928,9 +928,19 @@ def test_the_mood_page_shows_his_needs_and_cant_change_them(qapp, sync_window, t
     # Only to look at: nothing on the page can set a need.
     for kind in (QAbstractButton, QSlider, QAbstractSpinBox, QLineEdit):
         assert not page.findChildren(kind)
-    brain.life = lambda: {**LIFE, "dials": None, "mood": "asleep", "feeling": None}
+    brain.life = lambda: {
+        **LIFE,
+        "dials": None,
+        "mood": "asleep",
+        "feeling": None,
+        "presence": "asleep",
+        "wakes_at": "2026-10-11T13:45",
+        "slept_lately": ["13:05 to now, a doze"],
+    }
     page.refresh()
     assert "Happiness" not in page.bars and page.face.face.state == "sleeping"
+    assert "waking about 13:45" in page.presence.text()
+    assert page.slept.text() == "Slept: 13:05 to now, a doze"
     win.close()
 
 

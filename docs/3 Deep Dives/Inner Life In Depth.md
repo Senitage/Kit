@@ -302,7 +302,10 @@ and his eyes opening after a nap beside you isn't taken for you arriving.
 After a sleep of ten minutes or more he's groggy for ten minutes: his mood
 shows sleepy, he knows he's just woken from a nap, a doze or a night's sleep,
 and he keeps his replies short. `kit life` shows the sleep he's in and when
-he'll wake by himself.
+he'll wake by himself, and both `kit life` and the desk app's Mood page keep
+a sleep diary for the last day ("13:05 to 13:47, a doze (woke by himself)"),
+so you can tell he slept while you were out. The server log has a line for each
+sleep and wake too.
 
 ## Something for later
 
