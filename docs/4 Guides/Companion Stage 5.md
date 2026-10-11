@@ -61,8 +61,9 @@ kit hearing
 
 The first start downloads three models into `%APPDATA%\Kit Hearing\models`
 (about 200 MB, once). Then it says "Kit's ears are open". Each thing it hears
-shows as one line: how long, whose voice, and what Kit made of it, never the
-words.
+shows as one line: how long, whose voice, and what Kit made of it. The words
+only show if you start them with `kit hearing --words`, and only in that
+window.
 
 To start them with Windows, add a logon task the same way as the eyes'
 ([[Vision Stage 1#4. Open them]]), with `kit hearing` as the command.
@@ -105,8 +106,11 @@ pick new voices up by themselves.
 ## If something's off
 
 - **He never answers:** `kit hearing show` says whether the ears are
-  listening. If it's "not talking to him", the mic heard you but not his name:
-  say it at the start or end, or add what it hears instead to `hearing.names`.
+  listening. If it's "not talking to him", the mic heard you but not his name.
+  Run `kit hearing --words` to see the words they heard (only in that window),
+  then say his name at the start or end, or add the word they write instead to
+  `hearing.names` on the server (`kit config set hearing.names
+  '["Kit", "Kitt", "Ki", "Kid", "Kip"]'`).
 - **He stops himself mid-sentence:** his own voice is coming back loud enough
   to sound like someone else. Lower `hearing.own_voice` a little, turn the
   speakers down, use a headset, or set `hearing.barge_in` to false.

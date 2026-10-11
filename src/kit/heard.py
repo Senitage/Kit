@@ -53,8 +53,16 @@ TONE_FEELINGS = {
     "angry": ("sympathetic", 0.3),
     "fearful": ("worried", 0.4),
 }
-SIGN_OFF = r"(?:thanks|thank you|cheers|ta|hey|hi|hello|morning|night|bye|see you|love you)"
-GREETING = r"(?:(?:hey|hi|hello|oi|ok|okay|yo|so|and|um|uh)\s*,?\s+)?"
+FILLER = r"(?:hey|hi|hello|oi|ok|okay|yo|so|and|um|uh|ah|oh|well|right|alright)"
+OPENING = rf"(?:{FILLER}\s*,?\s+){{0,2}}"  # "hey Kit", "okay so Kit"
+# A word just before his name at the end that makes it a mention, not a call: "I
+# told Kit", "ask Kit", "the first aid kit". With a comma between, it's a call.
+MENTIONS = {
+    *"to told tell telling ask asked asking with about for at from and or of than".split(),
+    *"like likes call called is was by on that said says met meet see saw".split(),
+    *"the a an my our your his her their this new old s".split(),  # s: "Dan's kit"
+    *"aid tool drum test repair starter sewing survival build press".split(),
+}
 
 
 class Utterance(BaseModel):
@@ -80,19 +88,25 @@ class Verdict:
 
 def calls(text: str, names: list[str]) -> bool:
     """Is Kit being spoken to by name: his name at the start of the sentence ("Kit,
-    ...", "hey Kit ..."), at the end ("..., Kit?"), or set off by commas in the
-    middle ("so, Kit, what now")? Not just mentioned ("I told Kit yesterday")."""
+    ...", "hey Kit ..."), at the end ("..., Kit?", "what's it doing Kit"), or set
+    off by commas in the middle ("so, Kit, what now")? Not just mentioned ("I told
+    Kit")."""
     for name in names:
         n = re.escape(name.strip())
         if not n:
             continue
-        if re.match(rf"^\W*{GREETING}{n}\b", text, re.I):
+        if re.match(rf"^\W*{OPENING}{n}\b(?!['’]s\b)", text, re.I):  # not "Kit's ..."
             return True
-        if re.search(rf"(?:^|[,.!?]\s*|\b{SIGN_OFF}\s+){n}\W*$", text, re.I):
+        end = re.search(rf"(?:\b(\w+)(\W+))?\b{n}\W*$", text, re.I)
+        if end and (re.search(r"[,.!?]", end.group(2) or "") or _calling(end.group(1))):
             return True
         if re.search(rf",\s*{n}\s*[,!?]", text, re.I):
             return True
     return False
+
+
+def _calling(before: str | None) -> bool:
+    return (before or "").lower() not in MENTIONS
 
 
 def _words(text: str) -> set[str]:

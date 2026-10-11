@@ -72,7 +72,8 @@ which a face can't be rebuilt; `kit eyes forget NAME` deletes them. See
 The ears turn talking into words **on the PC with the mic**; no sound is sent
 or saved. The brain keeps only what was meant for Kit (his name, or answering
 him), as an ordinary message. Everything else is let go: not kept, not sent
-on, not written in the log. Voices are recognised from voice prints, numbers
+on, not written in the log. (`kit hearing --words` shows the words in the
+ears' own window while you tune them, and saves nothing.) Voices are recognised from voice prints, numbers
 from which no sound can be rebuilt; `kit hearing forget NAME` deletes them.
 See [[Hearing]].
 

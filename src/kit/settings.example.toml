@@ -209,7 +209,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # [hearing]
 # enabled = true
 # mic = ""                 # part of the mic's name, or its number; `kit hearing mics` lists them
-# names = ["Kit"]          # what he answers to, at the start or end of a sentence
+# names = ["Kit", "Kitt", "Ki", "Kid"]  # his name, and how the ears sometimes write it
 # follow_up_s = 8.0        # after he stops talking, answer him without his name for this long
 # barge_in = true          # talking over him stops him
 # barge_in_ms = 500

@@ -25,6 +25,8 @@ from kit.settings import HearingSettings
 RATE = 16000  # samples a second, everywhere in the ears
 CHUNK = 512  # the VAD's step: 32 ms
 
+LEAD_IN_S = 0.8  # sound kept from before the VAD noticed talking: "Kit, ..." starts there
+
 TONES = {"happy", "sad", "angry", "neutral", "fearful", "disgusted", "surprised"}
 
 
@@ -90,6 +92,31 @@ def wav_samples(wav: bytes) -> np.ndarray:
     return resample(data, rate)
 
 
+class Lookback:
+    """The last few seconds of sound, by sample number, so a stretch of talking can
+    start a little before the VAD noticed it. The VAD is slow to notice a short
+    first word, and that's where his name usually is."""
+
+    def __init__(self, seconds: float) -> None:
+        self.buffer = np.zeros(max(int(seconds * RATE), CHUNK), dtype=np.float32)
+        self.fed = 0  # samples heard so far
+
+    def add(self, chunk: np.ndarray) -> None:
+        size, n = len(self.buffer), len(chunk)
+        kept = chunk[-size:]
+        at = (self.fed + n - len(kept)) % size
+        first = min(len(kept), size - at)
+        self.buffer[at : at + first] = kept[:first]
+        self.buffer[: len(kept) - first] = kept[first:]
+        self.fed += n
+
+    def before(self, start: int, seconds: float) -> np.ndarray:
+        """Up to ``seconds`` of the sound just before sample number ``start``."""
+        lo = max(start - int(seconds * RATE), self.fed - len(self.buffer), 0)
+        hi = max(lo, min(start, self.fed))
+        return self.buffer[np.arange(lo, hi) % len(self.buffer)]
+
+
 class SileroVad:
     def __init__(self, folder: Path, settings: HearingSettings) -> None:
         import sherpa_onnx
@@ -103,12 +130,16 @@ class SileroVad:
         config.sample_rate = RATE
         config.num_threads = 1
         self._vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=60)
+        self._lookback = Lookback(settings.max_speech_s + settings.pause_ms / 1000 + 3)
 
     def accept(self, chunk: np.ndarray) -> list[np.ndarray]:
+        self._lookback.add(chunk)
         self._vad.accept_waveform(chunk)
         done = []
         while not self._vad.empty():
-            done.append(np.asarray(self._vad.front.samples, dtype=np.float32))
+            stretch = self._vad.front
+            lead_in = self._lookback.before(stretch.start, LEAD_IN_S)
+            done.append(np.concatenate([lead_in, np.asarray(stretch.samples, dtype=np.float32)]))
             self._vad.pop()
         return done
 

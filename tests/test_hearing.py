@@ -11,7 +11,15 @@ import numpy as np
 import pytest
 
 from kit.hearing import enrol, link, models
-from kit.hearing.engines import CHUNK, RATE, Transcript, resample, transcript_of, wav_samples
+from kit.hearing.engines import (
+    CHUNK,
+    RATE,
+    Lookback,
+    Transcript,
+    resample,
+    transcript_of,
+    wav_samples,
+)
 from kit.hearing.mic import pick_device
 from kit.hearing.run import CHECK_IN_S, Ears
 from kit.settings import HearingSettings
@@ -144,6 +152,33 @@ def test_a_stretch_of_talking_goes_to_the_brain_as_words_with_whose_voice():
     assert heard["who"] == "Dan" and heard["own_voice"] is False
     assert heard["seconds"] == pytest.approx(0.99, abs=0.05)
     assert "audio" not in heard and "samples" not in heard  # words, never sound
+
+
+def test_the_words_show_in_the_ears_window_only_when_asked(caplog):
+    said = Transcript("Kit, what's the time?", "en", "", "speech")
+    for words in (False, True):
+        caplog.clear()
+        e, run = ears(talk(0.8, 1.0) + quiet(), Brain(), FakeTranscriber(said))
+        e.words = words
+        with caplog.at_level("INFO", logger="kit.hearing.run"):
+            run()
+        line = next(r.getMessage() for r in caplog.records if "heard" in r.getMessage())
+        assert ("what's the time" in line) is words
+
+
+def test_a_stretch_starts_a_little_before_the_vad_noticed_it():
+    back = Lookback(1.0)
+    sound = np.arange(RATE * 3, dtype=np.float32)
+    for i in range(0, len(sound), CHUNK):
+        back.add(sound[i : i + CHUNK])
+    assert back.fed == RATE * 3
+    start = RATE * 2 + RATE // 2
+    assert np.array_equal(back.before(start, 0.25), sound[start - RATE // 4 : start])
+    assert len(back.before(RATE, 0.5)) == 0  # older than it keeps
+    assert len(back.before(RATE * 2 + 10, 0.5)) == 10  # only what it still has
+    short = Lookback(1.0)
+    short.add(sound[:100])
+    assert np.array_equal(short.before(50, 1.0), sound[:50])
 
 
 def test_his_own_voice_from_the_speakers_is_flagged_and_does_not_stop_him():
@@ -291,6 +326,7 @@ def _args(action=None, **kw):
         "token": "t",
         "name": "desk",
         "steps": None,
+        "words": False,
     }
     return Namespace(**{**base, **kw})
 
@@ -346,7 +382,7 @@ def test_kit_hearing_runs_and_enrols_with_the_brains_settings(paths, capsys):
         def run(self, max_steps=None):
             built["ran"] = max_steps
 
-    def build(settings, client, mic_name):
+    def build(settings, client, mic_name, words):
         built["settings"] = settings
         return Ran()
 

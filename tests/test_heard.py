@@ -66,6 +66,30 @@ def test_his_name_at_the_start_or_end_means_he_is_spoken_to():
     assert calls("Kitt, you there?", ["Kit", "Kitt"])
 
 
+def test_his_name_counts_without_a_comma_and_as_the_ears_mishear_it():
+    # How the ears wrote "Kit" in sample sentences, from real speech models.
+    names = HearingSettings().names
+    for said in (
+        "What's the weather doing kitt?",
+        "Hey Ki, how are you going?",
+        "Okay, Ki, tell me a joke.",
+        "Hey, kid, how are you going.",
+        "okay so Kit, what's for tea",
+        "what do you reckon Kit",
+        "I told him, Kit.",
+    ):
+        assert calls(said, names), said
+    for said in (
+        "I told Kit",
+        "ask Kit",
+        "where's the first aid kit?",
+        "that's my kid",
+        "Kit's been quiet today",
+        "did you get it?",
+    ):
+        assert not calls(said, names), said
+
+
 def test_words_he_just_said_coming_back_are_an_echo():
     said = ["It's going to rain this afternoon, so bring the washing in."]
     assert echo_of("going to rain this afternoon", said)
@@ -242,7 +266,7 @@ def test_the_ears_report_hear_and_hush_through_the_api(paths):
     with TestClient(app) as client:
         assert client.post("/api/hearing/report", json={}).status_code == 401
         answer = client.post("/api/hearing/report", json={"mic": "desk"}, headers=AUTH).json()
-        assert answer["paused"] is False and answer["settings"]["names"] == ["Kit"]
+        assert answer["paused"] is False and answer["settings"]["names"][0] == "Kit"
         assert answer["speech"] == "" and answer["voices_version"] == 0
         status = client.get("/api/status", headers=AUTH).json()
         assert status["hearing"] == "listening (desk)" and status["hearing_paused"] is False

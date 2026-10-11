@@ -921,7 +921,7 @@ def cmd_hearing(
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
-        ears = build(settings, client, mic_name=args.name)
+        ears = build(settings, client, mic_name=args.name, words=args.words)
     except ImportError as e:
         print(f'the ears need the sound and speech libraries: pip install "kit[hearing]" ({e})')
         return 1
@@ -1722,6 +1722,11 @@ def main(argv: list[str] | None = None) -> int:
     hearing.add_argument("--brain", help="the brain's address, e.g. http://kit-server:8600")
     hearing.add_argument("--token", help="Kit's API token (`kit token` on the server)")
     hearing.add_argument("--name", default="desk", help="what to call this mic (default: desk)")
+    hearing.add_argument(
+        "--words",
+        action="store_true",
+        help="show the words the ears heard, in this window only (for tuning hearing.names)",
+    )
     hearing.add_argument("--steps", type=int, help="stop after this many 32 ms steps (testing)")
     hsub = hearing.add_subparsers(dest="hearing_action")
     hsub.add_parser("mics", help="list the microphones on this machine")

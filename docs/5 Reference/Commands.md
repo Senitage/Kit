@@ -140,7 +140,7 @@ These run on the PC with the microphone.
 
 | Command | What it does |
 |---|---|
-| `kit hearing` | Run the ears (`--name` for the mic, `--brain`, `--token`) |
+| `kit hearing` | Run the ears (`--name` for the mic, `--brain`, `--token`; `--words` shows the words they hear, in that window only) |
 | `kit hearing mics` | The microphones on this machine |
 | `kit hearing connect URL TOKEN` | Save where the brain is |
 | `kit hearing show` | Whether the ears are listening, and what Kit last made of something (never the words) |

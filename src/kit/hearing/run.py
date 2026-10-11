@@ -61,6 +61,7 @@ class Ears:
         load_voices: Callable[[], dict] | None = None,
         own_voice: Callable[[], np.ndarray | None] | None = None,
         mic_name: str = "desk",
+        words: bool = False,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -75,6 +76,7 @@ class Ears:
         self.load_voices = load_voices  # the people Kit knows by voice, from the brain
         self.own_voice = own_voice  # a few words in Kit's voice, from the brain
         self.mic_name = mic_name
+        self.words = words  # show what was heard in this window (`kit hearing --words`)
         self.clock = clock
         self.sleep = sleep
         self.mic = None
@@ -195,14 +197,16 @@ class Ears:
             return None
         self.heard_count += 1
         took = self.clock() - started
-        # What Kit made of it, never the words: overheard talk stays out of the log too.
+        # What Kit made of it, not the words: overheard talk stays off the screen too,
+        # unless whoever runs the ears asks to see it (--words, for tuning).
         log.info(
-            "heard %.1f s%s: %s (%s, %.2f s)",
+            "heard %.1f s%s: %s (%s, %.2f s)%s",
             seconds,
             f" from {who}" if who else "",
             answer.get("heard", "?"),
             answer.get("why", ""),
             took,
+            f': "{said.text}"' if self.words else "",
         )
         return answer
 
@@ -312,7 +316,9 @@ class Ears:
             self.mic = None
 
 
-def build_ears(settings: HearingSettings, client, mic_name: str = "desk", folder=None) -> Ears:
+def build_ears(
+    settings: HearingSettings, client, mic_name: str = "desk", folder=None, words: bool = False
+) -> Ears:
     """The real ears: sounddevice mic, Silero VAD, SenseVoice and CAM++ through
     sherpa-onnx. Imports the libraries here, so only this needs them installed.
     ``client`` is a kit.desk.client.BrainClient."""
@@ -341,4 +347,5 @@ def build_ears(settings: HearingSettings, client, mic_name: str = "desk", folder
         load_voices=client.known_voices,
         own_voice=own_voice,
         mic_name=mic_name,
+        words=words,
     )

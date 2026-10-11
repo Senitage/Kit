@@ -776,10 +776,10 @@ class HearingSettings(_Section):
         "`kit hearing mics`. Empty uses the PC's default.",
     )
     names: list[str] = Field(
-        default_factory=lambda: ["Kit"],
+        default_factory=lambda: ["Kit", "Kitt", "Ki", "Kid"],
         description='What Kit answers to. Said at the start or end of a sentence ("Kit, '
-        "what's the weather?\"), it means you're talking to him. Add a word the mic often "
-        "hears instead of his name.",
+        "what's the weather?\"), it means you're talking to him. After his name come the "
+        "ways the ears sometimes write it; add a word they often hear instead.",
     )
     follow_up_s: float = Field(
         8.0,

@@ -228,7 +228,7 @@ See [[Hearing]].
 |---|---|---|
 | `enabled` | on | Kit listens through a microphone when `kit hearing` is running on the PC with the mic. The tray's "Let Kit hear me" switch turns it off and on. |
 | `mic` | empty | Which microphone to use: part of its name, or its number from `kit hearing mics`. Empty uses the PC's default. |
-| `names` | `["Kit"]` | What Kit answers to. Said at the start or end of a sentence ("Kit, what's the weather?"), it means you're talking to him. Add a word the mic often hears instead of his name. |
+| `names` | `["Kit", "Kitt", "Ki", "Kid"]` | What Kit answers to. Said at the start or end of a sentence ("Kit, what's the weather?"), it means you're talking to him. After his name come the ways the ears sometimes write it; `kit hearing --words` shows what they hear, so add a word they often hear instead. |
 | `follow_up_s` | `8.0` | After Kit stops talking, this many seconds when you can answer him without saying his name. 0 means always say his name. |
 | `barge_in` | on | Talking over Kit stops him, as typing does. His own voice from the speakers doesn't count. |
 | `barge_in_ms` | `500` | How long you must talk over Kit before he stops (milliseconds). |

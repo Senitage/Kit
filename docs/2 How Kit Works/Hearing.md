@@ -62,11 +62,17 @@ The brain (`kit.heard`) decides what each stretch of talking means:
 
 | Heard | He... |
 |---|---|
-| His name at the start or end: "Kit, ...", "hey Kit ...", "..., Kit?", "thanks Kit" | answers |
+| His name at the start or end: "Kit, ...", "hey Kit ...", "..., Kit?", "what's it doing Kit", "thanks Kit" | answers |
 | Anything in the few seconds after he stops talking | answers: you're answering him |
 | A laugh soon after he said something (`hearing.laugh_s`) | is chuffed |
 | His own voice, or words he just said | ignores it: that's the speakers |
 | Anything else ("I told Kit yesterday", the TV) | lets it go |
+
+His name is short, so the ears keep the moment of sound just before the voice
+detector notices talking: that's where "Kit, ..." usually is. Speech to text
+sometimes writes it "Ki", "Kid" or "Kitt", so those count too
+(`hearing.names`). A name at the end only counts when it's said to him, not
+about him: "I told Kit" and "the first aid kit" don't.
 
 An answer is an ordinary chat turn on the **voice channel**, so he keeps it
 short and spoken. It starts on the brain straight away, and the desk app reads
@@ -124,6 +130,7 @@ pretends to. The brain keeps the switch across restarts. See [[Privacy]].
 ```
 kit hearing mics        # which microphones this PC has
 kit hearing             # run the ears; Ctrl+C stops them
+kit hearing --words     # the same, showing the words they hear (only in that window)
 kit hearing enrol me    # introduce your voice; NAME for anyone else
 kit hearing show        # listening or not, and what he last made of something
 ```
