@@ -164,6 +164,9 @@ reconnects without asking.
       appears in the bottom right of the screen.
 - [ ] Test connection succeeds. With the brain stopped, the face and tray icon
       go grey within about 15 seconds, then come back when it restarts.
+- [ ] With Kit's address as a name (`http://kit-server:8600`, or
+      `http://localhost:8600` when Kit runs on the same PC), Test connection
+      answers straight away, not after about 2 seconds.
 - [ ] Clicking the tray icon or the face opens the chat beside the face. Recent
       conversation from the web chat is shown.
 - [ ] Ask "hi". The words stream in, the face plays the emotion and gesture, and
