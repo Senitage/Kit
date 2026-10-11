@@ -46,6 +46,10 @@ kit hearing mics                # which microphones this PC has
 kit hearing connect http://kit-server:8600 TOKEN   # once, if the eyes aren't set up
 ```
 
+If `pip` says the file `kit.exe` is in use, the eyes are running from this copy.
+Stop them (`Get-Process kit | Where-Object Path -like "*\.eyes\*" | Stop-Process`,
+which leaves the desk app alone), install again, then start them again.
+
 If the default mic isn't the one you want, set `hearing.mic` to part of its
 name: `kit config set hearing.mic "Headset"`.
 
