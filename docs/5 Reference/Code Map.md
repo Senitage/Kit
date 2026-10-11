@@ -27,9 +27,11 @@ flowchart TB
     subgraph PC["The Windows PC"]
         Dsk["desk/"]
         Eye["eyes/"]
+        Ear["hearing/"]
     end
     Dsk -- "HTTP" --> Srv
     Eye -- "HTTP" --> Srv
+    Ear -- "HTTP" --> Srv
 ```
 
 ## The brain
@@ -80,6 +82,8 @@ flowchart TB
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
+| `src/kit/heard.py` | The brain's side of what the ears hear: spoken to, a laugh, an echo, tone, who | [[Hearing]] |
+| `src/kit/known_voices.py` | The people his ears know, by voice print | [[Hearing]] |
 
 ## Setup and settings
 
@@ -153,6 +157,17 @@ flowchart TB
 | `src/kit/eyes/scene.py` | The scene as plain data | [[Eyes]] |
 | `src/kit/eyes/link.py` | The eyes' files, and finding the brain | [[Vision Stage 1]] |
 | `src/kit/eyes/preview.py` | `kit eyes --show` | [[Vision Stage 1]] |
+
+## The ears (on the PC with the mic)
+
+| Module | What it does | Explained in |
+|---|---|---|
+| `src/kit/hearing/run.py` | The loop: sound in, words out; talking over him stops him | [[Hearing]] |
+| `src/kit/hearing/mic.py` | The microphone through sounddevice | [[Hearing]] |
+| `src/kit/hearing/engines.py` | Voice detection, speech to text with tone, voice prints (sherpa-onnx) | [[Hearing#How it works]] |
+| `src/kit/hearing/models.py` | The three model files, downloaded the first time | [[Companion Stage 5]] |
+| `src/kit/hearing/enrol.py` | `kit hearing enrol` | [[Companion Stage 5]] |
+| `src/kit/hearing/link.py` | The ears' files, and finding the brain | [[Companion Stage 5]] |
 
 ## Outside src
 

@@ -88,12 +88,15 @@ class BrainClient:
     def speech_status(self) -> dict:
         return self._call("GET", "/api/speech").json()
 
-    def speak(self, text: str, emotion: str = "neutral", first: bool = False) -> bytes:
-        """One sentence as a WAV file. Raises SpeechOff if speech is turned off."""
+    def speak(
+        self, text: str, emotion: str = "neutral", first: bool = False, aloud: bool = True
+    ) -> bytes:
+        """One sentence as a WAV file. Raises SpeechOff if speech is turned off.
+        ``aloud`` False: it won't be played in the room (the ears learning his voice)."""
         try:
             r = self._http.post(
                 "/api/speech/say",
-                json={"text": text, "emotion": emotion, "first": first},
+                json={"text": text, "emotion": emotion, "first": first, "aloud": aloud},
                 timeout=SPEAK_TIMEOUT,
             )
         except httpx.HTTPError as e:
@@ -163,12 +166,50 @@ class BrainClient:
     def forget_face(self, name: str) -> dict:
         return self._call("DELETE", f"/api/eyes/faces/{quote(name, safe='')}").json()
 
+    # Kit's ears (kit.hearing): the mic process reports through here too.
+
+    def report_hearing(self, report: dict) -> dict:
+        """The ears checking in; the answer says whether they're paused, and more."""
+        return self._call("POST", "/api/hearing/report", json=report).json()
+
+    def heard(self, utterance: dict) -> dict:
+        """Something the ears heard, in words; the answer says what Kit made of it."""
+        return self._call("POST", "/api/hearing/heard", json=utterance).json()
+
+    def hush(self) -> dict:
+        """Someone is talking over Kit: stop his voice."""
+        return self._call("POST", "/api/hearing/hush").json()
+
+    def hearing(self) -> dict:
+        return self._call("GET", "/api/hearing").json()
+
+    def set_hearing(self, on: bool) -> dict:
+        """The "Let Kit hear me" switch: off lets the mic go."""
+        return self._call("POST", "/api/hearing/pause", json={"paused": not on}).json()
+
+    def known_voices(self) -> dict:
+        """The people Kit's ears know: names and voice prints (kit.known_voices)."""
+        return self._call("GET", "/api/hearing/voices").json()
+
+    def enrol_voice(self, name: str, embeddings: list[list[float]]) -> dict:
+        return self._call(
+            "POST", "/api/hearing/voices", json={"name": name, "embeddings": embeddings}
+        ).json()
+
+    def forget_voice(self, name: str) -> dict:
+        return self._call("DELETE", f"/api/hearing/voices/{quote(name, safe='')}").json()
+
+    def heard_turn(self, turn: int) -> Iterator[dict]:
+        """Kit's reply to something he heard, as it's made (the same events as chat)."""
+        yield from self._stream("GET", f"/api/hearing/turns/{turn}")
+
     def chat(self, text: str) -> Iterator[dict]:
         """Kit's reply events as they arrive (see kit.brain for the kinds)."""
+        yield from self._stream("POST", "/api/chat", json={"text": text, "channel": "desk"})
+
+    def _stream(self, method: str, path: str, **kwargs) -> Iterator[dict]:
         try:
-            with self._http.stream(
-                "POST", "/api/chat", json={"text": text, "channel": "desk"}, timeout=CHAT_TIMEOUT
-            ) as r:
+            with self._http.stream(method, path, timeout=CHAT_TIMEOUT, **kwargs) as r:
                 if r.status_code >= 400:
                     r.read()
                     _check(r)

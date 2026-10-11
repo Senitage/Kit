@@ -785,7 +785,8 @@ def history_messages(
     reply keeps its written detail (cut short so it doesn't crowd the local model's
     context), for "explain step 3"; older detail is dropped, or a small model copies
     it under every answer. Messages that came in another way than ``channel`` say
-    where from, e.g. "(from their phone)"."""
+    where from, e.g. "(from their phone)", and one someone else said out loud says
+    who ("(Sam, out loud)")."""
     out = []
     last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
     for i, m in enumerate(history):
@@ -793,13 +794,25 @@ def history_messages(
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
             later = _later(history[i - 1].at, m.at) if i else ""
-            out.append({"role": "user", "content": later + note + m.text})
+            who = _speaker(m)
+            said = f"({who}, out loud) " if who else ""
+            out.append({"role": "user", "content": later + note + said + m.text})
         elif plain:
             out.append({"role": "assistant", "content": _plain(m, keep_detail=i == last_kit)})
         else:
             short = _short(m.reply_json, keep_detail=i == last_kit)
             out.append({"role": "assistant", "content": short or _as_json(m.text)})
     return out
+
+
+def _speaker(m: Message) -> str:
+    """Who said a message, when Kit's ears knew it wasn't Dan (kit.heard)."""
+    if not m.meta_json:
+        return ""
+    try:
+        return str(json.loads(m.meta_json).get("speaker") or "")
+    except (ValueError, AttributeError):
+        return ""
 
 
 GAP_SHOWN = timedelta(minutes=30)  # a pause this long in the chat is marked in the history

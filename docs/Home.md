@@ -34,7 +34,8 @@ ones around it, and the deeper notes are always one click further.
 ## The map
 
 One brain on the server does all the thinking. Everything else is a way in
-or out: a body that shows his face, a pair of eyes, a voice, a page. Click
+or out: a body that shows his face, a pair of eyes, a pair of ears, a voice,
+a page. Click
 any box to open its note.
 
 ```mermaid
@@ -42,6 +43,7 @@ flowchart LR
     subgraph Ways["Ways in and out"]
         DeskApp["Desk App"]
         Eyes["Eyes"]
+        Hearing["Hearing"]
         Voice["Voice"]
         Bodies["Bodies"]
         Pod["The Pod"]
@@ -64,6 +66,7 @@ flowchart LR
     end
     DeskApp <--> Brain
     Eyes --> Brain
+    Hearing --> Brain
     Brain --> Voice
     OtherApps <--> Brain
     Bodies <--> Brain
@@ -76,7 +79,7 @@ flowchart LR
     Brain --> Face
     Notes --> Memory
     Weather --> Brain
-    class DeskApp,Eyes,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
+    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
 ```
 
 ## Everything in these docs
@@ -100,6 +103,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[Face]]: character sheets, Retro, Kit 2D and Kit 3D, shows and body moves.
 - [[Voice]]: how he talks out loud, sentence by sentence.
 - [[Eyes]]: the camera process that tells him, in words, who's there.
+- [[Hearing]]: the microphone process: he answers his name, stops when talked over, knows voices.
 - [[Desk App]]: his home on the Windows PC: tray, face, chat and window.
 - [[Bodies]]: one brain, many bodies: the desk, the Pod, the arm.
 - [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
@@ -118,11 +122,11 @@ The full detail behind the plain-words notes.
 - [[Pod In Depth]]
 
 ### 4. Guides: set up and test
-- [[Running Kit]]: start, stop, restart and check Kit, his eyes and the Pod.
+- [[Running Kit]]: start, stop, restart and check Kit, his eyes, his ears and the Pod.
 - [[Updating Kit]]: pull, install, restart. The same every time.
 - [[Building the Pod]]: print, wire, upload and link the Pod, step by step.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
-- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]]
+- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 5]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
 
 ### 5. Reference

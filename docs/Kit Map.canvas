@@ -80,7 +80,7 @@
 			"x": -1120,
 			"y": 40,
 			"width": 400,
-			"height": 800,
+			"height": 990,
 			"color": "5"
 		},
 		{
@@ -116,6 +116,15 @@
 			"text": "### [[Other Apps]]\nhome_app shows and configures him; MetTools and Home Assistant come later.",
 			"x": -1080,
 			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "hearing",
+			"type": "text",
+			"text": "### [[Hearing]]\nThe microphone program: answers his name, stops when talked over, words never sound.",
+			"x": -1080,
+			"y": 840,
 			"width": 320,
 			"height": 150
 		},
@@ -403,6 +412,14 @@
 			"toNode": "brain",
 			"toSide": "left",
 			"label": "the scene, in words"
+		},
+		{
+			"id": "hearing-brain",
+			"fromNode": "hearing",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "what was said, in words"
 		},
 		{
 			"id": "apps-brain",

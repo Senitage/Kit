@@ -13,7 +13,8 @@ related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 > can be swapped (Chatterbox Turbo, Chatterbox, Kokoro, Piper). He speaks
 > **sentence by sentence** as the brain writes, so he starts talking a few
 > words in, not after the whole reply. His **mood** colours how he sounds.
-> Hearing (a microphone, a wake word) is the next part of the stage.
+> He listens too: say his name and he answers out loud, and talking over him
+> stops him ([[Hearing]]).
 
 ## How a sentence becomes sound
 

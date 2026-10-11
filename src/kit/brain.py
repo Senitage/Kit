@@ -69,6 +69,14 @@ from datetime import datetime, timedelta
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
+from kit.heard import (
+    TONE_FEELINGS,
+    HeardTurns,
+    Hearing,
+    Utterance,
+    speaker_aside,
+    tone_aside,
+)
 from kit.knowledge import Item
 from kit.learning import Learner, asking, relations_in, said_so
 from kit.life import (
@@ -279,6 +287,8 @@ PRIORITY: contextvars.ContextVar[str] = contextvars.ContextVar("priority", defau
 # How Dan seems, as the model answering this turn read it (``life.read_mood`` meaning).
 READ: contextvars.ContextVar[dict | None] = contextvars.ContextVar("read", default=None)
 READ_ON: contextvars.ContextVar[bool] = contextvars.ContextVar("read_on", default=False)
+# What Kit's ears heard, when the message came in out loud (kit.heard): tone, who.
+HEARD: contextvars.ContextVar[Utterance | None] = contextvars.ContextVar("heard", default=None)
 MOOD_CALIBRATION = "mood_calibration"  # kit_self: the last `kit eval mood` (kit.evals)
 CLOSE = re.compile(
     r"\b(partner|wife|husband|girlfriend|boyfriend|fianc\w*|mum|mom|dad|mother|father|"
@@ -360,6 +370,7 @@ SCENE_QUESTION = re.compile(
 )
 SCENE_FOLLOW_UP = timedelta(minutes=10)
 EYES_PAUSED = "eyes_paused"  # kit_self key: the "Let Kit see me" switch, kept over restarts
+HEARING_PAUSED = "hearing_paused"  # kit_self key: the "Let Kit hear me" switch
 # "How are you going?" while a slow answer is still coming means "how's that going?".
 CHECKING_IN = re.compile(
     r"\b(how('?s| is| are) (it|you|that|things) (going|coming along)|how are you going|"
@@ -520,6 +531,17 @@ def reads_ahead(settings: Settings) -> bool:
     return settings.ollama.warm_up and own_role(settings) == LOCAL
 
 
+def _heard_meta(heard: Utterance | None, speaker: str, owner: str) -> str | None:
+    """What's kept with a message that came in out loud: how it sounded, and who
+    said it when that wasn't Dan (the history marks their lines)."""
+    if heard is None:
+        return None
+    meta: dict = {"heard": {k: v for k, v in (("tone", heard.tone), ("sound", heard.sound)) if v}}
+    if speaker != owner:
+        meta["speaker"] = speaker
+    return json.dumps(meta)
+
+
 class Brain:
     def __init__(
         self,
@@ -537,6 +559,9 @@ class Brain:
         self.recall = recall
         self.pc = PcContext(memory.clock)
         self.scene = SceneContext(memory.clock)
+        self.hearing = Hearing(memory.clock)  # his ears, and his voice in the room
+        self.heard_turns = HeardTurns()  # replies to what he heard, for bodies to read
+        self._hearing_tasks: set[asyncio.Task] = set()
         self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
         self.notebook = Notebook(memory)
         self.notebook.swap_work_quirks(settings().persona.owner)
@@ -585,10 +610,13 @@ class Brain:
         """A chat turn is under way."""
         return bool(self._turns)
 
-    async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
+    async def chat(
+        self, text: str, channel: str | None = None, heard: Utterance | None = None
+    ) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
-        even if whoever asked stops listening."""
+        even if whoever asked stops listening. ``heard`` is how it sounded, when it
+        came in through Kit's ears (kit.heard)."""
         text = text.strip()
         if not text:
             return
@@ -597,6 +625,7 @@ class Brain:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
+        context.run(HEARD.set, heard)
         self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
@@ -625,14 +654,20 @@ class Brain:
             self.memory.new_chat()
             history = []
             emit({"type": "new_topic"})
-        user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         owner = settings.persona.owner
+        heard = HEARD.get()
+        speaker = owner  # who said it: someone else in the house, when his ears know them
+        if heard is not None and heard.who and heard.who.casefold() != owner.casefold():
+            speaker = heard.who
+        user_id = self.memory.add_message(
+            "user", text, channel=CHANNEL.get(), meta_json=_heard_meta(heard, speaker, owner)
+        )
         now = self.memory.clock()
         game = self.life.game_out  # a game he suggested, which this may answer
         READ.set(None)
         READ_ON.set(self._reading_mood(settings))
         night = bad_night_in(text) if settings.life.bad_night else ""
-        felt = feeling_from(text, owner)
+        felt = feeling_from(text, speaker)
         if night:  # a really bad time: worried for Dan, whatever the words matched
             felt = ("worried", f'{owner} said "{quoted(text)}"', 0.9)
             self.life.start_bad_night(felt[1])
@@ -647,11 +682,14 @@ class Brain:
             self.life.said_goodbye(text)
         self._react(felt, home, farewell)
         keep_local = bool(KEEP_LOCAL.search(text))
-        learn = relations_in(text, owner) if "?" not in text else []  # "Emma's my cousin"
+        # "Emma's my cousin", from Dan (someone else's cousin isn't his).
+        learn = relations_in(text, owner) if "?" not in text and speaker == owner else []
         answer_aside, named = self._answering_ask(text, before, owner)
         learn += [named] if named else []
         self._follow_life(text, now, settings, farewell)
         asides = [self._answering(history, owner), answer_aside]
+        if heard is not None:
+            self._heard_asides(heard, speaker, owner, felt is None, asides, settings)
         check_fact = False
         pick_up, picked = "", None
         if new_chat and settings.life.chat_opener and not farewell and not self.jobs:
@@ -705,9 +743,7 @@ class Brain:
         if answered is not None:
             for event in self._say_locally(answered):
                 emit(event)
-            self.memory.index_exchange(
-                user_id, settings.persona.owner, text, settings.persona.name, answered.text
-            )
+            self.memory.index_exchange(user_id, speaker, text, settings.persona.name, answered.text)
             return
         # What his face shows (the time, the weather), looked up while he thinks.
         showing = asyncio.create_task(self._show_for(text, settings))
@@ -828,9 +864,7 @@ class Brain:
             if bit is not None and self.notebook.bit_said(bit, whole):
                 self.notebook.bit_used(bit.id)
                 self._bit_out = (bit.id, now)
-            self.memory.index_exchange(
-                user_id, settings.persona.owner, text, settings.persona.name, whole
-            )
+            self.memory.index_exchange(user_id, speaker, text, settings.persona.name, whole)
         for fact in learn:
             learned = await self.learner.learn(
                 fact, "person", owner, private=keep_local, cloud=cloud_background(settings)
@@ -1087,6 +1121,81 @@ class Brain:
             f"long it's been, in one short line, in character. {_patience(asked)} Never "
             f"reuse a line you've already said. Don't answer the question itself.)"
         )
+
+    def _heard_asides(
+        self,
+        heard: Utterance,
+        speaker: str,
+        owner: str,
+        unfelt: bool,
+        asides: list[str],
+        settings: Settings,
+    ) -> None:
+        """A message that came in out loud: who said it (someone else in the house, by
+        their voice) and how it sounded, which he may ask about but never states.
+        A tone gives a light feeling, when the words gave none."""
+        if speaker != owner:
+            asides.append(speaker_aside(speaker, owner))
+        if not settings.hearing.tone or not heard.tone:
+            return
+        if aside := tone_aside(speaker, heard.tone):
+            asides.append(aside)
+        if unfelt and heard.tone in TONE_FEELINGS:
+            name, strength = TONE_FEELINGS[heard.tone]
+            self.life.feel(name, f"{speaker}'s voice sounded {heard.tone}", strength, show=False)
+
+    # Kit's ears (kit.hearing beside the mic; kit.heard decides what it means)
+
+    async def hear(self, heard: Utterance) -> dict:
+        """Something Kit's ears heard. Talk meant for him starts a chat turn on the
+        voice channel straight away; bodies read it from ``heard_turns`` (the
+        "heard" event says which) and say it aloud. A laugh at his last line makes
+        him chuffed. Anything else is let go: not kept, not logged."""
+        settings = self.settings()
+        owner = settings.persona.owner
+        verdict = self.hearing.decide(heard, settings.hearing)
+        who = heard.who or owner
+        if verdict.laughed:
+            self.life.laughed(who, self.hearing.last_line())
+        if verdict.action != "answer":
+            return {"heard": verdict.action, "why": verdict.why}
+        if verdict.called:
+            self.life.called("heard his name")
+        log.info("heard: %s (%s)", verdict.why, who)
+        turn = self.heard_turns.start()
+        self.life.publish({"type": "heard", "turn": turn, "text": heard.text.strip(), "who": who})
+        task = asyncio.create_task(self._heard_turn(turn, heard))
+        self._hearing_tasks.add(task)
+        task.add_done_callback(self._hearing_tasks.discard)
+        return {"heard": "answer", "why": verdict.why, "turn": turn}
+
+    async def _heard_turn(self, turn: int, heard: Utterance) -> None:
+        try:
+            async for event in self.chat(heard.text, "voice", heard=heard):
+                self.heard_turns.add(turn, event)
+        except Exception:
+            log.exception("a heard turn failed")
+            self.heard_turns.add(turn, {"type": "error", "message": "Sorry, say again?"})
+        finally:
+            self.heard_turns.finish(turn)
+            self.hearing.answered()
+
+    def hush(self) -> bool:
+        """Someone talked over Kit (``hearing.barge_in``): bodies stop his voice now.
+        True if he was talking."""
+        if not (self.hearing.speaking() or self.talking()):
+            return False
+        self.hearing.hushed()
+        self.life.publish({"type": "hush"})
+        return True
+
+    @property
+    def hearing_paused(self) -> bool:
+        """The "Let Kit hear me" switch: off means the ears let the mic go."""
+        return self.memory.self_value(HEARING_PAUSED) == "1"
+
+    def pause_hearing(self, paused: bool) -> None:
+        self.memory.set_self_value(HEARING_PAUSED, "1" if paused else "0")
 
     def saw(self, report: SceneReport) -> list[Happening]:
         """A report from Kit's eyes (kit.eyes): the scene is updated, his life hears
@@ -1645,16 +1754,22 @@ class Brain:
                 f"front{tabs}, how long since they touched the keyboard or mouse, and whether "
                 f"it's locked), the time and date, and the weather when you look it up."
             )
+        hearing = self.hearing.online() and not self.hearing_paused
         if self.scene.online():
             senses += (
-                f" You can see the desk with your own eyes: who's there, what they're doing "
-                f"or holding, and the cat when it wanders in. You can't hear {owner} yet."
+                " You can see the desk with your own eyes: who's there, what they're doing "
+                "or holding, and the cat when it wanders in."
             )
         else:
+            senses += f" You can't see {owner} right now: your eyes aren't open."
+        if hearing:
             senses += (
-                f" You can't see or hear {owner} right now: your eyes aren't open, and you "
-                f"have no microphone yet."
+                " You can hear the room through a microphone at the desk: you answer when "
+                "someone says your name or answers you, and you notice a laugh or how a "
+                "voice sounds. Talk that isn't meant for you, you let go of."
             )
+        else:
+            senses += f" You can't hear {owner} right now: your ears aren't on."
         feeling = self.life.feeling_line(owner)
         did = self.life.did_line(owner)
         if did:

@@ -79,6 +79,12 @@ if the guide says there's something new, then stop and start `kit eyes`. Their
 settings come from the brain, so there's nothing else to change. See
 [[Vision Stage 1]].
 
+## The ears
+
+The same on the PC with the mic: `git pull` in that copy of Kit,
+`pip install -e ".[hearing]"` if the guide says there's something new, then
+stop and start `kit hearing`. See [[Companion Stage 5]].
+
 ## The voice engine
 
 Chatterbox has its own Python (`speech.engines.*.python`), which Kit updates

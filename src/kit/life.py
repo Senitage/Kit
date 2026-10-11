@@ -1270,14 +1270,29 @@ class Life:
         at_pc = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
         return at_pc or self._in_view()
 
-    def _wake(self) -> None:
+    def _wake(self, why: str = "") -> None:
+        """Every way Kit wakes comes through here, with why (for bodies and the log)."""
         slept = self.clock() - self._asleep_since if self._asleep_since else timedelta(0)
         if slept >= SLEPT_ENOUGH:
             self.energy = 1.0  # a proper sleep sets him right (life.energy_need)
         self.asleep = False
         self._asleep_since = None
         self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
-        self.publish({"type": "state", "state": "awake"})
+        self.publish({"type": "state", "state": "awake", **({"why": why} if why else {})})
+
+    def called(self, why: str) -> None:
+        """Someone said his name out loud (kit.heard): that wakes him, where talk he
+        only overhears never does."""
+        if self.asleep:
+            self._wake(why)
+            self._show_face()
+            self.save()
+
+    def laughed(self, who: str, line: str) -> None:
+        """A laugh his ears heard just after he said something: he's chuffed."""
+        said = f': "{quoted(line)}"' if line else ""
+        if self.feel("chuffed", f"{who} laughed at what you said{said}", 0.6, show=False):
+            self.react("laugh", "you laughed")
 
     def _came_back(
         self,

@@ -25,8 +25,10 @@ import kit
 from kit.brain import Brain
 from kit.face import character as characters
 from kit.face import serve as face_files
+from kit.heard import Utterance
 from kit.knowledge import Item
 from kit.known_faces import FACES_FILE, Enrolment, KnownFaces
+from kit.known_voices import VOICES_FILE, KnownVoices
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
@@ -69,6 +71,8 @@ class SpeakIn(BaseModel):
     emotion: str = Field("neutral", max_length=20)
     # The opening of a reply, where an engine may add a sound (a sigh, a chuckle).
     first: bool = False
+    # False for a clip that won't be played in the room (the ears learning his voice).
+    aloud: bool = True
 
 
 class FactIn(BaseModel):
@@ -106,6 +110,13 @@ class VersionIn(BaseModel):
 
 class EyesSwitch(BaseModel):
     paused: bool
+
+
+class EarsReport(BaseModel):
+    """The ears checking in (kit.hearing), every few seconds."""
+
+    mic: str = Field("desk", max_length=20)
+    listening: bool = True
 
 
 class ThingEdit(BaseModel):
@@ -156,9 +167,12 @@ def create_app(
     speech: SpeechService | None = None,
     speech_check_s: float | None = SPEECH_CHECK_S,
     faces: KnownFaces | None = None,
+    voices: KnownVoices | None = None,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
+    if voices is None:
+        voices = KnownVoices(paths.state_dir / VOICES_FILE if paths is not None else None)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -297,6 +311,8 @@ def create_app(
             "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
             "eyes": brain.scene.now_line(s.persona.owner) or "the eyes haven't reported yet",
             "eyes_paused": brain.eyes_paused,
+            "hearing": _hearing_line(),
+            "hearing_paused": brain.hearing_paused,
         }
 
     @app.get("/api/settings", dependencies=auth)
@@ -553,6 +569,93 @@ def create_app(
         brain.pause_eyes(body.paused)
         return {"paused": _eyes_paused()}
 
+    # Kit's ears (kit.hearing beside the mic; kit.heard on the brain)
+
+    def _hearing_paused() -> bool:
+        return brain.hearing_paused or not store.current().hearing.enabled
+
+    def _hearing_line() -> str:
+        if not brain.hearing.online():
+            return "the ears haven't reported lately"
+        return "switched off" if _hearing_paused() else f"listening ({brain.hearing.mic})"
+
+    @app.post("/api/hearing/report", dependencies=auth)
+    def ears_report(body: EarsReport) -> dict:
+        """The ears checking in. The answer carries the switch, the ears' settings,
+        which voices Kit knows, and his voice engine (the ears learn his own voice
+        from it, so they can ignore it coming back from the speakers)."""
+        brain.hearing.report(body.mic)
+        s = store.current()
+        return {
+            "ok": True,
+            "paused": _hearing_paused(),
+            "settings": s.hearing.model_dump(),
+            "voices_version": voices.version,
+            "speech": s.speech.engine if s.speech.enabled and speech is not None else "",
+        }
+
+    @app.post("/api/hearing/heard", dependencies=auth)
+    async def ears_heard(body: Utterance) -> dict:
+        """Something the ears heard, in words. Talk meant for Kit starts a reply at
+        once ("turn": read it from /api/hearing/turns/{turn}); the rest is let go."""
+        if _hearing_paused():
+            return {"heard": "ignore", "why": "his ears are switched off"}
+        if body.who is not None and body.who not in voices.people:
+            body = body.model_copy(update={"who": None})  # a voice he's since forgotten
+        return await brain.hear(body)
+
+    @app.get("/api/hearing/turns/{turn}", dependencies=auth)
+    async def heard_turn(turn: int) -> StreamingResponse:
+        """Kit's reply to something he heard, as it's made: the same events as /api/chat."""
+        if turn not in brain.heard_turns:
+            raise HTTPException(404, "no such heard turn (they're kept for the last 20)")
+
+        async def events() -> AsyncIterator[str]:
+            async for event in brain.heard_turns.stream(turn):
+                yield json.dumps(event) + "\n"
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    @app.post("/api/hearing/hush", dependencies=auth)
+    def ears_hush() -> dict:
+        """Someone is talking over Kit: his voice stops (a "hush" event for the bodies)."""
+        on = store.current().hearing.barge_in and not _hearing_paused()
+        return {"hushed": on and brain.hush()}
+
+    @app.get("/api/hearing", dependencies=auth)
+    def ears_status() -> dict:
+        """Whether Kit's ears are listening, and what he last made of something (never
+        the words: talk that wasn't for him isn't kept)."""
+        return {**brain.hearing.as_dict(), "paused": _hearing_paused(), "voices": voices.names()}
+
+    @app.post("/api/hearing/pause", dependencies=auth)
+    def ears_switch(body: EyesSwitch) -> dict:
+        """The "Let Kit hear me" switch: paused ears let the mic go until it's on again."""
+        brain.pause_hearing(body.paused)
+        return {"paused": _hearing_paused()}
+
+    @app.get("/api/hearing/voices", dependencies=auth)
+    def known_voices() -> dict:
+        """The people Kit's ears know (kit.known_voices): names and voice prints."""
+        return voices.as_dict()
+
+    @app.post("/api/hearing/voices", dependencies=auth)
+    def enrol_voice(body: Enrolment) -> dict:
+        """Voice prints of someone, from `kit hearing enrol NAME`."""
+        try:
+            name, count = voices.add(body.name, body.embeddings)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"name": name, "count": count, "version": voices.version}
+
+    @app.delete("/api/hearing/voices/{name}", dependencies=auth)
+    def forget_voice(name: str) -> dict:
+        """Forget someone's voice completely (`kit hearing forget NAME`)."""
+        gone = voices.forget(name)
+        if gone is None:
+            raise HTTPException(404, f"Kit's ears don't know anyone called {name}")
+        return {"forgot": gone, "version": voices.version}
+
     @app.get("/api/life", dependencies=auth)
     def life() -> dict:
         """Kit's mood, feeling and drives, what he's thinking and wants to bring up, and
@@ -696,6 +799,8 @@ def create_app(
             )
         except SpeechError as e:
             raise HTTPException(503, str(e)) from e
+        if body.aloud:
+            brain.hearing.spoke(body.text, spoken.audio_ms / 1000)  # his voice, in the room
         if body.first:
             log.info(
                 "turn: first sound made in %.2f s (%.1f s of speech), %.2f s after the message",

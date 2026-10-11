@@ -410,6 +410,7 @@ class _Signals(QObject):
     online = Signal(bool, str)
     life = Signal(dict)
     eyes = Signal(bool)  # the "Let Kit see me" switch, as the brain has it
+    ears = Signal(bool)  # the "Let Kit hear me" switch, as the brain has it
     character = Signal()
 
 
@@ -430,6 +431,7 @@ class DeskApp(QObject):
         self._signals.online.connect(self._show_online)
         self._signals.life.connect(self._on_life)
         self._signals.eyes.connect(self._show_eyes)
+        self._signals.ears.connect(self._show_ears)
         self._signals.character.connect(self._use_look)
         self._face3d: face3d.Face3D | None = None  # the 3D face page over Glow, if his look is 3D
 
@@ -522,6 +524,10 @@ class DeskApp(QObject):
         self.eyes_action.setChecked(True)  # the brain says otherwise once it's reached
         self.eyes_action.toggled.connect(self.set_eyes)
         menu.addAction(self.eyes_action)
+        self.ears_action = QAction("Let Kit hear me", menu, checkable=True)
+        self.ears_action.setChecked(True)  # the brain says otherwise once it's reached
+        self.ears_action.toggled.connect(self.set_ears)
+        menu.addAction(self.ears_action)
         self.playing_action = QAction("Share what's playing", menu, checkable=True)
         self.playing_action.setChecked(self.config.share_playing)
         self.playing_action.toggled.connect(self.set_sharing_playing)
@@ -649,6 +655,28 @@ class DeskApp(QObject):
             face_icon(),
             2500,
         )
+
+    def set_ears(self, on: bool) -> None:
+        """Switch Kit's ears (kit.hearing, beside the mic) on or off: off lets the mic go."""
+        client = self.client
+        if client is None:
+            return
+        threading.Thread(
+            target=lambda: _quietly(client.set_hearing, on), name="kit-ears", daemon=True
+        ).start()
+        self.tray.showMessage(
+            "Kit",
+            "Ears on: say my name and I'll answer."
+            if on
+            else "Ears off: the mic's let go until you switch me back on.",
+            face_icon(),
+            2500,
+        )
+
+    def _show_ears(self, on: bool) -> None:
+        self.ears_action.blockSignals(True)
+        self.ears_action.setChecked(on)
+        self.ears_action.blockSignals(False)
 
     def set_sharing_playing(self, on: bool) -> None:
         self.config.share_playing = on
@@ -850,6 +878,7 @@ class DeskApp(QObject):
                 status = client.check()
                 self._signals.online.emit(True, status.get("pc") or "online")
                 self._signals.eyes.emit(not status.get("eyes_paused", False))
+                self._signals.ears.emit(not status.get("hearing_paused", False))
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
                 return
@@ -957,6 +986,12 @@ class DeskApp(QObject):
             self._quiet = str(event.get("because") or "")
             if self.online:
                 self._show_online(True, "online")
+        elif event.get("type") == "heard":  # Kit's ears heard someone talk to him
+            if self.alive.asleep:
+                self.alive.wake_up()
+            self.chat.listened(int(event.get("turn", 0)), str(event.get("text") or ""))
+        elif event.get("type") == "hush":  # someone talked over him: his voice stops
+            self.chat.hush()
         elif event.get("type") == "pipe_up":
             reply = event.get("reply") or {}
             if self.alive.asleep:

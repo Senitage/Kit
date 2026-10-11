@@ -1,7 +1,7 @@
 ---
 tags: [reference, topic/api]
 aliases: [HTTP API, Endpoints, Kit's API, Routes]
-summary: Every web address the brain answers on - chat, settings, memory, the register, life events, the PC and eyes feeds, speech, spend and the 3D face - and how the token works.
+summary: Every web address the brain answers on - chat, settings, memory, the register, life events, the PC, eyes and ears feeds, speech, spend and the 3D face - and how the token works.
 ---
 
 # API
@@ -89,8 +89,10 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | `POST /api/life/snooze` | Keep him quiet for `minutes` (0 lets him talk again) |
 
 Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
-(asleep or awake), `look`, `doing`, `quiet`, `dials` and `pipe_up`. See
-[[Bodies]].
+(asleep or awake, with `why` when there is one), `look`, `doing`, `quiet`,
+`dials`, `pipe_up`, `heard` (someone talked to him out loud: read his reply
+from `/api/hearing/turns/{turn}`) and `hush` (someone talked over him: stop
+his voice). See [[Bodies]].
 
 ## What he senses
 
@@ -100,17 +102,23 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
 | `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know |
+| `POST /api/hearing/report` | The ears checking in; the answer has the switch, `[hearing]`, the voices version and his voice engine |
+| `POST /api/hearing/heard` | Something the ears heard, in words, tone, sound and whose voice; talk meant for him starts a reply (`turn`) |
+| `GET /api/hearing/turns/{turn}` | His reply to something he heard, as it's made: the same events as `/api/chat` |
+| `POST /api/hearing/hush` | Someone is talking over him: his voice stops |
+| `GET /api/hearing`, `POST /api/hearing/pause` | Whether the ears are listening and what he last made of something (never the words); the switch |
+| `GET /api/hearing/voices`, `POST /api/hearing/voices`, `DELETE /api/hearing/voices/{name}` | The people his ears know, by voice print |
 
 ## Voice, face and status
 
 | Method and path | What it does |
 |---|---|
 | `GET /api/speech` | Voice engine status |
-| `POST /api/speech/say` | One sentence as a WAV file, in his voice and mood |
+| `POST /api/speech/say` | One sentence as a WAV file, in his voice and mood (`aloud: false` for a clip that won't be played in the room) |
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend, memory size, what the PC and eyes last said |
+| `GET /api/status` | Version, models, spend, memory size, what the PC, eyes and ears last said |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log or per day and model |
 
@@ -118,3 +126,4 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 - `src/kit/server.py`: every route.
 - `src/kit/desk/client.py`: the desk app's side.
 - `src/kit/eyes/link.py`: the eyes' side.
+- `src/kit/hearing/run.py`: the ears' side.

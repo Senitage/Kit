@@ -940,3 +940,50 @@ def test_the_desk_draws_kit_from_the_brains_character_sheet():
     finally:
         character.use(character.builtin())
         client.close()
+
+
+def test_what_kits_ears_heard_shows_and_his_reply_streams_in(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    read = []
+
+    def heard_turn(turn):
+        read.append(turn)
+        yield {"type": "say", "text": "Sunny all day."}
+        yield reply_event("Sunny all day.")
+
+    desk.client.heard_turn = heard_turn
+    stopped = []
+    try:
+        desk._on_life({"type": "state", "state": "asleep"})
+        desk._on_life({"type": "heard", "turn": 7, "text": "Kit, what's the weather?"})
+        assert not desk.alive.asleep  # his name woke him
+        import time as _t
+
+        end = _t.time() + 2
+        while "Sunny all day." not in desk.chat.text() and _t.time() < end:
+            qapp.processEvents()
+            _t.sleep(0.02)
+        assert read == [7]
+        text = desk.chat.text()
+        assert text.index("Kit, what's the weather?") < text.index("Sunny all day.")
+        desk.chat.speaker.stop = lambda turn=None: stopped.append(turn)
+        desk._on_life({"type": "hush"})  # talked over: his voice stops
+        assert stopped == [None]
+        assert desk.ears_action.isChecked()
+        desk._show_ears(False)
+        assert not desk.ears_action.isChecked()
+        switched = []
+        desk.client.set_hearing = lambda on: switched.append(on)
+        desk.ears_action.setChecked(True)
+        end = _t.time() + 2
+        while not switched and _t.time() < end:
+            qapp.processEvents()
+            _t.sleep(0.02)
+        assert switched == [True]
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

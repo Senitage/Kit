@@ -737,6 +737,109 @@ class EyesSettings(_Section):
     )
 
 
+class HearingSettings(_Section):
+    """Kit's ears: the microphone process (`kit hearing`) on the PC with the mic. It
+    fetches these from the brain, so there's one place to change them. Sound never
+    leaves that PC: only the words, and how they sounded, reach the brain."""
+
+    enabled: bool = Field(
+        True,
+        description="Kit listens through a microphone when `kit hearing` is running on the PC "
+        'with the mic. The tray\'s "Let Kit hear me" switch turns it off and on.',
+    )
+    mic: str = Field(
+        "",
+        description="Which microphone to use: part of its name, or its number from "
+        "`kit hearing mics`. Empty uses the PC's default.",
+    )
+    names: list[str] = Field(
+        default_factory=lambda: ["Kit"],
+        description='What Kit answers to. Said at the start or end of a sentence ("Kit, '
+        "what's the weather?\"), it means you're talking to him. Add a word the mic often "
+        "hears instead of his name.",
+    )
+    follow_up_s: float = Field(
+        8.0,
+        ge=0,
+        le=60,
+        description="After Kit stops talking, this many seconds when you can answer him "
+        "without saying his name. 0 means always say his name.",
+    )
+    barge_in: bool = Field(
+        True,
+        description="Talking over Kit stops him, as typing does. His own voice from the "
+        "speakers doesn't count.",
+    )
+    barge_in_ms: int = Field(
+        500,
+        ge=150,
+        le=3000,
+        description="How long you must talk over Kit before he stops (milliseconds).",
+    )
+    laugh_s: float = Field(
+        10.0,
+        ge=0,
+        le=60,
+        description="A laugh within this many seconds of Kit saying something makes him "
+        "chuffed. 0 turns it off.",
+    )
+    tone: bool = Field(
+        True,
+        description="Kit notices how you sound (down, cross, cheerful). He may ask about "
+        "it, never tells you how you feel.",
+    )
+    match: float = Field(
+        0.45,
+        ge=0.2,
+        le=0.9,
+        description="How alike a voice must be to someone Kit knows to count as them "
+        "(`kit hearing enrol NAME`). Higher is stricter.",
+    )
+    own_voice: float = Field(
+        0.5,
+        ge=0.3,
+        le=0.95,
+        description="How alike a voice must be to Kit's own for him to know it's himself "
+        "coming back from the speakers. Lower ignores more.",
+    )
+    threshold: float = Field(
+        0.5,
+        ge=0.1,
+        le=0.95,
+        description="How sure the voice detector must be that a sound is speech. Higher "
+        "ignores more background noise, but may miss quiet speech.",
+    )
+    pause_ms: int = Field(
+        600,
+        ge=200,
+        le=3000,
+        description="How long a pause ends what you're saying (milliseconds). Shorter "
+        "answers sooner; too short cuts you off mid-thought.",
+    )
+    min_speech_s: float = Field(
+        0.4, ge=0.1, le=5, description="Shorter sounds than this are ignored (a cough, a click)."
+    )
+    max_speech_s: float = Field(
+        20.0, ge=3, le=60, description="Longest stretch of talking heard as one go."
+    )
+    language: Literal["auto", "en", "zh", "ja", "ko", "yue"] = Field(
+        "en",
+        description="The language Kit's ears listen for. auto works it out each time, "
+        "a little less reliably.",
+    )
+    threads: int = Field(
+        2, ge=1, le=16, description="Processor threads the speech models use on the mic's PC."
+    )
+
+    @field_validator("names")
+    @classmethod
+    def _some_name(cls, value: list[str]) -> list[str]:
+        names = [" ".join(n.split()) for n in value if n.strip()]
+        if not names:
+            raise ValueError("Kit needs at least one name to answer to")
+        return names
+
+
 CharacterName = Literal[tuple(characters.presets())]  # type: ignore[valid-type]
 
 
@@ -1010,6 +1113,7 @@ class Settings(_Section):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
     eyes: EyesSettings = Field(default_factory=EyesSettings)
+    hearing: HearingSettings = Field(default_factory=HearingSettings)
     speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
 

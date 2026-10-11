@@ -12,7 +12,8 @@ related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 > Only the words a **cloud model** needs to answer leave the house, and
 > **"keep it local"** stops even that for anything you choose. On the PC he
 > sees **window titles, never screenshots**; through the camera he sees
-> **words and numbers, never pictures**. Every way in has a **switch**, and
+> **words and numbers, never pictures**; through the mic he gets **words, never
+sound**. Every way in has a **switch**, and
 > you can see and forget anything he remembers.
 
 ## What stays home, and what goes out
@@ -24,6 +25,7 @@ related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 | What's on the PC, the scene from the eyes | always | the one-line summary, with that message |
 | His voice | always (the engine runs on the server's GPU) | never |
 | The camera | never leaves the PC as a picture | never |
+| The microphone | never leaves the PC as sound; only words meant for Kit are kept | his words, when a cloud model answers them |
 | Notes in your vault | always | the parts recalled for that message |
 
 Which model answers is in [[Models and Routing]]. Turning `routing.mode` to
@@ -44,6 +46,7 @@ to a cloud model, in recall, reflection or review. See
 |---|---|---|
 | **Share what I'm working on** | desk app tray menu | window titles, tabs and idle time |
 | **Let Kit see me** | tray menu, or `kit eyes pause` | the camera: it's released, and Kit is told he can't see |
+| **Let Kit hear me** | tray menu, or `kit hearing pause` | the microphone: it's let go, and Kit is told he can't hear |
 | **Share what's playing** | tray menu | the music the PC is playing |
 | **Quiet for an hour** | tray menu | piping up |
 | `life.enabled` and friends | settings | his inner life, games, nudges, questions |
@@ -63,6 +66,15 @@ The eyes send the brain **words and numbers**, never a picture or a video.
 People are recognised from sets of numbers worked out from their face, from
 which a face can't be rebuilt; `kit eyes forget NAME` deletes them. See
 [[Eyes]].
+
+## The microphone
+
+The ears turn talking into words **on the PC with the mic**; no sound is sent
+or saved. The brain keeps only what was meant for Kit (his name, or answering
+him), as an ordinary message. Everything else is let go: not kept, not sent
+on, not written in the log. Voices are recognised from voice prints, numbers
+from which no sound can be rebuilt; `kit hearing forget NAME` deletes them.
+See [[Hearing]].
 
 ## Your files
 

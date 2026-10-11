@@ -134,6 +134,23 @@ These run on the PC with the camera.
 
 See [[Eyes]].
 
+## Hearing
+
+These run on the PC with the microphone.
+
+| Command | What it does |
+|---|---|
+| `kit hearing` | Run the ears (`--name` for the mic, `--brain`, `--token`) |
+| `kit hearing mics` | The microphones on this machine |
+| `kit hearing connect URL TOKEN` | Save where the brain is |
+| `kit hearing show` | Whether the ears are listening, and what Kit last made of something (never the words) |
+| `kit hearing enrol WHO` | Introduce someone's voice (`me` for you): they read a few lines aloud |
+| `kit hearing voices` | Whose voices his ears know |
+| `kit hearing forget WHO` | Forget someone's voice completely |
+| `kit hearing pause` / `resume` | Switch the ears off (the mic is let go) or on |
+
+See [[Hearing]].
+
 ## Evals
 
 | Command | What it does |

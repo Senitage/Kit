@@ -25,7 +25,10 @@ Up: [[Home]] · Reference
 | **Embedding** | A meaning vector: numbers that let him find things by what they mean | [[Memory#Finding things]] |
 | **Emotion** | One of 17 feelings a reply is acted out in | [[Face#Emotions and gestures]] |
 | **Eval** | A repeatable check of how the real models behave | [[Evals]] |
+| **Echo** | Kit's own voice from the speakers coming back through the mic; his ears know it and ignore it | [[Hearing#His own voice]] |
+| **Ears** | The microphone program that tells the brain what it heard, in words, never sound | [[Hearing]] |
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
+| **Follow-up window** | The few seconds after Kit stops talking when you can answer without his name | [[Hearing#When he answers]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |
@@ -46,7 +49,10 @@ Up: [[Home]] · Reference
 | **Self-sheet** | Who Kit thinks he is, in his own words, rewritten nightly | [[Inner Life#Each night he looks back]] |
 | **Show** | Something his face shows instead of his eyes: the time, the date, the weather | [[Face#Shows for the time, date and weather]] |
 | **Source** | A kind of thing in the memory index: facts, days, conversations, things, notes, his notebook | [[Memory#What's in it]] |
+| **Talking over him** | Starting to talk while Kit speaks; he stops, as he does when you type (`hearing.barge_in`) | [[Hearing#Talking over him]] |
 | **Thread** | Something coming up in your life that he'll ask about after | [[Companion#He follows your life]] |
 | **Token** | The password every app uses to talk to the brain (`kit token`) | [[Privacy#Tokens and secrets]] |
+| **Tone** | How a voice sounded (cheerful, down, cross), read from the sound; he may ask, never tells | [[Hearing#Tone and laughs]] |
 | **Two passes** | Deciding what to do in one model call, then saying it in a second | [[Brain#Two passes when the local model talks]] |
+| **Voice print** | 512 numbers worked out from a few seconds of someone talking; no sound can be rebuilt from them | [[Hearing#Whose voice]] |
 | **Vault** | A folder of markdown notes Obsidian opens: your notes on the NAS, or these docs | [[Notes on the NAS]], [[How These Docs Work]] |
