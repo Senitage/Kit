@@ -235,7 +235,7 @@ See [[Hearing]].
 | `laugh_s` | `10.0` | A laugh within this many seconds of Kit saying something makes him chuffed. 0 turns it off. |
 | `tone` | on | Kit notices how you sound (down, cross, cheerful). He may ask about it, never tells you how you feel. |
 | `match` | `0.45` | How alike a voice must be to someone Kit knows to count as them (`kit hearing enrol NAME`). Higher is stricter. |
-| `own_voice` | `0.5` | How alike a voice must be to Kit's own for him to know it's himself coming back from the speakers. Lower ignores more. |
+| `own_voice` | `0.5` | How alike a voice must be to Kit's own for him to know it's himself coming back from the speakers, while he's talking. It must also be more like him than like anyone he knows. Lower ignores more. |
 | `threshold` | `0.5` | How sure the voice detector must be that a sound is speech. Higher ignores more background noise, but may miss quiet speech. |
 | `pause_ms` | `600` | How long a pause ends what you're saying (milliseconds). Shorter answers sooner; too short cuts you off mid-thought. |
 | `min_speech_s` | `0.4` | Shorter sounds than this are ignored (a cough, a click). |

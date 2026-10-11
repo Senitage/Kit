@@ -45,9 +45,9 @@ def listen_for(read: Callable[[], np.ndarray | None], vad: Vad, seconds: float) 
             continue
         missed = 0
         heard += len(chunk) / RATE
-        stretches += vad.accept(chunk)
+        stretches += [s.voice for s in vad.accept(chunk)]
     # Flush whatever is still being said with a little silence.
-    stretches += vad.accept(np.zeros(int(RATE), dtype=np.float32))
+    stretches += [s.voice for s in vad.accept(np.zeros(int(RATE), dtype=np.float32))]
     return stretches
 
 

@@ -2,7 +2,7 @@
 and the tests never touch sherpa-onnx. Each real one imports it when it's built.
 
 - ``Vad``: give it sound 512 samples at a time; it says whether someone is
-  talking right now and hands back each finished stretch of talking.
+  talking right now and hands back each finished ``Stretch`` of talking.
 - ``Transcriber``: a stretch of talking -> ``Transcript`` (words, language,
   tone, sound).
 - ``VoicePrinter``: a stretch of talking -> 512 numbers for whose voice it is.
@@ -13,7 +13,7 @@ All work on 16 kHz mono floats between -1 and 1.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -38,8 +38,22 @@ class Transcript:
     sound: str = ""  # speech, laughter, applause, cough, sneeze, cry, bgm...
 
 
+@dataclass
+class Stretch:
+    """One stretch of talking: what the VAD found, and the moment just before it."""
+
+    voice: np.ndarray  # the talking itself: voice prints use only this
+    lead_in: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
+
+    @property
+    def samples(self) -> np.ndarray:
+        """Lead-in and talking together, for speech to text: a short first word
+        ("Kit, ...") is often in the lead-in."""
+        return np.concatenate([self.lead_in, self.voice]) if len(self.lead_in) else self.voice
+
+
 class Vad(Protocol):
-    def accept(self, chunk: np.ndarray) -> list[np.ndarray]: ...  # finished stretches
+    def accept(self, chunk: np.ndarray) -> list[Stretch]: ...  # finished stretches
     def talking(self) -> bool: ...  # someone is talking right now
 
 
@@ -132,19 +146,26 @@ class SileroVad:
         self._vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=60)
         self._lookback = Lookback(settings.max_speech_s + settings.pause_ms / 1000 + 3)
 
-    def accept(self, chunk: np.ndarray) -> list[np.ndarray]:
+    def accept(self, chunk: np.ndarray) -> list[Stretch]:
         self._lookback.add(chunk)
         self._vad.accept_waveform(chunk)
         done = []
         while not self._vad.empty():
-            stretch = self._vad.front
-            lead_in = self._lookback.before(stretch.start, LEAD_IN_S)
-            done.append(np.concatenate([lead_in, np.asarray(stretch.samples, dtype=np.float32)]))
+            found = self._vad.front
+            voice = np.asarray(found.samples, dtype=np.float32)
+            done.append(Stretch(voice, self._lookback.before(found.start, LEAD_IN_S)))
             self._vad.pop()
         return done
 
     def talking(self) -> bool:
         return bool(self._vad.is_speech_detected())
+
+
+def trim_quiet(samples: np.ndarray, floor: float = 0.01) -> np.ndarray:
+    """Without the near-silence at either end (a voice clip's padding), so a voice
+    print is of the voice, not the gaps."""
+    loud = np.flatnonzero(np.abs(samples) >= floor)
+    return samples[loud[0] : loud[-1] + 1] if len(loud) else samples[:0]
 
 
 class SenseVoice:

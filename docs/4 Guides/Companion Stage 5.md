@@ -115,6 +115,10 @@ pick new voices up by themselves.
 - **He stops himself mid-sentence:** his own voice is coming back loud enough
   to sound like someone else. Lower `hearing.own_voice` a little, turn the
   speakers down, use a headset, or set `hearing.barge_in` to false.
+- **He ignores you talking over him ("his own voice"):** `kit hearing --words`
+  shows how alike each stretch was to his voice and to yours. If yours sounds
+  more like him than like you, introduce yourself again (`kit hearing enrol
+  me`) at your usual distance, or raise `hearing.own_voice`.
 - **He cuts you off mid-thought:** raise `hearing.pause_ms`.
 - **The fridge or fan sets it off:** raise `hearing.threshold`.
 - **He calls you by your partner's name:** introduce both of you again in the

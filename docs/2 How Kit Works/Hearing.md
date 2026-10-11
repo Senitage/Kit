@@ -69,7 +69,8 @@ The brain (`kit.heard`) decides what each stretch of talking means:
 | Anything else ("I told Kit yesterday", the TV) | lets it go |
 
 His name is short, so the ears keep the moment of sound just before the voice
-detector notices talking: that's where "Kit, ..." usually is. Speech to text
+detector notices talking: that's where "Kit, ..." usually is. It goes to speech
+to text, but not into voice prints, which are of the talking only. Speech to text
 sometimes writes it "Ki", "Kid" or "Kitt", so those count too
 (`hearing.names`). A name at the end only counts when it's said to him, not
 about him: "I told Kit" and "the first aid kit" don't.
@@ -94,9 +95,11 @@ answering himself:
 
 - **His voice print.** When the ears start, and whenever his voice engine
   changes, they ask the brain for a line in his voice (never played) and learn
-  its print. A stretch that sounds like him is flagged, and never stops him.
-  With his voice off there's nothing to learn, and talking over him is off
-  too.
+  its print. A stretch that sounds more like him than like anyone he knows
+  (`hearing.own_voice`) is flagged, and never stops him. The brain only
+  believes it while his voice is playing or just after, so you're never
+  mistaken for him when he's quiet. With his voice off there's nothing to
+  learn, and talking over him is off too.
 - **His words.** Anything heard just after he spoke that's mostly the same
   words as what he said is dropped.
 

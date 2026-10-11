@@ -203,9 +203,9 @@ class Hearing:
 
     def _decide(self, heard: Utterance, s: HearingSettings) -> Verdict:
         text = heard.text.strip()
-        if heard.own_voice:
-            return Verdict("ignore", "his own voice")
         quiet = self.quiet_s()
+        if heard.own_voice and quiet <= ECHO_S:  # only while his voice is playing, or just after
+            return Verdict("ignore", "his own voice")
         if text and quiet <= ECHO_S and echo_of(text, self.said_lately()):
             return Verdict("ignore", "his own words coming back")
         laughed = heard.sound == "laughter" and s.laugh_s > 0 and quiet <= s.laugh_s

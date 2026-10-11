@@ -103,9 +103,11 @@ def test_what_kit_makes_of_what_he_hears():
     assert ears.decide(Utterance(text="what's on the telly"), s).action == "ignore"
     v = ears.decide(Utterance(text="Kit, how are you?"), s)
     assert (v.action, v.called) == ("answer", True)
-    assert ears.decide(Utterance(text="Kit, hi", own_voice=True), s).why == "his own voice"
+    # Sounding like Kit only means it's his voice from the speakers while that's playing.
+    assert ears.decide(Utterance(text="Kit, hi", own_voice=True), s).why == "his name"
     ears.spoke("The footy starts at seven tonight.", 2.0)
     assert ears.speaking()
+    assert ears.decide(Utterance(text="Kit, hi", own_voice=True), s).why == "his own voice"
     echo = ears.decide(Utterance(text="the footy starts at seven"), s)
     assert echo.why == "his own words coming back"
     clock.now += timedelta(seconds=5)  # he stopped 3 s ago: Dan answers without his name

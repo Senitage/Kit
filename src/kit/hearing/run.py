@@ -29,7 +29,7 @@ from collections.abc import Callable
 import numpy as np
 
 from kit.eyes.recognise import Gallery, normalise, similarity
-from kit.hearing.engines import CHUNK, RATE, Transcriber, Vad, VoicePrinter
+from kit.hearing.engines import CHUNK, RATE, Stretch, Transcriber, Vad, VoicePrinter, trim_quiet
 from kit.known_voices import VOICE_SIZE
 from kit.settings import HearingSettings
 
@@ -148,7 +148,7 @@ class Ears:
         latest = np.concatenate(list(self._recent))
         if len(latest) < MIN_PRINT_S * RATE:
             return
-        if self._own(self.printer.print(latest)):
+        if self._likeness(normalise(self.printer.print(latest)))[0]:
             return
         self._hushed = True
         try:
@@ -157,29 +157,35 @@ class Ears:
         except Exception as e:
             log.warning("couldn't stop Kit talking: %s", e)
 
-    def _own(self, voice: list[float]) -> bool:
-        if self.kit_print is None:
-            return False
-        return similarity(normalise(voice), self.kit_print) >= self.settings.own_voice
+    def _likeness(self, voice: list[float]) -> tuple[bool, float, str | None, float]:
+        """Is this (normalised) voice print Kit's own voice from the speakers, and how
+        alike it is to his voice and to the nearest person he knows. It's his only if
+        it's closer to him than to anyone he knows: two voices can both be fairly
+        alike to his."""
+        who, likeness = self.gallery.match(voice) if self.gallery else (None, 0.0)
+        kit = similarity(voice, self.kit_print) if self.kit_print is not None else 0.0
+        own = self.kit_print is not None and kit >= self.settings.own_voice and kit > likeness
+        return own, kit, who, likeness
 
     # A stretch of talking
 
-    def hear(self, samples: np.ndarray) -> dict | None:
-        """One finished stretch of talking: words, tone, whose voice, to the brain."""
+    def hear(self, stretch: Stretch) -> dict | None:
+        """One finished stretch of talking: words, tone, whose voice, to the brain.
+        The words come from the stretch and the moment before it; the voice print
+        only from the talking itself."""
         s = self.settings
-        seconds = len(samples) / RATE
+        seconds = len(stretch.voice) / RATE
         if seconds < s.min_speech_s:
             return None
         started = self.clock()
-        said = self.transcriber.transcribe(samples)
+        said = self.transcriber.transcribe(stretch.samples)
         if not said.text and said.sound != "laughter":
             return None
-        who, likeness, own = None, 0.0, False
+        who, likeness, own, kit = None, 0.0, False, 0.0
         if self.printer is not None and seconds >= MIN_PRINT_S:
-            voice = self.printer.print(samples)
-            own = self._own(voice)
-            if self.gallery and not own:
-                who, likeness = self.gallery.match(normalise(voice))
+            # Who it is goes too, even when it sounds like Kit: the brain knows
+            # whether his voice was playing just then.
+            own, kit, who, likeness = self._likeness(normalise(self.printer.print(stretch.voice)))
         heard = {
             "text": said.text,
             "tone": said.tone,
@@ -206,7 +212,9 @@ class Ears:
             answer.get("heard", "?"),
             answer.get("why", ""),
             took,
-            f': "{said.text}"' if self.words else "",
+            f' [like Kit {kit:.2f}, like {who or "anyone known"} {likeness:.2f}]: "{said.text}"'
+            if self.words
+            else "",
         )
         return answer
 
@@ -288,6 +296,7 @@ class Ears:
             log.warning("couldn't hear Kit's own voice to learn it: %s", e)
             self.engine = ""  # try again at the next check-in
             return
+        sample = trim_quiet(sample) if sample is not None else None
         if sample is None or len(sample) < MIN_PRINT_S * RATE:
             return
         self.kit_print = normalise(self.printer.print(sample))

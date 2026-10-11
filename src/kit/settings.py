@@ -823,7 +823,8 @@ class HearingSettings(_Section):
         ge=0.3,
         le=0.95,
         description="How alike a voice must be to Kit's own for him to know it's himself "
-        "coming back from the speakers. Lower ignores more.",
+        "coming back from the speakers, while he's talking. It must also be more like him "
+        "than like anyone he knows. Lower ignores more.",
     )
     threshold: float = Field(
         0.5,

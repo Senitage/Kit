@@ -15,9 +15,11 @@ from kit.hearing.engines import (
     CHUNK,
     RATE,
     Lookback,
+    Stretch,
     Transcript,
     resample,
     transcript_of,
+    trim_quiet,
     wav_samples,
 )
 from kit.hearing.mic import pick_device
@@ -61,7 +63,7 @@ class FakeVad:
         if loud:
             self.stretch.append(chunk)
         elif self.stretch:
-            done.append(np.concatenate(self.stretch))
+            done.append(Stretch(np.concatenate(self.stretch)))
             self.stretch = []
         self.now = loud
         return done
@@ -79,10 +81,13 @@ class FakeTranscriber:
 
 
 class FakePrinter:
-    """Whose voice: the loudness of the sound says (0.5 Kit, 0.8 Dan, 0.9 Sam)."""
+    """Whose voice: the loudness of the sound says (0.5 Kit, 0.8 Dan, 0.9 Sam; 0.6 is
+    Dan sounding a bit like Kit)."""
 
     def print(self, samples):
         level = round(float(np.abs(samples).max()), 1)
+        if level == 0.6:
+            return [0.6, 0.8] + [0.0] * 510
         return {0.5: KIT, 0.8: DAN, 0.9: SAM}.get(level, DAN)
 
 
@@ -187,6 +192,39 @@ def test_his_own_voice_from_the_speakers_is_flagged_and_does_not_stop_him():
     run()
     assert brain.hushes == 0
     assert brain.heard[0]["own_voice"] is True and brain.heard[0]["who"] is None
+
+
+def test_a_voice_more_like_someone_known_than_like_kit_is_theirs():
+    brain = Brain()
+    e, run = ears(talk(0.6, 2.0) + quiet(), brain, FakeTranscriber(Transcript("Kit, you there?")))
+    run()
+    assert brain.heard[0]["own_voice"] is False and brain.heard[0]["who"] == "Dan"
+    assert brain.hushes == 1  # and it talks over him
+
+
+def test_words_come_from_the_lead_in_too_but_the_voice_print_does_not():
+    heard_lengths, printed_lengths = [], []
+
+    class Hears(FakeTranscriber):
+        def transcribe(self, samples):
+            heard_lengths.append(len(samples))
+            return Transcript("Kit, hi")
+
+    class Prints(FakePrinter):
+        def print(self, samples):
+            printed_lengths.append(len(samples))
+            return DAN
+
+    e = Ears(lambda: None, FakeVad(), Hears(), Prints(), Brain().check_in, Brain().hear, None)
+    lead_in, voice = np.zeros(RATE // 2, dtype=np.float32), np.full(RATE, 0.8, dtype=np.float32)
+    e.hear(Stretch(voice, lead_in))
+    assert heard_lengths == [RATE + RATE // 2] and printed_lengths == [RATE]
+
+
+def test_kits_voice_sample_is_printed_without_its_silent_padding():
+    clip = np.concatenate([np.zeros(800), np.full(1600, 0.3), np.zeros(400)]).astype(np.float32)
+    assert len(trim_quiet(clip)) == 1600
+    assert len(trim_quiet(np.zeros(100, dtype=np.float32))) == 0
 
 
 def test_talking_over_him_stops_him_once_a_stretch():
