@@ -14,6 +14,8 @@ Ways (``--modes``):
   fp16       the same, with the voice model in half precision
   stream     plays the first ~0.5 s while the rest is made
   stream16   streamed and half precision
+  parts      today's way split in two: making the speech tokens, then turning
+             them into sound (shows which half is slow)
 """
 
 from __future__ import annotations
@@ -135,6 +137,28 @@ def whole(tts: ChatterboxTurboTTS, text: str, fp16: bool) -> dict:
     return {"first": took, "total": took, "stalls": 0.0, "audio": audio}
 
 
+def parts(tts: ChatterboxTurboTTS, text: str) -> dict:
+    """Today's way, timed in its two halves: the token loop, then the decoder."""
+    noise = torch.randn(1, 80, 2 * 1100, device=tts.device, dtype=tts.s3gen.dtype)
+    sync()
+    t0 = time.perf_counter()
+    tokens = list(speech_tokens(tts, text, False))
+    sync()
+    t1 = time.perf_counter()
+    audio = to_audio(tts, tokens, True, noise, False)
+    sync()
+    t2 = time.perf_counter()
+    return {
+        "first": t2 - t0,
+        "total": t2 - t0,
+        "stalls": 0.0,
+        "audio": audio,
+        "tokens_s": t1 - t0,
+        "decode_s": t2 - t1,
+        "tokens": len(tokens),
+    }
+
+
 def streamed(tts: ChatterboxTurboTTS, text: str, fp16: bool, first: int, chunk: int) -> dict:
     """Make audio every ``first`` then ``chunk`` tokens and hand each piece over as
     soon as it's ready, crossfading where pieces meet."""
@@ -195,7 +219,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--reference", default="", help="Kit's voice clip (the engine's 'reference')")
     p.add_argument("--out", default="voice_bench", help="folder for the .wav files and results")
-    p.add_argument("--modes", default="now,fp16,stream,stream16")
+    p.add_argument("--modes", default="now,fp16,stream,stream16,parts")
     p.add_argument("--runs", type=int, default=3, help="tries per line (the median is shown)")
     p.add_argument("--first", type=int, default=12, help="streamed: tokens in the first piece")
     p.add_argument("--chunk", type=int, default=25, help="streamed: tokens in later pieces")
@@ -218,6 +242,7 @@ def main() -> None:
         "fp16": lambda text: whole(tts, text, True),
         "stream": lambda text: streamed(tts, text, False, args.first, args.chunk),
         "stream16": lambda text: streamed(tts, text, True, args.first, args.chunk),
+        "parts": lambda text: parts(tts, text),
     }
     for mode in modes:  # warm each way up once so the first timing isn't a cold start
         run[mode]("Warming up.")
@@ -244,13 +269,27 @@ def main() -> None:
                 if device == "cuda"
                 else None,
             }
+            row["made_vs_played"] = round(seconds / row["total_s"], 2)
+            if mode == "parts":
+                row["token_loop_s"] = round(statistics.median(t["tokens_s"] for t in tries), 3)
+                row["decode_s"] = round(statistics.median(t["decode_s"] for t in tries), 3)
+                row["tokens_per_s"] = round(
+                    statistics.median(t["tokens"] / t["tokens_s"] for t in tries), 1
+                )
             results.append(row)
             save(out / f"line{i}_{mode}.wav", tries[0]["audio"], tts.sr)
             print(
                 f"  {mode:9} first sound {row['first_sound_s']:.2f}s  "
                 f"whole line {row['total_s']:.2f}s  gaps {row['stalls_s']:.2f}s  "
-                f"({row['audio_s']:.1f}s of speech)"
+                f"({row['audio_s']:.1f}s of speech, made at {row['made_vs_played']:.2f}x "
+                "the speed it plays)"
             )
+            if mode == "parts":
+                print(
+                    f"            token loop {row['token_loop_s']:.2f}s "
+                    f"({row['tokens_per_s']:.0f} tokens/s; 25 plays in real time), "
+                    f"decoder {row['decode_s']:.2f}s"
+                )
     (out / "results.json").write_text(json.dumps(results, indent=2))
     print(f"\nsaved the clips and results.json in {out.resolve()}")
 
