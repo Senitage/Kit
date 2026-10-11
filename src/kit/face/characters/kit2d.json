@@ -1,7 +1,7 @@
 {
   "name": "Kit 2D",
   "version": 1,
-  "about": "Kit's 3D face drawn flat: the same moods, glow colours, brows, mouth and blush as the kit3d character, as rounded 2D shapes every app can draw, down to the Pod's small screen. See docs/face.md.",
+  "about": "Kit's 3D face drawn flat: the same moods, glow colours, brows, mouth and blush as the kit3d character, as rounded 2D shapes every app can draw, down to the Pod's small screen. See docs/3 Deep Dives/Face In Depth.md.",
   "use": {
     "default": "kit2d",
     "desk": "kit2d",

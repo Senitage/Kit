@@ -1,7 +1,8 @@
 # Kit
 
 Kit is Dan's personal AI assistant. The plan and every stage's test checklist are
-in the roadmap linked from README.md. Work one stage at a time.
+in the roadmap linked from README.md. Work one stage at a time. How Kit works is
+in the docs vault: start at docs/Home.md.
 
 ## Rules for all code
 
@@ -21,9 +22,37 @@ in the roadmap linked from README.md. Work one stage at a time.
 - NAS shares are read-only for Kit, except the Obsidian vault.
 - Anything Kit should be able to recall (notes, files, projects, photos) goes
   into the knowledge index (`kit.knowledge.Index`) as a new source, so recall,
-  search, the memory page and `kit eval memory` cover it. See docs/memory.md.
+  search, the memory page and `kit eval memory` cover it. See
+  docs/3 Deep Dives/Memory In Depth.md.
 - Memory schema changes are new entries in `kit.memory.MIGRATIONS`, never edits
   to old ones.
+
+## Docs
+
+- `docs/` is an Obsidian vault, read by people and by Claude. `docs/Home.md` is
+  the front door and `docs/Kit Map.canvas` the map. Layers: `1 Meet Kit`,
+  `2 How Kit Works` (one plain-words note per part of Kit), `3 Deep Dives`,
+  `4 Guides` (setup, updating, each stage's test checklist), `5 Reference`
+  (Commands, Settings Reference, API, Evals, Code Map, Glossary) and
+  `6 About These Docs`. Conventions are in
+  docs/6 About These Docs/How These Docs Work.md.
+- Links are wiki-links by note name (`[[Memory]]`, `[[Memory#Finding things]]`).
+  Note names are unique across the vault. Every note starts with `tags`,
+  `aliases` and `summary` properties. Pictures go in `docs/Assets/`, embedded
+  as `![[name.png]]`.
+- Every change updates the docs in the same PR: the part's How Kit Works note
+  and deep dive, its guide or docs/4 Guides/Updating Kit.md, Code Map for
+  modules, Commands, Settings Reference, API and Evals for those, Where Kit Is
+  Up To for PRs opened or merged, the Glossary for new words, and fresh
+  pictures when how Kit looks changes. A new part of Kit gets a note from
+  `docs/Templates/`, linked from Home, Kit Map.canvas and its neighbours; a
+  new stage gets a guide.
+- `tests/test_docs.py` checks links, headings, pictures and properties, and
+  that every module, setting and `kit` command is in the docs.
+- The repo is public. No real addresses, places, network details (IPs, host
+  names, home paths) or names of Dan's family, friends or pets in docs,
+  pictures, tests or examples. Use made-up ones: Richmond, NSW for a town,
+  192.168.1.50 for the NAS.
 
 ## Commands
 

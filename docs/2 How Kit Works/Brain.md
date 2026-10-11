@@ -1,0 +1,121 @@
+---
+tags: [how-it-works, brain]
+aliases: [The brain, Conversation loop, kit.brain]
+summary: The brain is Kit's conversation loop on the server - every message, pipe-up and thought goes through it, and it answers in one shape whichever model speaks.
+---
+
+# The brain
+
+> [!ABSTRACT] In short
+> The brain is `kit serve`: one program on the server that holds the
+> conversation, his memory and his inner life, and serves the chat page and
+> the API. Every message, from any body or page, goes through the same loop
+> and gets an answer in the same shape: **words**, an **emotion**,
+> **gestures**, maybe an **action**, maybe some **detail** to read. That's
+> what lets one Kit live in many bodies.
+
+[[Life of a Message]] follows one message through it, step by step.
+
+## One shape for every reply
+
+Whoever answers, the local model or a cloud model, the reply comes back as
+the same thing (`src/kit/reply.py`):
+
+| Part | What it is | Example |
+|---|---|---|
+| words | What he says, short and spoken | "Morning. Rough one? Coffee first." |
+| emotion | One of 17 moods his face eases into | `concerned` |
+| gestures | Named moves played a beat before the words | `lean_in`, `nod` |
+| action | Something to do before answering again | `recall`, `weather`, `ask_cloud` |
+| detail | Something to read on screen, never spoken | code, a list, a link |
+
+The model only ever picks **names** (an emotion, a gesture), never a motion.
+Each body turns the names into movement its own way, so the desk app, the Pod
+and the arm all understand the same reply. The full list of emotions and
+gestures is in [[Face]].
+
+## Two passes when the local model talks
+
+With `ollama.speak_pass` on (the default), the local model answers in two
+steps: a quick plan in JSON (emotion, gesture, action), then his words in
+plain text at a livelier temperature. Small models sound stiff when they
+write speech inside JSON; in plain text they sound like themselves. His
+opening is checked against what he said lately, so he doesn't repeat himself.
+Cloud models answer in one piece. More in [[Inner Life In Depth]], under "Two passes".
+
+## What he can do mid-answer
+
+| Action | What happens |
+|---|---|
+| `recall` | He searches memory for something specific, then answers again |
+| `look_at_pc` | He reads the full picture from the desk app: every window, what had focus this hour and today, PC health |
+| `look_around` | He reads everything his eyes see: who's at the desk, what they're doing |
+| `weather` | He gets the forecast, then answers from the numbers |
+| `remember` | A fact is learned, merging with or updating what he knew |
+| `note` | A note you asked for goes into your notes vault |
+| `offer_note` | Something sounds worth keeping but you didn't ask, so he offers: "want me to note that?" |
+| `thing` | A name goes into the register of things (a suggestion you confirm) |
+| `read_note` | He opens one of your notes and answers from it |
+| `ask_cloud`, `ask_expert` | The question goes up to the work or expert model. With `routing.confirm_expert` he asks before calling the expert |
+
+If a cloud model can't answer (offline, no key, budget used up), the local
+model answers instead and says why.
+
+## Where you're talking from
+
+Every message says which way it came in (`src/kit/channels.py`), and Kit is
+told on each turn:
+
+| Channel | Kit is told | So he |
+|---|---|---|
+| `desk` | you're typing in the desk app | takes "this" to mean what's on screen |
+| `voice` | you're talking out loud at the desk | keeps it short and spoken |
+| `phone` | you're on your phone, probably out | keeps it short; doesn't assume you can see the PC |
+| `web` | you're on the chat page | answers as usual |
+| `home` | you're on his page in home_app | answers as usual |
+| `terminal` | you're in `kit chat` | answers as usual |
+
+It's one conversation and one memory whichever way you talk. Each message is
+stored with its channel, so a message from your phone shows as "(from their
+phone) ..." when you pick up at the desk.
+
+## Conversations, chats and topics
+
+- **One conversation**, shared by every way in. The model sees the last
+  `brain.history_messages` (20) messages.
+- **A new chat** starts when you come back after `brain.new_chat_after_minutes`
+  (2 hours) quiet, and opens by picking up one thing from the last
+  ([[Companion]]). `kit new-chat` starts one by hand. The old one stays in
+  memory.
+- **A new topic** starts fresh when a message is far in meaning from your last
+  few (`brain.new_topic_below`).
+- **Settings are read every turn**, so a change on the settings page applies
+  from the next message, with no restart.
+
+## Talking while he works
+
+A turn runs as its own task. While a cloud model works on something slow,
+you can keep talking: the local model answers meanwhile, told what's in
+progress, for how long, and what's been done so far. The slow answer arrives
+when it's ready, even if the page that asked has closed. `/api/status` lists
+it under `working_on`.
+
+## Beyond answering
+
+The brain also runs Kit's **heartbeat** (drives, fidgets, pipe-ups and
+thoughts), the **nightly upkeep** (day summaries, reflection, backups) and the
+**notes sync**. See [[The Big Picture#How the brain keeps time]].
+
+## Go deeper
+- [[Models and Routing]]: who answers.
+- [[Memory]]: what gets recalled.
+- [[Inner Life]]: what colours the answer.
+- [[API]]: the routes the bodies and pages call.
+
+## Under the hood
+- `src/kit/brain.py`: the conversation loop, actions, pipe-ups, thoughts.
+- `src/kit/prompt.py`: what the model sees each turn.
+- `src/kit/reply.py`: the reply shape, emotions and gestures, the streaming reader.
+- `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.
+- `src/kit/channels.py`: where you're talking from.
+- `src/kit/server.py`: the pages, the API and the background loops.

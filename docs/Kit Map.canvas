@@ -1,0 +1,464 @@
+{
+	"nodes": [
+		{
+			"id": "banner",
+			"type": "file",
+			"file": "Assets/kit-banner.png",
+			"x": -700,
+			"y": -560,
+			"width": 1400,
+			"height": 385
+		},
+		{
+			"id": "welcome",
+			"type": "text",
+			"x": -700,
+			"y": -140,
+			"width": 1400,
+			"height": 120,
+			"text": "# Kit, on one page\nOne brain on the server does all the thinking; everything else is a way in or out. Cards link to their notes. Start with **Start here** on the left, or open [[Home]]."
+		},
+		{
+			"id": "g-start",
+			"type": "group",
+			"label": "Start here",
+			"x": -1580,
+			"y": 40,
+			"width": 400,
+			"height": 990,
+			"color": "6"
+		},
+		{
+			"id": "start0",
+			"type": "text",
+			"text": "### [[Who Kit Is]]\nHis personality, his faces, and what he can do today.",
+			"x": -1540,
+			"y": 80,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "start1",
+			"type": "text",
+			"text": "### [[The Big Picture]]\nThe parts of Kit and how they talk to each other.",
+			"x": -1540,
+			"y": 270,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "start2",
+			"type": "text",
+			"text": "### [[Life of a Message]]\nOne hello, step by step, from your keyboard to his face and voice.",
+			"x": -1540,
+			"y": 460,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "start3",
+			"type": "text",
+			"text": "### [[Where Kit Is Up To]]\nWhat's built, what's being tested, what's next.",
+			"x": -1540,
+			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "start4",
+			"type": "text",
+			"text": "### [[Roadmap]]\nThe stages, from setup to the robot arm.",
+			"x": -1540,
+			"y": 840,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "g-ways",
+			"type": "group",
+			"label": "Ways in and out",
+			"x": -1120,
+			"y": 40,
+			"width": 400,
+			"height": 800,
+			"color": "5"
+		},
+		{
+			"id": "desk",
+			"type": "text",
+			"text": "### [[Desk App]]\nHis home on the Windows PC: face, tray, chat, Kit's window, what's on the PC.",
+			"x": -1080,
+			"y": 80,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "eyes",
+			"type": "text",
+			"text": "### [[Eyes]]\nThe camera program: who's at the desk, in words, never pictures.",
+			"x": -1080,
+			"y": 270,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "voice",
+			"type": "text",
+			"text": "### [[Voice]]\nTalking out loud, sentence by sentence, in his own voice.",
+			"x": -1080,
+			"y": 460,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "apps",
+			"type": "text",
+			"text": "### [[Other Apps]]\nhome_app shows and configures him; MetTools and Home Assistant come later.",
+			"x": -1080,
+			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "g-brain",
+			"type": "group",
+			"label": "The brain, on the server",
+			"x": -660,
+			"y": 40,
+			"width": 760,
+			"height": 800,
+			"color": "4"
+		},
+		{
+			"id": "brain",
+			"type": "text",
+			"text": "### [[Brain]]\nThe conversation loop: one message in, a streamed reply out, and things he does mid-answer.",
+			"x": -620,
+			"y": 80,
+			"width": 680,
+			"height": 150,
+			"color": "4"
+		},
+		{
+			"id": "models",
+			"type": "text",
+			"text": "### [[Models and Routing]]\nWhich model answers what, and the budget.",
+			"x": -620,
+			"y": 270,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "memory",
+			"type": "text",
+			"text": "### [[Memory]]\nOne index of everything he knows, found by words and meaning.",
+			"x": -260,
+			"y": 270,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "things",
+			"type": "text",
+			"text": "### [[Register of Things]]\nPeople, pets, cars and projects, and where each lives.",
+			"x": -620,
+			"y": 460,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "notes",
+			"type": "text",
+			"text": "### [[Notes on the NAS]]\nYour Obsidian notes: read all, write when asked.",
+			"x": -260,
+			"y": 460,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "time",
+			"type": "text",
+			"text": "### [[Time and Weather]]\nThe clock, \"Thursday arvo\", and a real forecast.",
+			"x": -620,
+			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "settings",
+			"type": "text",
+			"text": "### [[Settings and Data]]\nOne data folder; settings with undo; secrets kept apart.",
+			"x": -260,
+			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "g-life",
+			"type": "group",
+			"label": "His inner life",
+			"x": -660,
+			"y": 880,
+			"width": 760,
+			"height": 230,
+			"color": "2"
+		},
+		{
+			"id": "life",
+			"type": "text",
+			"text": "### [[Inner Life]]\nDrives, moods, feelings with reasons, thoughts, his notebook, sleep.",
+			"x": -620,
+			"y": 920,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "companion",
+			"type": "text",
+			"text": "### [[Companion]]\nHellos, goodbyes, following your life, caring on a bad night.",
+			"x": -260,
+			"y": 920,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "g-show",
+			"type": "group",
+			"label": "How he shows it",
+			"x": 180,
+			"y": 40,
+			"width": 740,
+			"height": 1152,
+			"color": "3"
+		},
+		{
+			"id": "face",
+			"type": "text",
+			"text": "### [[Face]]\nOne rig, character sheets (Retro, Kit 3D, Kit 2D), shows and body moves.",
+			"x": 220,
+			"y": 80,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "face-img",
+			"type": "file",
+			"file": "Assets/kit3d-faces.png",
+			"x": 580,
+			"y": 80,
+			"width": 300,
+			"height": 225
+		},
+		{
+			"id": "bodies",
+			"type": "text",
+			"text": "### [[Bodies]]\nOne brain, many bodies: the desk, home_app, the Pod, later the arm.",
+			"x": 220,
+			"y": 345,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "pod-img",
+			"type": "file",
+			"file": "Assets/pod-v2-hero.jpg",
+			"x": 580,
+			"y": 345,
+			"width": 300,
+			"height": 300
+		},
+		{
+			"id": "pod-screen",
+			"type": "file",
+			"file": "Assets/pod-screen-moods.png",
+			"x": 220,
+			"y": 685,
+			"width": 660,
+			"height": 467
+		},
+		{
+			"id": "g-run",
+			"type": "group",
+			"label": "Running Kit, and the reference shelf",
+			"x": -1120,
+			"y": 1272,
+			"width": 1480,
+			"height": 420,
+			"color": "1"
+		},
+		{
+			"id": "privacy",
+			"type": "text",
+			"text": "### [[Privacy]]\nWhat he sees, what stays home, the switches.",
+			"x": -1080,
+			"y": 1312,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "updating",
+			"type": "text",
+			"text": "### [[Updating Kit]]\nPull, install, restart; trying a pull request.",
+			"x": -720,
+			"y": 1312,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "commands",
+			"type": "text",
+			"text": "### [[Commands]]\nEvery kit command.",
+			"x": -360,
+			"y": 1312,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "settingsref",
+			"type": "text",
+			"text": "### [[Settings Reference]]\nEvery setting and its default.",
+			"x": 0,
+			"y": 1312,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "api",
+			"type": "text",
+			"text": "### [[API]]\nEvery route and event the brain answers.",
+			"x": -1080,
+			"y": 1502,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "evals",
+			"type": "text",
+			"text": "### [[Evals]]\nChecking how the real models behave.",
+			"x": -720,
+			"y": 1502,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "codemap",
+			"type": "text",
+			"text": "### [[Code Map]]\nEvery module, and the note that explains it.",
+			"x": -360,
+			"y": 1502,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "howdocs",
+			"type": "text",
+			"text": "### [[How These Docs Work]]\nThe vault, and keeping it up to date.",
+			"x": 0,
+			"y": 1502,
+			"width": 320,
+			"height": 150
+		}
+	],
+	"edges": [
+		{
+			"id": "desk-brain",
+			"fromNode": "desk",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "messages, what's on the PC"
+		},
+		{
+			"id": "eyes-brain",
+			"fromNode": "eyes",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "the scene, in words"
+		},
+		{
+			"id": "apps-brain",
+			"fromNode": "apps",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "API, with the token"
+		},
+		{
+			"id": "brain-voice",
+			"fromNode": "brain",
+			"fromSide": "left",
+			"toNode": "voice",
+			"toSide": "right",
+			"label": "sentences to say"
+		},
+		{
+			"id": "brain-face",
+			"fromNode": "brain",
+			"fromSide": "right",
+			"toNode": "face",
+			"toSide": "left",
+			"label": "emotion, gestures, shows"
+		},
+		{
+			"id": "face-bodies",
+			"fromNode": "face",
+			"fromSide": "bottom",
+			"toNode": "bodies",
+			"toSide": "top",
+			"label": "drawn by each body"
+		},
+		{
+			"id": "brain-models",
+			"fromNode": "brain",
+			"fromSide": "bottom",
+			"toNode": "models",
+			"toSide": "top"
+		},
+		{
+			"id": "brain-memory",
+			"fromNode": "brain",
+			"fromSide": "bottom",
+			"toNode": "memory",
+			"toSide": "top"
+		},
+		{
+			"id": "memory-things",
+			"fromNode": "memory",
+			"fromSide": "bottom",
+			"toNode": "things",
+			"toSide": "top"
+		},
+		{
+			"id": "notes-memory",
+			"fromNode": "notes",
+			"fromSide": "top",
+			"toNode": "memory",
+			"toSide": "bottom",
+			"label": "read into memory"
+		},
+		{
+			"id": "brain-life",
+			"fromNode": "brain",
+			"fromSide": "left",
+			"toNode": "life",
+			"toSide": "left",
+			"label": "how he feels"
+		},
+		{
+			"id": "life-companion",
+			"fromNode": "life",
+			"fromSide": "right",
+			"toNode": "companion",
+			"toSide": "left"
+		},
+		{
+			"id": "life-bodies",
+			"fromNode": "life",
+			"fromSide": "right",
+			"toNode": "bodies",
+			"toSide": "left",
+			"label": "events: mood, sleep, pipe-ups"
+		}
+	]
+}

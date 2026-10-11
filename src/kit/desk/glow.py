@@ -6,7 +6,7 @@ C++) on the arm's round GC9A01 screen. ``FaceWidget`` runs a ``Face`` at 60 fps
 and makes the eyes follow the mouse. Colours and sizes come from the look in
 Kit's character sheet (kit.face.character), so the painter only knows shapes.
 A look can add brows, a mouth and a shaded shell (Kit 2D, the 3D face drawn
-flat); docs/face.md lays out the shapes for other painters.
+flat); docs/3 Deep Dives/Face In Depth.md lays out the shapes for other painters.
 """
 
 from __future__ import annotations

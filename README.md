@@ -1,194 +1,47 @@
 # Kit
 
-Kit is a personal AI assistant with a personality. He talks, sees, and helps
-around the PC, the Synology NAS and the Obsidian notes. He starts life as an
-on-screen helper and later gets a body: a desk robot arm.
+![Kit, a small AI companion who lives on the desk](docs/Assets/kit-banner.png)
+
+Kit is a small AI companion with a personality of his own. He chats,
+remembers, has moods and thoughts between conversations, sees who's at the
+desk, talks out loud and pulls faces. He lives on a PC screen for now and is
+growing into robot bodies: first a little desk Pod, later a robot arm. His
+brain runs on a home server; everything else is a way in or out.
+
+## Read the docs
+
+The docs are an [Obsidian](https://obsidian.md) vault in [`docs/`](docs/Home.md):
+plain markdown notes, linked to each other, with diagrams and pictures. They
+start simple and go as deep as you like, down to the code.
+
+- **In Obsidian** (best): *Open folder as vault*, pick `docs`, and start at
+  **Home** or the **Kit Map** canvas.
+- **On GitHub**: start at [docs/Home.md](docs/Home.md). The links between notes
+  are Obsidian wiki-links, so they show as plain text here.
+
+Good first reads:
+[Who Kit Is](docs/1%20Meet%20Kit/Who%20Kit%20Is.md) ·
+[The Big Picture](docs/2%20How%20Kit%20Works/The%20Big%20Picture.md) ·
+[Life of a Message](docs/2%20How%20Kit%20Works/Life%20of%20a%20Message.md) ·
+[Where Kit Is Up To](docs/1%20Meet%20Kit/Where%20Kit%20Is%20Up%20To.md)
+
+Running Kit:
+[Updating Kit](docs/4%20Guides/Updating%20Kit.md) ·
+[Commands](docs/5%20Reference/Commands.md) ·
+[Settings Reference](docs/5%20Reference/Settings%20Reference.md)
 
 Kit is built in tested stages. The plan and each stage's test checklist are in
-the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91).
+the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91)
+and the [Roadmap](docs/1%20Meet%20Kit/Roadmap.md) note.
 
-## Where Kit is up to (9 October 2026)
+## Where Kit is up to
 
-| Part | State | Pull requests |
-| --- | --- | --- |
-| Stage 0: setup and `kit check` | Passed | #1 |
-| Stage 1: text brain and memory | Passed | #2 |
-| Stage 2: desk app and Glow face | Passed, redesign and self-updates merged | #3, #4, #5 |
-| Inner life: feelings, notebook, nightly reflection | Merged | #6 |
-| Notes in the NAS vault, only when asked | Merged | #7, #8, #10 |
-| Companion stage 1: he knows you were gone | Merged | #12 |
-| Companion stage 2: he follows your life | Merged | #13, #14 |
-| Cloud-only routing (Haiku chats, Sonnet works, ask before Opus) | Merged | #15 |
-| Cloud spend per day and model | Merged | #19 |
-| Companion stage 3: a life of his own, and feeling it | Merged | #17 |
-| His thoughts and pipe-ups can go to the cloud too | Merged | #21 |
-| Character sheets for his face (Retro first), 2D or 3D per app | Merged | #20 |
-| Desk app: words under his face, face shows, a Mood page | Built, test build in use | #18 (draft) |
-| Stage 3 part 1: Kit's voice | Built and being tested, not merged | #24 (draft, was #9) |
-| Vision stage 1: Kit sees you | Built, waiting on a test with the webcam | #11 |
-
-Next up: companion stages 4 and 5, then land the voice (#24) and vision (#11),
-then the microphone (stage 3 part 2) and stage 4 (tools, PC control and the
-Claude Code bridge). The full list and the decisions still open are at the top
-of the roadmap.
-
-## Stage 1: text brain
-
-Kit chats by text in a browser or terminal. It recalls what's relevant from
-everything it has learned, by words and by meaning, and keeps its facts tidy
-as things change ([how memory works](docs/memory.md)). A register of things
-(people, vehicles, places, projects, equipment) tells it where each one lives:
-which NAS folder, Obsidian note, home_app record or Home Assistant area. Real
-questions go to a cloud model (Claude, GPT or Gemini, your choice) with web
-search, within a monthly budget. How much stays local is a setting
-(`routing.mode`): `balanced` keeps small talk on the local model, and
-`cloud-only` has a cheap chat model (Haiku) answer everything, hand real work
-to Sonnet and ask before calling Opus. It has settings and memory pages with history and undo. Set it up and test it with
-[docs/stage-1-text-brain.md](docs/stage-1-text-brain.md). Ideas waiting for a later stage are in
-[docs/improvements.md](docs/improvements.md).
-
-```
-kit serve          # run Kit: chat at /, memory at /memory, settings at /settings
-kit chat           # talk to Kit in the terminal
-kit config ...     # show, set, undo or check settings without a browser
-kit models         # which models do what; `kit models work gpt-sol` switches
-kit memory ...     # see, search, teach, pin or forget what Kit knows; cloud spend
-kit eval           # 50 prompts: are replies valid, and how fast do words start?
-kit things ...     # the register of things and where each one lives
-kit eval memory    # does Kit recall the right facts and keep its memory tidy?
-kit eval routing   # do questions bring back the right thing and where it lives?
-kit eval compare --models sonnet gpt-sol   # same questions, side by side
-kit token          # the API token for the pages and home_app
-```
-
-Kit reads your Obsidian notes vault on the NAS and takes notes in it when you ask:
-set it up with [docs/notes.md](docs/notes.md).
-
-Stage 0 ([docs/stage-0-setup.md](docs/stage-0-setup.md)) set up the server;
-`kit init`, `kit paths` and `kit check` are still there.
-
-## Stage 2: the desk app
-
-`Kit-Desk-Setup.exe` puts Kit on the Windows desk PC: his Glow face in the tray
-and floating on the desktop, a chat window, and a feed of which windows are
-open and what has focus (titles only, no screenshots), plus PC health. A Chrome
-extension adds the open tabs and the site you're on. Install
-and test it with [docs/stage-2-desk-app.md](docs/stage-2-desk-app.md).
-How the installer is built and published, and how the app updates itself:
-[docs/desk-app/README.md](docs/desk-app/README.md).
-
-## Stage 3: Kit's voice
-
-Kit speaks his replies through the desk PC's speakers, sentence by sentence as
-the brain writes them, in the mood he's in. The voice engine is swappable
-(Chatterbox, Chatterbox Turbo, Kokoro, Piper) with `kit speech use <name>`, and
-`kit speech bench` compares engines on the same lines. Set it up and test it with
-[docs/stage-3-voice.md](docs/stage-3-voice.md).
-
-## Kit as a companion, stage 3
-
-A life of his own, and feeling it. While you're away he keeps himself busy
-(watching the weather, rereading his journal, thinking about the cat) and
-tells you truthfully what he got up to. He knows Friday arvo from Monday
-morning and the WA public holidays, reads "not stressed, footy's on late" the
-right way (and, once `kit eval mood` passes on your own lines, reads your mood
-by meaning), can feel two things at once, gets tired, sticks to his views, and
-looks before he pipes up. On a really bad night he drops the cheek and stays.
-Each change is a setting, off until you turn it on (the bad-night care is on).
-Update and test it with
-[docs/stage-companion-3.md](docs/stage-companion-3.md).
-
-```
-kit life         # now also: where he is and what he's doing, energy, dials
-kit eval mood    # does reading your mood by meaning beat the words?
-```
-
-## Kit as a companion, stage 2
-
-He follows your life. Mention something coming up ("dentist Thursday arvo") and
-he asks how it went once it's over; ask him to check in after your 2 pm and he
-does. A new chat picks up one thing from the last, Monday brings "how was the
-weekend?", and each night he writes what's going on with you so he never asks
-what he already knows. He gets to know you a question a day, nudges you to bed
-or outside once a day, keeps running jokes, and Claude steps in for the moments
-that matter. Update and test it with
-[docs/stage-companion-2.md](docs/stage-companion-2.md).
-
-```
-kit life             # now also: what he'll ask about and when
-kit life notebook    # what's going on with you, threads, running jokes
-```
-
-## Kit as a companion, stage 1
-
-Kit knows how long you were gone, even across a restart. He's glad when you're
-back and says hello once (asking how lunch was, if you said), sees you off with
-one warm line and no guilt, and after his first week is a bit miffed if you
-vanish for hours without a goodbye. He's a small companion on your side rather
-than an assistant: an honest friend who corrects you kindly and asks one
-question at a time. He knows what's true about himself, grows closer to you
-slowly, suggests a small game now and then, and reacts the moment you speak.
-Update and test it with [docs/stage-companion-1.md](docs/stage-companion-1.md).
-
-```
-kit life                                  # now also: how close you are, a hello owed, your last goodbye
-kit eval companion --models gemma4:e4b    # clean goodbyes, no guilt in hellos, honest answers
-```
-
-## Kit's inner life (side stage)
-
-Kit gets a life between conversations: feelings with a reason, private thoughts
-while you work, things he wants to bring up (including "ask me tomorrow..."),
-and a notebook with his journal and a self-sheet he rewrites each night, so he
-grows a little each day. A weekly review shows how he's changed, and you can
-undo any of it on the memory page. How it works is in [docs/life.md](docs/life.md);
-update, pick his voice and test it with
-[docs/stage-inner-life.md](docs/stage-inner-life.md).
-
-```
-kit life             # how he feels and why, what he's thinking, what he wants to bring up
-kit life think       # have a thought now
-kit life reflect     # look back on today so far (a few cents)
-kit life notebook    # his self-sheet, quirks, thoughts, opinions and journal
-kit eval voice --models qwen3:8b gemma4:e4b   # which local model sounds most alive?
-```
-
-## Now: Kit's eyes (vision, stage 1 of 5)
-
-Kit gets eyes: a small camera process (`kit eyes`) that runs on the PC with the
-webcam and tells the brain, in words, who's at the desk and what they're
-doing, never sending video. He knows when someone's there even if they're only
-reading, says hello when you sit down after a while, follows your face with
-Glow's eyes, notices the cat, and can have a proper look when you ask ("what
-am I holding?"). What he sees goes into his thoughts and, when it's worth it,
-his memory. The same package will run on the Raspberry Pi at the arm later.
-Set it up and test it with [docs/stage-vision.md](docs/stage-vision.md).
-
-```
-kit eyes                 # on the PC with the webcam: open Kit's eyes (Ctrl+C closes them)
-kit eyes --show          # the same, with a window showing what he sees
-kit eyes cameras         # which cameras this PC has
-kit eyes connect URL TOKEN   # where the brain is (the desk app's settings do too)
-kit eyes show            # what Kit can see right now, as he's told it
-kit eyes pause | resume  # the "Let Kit see me" switch, from the terminal
-kit eyes enrol NAME      # introduce someone (`me` for you), from the camera or --photos DIR
-kit eyes faces | forget NAME   # who his eyes know; forget someone's face completely
-```
-
-Who's who (vision stage 2): [docs/stage-vision-2.md](docs/stage-vision-2.md).
-
-## How Kit is laid out
-
-- **Code** lives in this repo (`src/kit`). The server runs on Linux: Ubuntu under
-  WSL on the GPU PC now, a dedicated Linux box later. The desk app runs on
-  Windows, so CI tests both.
-- **Everything Kit owns** (settings, secrets, memory, logs) lives in one data
-  folder outside the repo: `/var/lib/kit` on Linux, `C:\ProgramData\Kit` on
-  Windows, or wherever `KIT_DATA_DIR` points. Moving Kit is copying that folder.
-- **Settings** are one TOML file in that folder, checked against a schema.
-  Configurators (the built-in page, `kit config`, later home_app) change them
-  through Kit's API, which keeps every earlier version for undo. Kit never
-  calls a configurator, so it runs fine without them.
+Stages 0 to 2 (the server, the text brain with memory, the desk app), his
+inner life, companion stages 1 to 3, his voice, the Retro, Kit 3D and Kit 2D
+faces, and vision stages 1 and 2 are all merged. The Pod's body feed and his
+naps are in review. Next: companion stages 4 and 5, hearing, and stage 4
+(tools and PC control). The detail is in
+[Where Kit Is Up To](docs/1%20Meet%20Kit/Where%20Kit%20Is%20Up%20To.md).
 
 ## Development
 
@@ -196,6 +49,10 @@ Who's who (vision stage 2): [docs/stage-vision-2.md](docs/stage-vision-2.md).
 python3 -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest
+pytest -q
 ruff check . && ruff format --check .
 ```
+
+The rules for working on Kit, code and docs, are in [CLAUDE.md](CLAUDE.md).
+Every change updates the docs in the same pull request; see
+[How These Docs Work](docs/6%20About%20These%20Docs/How%20These%20Docs%20Work.md).
