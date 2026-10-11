@@ -8,6 +8,11 @@ A reply plays through one sound output that stays open while he talks. Sentences
 follow each other with no gaps, the speakers are already awake for his first word
 (a sound that wakes them loses its start: his first letters went missing when each
 sentence was played on its own), and Dan talking stops him straight away.
+
+A sound in his voice (``speech.sounds``: a chuckle on the punchline) comes as its
+own event before the words it goes with, and is said, never shown. As each
+sentence starts playing, the face hears how long it lasts (``spoke``), so his
+mouth moves for exactly as long as his voice does.
 """
 
 from __future__ import annotations
@@ -24,12 +29,13 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kit.desk.client import BrainError, SpeechOff
-from kit.speech.sentences import SentenceSplitter
+from kit.speech.sentences import SentenceSplitter, without_sounds
 
 log = logging.getLogger(__name__)
 
 Fetch = Callable[[str, str, bool], bytes]  # (sentence, emotion, first) -> WAV
 Heard = Callable[[int, str], None]  # (turn, sentence): its turn to be heard has come
+Spoke = Callable[[int, str, float], None]  # (turn, sentence, seconds it plays for)
 
 TICK_S = 0.05  # how often the player looks in when there's nothing new to play
 WAIT_S = 20.0  # the output stays open this long for Kit's next sentence to be made
@@ -291,8 +297,10 @@ class Speaker:
 
     ``heard`` is told (from another thread) as each sentence's turn to be heard
     comes: when it starts playing, or when it couldn't be made, so the chat can show
-    his words as he says them. ``live`` says whether his voice is on, as far as the
-    server last said."""
+    his words as he says them. ``spoke`` is told the same moment how long the
+    sentence plays for (0 when it couldn't be made), so his face talks for as long
+    as his voice does. Both get the sentence without its sounds. ``live`` says
+    whether his voice is on, as far as the server last said."""
 
     def __init__(
         self,
@@ -301,10 +309,12 @@ class Speaker:
         heard: Heard | None = None,
         fallback: Callable[[], Output] = fallback_output,
         clock: Callable[[], float] = time.monotonic,
+        spoke: Spoke | None = None,
     ) -> None:
         self.fetch = fetch
         self.output = output if output is not None else default_output()
         self.heard = heard
+        self.spoke = spoke
         self.fallback = fallback
         self.clock = clock
         self.enabled = True
@@ -354,11 +364,23 @@ class Speaker:
             self._open = True
             self._queue(self._splitter.feed(text))
 
+    def sound(self, turn: int, name: str) -> None:
+        """A sound for his voice to make before the words that come next (a chuckle)."""
+        if not self.begin(turn) or not name:
+            return
+        with self._lock:
+            self._open = True
+            self._queue(self._splitter.feed(f" [{name}] "))
+
     def end(self, turn: int) -> None:
         with self._lock:
             if turn == self._turn and self._open:
                 self._queue(self._splitter.flush())
                 self._open = False
+
+    def saying(self, turn: int) -> bool:
+        """Is his voice saying the reply for ``turn`` (as far as it knows)?"""
+        return self.enabled and self.live and turn != 0 and turn == self._turn
 
     def pipe_up(self, turn: int, text: str, emotion: str) -> bool:
         """Say a line Kit came out with by himself, unless he's talking already.
@@ -434,9 +456,14 @@ class Speaker:
         self.live = True
         return clip
 
-    def _heard(self, generation: int, turn: int, text: str) -> None:
-        if self.heard is not None and self._current(generation):
-            self.heard(turn, text)
+    def _heard(self, generation: int, turn: int, text: str, seconds: float = 0.0) -> None:
+        if not self._current(generation):
+            return
+        shown = without_sounds(text)
+        if self.heard is not None:
+            self.heard(turn, shown)
+        if self.spoke is not None:
+            self.spoke(turn, shown, seconds)
 
     def _play(self) -> None:
         while True:
@@ -448,11 +475,12 @@ class Speaker:
             if not self._current(generation):
                 continue
             started = None
-            if self.heard is not None:
+            if self.heard is not None or self.spoke is not None:
+                seconds = clip.seconds if clip is not None else 0.0
 
                 @once
-                def started(generation=generation, turn=turn, text=text) -> None:
-                    self._heard(generation, turn, text)
+                def started(generation=generation, turn=turn, text=text, seconds=seconds) -> None:
+                    self._heard(generation, turn, text, seconds)
 
             if clip is None:
                 if started is not None:

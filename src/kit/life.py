@@ -62,6 +62,7 @@ from datetime import date, datetime, time, timedelta
 
 from kit.holidays import week_moment
 from kit.knowledge import STOPWORDS
+from kit.noticing import Moment, Noticing
 from kit.pastimes import Pastime, SelfStore, parse_time
 from kit.pc_context import AWAY_AFTER_S, PcContext
 from kit.scene_context import Happening, SceneContext, join_names
@@ -417,6 +418,15 @@ WAKE_UP = (5.0, 7.0)  # and rises back to full
 NOTHING_TO_DO = timedelta(minutes=15)  # found nothing to do: he waits this long to look again
 DID_KEPT = 12  # the pastimes he remembers doing today
 # Pipe-up scoring (``life.pipe_up_bar``) and how often Dan takes them up.
+# What his eyes see Dan busy with (life.eyes_manners), and pipe-ups held meanwhile
+# (life.hold_pipe_ups).
+BUSY_HOLDS = timedelta(seconds=20)  # busy this recently still counts: no flicking on and off
+HOLD_KEEPS = timedelta(minutes=30)  # a pipe-up held longer than this has gone stale
+BUSY_WORDS = {  # what the eyes saw: (why he's quiet, what he's waiting for)
+    "phone": ("you're on your phone", "till you're off your phone"),
+    "talking": ("you're talking to someone", "till you're done talking"),
+}
+LATE_ENDS = "04:00"  # past bedtime until this counts as late at night
 TAKEN_UP_WITHIN = timedelta(minutes=10)
 TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
@@ -425,6 +435,15 @@ EVENT_FEELINGS = {"glad", "miffed"}
 # Feelings about Dan being gone: they end the moment he's back.
 MISSING_FEELINGS = {"missing"}
 THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
+
+
+@dataclass
+class Held:
+    """A pipe-up Kit held back while Dan was busy (``life.hold_pipe_ups``)."""
+
+    reason: str
+    since: datetime
+    busy: str  # what Dan was busy with (a BUSY_WORDS key)
 
 
 @dataclass
@@ -945,6 +964,13 @@ class Life:
         self._pipe_out: tuple[str, datetime] | None = None  # his last pipe-up, for taken_up
         self._quiet_shown: str | None = None  # the quiet_because bodies last heard
         self._face_shown: str | None = None  # the resting face bodies last heard
+        # What his eyes catch (life.eyes_manners, life.seen_feelings).
+        self._busy: tuple[str, datetime] | None = None  # what Dan was last seen busy with
+        self._busy_told = ""  # what the bodies last heard he's busy with
+        self.holding: Held | None = None  # a pipe-up waiting till Dan's free
+        self.delivering: Held | None = None  # the held pipe-up he's saying now
+        self.noticing = Noticing()
+        self.eyes_closing_at: datetime | None = None  # Dan's eyes kept closing, late
         self._restore()
 
     @property
@@ -993,6 +1019,7 @@ class Life:
         self.awaiting_reply = False
         self.sulky = False
         self.held_until = None
+        self.holding = None  # you're talking now: what he held back has had its moment
         self._chat_open = True
         self._show_face()
         self.save()
@@ -1199,6 +1226,8 @@ class Life:
                 if self._at_the_pc():
                     continue  # the camera lost him, but he's still typing: he hasn't gone
                 self._think_about("left", h.text)
+                if self.settings().life.seen_feelings and not self.asleep:
+                    self.publish({"type": "fidget", "gesture": "droop", "mood": "lonely"})
                 if self.away_since is None and not self.pc.online():
                     self.away_since = now  # with no desk app reporting, his eyes keep the time
                     changed = True
@@ -1209,6 +1238,7 @@ class Life:
                 self.spotted = (self.curious_about, now)
                 self._think_about("seen", h.text)
                 changed = True
+        self._watch(now)
         if self.asleep and in_view:
             self._wake()
             changed = True
@@ -1230,6 +1260,91 @@ class Life:
         self._look_where(now)
         if changed:
             self.save()
+
+    def _watch(self, now: datetime) -> None:
+        """What his eyes see Dan doing, besides coming and going: busy on his phone
+        or talking to someone (he keeps quiet, ``life.eyes_manners``), and the small
+        moments he feels something about (kit.noticing, ``life.seen_feelings``)."""
+        scene = self.scene
+        if scene is None or self.asleep:
+            return
+        if busy := scene.busy():
+            self._busy = (busy, now)
+        busy = self.busy_with(now)
+        if busy != self._busy_told:  # the bodies hear why he's quiet now, not next tick
+            self._busy_told = busy
+            self.quiet_because = BUSY_WORDS[busy][0] if busy else ""
+            self._tell_quiet()
+        life = self.settings().life
+        if not life.seen_feelings:
+            return
+        # Late: quiet hours, or from an hour before bedtime (kit.daily's bed nudge).
+        soon = now + timedelta(hours=1)
+        late = in_quiet_hours(now, life.quiet_from, LATE_ENDS) or in_quiet_hours(
+            soon, life.bedtime, LATE_ENDS
+        )
+        report = scene.latest if scene.online() else None
+        for moment in self.noticing.see(report, self.settings().persona.owner, now, late):
+            self._felt_seen(moment, now)
+
+    def _felt_seen(self, m: Moment, now: datetime) -> None:
+        """A moment his eyes caught (kit.noticing): he shows it at once, and feels it."""
+        who = m.who
+        if m.kind == "waved":
+            self.react("wave", f"{who} waved")
+            self.feel("pleased", f"{who} waved at you", 0.3, show=False)
+        elif m.kind == "thumbs_up":
+            self.react("nod", f"{who} gave you a thumbs up")
+            self.feel("proud", f"{who} gave you a thumbs up", 0.5, show=False)
+        elif m.kind == "thumbs_down":
+            self.react("droop", f"{who} gave you a thumbs down")
+            self.feel("put_out", f"{who} gave you a thumbs down", 0.3, show=False)
+        elif m.kind == "smiled":
+            self.react("wiggle", f"{who} smiled at you")
+            self.feel("pleased", f"{who} smiled at you", 0.4, show=False)
+        elif m.kind == "frowning":
+            self.feel("sympathetic", f"{who} has been frowning for a while", 0.4)
+            self._think_about("frowning", f"{who} has been frowning for a while.")
+        elif m.kind == "eyes_closing":
+            self.react("yawn", f"{who}'s eyes keep closing")
+            self.eyes_closing_at = now
+            self._think_about("sleepy", f"{who}'s eyes keep closing, and it's late.")
+        log.info("Kit saw a moment: %s (%s)", m.kind, who)
+
+    def busy_with(self, now: datetime | None = None) -> str:
+        """What his eyes saw Dan busy with just now ("phone" or "talking"), so he
+        doesn't talk over it (``life.eyes_manners``); empty if nothing."""
+        if self._busy is None or not self.settings().life.eyes_manners:
+            return ""
+        what, at = self._busy
+        return what if (now or self.clock()) - at <= BUSY_HOLDS else ""
+
+    def hush_line(self) -> str:
+        """His bubble while Dan's busy: why he's keeping quiet, or that he's saving
+        something up. Empty when Dan isn't busy."""
+        busy = self.busy_with()
+        if not busy:
+            return ""
+        why, till = BUSY_WORDS[busy]
+        if self.holding is not None:
+            return f"saving something {till}"
+        return f"keeping quiet, {why}"
+
+    def held_words(self, owner: str) -> str:
+        """For the pipe-up he held while Dan was busy and is saying now: how long and
+        why ("8 minutes, while Dan was on the phone"). Empty if he held nothing."""
+        held = self.delivering
+        if held is None:
+            return ""
+        minutes = max(1, round((self.clock() - held.since).total_seconds() / 60))
+        what = "on the phone" if held.busy == "phone" else "talking to someone"
+        return f"{minutes} minute{'' if minutes == 1 else 's'}, while {owner} was {what}"
+
+    def eyes_closing(self, now: datetime | None = None) -> bool:
+        """His eyes saw Dan's eyes keep closing late at night, in the last quarter of
+        an hour (kit.daily nudges him to bed sooner)."""
+        at = self.eyes_closing_at
+        return at is not None and (now or self.clock()) - at < timedelta(minutes=15)
 
     def _arrived(self, h: Happening, now: datetime) -> None:
         """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
@@ -1742,7 +1857,7 @@ class Life:
             self.awaiting_reply = False
             # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody.
             left = self.came_back is not None and self.came_back[1] > self.last_pipe
-            if present and not self.asleep and not left:
+            if present and not self.asleep and not left and not self.busy_with(now):
                 self.ignored = min(self.ignored + 1, 3)
                 self.sulky = True
                 why = f"{owner} didn't answer when you piped up at {self.last_pipe:%H:%M}"
@@ -1839,17 +1954,20 @@ class Life:
 
     def _tell_quiet(self) -> None:
         """Bodies hear why he's keeping quiet when that changes (not every new number
-        in it), so the desk app can say why."""
+        in it), so the desk app can say why; while Dan's busy, his bubble says so."""
         gist = re.split(r"[(:0-9]", self.quiet_because, maxsplit=1)[0].strip()
-        if self._quiet_shown is None:
-            self._quiet_shown = gist  # just started: nothing has changed yet
-        elif gist != self._quiet_shown:
-            self._quiet_shown = gist
-            self.publish({"type": "quiet", "because": self.quiet_because})
+        bubble = self.hush_line()
+        shown = f"{gist}|{bubble}"
+        if self._quiet_shown is None and not bubble:
+            self._quiet_shown = shown  # just started: nothing has changed yet
+        elif shown != self._quiet_shown:
+            self._quiet_shown = shown
+            self.publish({"type": "quiet", "because": self.quiet_because, "bubble": bubble})
 
     def _urge(self, now: datetime, snap, present: bool) -> tuple[str | None, str]:
         """(why Kit wants to talk, or None; and if not, why he's keeping quiet)."""
         life = self.settings().life
+        self.delivering = None  # a held pipe-up is said on the tick it's let out, or not at all
         if not life.enabled or life.chattiness <= 0 or life.max_per_hour <= 0:
             return None, "turned off in settings (life.enabled, chattiness or max_per_hour)"
         if self.snoozed_until and now < self.snoozed_until:
@@ -1863,6 +1981,21 @@ class Life:
             focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
         ):
             return None, "you're on a call or presenting"
+        busy = self.busy_with(now)
+        if busy:  # talking or on the phone: never
+            reason, _ = self._urge_now(now, snap, life)  # what he'd say if Dan were free
+            if reason not in (None, "nag") and life.hold_pipe_ups and self.holding is None:
+                self.holding = Held(reason, now, busy)
+            saving = ": saving something to say after" if self.holding else ""
+            return None, BUSY_WORDS[busy][0] + saving
+        held, self.holding = self.holding, None
+        if held is not None and now - held.since <= HOLD_KEEPS:
+            self.delivering = held  # what he held back, now Dan's free
+            return held.reason, ""
+        return self._urge_now(now, snap, life)
+
+    def _urge_now(self, now: datetime, snap, life) -> tuple[str | None, str]:
+        """The rest of ``_urge``: his drives against his manners."""
         home = self.homecoming
         if home is not None and not home.tried and not home.by_chat:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
@@ -1938,6 +2071,7 @@ class Life:
             home.tried = True  # his next reply says hello instead
             self.homecoming = home
         self.butting_in = False
+        self.holding = self.delivering = None
         self.drives.boredom = min(self.drives.boredom, 0.2)
         self.drives.curiosity = 0.0
         self.spotted = self.visitor = None
@@ -1951,6 +2085,7 @@ class Life:
             self._pipe_out = (reason, now)
         self.nags = self.nags + 1 if reason == "nag" else 0
         self.butting_in = False
+        self.holding = self.delivering = None
         self.last_pipe = now
         self.pipes.append(now)
         self.awaiting_reply = reason not in ("back", "visitor")  # a hello needs no answer
@@ -2769,12 +2904,14 @@ def pipe_up_prompt(
     share: str = "",
     aim: str = "",
     speech: str = "",
+    held: str = "",
 ) -> str:
     """The stage direction for a pipe-up. It goes where Dan's message would.
     ``share`` is a thought from his notebook to bring up, or with ``aim`` a want:
     what he means to do ("tell Dan") and ``share`` what about. ``speech`` is how he
     talks (persona.speech, see ``in_your_voice``). A "visitor" hello goes to
-    ``about``, someone his eyes know who isn't Dan."""
+    ``about``, someone his eyes know who isn't Dan. ``held`` says how long he held
+    it back, and why ("8 minutes, while Dan was on the phone")."""
     if reason == "visitor":
         return (
             f"[Not from {owner}. {about} just sat down at the desk and you can see them; you "
@@ -2796,6 +2933,11 @@ def pipe_up_prompt(
     }[reason]
     if butting_in:
         feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
+    if held:
+        feeling += (
+            f". You've held this back for {held}, so say that first, in a few words "
+            f"(you waited, you didn't want to interrupt)"
+        )
     style = cheek_style(cheek)
     if share and aim:
         base = f'You\'ve been wanting to {aim}: "{share}". Bring it up now, as yourself.'

@@ -25,12 +25,13 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | The Pod: program, printed parts, build guide | Done, in `pod/` | [[The Pod]] |
 | Body feed and knowing who can hear him (the Pod's link to the brain) | Open, pull request #36 | [[Pod In Depth#The body feed]] |
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
+| Companion stage 4: his voice and eyes carry it | Done | [[Companion Stage 4]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Open, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
 ## What's next
 
-1. Companion stage 4, then stage 5 (hearing, #42) tested on the desk.
+1. Companion stage 5 (hearing, #42) tested on the desk.
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
 3. Stage 4: a tool loop, PC control, the Claude Code bridge, MCP, Home

@@ -76,6 +76,8 @@ monthly_cap_usd = 40.0
 # As it runs low, calls give way in order, each this much sooner: evals, then
 # fact checks and key moments, then chat. His nightly reflection gets the last.
 reserve_usd = 3.0
+# A Claude answer is read as it's written, so he starts talking at once.
+# stream = true
 
 # Built-in model profiles: sonnet, opus, haiku, gpt-sol and gemini-flash. Change any
 # field here (prices change), or add your own and point a role at it.
@@ -173,6 +175,9 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # opinions = 0              # standing opinions he keeps in mind when he talks (0 to 2)
 # dials = false             # liveliness and happiness dials that the face shows
 # pipe_up_bar = 0.0         # score a pipe-up first and keep quiet below this (0.5)
+# eyes_manners = true       # no pipe-ups while his eyes see you on your phone or talking
+# hold_pipe_ups = false     # ...and what he wanted to say waits till you're done
+# seen_feelings = false     # he feels a wave, a thumbs up, a smile, a frown, sleepy eyes
 
 # [face]
 # character = "retro"       # which character Kit is (src/kit/face/characters); retro is

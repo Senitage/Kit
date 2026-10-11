@@ -303,6 +303,13 @@ class CloudSettings(_Section):
         "sooner than the last: evals first, then fact checks and key moments, then chat. "
         "Kit's nightly reflection always has the last of it. 0 treats them all the same.",
     )
+    stream: bool = Field(
+        True,
+        description="A Claude answer comes in as it's written, so Kit starts saying the "
+        "first words (in the answer's mood) while the rest is still on its way, instead of "
+        "after the whole answer. Goodbyes are still checked whole first. Off: each answer "
+        "arrives in one piece.",
+    )
 
 
 class NasSettings(_Section):
@@ -663,6 +670,22 @@ class LifeSettings(_Section):
         description="Before Kit brings something up unprompted, he scores it for relevance, "
         "originality and urgency (helped by how often you take his pipe-ups up) and keeps "
         "quiet below this. 0 turns the scoring off; 0.5 is a sensible bar.",
+    )
+    eyes_manners: bool = Field(
+        True,
+        description="With his eyes on, Kit doesn't pipe up while you're on your phone or "
+        "talking to someone, and his bubble says why.",
+    )
+    hold_pipe_ups: bool = Field(
+        False,
+        description="Something Kit wanted to say while you were on your phone or talking to "
+        "someone waits until you're done (up to half an hour), and he says why he waited.",
+    )
+    seen_feelings: bool = Field(
+        False,
+        description="Kit feels what his eyes catch: a wave (he waves back), a thumbs up, a "
+        "smile at him for a couple of seconds (he brightens), a frown that stays (he's "
+        "sympathetic), and your eyes closing late at night (he yawns and thinks of bed).",
     )
 
     @field_validator("quiet_from", "quiet_until", "bedtime")
@@ -1070,6 +1093,12 @@ class SpeechSettings(_Section):
         description="How long a voice engine may take to load (the first Chatterbox start "
         "downloads its model).",
     )
+    sounds: bool = Field(
+        False,
+        description="Sounds in his voice where a gesture calls for one: a chuckle on the "
+        "punchline, a sigh, a gasp. At most one every other sentence. Only Chatterbox Turbo "
+        "makes them; other engines leave them out.",
+    )
 
     @field_validator("engines", mode="before")
     @classmethod
@@ -1085,11 +1114,22 @@ class SpeechSettings(_Section):
             merged[name] = profile
         return merged
 
+    fallback: str = Field(
+        "",
+        description="A voice engine to switch to if his usual one can't start or runs out of "
+        "graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech "
+        "settings change. Empty: no fallback, his voice just stops.",
+    )
+
     @model_validator(mode="after")
     def _engine_is_known(self) -> SpeechSettings:
+        known = ", ".join(sorted(self.engines))
         if self.engine not in self.engines:
-            known = ", ".join(sorted(self.engines))
             raise ValueError(f"speech.engine is '{self.engine}', which isn't an engine ({known})")
+        if self.fallback and self.fallback not in self.engines:
+            raise ValueError(
+                f"speech.fallback is '{self.fallback}', which isn't an engine ({known})"
+            )
         return self
 
     @property

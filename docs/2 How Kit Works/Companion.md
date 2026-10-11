@@ -11,8 +11,10 @@ related: ["[[Inner Life In Depth]]", "[[Memory]]"]
 > A chat window waits to be typed at. Kit lives on the desk. He knows how long
 > you were gone, is glad when you're back, sees you off without guilt, asks
 > how the dentist went, gets to know you a question at a time, keeps himself
-> busy while you're out, and drops the cheek on a really bad night. It's
-> built on his [[Inner Life]], in three stages so far.
+> busy while you're out, drops the cheek on a really bad night, and you can
+> hear and see it all: a chuckle in his voice, a wave back, quiet while
+> you're on your phone. It's built on his [[Inner Life]], in four stages so
+> far.
 
 ## He knows you were gone
 
@@ -79,16 +81,32 @@ never an invented afternoon.
 - **A game a day** at most: a weather bet, rate your lunch, a would-you-rather.
   Games that keep falling flat retire.
 
-## The three stages so far
+## His voice and eyes carry it
+
+- **He starts talking at once** on a cloud answer, in its mood, instead of
+  after the whole answer is written.
+- **Sounds in his voice**: a chuckle inside the punchline, a sigh, a gasp
+  (`speech.sounds`, with Chatterbox Turbo).
+- **His face keeps time with his voice**: his mouth moves for exactly as long
+  as each sentence plays.
+- **He feels what his eyes catch**: he waves back, a smile brightens him, a
+  frown that stays makes him sympathetic, and your eyes closing late puts bed
+  on his mind ([[Eyes#Moments he feels]]).
+- **He doesn't talk over you**: on your phone or talking to someone, he keeps
+  quiet and his bubble says so; what he wanted to say can wait, and he tells
+  you why he waited.
+
+## The stages so far
 
 | Stage | Theme | Guide |
 |---|---|---|
 | 1 | He knows you were gone | [[Companion Stage 1]] |
 | 2 | He follows your life | [[Companion Stage 2]] |
 | 3 | A life of his own, and feeling it | [[Companion Stage 3]] |
+| 4 | His voice and eyes carry it | [[Companion Stage 4]] |
 | 5 | He hears you: answers his name, stops when talked over, enjoys a laugh | [[Companion Stage 5]] |
 
-Stage 4 is next ([[Where Kit Is Up To]]); how he hears is in [[Hearing]]. `kit eval companion` checks
+How he hears is in [[Hearing]]. `kit eval companion` checks
 goodbyes, hellos and honesty on any local model ([[Evals]]).
 
 ## Go deeper
@@ -101,3 +119,4 @@ goodbyes, hellos and honesty on any local model ([[Evals]]).
 > - `src/kit/notebook.py`: threads, wants and running jokes.
 > - `src/kit/pastimes.py`: what he does while you're out.
 > - `src/kit/when.py`: reading "Thursday arvo".
+> - `src/kit/noticing.py`: the moments his eyes catch that he feels.

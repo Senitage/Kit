@@ -126,7 +126,7 @@ The full detail behind the plain-words notes.
 - [[Updating Kit]]: pull, install, restart. The same every time.
 - [[Building the Pod]]: print, wire, upload and link the Pod, step by step.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
-- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 5]]
+- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]], [[Companion Stage 5]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
 
 ### 5. Reference

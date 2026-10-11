@@ -104,9 +104,44 @@ class FakeModel:
             raise LocalModelError(self.error)
 
 
+class FakeStream:
+    """What ``client.beta.messages.stream(...)`` gives: text events a few characters at a
+    time, then the whole response, as the real stream helper does."""
+
+    def __init__(self, messages, kwargs):
+        self.messages, self.kwargs = messages, kwargs
+        self.response = None
+
+    async def __aenter__(self):
+        self.response = await self.messages.create(**self.kwargs)
+        self.messages.owner.streamed += 1
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def __aiter__(self):
+        return self._events()
+
+    async def _events(self):
+        for block in self.response.content:
+            if block.type != "text":
+                yield SimpleNamespace(type="content_block_start")
+                continue
+            for i in range(0, len(block.text), 5):
+                yield SimpleNamespace(type="text", text=block.text[i : i + 5])
+                await asyncio.sleep(0)
+
+    async def get_final_message(self):
+        return self.response
+
+
 class FakeMessages:
     def __init__(self, owner):
         self.owner = owner
+
+    def stream(self, **kwargs):
+        return FakeStream(self, kwargs)
 
     async def create(self, **kwargs):
         owner = self.owner
@@ -159,6 +194,7 @@ class FakeAnthropic:
         self.cache_read_input_tokens = cache_read_input_tokens
         self.searches = searches
         self.calls: list[dict] = []
+        self.streamed = 0  # calls that streamed their answer
         self.beta = SimpleNamespace(messages=FakeMessages(self))
         self.keys: list[str] = []
 

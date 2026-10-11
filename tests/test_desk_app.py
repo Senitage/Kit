@@ -273,13 +273,35 @@ def test_glow_sleeps_and_wakes_when_the_brain_says_and_glances_by_himself(qapp):
     face.close()
 
 
+def test_on_your_phone_his_bubble_says_hes_keeping_quiet(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    piped = []
+    desk.chat.pipe_up = lambda reply, **how: piped.append(how)
+    try:
+        hush = "keeping quiet, you're on your phone"
+        desk._on_life({"type": "quiet", "because": "you're on your phone", "bubble": hush})
+        assert desk.bubble.idle_text() == f"{hush}..."
+        desk._on_life({"type": "quiet", "because": "", "bubble": ""})
+        assert desk.bubble.idle_text() == ""
+        line = reply_event("Ha.")["reply"]
+        desk._on_life({"type": "pipe_up", "reply": line, "voice": "[chuckle] Ha.", "aloud": False})
+        assert piped == [{"lead_in_ms": 700, "voice": "[chuckle] Ha.", "aloud": False}]
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()
+
+
 def test_a_pipe_up_shows_in_the_chat_and_on_the_face(qapp, desk_dir, monkeypatch):
     DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
     save_token("tok", desk_dir)
     monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
     desk = desk_app.DeskApp(qapp, background=True)
     acted = []
-    desk.performer.perform = acted.append
+    desk.performer.perform = lambda reply, voiced=False: acted.append(reply)
     try:
         desk._on_life({"type": "fidget", "gesture": "yawn"})
         desk._on_life({"type": "state", "state": "asleep"})
@@ -820,7 +842,7 @@ def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):
     desk = desk_app.DeskApp(qapp, background=True)
     played = []
     desk.sounds.player = lambda path: played.append(path.name)
-    desk.performer.perform = lambda reply: None
+    desk.performer.perform = lambda reply, voiced=False: None
     try:
         desk.show_chat()  # even with the chat open
         desk._act_out(reply_event("Hi")["reply"])
@@ -854,7 +876,7 @@ def test_a_show_plays_as_he_answers(qapp, desk_dir, monkeypatch):
     monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
     desk = desk_app.DeskApp(qapp, background=True)
     desk.sounds.player = None
-    desk.performer.perform = lambda reply: None
+    desk.performer.perform = lambda reply, voiced=False: None
     time_show = {"kind": "time", "text": "3:07", "small": "pm"}
     try:
         desk._chat_state("heard")

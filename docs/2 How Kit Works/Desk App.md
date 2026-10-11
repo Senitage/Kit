@@ -57,7 +57,10 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 ## His voice and face on the desk
 
 - **Voice**: the app plays each sentence as soon as the server has made it,
-  through one steady sound output. See [[Voice]].
+  through one steady sound output, with any sound (a chuckle) in its place.
+  His face talks for exactly as long as each sentence plays. See [[Voice]].
+- **His bubble** shows what he's said, what he's up to while you're out, or,
+  while his eyes see you on your phone, that he's keeping quiet.
 - **Kit 3D**: when his character has a 3D look, the app lays the brain's face
   page over his window and mirrors every expression to it. See [[Face]].
 - **Reflexes**: the only things the desk decides itself. Every so often he

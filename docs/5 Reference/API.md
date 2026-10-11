@@ -36,8 +36,9 @@ A chat streams events like these, one per line:
 
 | Event | Means |
 |---|---|
-| `mood` | His feeling going in, so the face can react at once |
-| `say` | Words as they're written |
+| `mood` | His feeling going in, so the face and voice can react at once |
+| `say` | Words as they're written (a cloud answer's too, as it streams in) |
+| `sound` | A sound for his voice before the words that come next (`chuckle`, `sigh`, `gasp`), with `speech.sounds`. Never shown |
 | `show` | Something for his face: the time, the date, the weather |
 | `recalled`, `remembered`, `reading_note`, `looked_at_pc`, `looked_around` | What he did mid-answer |
 | `handing_off` | A bigger model is taking over ("Let me think...") |
@@ -92,7 +93,11 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 (asleep or awake, with `why` when there is one), `look`, `doing`, `quiet`,
 `dials`, `pipe_up`, `heard` (someone talked to him out loud: read his reply
 from `/api/hearing/turns/{turn}`) and `hush` (someone talked over him: stop
-his voice). See [[Bodies]].
+his voice). See [[Bodies]]. A `quiet` event says why he's keeping quiet
+(`because`) and, while his eyes see you busy, what his bubble should say
+(`bubble`). A `pipe_up` carries the line (`reply`), the line as his voice says
+it with any sounds (`voice`), and whether to say it out loud (`aloud`: false
+when his eyes see nobody there).
 
 ## What he senses
 
@@ -113,7 +118,7 @@ his voice). See [[Bodies]].
 
 | Method and path | What it does |
 |---|---|
-| `GET /api/speech` | Voice engine status |
+| `GET /api/speech` | Voice engine status: the engine set, the one he's `using`, and why if he `fell_back` |
 | `POST /api/speech/say` | One sentence as a WAV file, in his voice and mood (`aloud: false` for a clip that won't be played in the room) |
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |

@@ -183,6 +183,7 @@ from kit.reply import (
     ReplyError,
     SayExtractor,
     SpokenStream,
+    StreamedReply,
     early_plan,
     mood_read,
     parse_cloud_reply,
@@ -190,6 +191,7 @@ from kit.reply import (
     parse_reply,
     plan_json,
     plan_schema,
+    reply_events,
     reply_json,
     reply_schema,
     sentences,
@@ -197,7 +199,7 @@ from kit.reply import (
     without_plans,
 )
 from kit.scene_context import SEEN, Happening, SceneContext, SceneReport
-from kit.settings import Settings, cloud_background, local_stands_in
+from kit.settings import ModelProfile, Settings, cloud_background, local_stands_in
 from kit.shows import show_for
 from kit.things import THINGS, Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
@@ -1350,6 +1352,7 @@ class Brain:
                     share=about,
                     aim=aim,
                     speech=settings.persona.speech,
+                    held=self.life.held_words(owner),
                 )
             messages = self._local_messages(
                 settings,
@@ -2400,15 +2403,33 @@ class Brain:
                 yield event
             return
         on_step = job.steps.append if job else None
-        answer = await self.cloud.answer(
-            profile, messages, settings, question, on_step, priority=PRIORITY.get()
-        )
-        self.life.react("perk_up", "the answer came back")
+        lint, sounds = LINT.get(), settings.speech.sounds
+        words = None  # the answer read as it streams in (cloud.stream)
+        if lint is not None:  # a goodbye: checked whole before a word of it is said
+            answer, reply = await self._cloud_checked(
+                profile, messages, settings, question, on_step, lint
+            )
+        elif settings.cloud.stream:
+            words = StreamedReply("cloud", sounds)
+            async for event in self._cloud_stream(
+                profile, messages, settings, question, on_step, words
+            ):
+                if isinstance(event, CloudAnswer):
+                    answer = event
+                else:
+                    yield event
+            reply = parse_cloud_reply(answer.text)
+        else:
+            answer = await self.cloud.answer(
+                profile, messages, settings, question, on_step, priority=PRIORITY.get()
+            )
+            reply = parse_cloud_reply(answer.text)
+        if words is None or not words.said:
+            self.life.react("perk_up", "the answer came back")
         if role != CHAT:  # a real job tires him; an everyday answer doesn't
             self.life.spend(CLOUD_TIRES)
         if READ_ON.get() and READ.get() is None:
             READ.set(mood_read(answer.text))
-        reply = parse_cloud_reply(answer.text)
         if answer.truncated:
             reply.detail = reply.detail + "\n\n(I ran out of room there; ask me to continue.)"
         meta = {
@@ -2419,7 +2440,9 @@ class Brain:
             "searches": answer.searches,
         }
         message_id = self._remember_reply(reply, "cloud", meta)
-        yield {"type": "say", "text": reply.text, "source": "cloud"}
+        if words is None or not words.said:  # it came in one piece: his words now
+            for event in reply_events(reply, "cloud", sounds):
+                yield event
         yield {
             "type": "reply",
             "source": "cloud",
@@ -2428,6 +2451,71 @@ class Brain:
             "message_id": message_id,
             "month_usd": round(self.memory.month_spend(), 4),
         }
+
+    async def _cloud_stream(
+        self,
+        profile: ModelProfile,
+        messages: list[dict],
+        settings: Settings,
+        question: str,
+        on_step: Callable[[str], None] | None,
+        words: StreamedReply,
+    ) -> AsyncIterator[Event | CloudAnswer]:
+        """A cloud answer as it's written (``cloud.stream``): his mood, sounds and words
+        as chat events the moment they're in, then the whole answer (a ``CloudAnswer``,
+        last). He perks up at the first word. Raises CloudError as ``Cloud.answer``
+        does; a model that can't stream gives its words at the end instead."""
+        pieces: asyncio.Queue[str | None] = asyncio.Queue()
+        call = asyncio.create_task(
+            self.cloud.answer(
+                profile,
+                messages,
+                settings,
+                question,
+                on_step,
+                priority=PRIORITY.get(),
+                on_text=pieces.put_nowait,
+            )
+        )
+        call.add_done_callback(lambda _: pieces.put_nowait(None))
+        try:
+            while (piece := await pieces.get()) is not None:
+                for event in words.feed(piece):
+                    if event["type"] == "say" and words.said == event["text"]:
+                        self.life.react("perk_up", "the answer started coming back")
+                    yield event
+            yield await call
+        finally:
+            if not call.done():  # nobody's listening any more
+                call.cancel()
+
+    async def _cloud_checked(
+        self,
+        profile: ModelProfile,
+        messages: list[dict],
+        settings: Settings,
+        question: str,
+        on_step: Callable[[str], None] | None,
+        lint: Lint,
+    ) -> tuple[CloudAnswer, Reply]:
+        """A cloud answer that's checked whole before it's said (a goodbye): one that
+        fails the check gets one more go with what was wrong, then the stock line."""
+        talk = messages
+        for _ in range(2):
+            answer = await self.cloud.answer(
+                profile, talk, settings, question, on_step, priority=PRIORITY.get()
+            )
+            reply = parse_cloud_reply(answer.text)
+            fault = lint.check(reply.text)
+            if not fault:
+                return answer, reply
+            log.info("the cloud's %r didn't pass: %s", reply.text, fault)
+            asked = messages[-1]
+            talk = [*messages[:-1], {**asked, "content": asked["content"] + fault}]
+        if not lint.fallback:
+            return answer, reply
+        log.info("said a stock line: no clean answer in two goes")
+        return answer, Reply.plain(lint.fallback, reply.emotion, reply.segments[0].gesture)
 
     async def _local_reply(
         self,
