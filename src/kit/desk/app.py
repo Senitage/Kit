@@ -409,6 +409,7 @@ class _NoDesktop:
 class _Signals(QObject):
     online = Signal(bool, str)
     life = Signal(dict)
+    eyes = Signal(bool)  # the "Let Kit see me" switch, as the brain has it
     character = Signal()
 
 
@@ -428,6 +429,7 @@ class DeskApp(QObject):
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
         self._signals.life.connect(self._on_life)
+        self._signals.eyes.connect(self._show_eyes)
         self._signals.character.connect(self._use_look)
         self._face3d: face3d.Face3D | None = None  # the 3D face page over Glow, if his look is 3D
 
@@ -516,6 +518,10 @@ class DeskApp(QObject):
         self.watch_action.setChecked(self.config.watch)
         self.watch_action.toggled.connect(self.set_watching)
         menu.addAction(self.watch_action)
+        self.eyes_action = QAction("Let Kit see me", menu, checkable=True)
+        self.eyes_action.setChecked(True)  # the brain says otherwise once it's reached
+        self.eyes_action.toggled.connect(self.set_eyes)
+        menu.addAction(self.eyes_action)
         self.playing_action = QAction("Share what's playing", menu, checkable=True)
         self.playing_action.setChecked(self.config.share_playing)
         self.playing_action.toggled.connect(self.set_sharing_playing)
@@ -627,6 +633,23 @@ class DeskApp(QObject):
             2500,
         )
 
+    def set_eyes(self, on: bool) -> None:
+        """Switch Kit's eyes (kit.eyes, on the brain) on or off: off releases the camera."""
+        client = self.client
+        if client is None:
+            return
+        threading.Thread(
+            target=lambda: _quietly(client.set_eyes, on), name="kit-eyes", daemon=True
+        ).start()
+        self.tray.showMessage(
+            "Kit",
+            "Eyes open: I can see the desk again."
+            if on
+            else "Righto, eyes shut: the camera's off.",
+            face_icon(),
+            2500,
+        )
+
     def set_sharing_playing(self, on: bool) -> None:
         self.config.share_playing = on
         self.config.save()
@@ -636,6 +659,12 @@ class DeskApp(QObject):
             face_icon(),
             2500,
         )
+
+    def _show_eyes(self, on: bool) -> None:
+        """The switch as the brain has it, without switching anything."""
+        self.eyes_action.blockSignals(True)
+        self.eyes_action.setChecked(on)
+        self.eyes_action.blockSignals(False)
 
     def set_boop(self, on: bool) -> None:
         if on == self.config.boop:
@@ -820,6 +849,7 @@ class DeskApp(QObject):
             try:
                 status = client.check()
                 self._signals.online.emit(True, status.get("pc") or "online")
+                self._signals.eyes.emit(not status.get("eyes_paused", False))
             except BrainError as e:
                 self._signals.online.emit(False, str(e))
                 return
@@ -910,6 +940,9 @@ class DeskApp(QObject):
         elif event.get("type") == "fidget":
             if not self._busy() and not self.alive.asleep:
                 face.play(event.get("gesture", "look_away"), time.monotonic())
+        elif event.get("type") == "look":  # Kit's eyes saw where you are: Glow looks at you
+            if not self.alive.asleep:
+                face.look_at(float(event.get("x", 0)), float(event.get("y", 0)), time.monotonic())
         elif event.get("type") == "react":  # a reaction plays even mid-conversation
             if not self.alive.asleep:
                 face.play(event.get("gesture", "perk_up"), time.monotonic())

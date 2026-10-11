@@ -126,6 +126,7 @@ class Action(BaseModel):
         "none",
         "recall",
         "look_at_pc",
+        "look_around",
         "remember",
         "note",
         "read_note",
@@ -136,7 +137,9 @@ class Action(BaseModel):
         "ask_expert",
     ] = Field(
         description="recall searches memory before answering; look_at_pc checks what's "
-        "open and in focus on Dan's PC and how it's running; remember saves a fact; "
+        "open and in focus on Dan's PC and how it's running; look_around reads everything "
+        "the camera sees right now (who's at the desk, what they're doing, what's about); "
+        "remember saves a fact; "
         "note writes a note into Dan's notes; offer_note asks whether to; "
         "read_note opens one of his notes and reads it before answering; "
         "thing notes a named thing and where it lives; weather gets the forecast before "

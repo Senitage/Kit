@@ -27,11 +27,13 @@ from kit.brain import Brain
 from kit.face import character as characters
 from kit.face import serve as face_files
 from kit.knowledge import Item
+from kit.known_faces import FACES_FILE, Enrolment, KnownFaces
 from kit.life import TICK_S
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
+from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
 from kit.speech.service import SpeechError, SpeechService
@@ -103,6 +105,10 @@ class VersionIn(BaseModel):
     id: int
 
 
+class EyesSwitch(BaseModel):
+    paused: bool
+
+
 class ThingEdit(BaseModel):
     name: str | None = None
     kind: str | None = None
@@ -150,7 +156,11 @@ def create_app(
     notes_every_s: float | None = NOTES_SYNC_S,
     speech: SpeechService | None = None,
     speech_check_s: float | None = SPEECH_CHECK_S,
+    faces: KnownFaces | None = None,
 ) -> FastAPI:
+    if faces is None:
+        faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
@@ -286,6 +296,8 @@ def create_app(
             if brain.recall.embed_problem
             else "words and meaning",
             "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
+            "eyes": brain.scene.now_line(s.persona.owner) or "the eyes haven't reported yet",
+            "eyes_paused": brain.eyes_paused,
         }
 
     @app.get("/api/settings", dependencies=auth)
@@ -497,6 +509,55 @@ def create_app(
     def pc_context() -> dict:
         """What Kit can see of Dan's PC, as Kit sees it."""
         return brain.pc.as_dict(store.current().persona.owner)
+
+    def _eyes_paused() -> bool:
+        return brain.eyes_paused or not store.current().eyes.enabled
+
+    @app.post("/api/eyes/scene", dependencies=auth)
+    def eyes_report(report: SceneReport) -> dict:
+        """The eyes' report (kit.eyes): who and what is in view, what just happened.
+        The answer carries the switch and the eyes' settings, so a running pair
+        of eyes follows changes to either."""
+        brain.saw(report)
+        return {
+            "ok": True,
+            "paused": _eyes_paused(),
+            "settings": store.current().eyes.model_dump(),
+            "faces_version": faces.version,
+        }
+
+    @app.get("/api/eyes/faces", dependencies=auth)
+    def known_faces() -> dict:
+        """The people Kit's eyes know (kit.known_faces): names and face numbers."""
+        return faces.as_dict()
+
+    @app.post("/api/eyes/faces", dependencies=auth)
+    def enrol_face(body: Enrolment) -> dict:
+        """More looks at someone, from `kit eyes enrol NAME`."""
+        try:
+            name, count = faces.add(body.name, body.embeddings)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"name": name, "count": count, "version": faces.version}
+
+    @app.delete("/api/eyes/faces/{name}", dependencies=auth)
+    def forget_face(name: str) -> dict:
+        """Forget someone's face completely (`kit eyes forget NAME`)."""
+        gone = faces.forget(name)
+        if gone is None:
+            raise HTTPException(404, f"Kit's eyes don't know anyone called {name}")
+        return {"forgot": gone, "version": faces.version}
+
+    @app.get("/api/eyes/scene", dependencies=auth)
+    def eyes_scene() -> dict:
+        """What Kit can see through his eyes, as Kit sees it."""
+        return {**brain.scene.as_dict(store.current().persona.owner), "paused": _eyes_paused()}
+
+    @app.post("/api/eyes/pause", dependencies=auth)
+    def eyes_switch(body: EyesSwitch) -> dict:
+        """The "Let Kit see me" switch: paused eyes release the camera until it's on again."""
+        brain.pause_eyes(body.paused)
+        return {"paused": _eyes_paused()}
 
     @app.get("/api/life", dependencies=auth)
     def life() -> dict:
@@ -727,10 +788,24 @@ async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: flo
         await asyncio.sleep(every_s)
 
 
-async def _life_loop(brain: Brain, every_s: float) -> None:
-    """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up."""
+async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
+    """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up. A
+    hello waiting to be said (Dan just sat down, or came back to the keyboard)
+    gets a beat straight away rather than at the next one, so he says hi while
+    Dan's still sitting down. The same goes for the cat just spotted, and for
+    someone else Kit knows sitting down."""
+    loop = asyncio.get_running_loop()
+    last = loop.time()
+    greeted = None
     while True:
-        await asyncio.sleep(every_s)
+        await asyncio.sleep(min(step_s, every_s))
+        life = brain.life
+        home = life.homecoming or getattr(life, "visitor", None) or getattr(life, "spotted", None)
+        due = loop.time() - last >= every_s
+        if not due and (home is None or home is greeted):
+            continue
+        greeted = home  # one early beat per hello: quiet hours or a snooze can hold it
+        last = loop.time()
         try:
             await life_tick(brain)
         except Exception:

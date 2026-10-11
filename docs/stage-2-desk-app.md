@@ -111,6 +111,9 @@ it. After a Kit update, press the reload arrow on Kit's card in
   hidden tab is open.
 - Untick **Share what I'm working on** in the tray menu to pause. Kit is told
   it's paused and sees no windows at all. A locked PC shares nothing either.
+- Untick **Let Kit see me** to switch his eyes off ([stage-vision.md](stage-vision.md)):
+  the camera process releases the camera until you tick it again. The brain
+  keeps the switch, so it holds across restarts and `kit eyes pause` does the same.
 - Today's activity is held in the brain's working memory only. It isn't saved
   to disk or to Kit's long-term memory yet, and it's gone when the brain
   restarts.
@@ -232,6 +235,8 @@ face and chat; there it reports PC health but no windows.
   `/api/messages`, `/api/pc/context`).
 - `kit.pc_context` (brain side, cross-platform): keeps the latest report and
   today's focus history, writes the prompt line, and answers `look_at_pc`.
+- `kit.scene_context` (brain side): the same for what Kit's eyes see; the desk
+  app acts out its `look` events so Glow looks at you ([stage-vision.md](stage-vision.md)).
 
 Next steps: fold the day's PC activity into Kit's day summaries so he
 remembers what you worked on; add a global hotkey for the chat; then stage 4's

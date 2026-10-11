@@ -23,6 +23,7 @@ a reference back to where it came from.
 | `files` | NAS documents and folders (names, paths, text) | Stage 5 |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([your notes](notes.md)) | Now |
+| `seen` | What Kit's eyes saw that's worth remembering: someone arriving after the desk was empty a while, the cat wandering in ([his eyes](stage-vision.md)) | Vision 1 |
 
 A later stage adds a source by putting items into the same index. Recall,
 search, the memory page and the accuracy test then work for it with no other

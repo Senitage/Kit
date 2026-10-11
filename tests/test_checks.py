@@ -226,3 +226,30 @@ def test_api_key_from_secrets_folder(paths):
 def test_api_key_env_wins(paths, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-env")
     assert anthropic_api_key(paths) == "sk-env"
+
+
+# --- eyes ------------------------------------------------------------------
+
+
+def test_eyes_check_passes_warns_or_skips():
+    cams = [{"index": 0, "backend": "DSHOW", "width": 1280, "height": 720, "fps": 30.0}]
+    r = checks.check_eyes(Settings(), lambda: cams)
+    assert r.status is Status.PASS and r.detail == "[0] 1280x720 at 30 fps via DSHOW"
+    r = checks.check_eyes(Settings.model_validate({"eyes": {"camera": 2}}), lambda: cams)
+    assert r.status is Status.WARN and "camera 2 (eyes.camera) not found" in r.detail
+    r = checks.check_eyes(Settings(), lambda: [])
+    assert r.status is Status.WARN and "no camera on this machine" in r.detail
+
+    def no_cv2():
+        raise ImportError("No module named cv2")
+
+    r = checks.check_eyes(Settings(), no_cv2)
+    assert r.status is Status.WARN and 'pip install "kit[eyes]"' in r.detail
+
+    def broken():
+        raise RuntimeError("driver fell over")
+
+    r = checks.check_eyes(Settings(), broken)
+    assert r.status is Status.WARN and "driver fell over" in r.detail
+    r = checks.check_eyes(Settings.model_validate({"eyes": {"enabled": False}}), lambda: cams)
+    assert r.status is Status.SKIP

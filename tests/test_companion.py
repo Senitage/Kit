@@ -695,7 +695,7 @@ def test_asked_about_himself_he_answers_from_what_is_true(memory):
     turn = model.calls[0][-1]["content"]
     assert "[About yourself, true right now" in turn
     assert "Dan told you to shush until 10:30" in turn
-    assert "the window in front" in turn and "no camera or microphone yet" in turn
+    assert "the window in front" in turn and "your eyes aren't open" in turn
     assert "never claim to be human" in turn
 
 
@@ -925,7 +925,7 @@ def test_what_is_true_about_him_reaches_his_spoken_words(memory):
     brain.pc.update(snap(idle=5))
     collect(brain.chat("Can you see me?"))
     note = model.speak_calls[0][-1]["content"]
-    assert "Keep in mind: About yourself" in note and "no camera or microphone yet" in note
+    assert "Keep in mind: About yourself" in note and "your eyes aren't open" in note
 
 
 def test_a_goodbye_reaches_his_spoken_words_too(memory):
