@@ -110,7 +110,8 @@ pick new voices up by themselves.
   Run `kit hearing --words` to see the words they heard (only in that window),
   then say his name at the start or end, or add the word they write instead to
   `hearing.names` on the server (`kit config set hearing.names
-  '["Kit", "Kitt", "Ki", "Kid", "Kip"]'`).
+  '["Kit", "Kitt", "Ki", "Kid", "Kip"]'`). A `hearing.names` already in your
+  settings file replaces the default list, so check it has "Ki" and "Kid".
 - **He stops himself mid-sentence:** his own voice is coming back loud enough
   to sound like someone else. Lower `hearing.own_voice` a little, turn the
   speakers down, use a headset, or set `hearing.barge_in` to false.

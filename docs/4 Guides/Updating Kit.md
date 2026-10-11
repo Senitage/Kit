@@ -85,6 +85,10 @@ The same on the PC with the mic: `git pull` in that copy of Kit,
 `pip install -e ".[hearing]"` if the guide says there's something new, then
 stop and start `kit hearing`. See [[Companion Stage 5]].
 
+A setting saved in your settings file keeps its value when an update changes
+the default. So if `hearing.names` is already there, add any new spellings of
+his name yourself (`kit config show` lists what's set).
+
 ## The voice engine
 
 Chatterbox has its own Python (`speech.engines.*.python`), which Kit updates
