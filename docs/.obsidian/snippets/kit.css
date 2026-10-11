@@ -1,0 +1,45 @@
+/* Kit's vault: a few touches so the notes look like Kit. */
+
+/* Pictures: rounded, centred, with a soft shadow. */
+.markdown-rendered img {
+  border-radius: 12px;
+  display: block;
+  margin: 0.6em auto;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+}
+
+/* The banner on Home runs the full width. */
+.markdown-rendered img[src*="kit-banner"] {
+  width: 100%;
+  border-radius: 16px;
+}
+
+/* Home's title glows like his eyes. */
+.theme-dark .kit-home h1 {
+  color: #6effcd;
+  text-shadow: 0 0 18px rgba(77, 255, 192, 0.35);
+}
+
+/* Section headings in Kit's mint. */
+.theme-dark .markdown-rendered h2 { color: #7ef3e6; }
+.theme-light .markdown-rendered h2 { color: #178f75; }
+
+/* Tables: a little air. */
+.markdown-rendered table td,
+.markdown-rendered table th { padding: 6px 12px; }
+
+/* Kit's own callouts. "> [!kit]" is Kit talking, in his mint glow. */
+.callout[data-callout="kit"] {
+  --callout-color: 46, 196, 160;
+  --callout-icon: lucide-bot;
+}
+.theme-dark .callout[data-callout="kit"] {
+  --callout-color: 110, 255, 205;
+  box-shadow: 0 0 22px rgba(77, 255, 192, 0.12);
+}
+
+/* "> [!under-the-hood]-" folds the code paths away until you want them. */
+.callout[data-callout="under-the-hood"] {
+  --callout-color: 130, 140, 150;
+  --callout-icon: lucide-wrench;
+}

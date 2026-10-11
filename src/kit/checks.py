@@ -205,7 +205,7 @@ def check_eyes(settings: Settings, cameras: CameraLister = cameras_here) -> Chec
     except ImportError:
         detail = (
             "no camera libraries here; on the PC with the webcam run "
-            'pip install "kit[eyes]" then `kit eyes` (docs/stage-vision.md)'
+            'pip install "kit[eyes]" then `kit eyes` (docs/4 Guides/Vision Stage 1.md)'
         )
         return CheckResult("eyes", Status.WARN, detail)
     except Exception as e:  # a broken driver mustn't stop the report
@@ -246,7 +246,7 @@ def check_cloud(
             continue
         key = api_key(profile.provider)
         if not key:
-            detail = f"no {profile.provider} API key; see docs/stage-0-setup.md"
+            detail = f"no {profile.provider} API key; see docs/4 Guides/Stage 0 - Server Setup.md"
             results.append(CheckResult(label, Status.FAIL, detail))
         elif profile.provider == "anthropic":
             results.append(_check_claude(label, profile.model, key, make_client))

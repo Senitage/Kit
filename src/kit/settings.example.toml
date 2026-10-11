@@ -1,5 +1,5 @@
 # Kit's settings. Lives in Kit's data folder (run `kit paths` to see where).
-# Secrets such as API keys never go in this file; see docs/stage-0-setup.md.
+# Secrets such as API keys never go in this file; see docs/4 Guides/Stage 0 - Server Setup.md.
 
 schema_version = 1
 
@@ -79,7 +79,7 @@ reserve_usd = 3.0
 
 # Built-in model profiles: sonnet, opus, haiku, gpt-sol and gemini-flash. Change any
 # field here (prices change), or add your own and point a role at it.
-# Each needs its provider's API key in the secrets folder; see docs/stage-0-setup.md.
+# Each needs its provider's API key in the secrets folder; see docs/4 Guides/Stage 0 - Server Setup.md.
 # [models.sonnet]
 # effort = "medium"
 #
@@ -136,7 +136,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # kit = "Morning. Coffee first, or straight into it?"
 
 # Kit's inner life: fidgets, boredom, piping up on his own, his own thoughts,
-# and a nightly look back at his day (docs/life.md).
+# and a nightly look back at his day (docs/2 How Kit Works/Inner Life.md).
 # [life]
 # enabled = true
 # cheek = 0.6            # 0 polite .. 1 very cheeky
@@ -182,7 +182,7 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 #                           # the built-in one, e.g. your Blender project's pack folder
 
 # Kit's eyes: the camera process (`kit eyes`, on the PC with the webcam) reads
-# these from the brain, so there's one place to change them (docs/stage-vision.md).
+# these from the brain, so there's one place to change them (docs/4 Guides/Vision Stage 1.md).
 # [eyes]
 # enabled = true
 # camera = 0               # `kit eyes cameras` lists them

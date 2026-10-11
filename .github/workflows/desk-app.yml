@@ -4,7 +4,7 @@ name: Desk app
 # is attached to each run as an artifact (Actions tab > Desk app > the run >
 # Artifacts). Builds of main are also published as a GitHub Release tagged
 # desk-v<version>, which is where the desk app's update check looks.
-# See docs/desk-app/README.md.
+# See docs/3 Deep Dives/Desk App Builds and Updates.md.
 
 on:
   push:
