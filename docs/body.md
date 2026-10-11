@@ -20,6 +20,7 @@ talk done             the chat turn is over
 fidget sigh           an idle move: a body may keep it to its face
 gesture perk_up       a real reaction: a body plays it with its whole body
 look -0.40 0.12       where Kit's eyes see the person (x -1 left .. 1 right, y -1 up .. 1 down)
+turn_to 0.80 0.26     he's talking to someone in the room there: a body turns to face them
 last 123              ask with after=123 next time
 ```
 
@@ -30,11 +31,24 @@ up to `wait` seconds for something new, so a body hears about it straight away.
 A pipe-up (Kit speaking up on his own) comes as its `emotion` and `talk speaking`
 lines. `look` lines come about every couple of seconds while someone's in view
 (when the eyes are running); a body decides itself whether to turn its head.
+`turn_to` comes when Kit's first words in a reply are for someone his eyes see by
+name ("Hi Sam!", "Milo, you'd better not eat me"), so a body faces who he's talking to.
 
 Chat moments only went to the chat client before, so `kit.body.ChatMoments` copies
 them into life's events where every body hears them.
 
 `POST /api/body/touch`: Dan patted the body's head. Kit feels warm; the body shows the pat itself.
+
+## Who can hear him
+
+Kit is one mind, whichever way he's reached. Out loud (the `voice` and `pod` chat
+channels) anyone in the room hears him, so his prompt says who his eyes see there
+(people by name, and pets: a pet in the register is named when it's the only one of
+its kind, e.g. the only cat) and he talks to them directly. On a screen only Dan
+reads him, so a greeting for someone else goes through Dan. A chat message can say
+who sent it (`speaker`, e.g. a visitor's name); out loud, if it doesn't, it's the
+one person his eyes know in the room, if there's only one and it isn't Dan. It's
+kept with the message, so the history shows "(Sam said) ...". See `kit.audience`.
 
 ## How the Pod acts it out
 

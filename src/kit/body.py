@@ -4,8 +4,8 @@ The brain decides what Kit feels and does; a body only plays it (see docs/body.m
 A small body such as the Pod (an ESP32 with a screen and two servos) can't do much
 parsing, so it reads one plain-text feed: a few lines with his resting face, whether
 he's asleep, how lively he is, and what just happened (a reply's emotion, talking,
-a fidget, where Kit's eyes see the person). It long-polls ``GET /api/body/feed`` and
-sends pats to ``POST /api/body/touch``.
+a fidget, where Kit's eyes see the person, who he's talking to). It long-polls
+``GET /api/body/feed`` and sends pats to ``POST /api/body/touch``.
 
 Chat moments (thinking, a reply's emotion, talking) only reach the chat client, so
 :class:`ChatMoments` copies them into life's events where every body hears them.
@@ -13,7 +13,10 @@ Chat moments (thinking, a reply's emotion, talking) only reach the chat client, 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
+
+from kit.audience import addressed
 
 if TYPE_CHECKING:
     from kit.life import Life
@@ -31,11 +34,17 @@ def talk_seconds(text: str) -> float:
 
 class ChatMoments:
     """Tells bodies about one chat turn as it happens: he's thinking from the start,
-    then the reply's emotion and the words he says (with roughly how long they take)."""
+    then the reply's emotion and the words he says (with roughly how long they take).
+    When his first words are for someone his eyes see in the room ("Hi Sam!"), a
+    body turns to face them; ``room`` gives who's there and where."""
 
-    def __init__(self, life: Life) -> None:
+    def __init__(
+        self, life: Life, room: Callable[[], dict[str, tuple[float, float]]] | None = None
+    ) -> None:
         self.life = life
+        self.room = room
         self.felt = False
+        self.spoke = False
         life.publish({"type": "talk", "state": "thinking"})
 
     def see(self, event: dict) -> None:
@@ -45,12 +54,21 @@ class ChatMoments:
         elif kind == "reply":  # some replies carry their emotion only at the end
             self._emotion((event.get("reply") or {}).get("emotion") or "")
         elif kind == "say" and event.get("text"):
+            if not self.spoke:
+                self.spoke = True
+                self._turn_to(event["text"])
             seconds = talk_seconds(event["text"])
             self.life.publish({"type": "talk", "state": "speaking", "seconds": seconds})
 
     def done(self) -> None:
         """The turn's over: a body stops thinking (talking runs out on its own)."""
         self.life.publish({"type": "talk", "state": "done"})
+
+    def _turn_to(self, words: str) -> None:
+        room = self.room() if self.room else {}
+        if who := addressed(words, room):
+            x, y = room[who]
+            self.life.publish({"type": "turn_to", "name": who, "x": x, "y": y})
 
     def _emotion(self, emotion: str) -> None:
         if emotion and not self.felt:
@@ -67,8 +85,9 @@ def _lines(event: dict) -> list[str]:
     if kind == "talk":
         seconds = event.get("seconds")
         return [f"talk {event['state']}" + (f" {seconds}" if seconds else "")]
-    if kind == "look":  # Kit's eyes saw where the person is (-1..1 across, up..down)
-        return [f"look {float(event['x']):.2f} {float(event['y']):.2f}"]
+    if kind in ("look", "turn_to"):  # where the person is (-1..1 across, up..down)
+        # look: Kit's eyes saw where they are; turn_to: he's talking to them
+        return [f"{kind} {float(event['x']):.2f} {float(event['y']):.2f}"]
     if kind == "pipe_up":  # he spoke up on his own: show its emotion and move his mouth
         said = event.get("reply") or {}
         words = " ".join(s.get("say", "") for s in said.get("segments") or [])

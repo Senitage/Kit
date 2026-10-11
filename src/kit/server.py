@@ -63,6 +63,8 @@ class ChatIn(BaseModel):
     text: str
     # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
+    # Who's talking, when it isn't Dan (kit.audience): a name, such as a visitor's.
+    speaker: str | None = Field(None, max_length=50)
 
 
 class SpeakIn(BaseModel):
@@ -340,9 +342,9 @@ def create_app(
         async def events() -> AsyncIterator[str]:
             turn.started = time.monotonic()
             first_words = True
-            moments = bodies.ChatMoments(brain.life)
+            moments = bodies.ChatMoments(brain.life, brain.room)
             try:
-                async for event in brain.chat(body.text, body.channel):
+                async for event in brain.chat(body.text, body.channel, body.speaker):
                     moments.see(event)
                     if first_words and event.get("type") == "say" and event.get("text"):
                         first_words = False

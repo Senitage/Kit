@@ -276,16 +276,42 @@ class SceneContext:
         if not self.in_view():
             return None
         p = self.latest.people[0]
-        if p.face is not None:
-            x1, y1, x2, y2 = p.face
+        return self._aim(p.box, p.face)
+
+    def _aim(self, box: list[float], face: list[float] | None = None) -> tuple[float, float]:
+        if face is not None:
+            x1, y1, x2, y2 = face
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
         else:
-            x1, y1, x2, y2 = p.box
+            x1, y1, x2, y2 = box
             cx, cy = (x1 + x2) / 2, y1 + 0.15 * (y2 - y1)  # about head height
         x = (cx - 0.5) * 2
-        if not self.latest.mirrored:
+        if self.latest is not None and not self.latest.mirrored:
             x = -x  # a camera facing you: your left is the picture's right
         return round(max(-1.0, min(1.0, x)), 2), round(max(-1.0, min(1.0, (cy - 0.5) * 2)), 2)
+
+    def present(
+        self, pets: dict[str, str] | None = None, animals: bool = True
+    ) -> dict[str, tuple[float, float]]:
+        """Who's in view right now and where, by name: people Kit knows by name,
+        and animals, named by the eyes or from ``pets`` (an animal's kind, such as
+        "cat", to the name of the one pet of that kind). Unnamed people are left
+        out. Empty if the eyes are off or not working."""
+        r = self.latest
+        if r is None or r.off or not self.online():
+            return {}
+        out = {p.name: self._aim(p.box, p.face) for p in r.people if p.name}
+        for o in r.objects if animals else []:
+            if o.label in ANIMALS and (name := o.name or (pets or {}).get(o.label)):
+                out.setdefault(name, self._aim(o.box))
+        return out
+
+    def strangers(self) -> int:
+        """How many people in view Kit can't put a name to."""
+        r = self.latest
+        if r is None or r.off or not self.online():
+            return 0
+        return sum(1 for p in r.people if not p.name)
 
     def now_line(self, owner: str) -> str:
         """One line for every prompt; empty if the eyes have never reported."""

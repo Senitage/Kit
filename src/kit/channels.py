@@ -1,8 +1,8 @@
 """Where Dan is talking to Kit from.
 
 Every chat message says which way it came in: the desk app, the chat page,
-the terminal, his phone, or (from stage 3) his voice at the desk. Kit is told
-in each prompt, so he answers to suit: short and spoken for voice, short and
+the terminal, his phone, or (from stage 3) his voice, at the desk or through Kit's
+robot body. Kit is told in each prompt, so he answers to suit: short and spoken for voice, short and
 small-screen for the phone, and on the desk app he can take "this" to mean
 what's on screen. Each message is stored with its channel, so earlier turns
 from somewhere else are marked in the history.
@@ -21,6 +21,11 @@ CHANNELS: dict[str, tuple[str, str]] = {
         "Your words are spoken: keep it short and natural, and leave detail empty unless "
         "they ask to see something.",
     ),
+    "pod": (
+        "talking to you out loud, face to face with your robot body on the desk",
+        "Your words are spoken from your body: keep it short and natural, and leave detail "
+        "empty unless they ask to see something.",
+    ),
     "phone": (
         "on their phone, probably away from the desk",
         "Keep it short for a small screen. Their PC isn't in front of them, so don't assume "
@@ -34,6 +39,7 @@ DEFAULT = "web"
 SHORT = {
     "desk": "the desk app",
     "voice": "voice",
+    "pod": "your robot body",
     "phone": "their phone",
     "web": "the chat page",
     "home": "your home_app page",

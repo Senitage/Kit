@@ -66,6 +66,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
+from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
 from kit.channels import channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
@@ -243,6 +244,8 @@ DEEP_RECALL = 10
 # Where the message being answered came from. Each turn is its own task, so each
 # sees its own channel without passing it through every call.
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# Who sent it, when it wasn't Dan (kit.audience); empty for Dan.
+SPEAKER: contextvars.ContextVar[str] = contextvars.ContextVar("speaker", default="")
 # Reading the conversation into the local model ahead of Dan's next message
 # (ollama.warm_up): a moment after Kit has finished, once his voice has been quiet
 # for a moment too (they share the GPU, and his voice mustn't stutter).
@@ -581,14 +584,45 @@ class Brain:
         """The quirks Kit picked for himself; the nightly reflection may change one."""
         return self.notebook.quirks()
 
+    def room(self) -> dict[str, tuple[float, float]]:
+        """Who Kit's eyes see in the room by name (people and pets), and where."""
+        pets = [
+            (t.name, " ".join([t.about, *t.aliases]))
+            for t in self.register.all()
+            if t.kind == "pet"
+        ]
+        return self.scene.present(pets_by_kind(pets))
+
+    def _speaker(self, speaker: str | None, channel: str) -> str:
+        owner = self.settings().persona.owner
+        if speaker and speaker.strip():
+            name = speaker.strip()
+            return "" if name.lower() == owner.lower() else name
+        if aloud(channel):  # nobody said: the one person in the room Kit knows
+            people = list(self.scene.present(animals=False))
+            if len(people) == 1 and not self.scene.strangers() and people[0] != owner:
+                return people[0]
+        return ""
+
+    def _channel_line(self, owner: str) -> str:
+        """Where the message came from, who can hear Kit, and who sent it."""
+        channel = CHANNEL.get()
+        room = self.room()
+        heard = audience_line(channel, owner, SPEAKER.get(), room, self.scene.strangers())
+        return f"{channel_line(channel, owner)} {heard}"
+
     def talking(self) -> bool:
         """A chat turn is under way."""
         return bool(self._turns)
 
-    async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
+    async def chat(
+        self, text: str, channel: str | None = None, speaker: str | None = None
+    ) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
-        even if whoever asked stops listening."""
+        even if whoever asked stops listening. ``speaker`` is who sent it, when
+        that isn't Dan; out loud, if nobody says, it's the one person Kit's eyes
+        know in the room."""
         text = text.strip()
         if not text:
             return
@@ -597,6 +631,7 @@ class Brain:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
+        context.run(SPEAKER.set, self._speaker(speaker, known(channel)))
         self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
@@ -625,8 +660,10 @@ class Brain:
             self.memory.new_chat()
             history = []
             emit({"type": "new_topic"})
-        user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
         owner = settings.persona.owner
+        user_id = self.memory.add_message(
+            "user", text, channel=CHANNEL.get(), meta_json=speaker_meta(SPEAKER.get(), owner)
+        )
         now = self.memory.clock()
         game = self.life.game_out  # a game he suggested, which this may answer
         READ.set(None)
@@ -1980,7 +2017,7 @@ class Brain:
             quirks=self.quirks,
             voice=voice,
             pc=self.pc.now_line(settings.persona.owner),
-            channel=channel_line(CHANNEL.get(), settings.persona.owner),
+            channel=self._channel_line(settings.persona.owner),
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
             note_names=self.notes.names() if settings.nas.vault else None,
