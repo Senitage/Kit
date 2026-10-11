@@ -76,6 +76,9 @@ which a face can't be rebuilt; `kit eyes forget NAME` deletes them. See
 - Every API call needs **Kit's token** (`kit token`). The desk app, the eyes
   and home_app each keep a copy on their own machine; home_app never hands it
   to a browser.
+- A device that leaves the house, like a phone, gets a **token of its own**
+  (`kit pair phone`), so a lost phone is one `kit devices forget phone` away
+  from locked out. Only a hash of it is kept. See [[Phone App#Pairing]].
 - **API keys** live in the data folder's `secrets/` or the environment, never
   in settings or the repo. See [[Settings and Data#Secrets]].
 - The brain answers on this PC only (`brain.host = 127.0.0.1`) until you open

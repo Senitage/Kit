@@ -66,7 +66,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
-from kit.channels import channel_line, known
+from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
 from kit.knowledge import Item
@@ -245,6 +245,8 @@ DEEP_RECALL = 10
 # Where the message being answered came from. Each turn is its own task, so each
 # sees its own channel without passing it through every call.
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# How it came (said aloud, written earlier, through which body), the same way.
+ARRIVAL: contextvars.ContextVar[Arrival | None] = contextvars.ContextVar("arrival", default=None)
 # Reading the conversation into the local model ahead of Dan's next message
 # (ollama.warm_up): a moment after Kit has finished, once his voice has been quiet
 # for a moment too (they share the GPU, and his voice mustn't stutter).
@@ -587,10 +589,20 @@ class Brain:
         """A chat turn is under way."""
         return bool(self._turns)
 
-    async def chat(self, text: str, channel: str | None = None) -> AsyncIterator[Event]:
+    async def chat(
+        self,
+        text: str,
+        channel: str | None = None,
+        *,
+        sent_at: datetime | None = None,
+        spoken: bool = False,
+        body: str | None = None,
+    ) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
-        even if whoever asked stops listening."""
+        even if whoever asked stops listening. ``sent_at`` is when it was written if
+        it waited to be sent, ``spoken`` that it was said aloud, and ``body`` which of
+        Kit's bodies it came through (kit.body_registry)."""
         text = text.strip()
         if not text:
             return
@@ -599,6 +611,8 @@ class Brain:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
+        if sent_at is not None or spoken or body:
+            context.run(ARRIVAL.set, Arrival(spoken=spoken, sent_at=sent_at, body=body))
         self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
@@ -627,7 +641,13 @@ class Brain:
             self.memory.new_chat()
             history = []
             emit({"type": "new_topic"})
-        user_id = self.memory.add_message("user", text, channel=CHANNEL.get())
+        arrival = ARRIVAL.get()
+        user_id = self.memory.add_message(
+            "user",
+            text,
+            channel=CHANNEL.get(),
+            meta_json=json.dumps(arrival.meta()) if arrival and arrival.meta() else None,
+        )
         owner = settings.persona.owner
         now = self.memory.clock()
         game = self.life.game_out  # a game he suggested, which this may answer
@@ -1983,7 +2003,9 @@ class Brain:
             quirks=self.quirks,
             voice=voice,
             pc=self.pc.now_line(settings.persona.owner),
-            channel=channel_line(CHANNEL.get(), settings.persona.owner),
+            channel=channel_line(
+                CHANNEL.get(), settings.persona.owner, ARRIVAL.get(), self.memory.clock()
+            ),
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
             note_names=self.notes.names() if settings.nas.vault else None,

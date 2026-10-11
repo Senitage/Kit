@@ -14,6 +14,7 @@ import logging
 import secrets
 import time
 from collections.abc import AsyncIterator
+from datetime import datetime
 from importlib import resources
 from typing import Annotated
 
@@ -22,7 +23,9 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import kit
+from kit.body_registry import API_VERSION, LIFE_EVENTS, BodyRegistry, Hello
 from kit.brain import Brain
+from kit.devices import DEVICES_FILE, Devices
 from kit.face import character as characters
 from kit.face import serve as face_files
 from kit.knowledge import Item
@@ -63,6 +66,12 @@ class ChatIn(BaseModel):
     text: str
     # Where Dan is talking from (kit.channels): desk, voice, phone, web, home or terminal.
     channel: str = Field("web", max_length=20)
+    # Which body it came through (kit.body_registry), if it said hello.
+    body: str = Field("", max_length=40)
+    # When it was written, if it waited to be sent (typed while Kit was out of reach).
+    sent_at: datetime | None = None
+    # Said out loud rather than typed (the phone's talk mode).
+    spoken: bool = False
 
 
 class SpeakIn(BaseModel):
@@ -157,9 +166,15 @@ def create_app(
     speech: SpeechService | None = None,
     speech_check_s: float | None = SPEECH_CHECK_S,
     faces: KnownFaces | None = None,
+    devices: Devices | None = None,
+    registry: BodyRegistry | None = None,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
+    if devices is None:
+        devices = Devices(paths.secrets_dir / DEVICES_FILE if paths is not None else None)
+    if registry is None:
+        registry = BodyRegistry()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -182,10 +197,17 @@ def create_app(
     if speech is not None:
         brain.voice_quiet = speech.quiet_s  # reading ahead waits for his voice to finish
 
-    def require_token(authorization: Annotated[str, Header()] = "") -> None:
+    def require_token(authorization: Annotated[str, Header()] = "") -> str | None:
+        """Kit's shared token, or a paired device's own (kit.devices). Returns the
+        device's name, or None for the shared token."""
         given = authorization.removeprefix("Bearer ").strip()
-        if not secrets.compare_digest(given.encode(), token.encode()):
+        if secrets.compare_digest(given.encode(), token.encode()):
+            return None
+        device = devices.match(given)
+        if device is None:
             raise HTTPException(401, "missing or wrong token; run `kit token` to see it")
+        registry.seen(device.name)
+        return device.name
 
     auth = [Depends(require_token)]
 
@@ -335,12 +357,24 @@ def create_app(
 
     turn = _Turn()  # when Dan's latest message came in, for the timing lines in the log
 
-    @app.post("/api/chat", dependencies=auth)
-    async def chat(body: ChatIn) -> StreamingResponse:
+    @app.post("/api/chat")
+    async def chat(
+        body: ChatIn,
+        device: str | None = Depends(require_token),  # noqa: B008 (a local can't be annotated)
+    ) -> StreamingResponse:
+        came_through = device or body.body or None
+        registry.used(came_through)
+
         async def events() -> AsyncIterator[str]:
             turn.started = time.monotonic()
             first_words = True
-            async for event in brain.chat(body.text, body.channel):
+            async for event in brain.chat(
+                body.text,
+                body.channel,
+                sent_at=body.sent_at,
+                spoken=body.spoken,
+                body=came_through,
+            ):
                 if first_words and event.get("type") == "say" and event.get("text"):
                     first_words = False
                     log.info("turn: first words %.2f s after the message", turn.since())
@@ -356,9 +390,19 @@ def create_app(
         return {"ok": True}
 
     @app.get("/api/messages", dependencies=auth)
-    def messages(limit: int = 50) -> list[dict]:
+    def messages(
+        limit: int = 50, before: int | None = None, after: int | None = None
+    ) -> list[dict]:
+        """The current conversation; or, with ``before`` or ``after`` (a message id),
+        a page of the whole history, for scrolling back and catching up."""
+        limit = min(limit, 500)
+        if before is None and after is None:
+            found = memory.recent(limit)
+        else:
+            found = memory.page(limit, before=before, after=after)
         return [
             {
+                "id": m.id,
                 "at": m.at,
                 "role": m.role,
                 "text": m.text,
@@ -367,7 +411,7 @@ def create_app(
                 "reply": json.loads(m.reply_json) if m.reply_json else None,
                 "meta": json.loads(m.meta_json) if m.meta_json else None,
             }
-            for m in memory.recent(min(limit, 500))
+            for m in found
         ]
 
     @app.get("/memory", response_class=HTMLResponse)
@@ -664,6 +708,60 @@ def create_app(
         one, so the desk app (and later the arm) hears about them at once."""
         events = await brain.life.wait_for_events(after, wait)
         return {"events": events, "last": brain.life.state()["last_event"]}
+
+    # Kit's bodies (kit.body_registry) and paired devices (kit.devices)
+
+    def _features() -> dict[str, int]:
+        """What this brain can do, each with a version; a body uses only these."""
+        features = {
+            "chat": 2,  # 2: body, sent_at and spoken on /api/chat
+            "messages": 2,  # 2: ids, and paging with before and after
+            "life": 1,
+            "life_events": 1,
+            "memory": 1,
+            "things": 1,
+            "settings": 1,
+            "spend": 1,
+            "face": 1,
+            "pc_context": 1,
+            "eyes": 1,
+            "bodies": 1,
+            "pairing": 1,
+        }
+        if speech is not None:
+            features["voice_out"] = 1
+        return features
+
+    @app.post("/api/bodies/hello")
+    def body_hello(
+        hello: Hello,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """A body says what it is and what it can do; the brain answers with what it
+        can do, so new features light up only where both sides know them."""
+        body = registry.hello(hello, device)
+        name = store.current().face.character
+        look = characters.preset(name).look(body.kind, styles=("glow", "model"))
+        return {
+            "api": API_VERSION,
+            "kit": kit.__version__,
+            "name": store.current().persona.name,
+            "body": body.as_dict(registry.clock()),
+            "features": _features(),
+            "events": list(LIFE_EVENTS),
+            "face": {"character": name, "style": look["style"], "page": f"/face/?app={body.kind}"},
+            "unknown_abilities": list(body.unknown),
+        }
+
+    @app.get("/api/bodies", dependencies=auth)
+    def bodies_list() -> dict:
+        """Every body that's said hello since the brain started, and the paired devices."""
+        return {
+            "bodies": registry.listing(),
+            "devices": [
+                {"name": d.name, "kind": d.kind, "created": d.created} for d in devices.all()
+            ],
+        }
 
     @app.post("/api/life/poke", dependencies=auth)
     async def life_poke() -> dict:

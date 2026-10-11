@@ -82,6 +82,12 @@ It's one conversation and one memory whichever way you talk. Each message is
 stored with its channel, so a message from your phone shows as "(from their
 phone) ..." when you pick up at the desk.
 
+A message can also say it was **said out loud** (`spoken`), so he keeps it
+short whatever the channel, and **when it was written** (`sent_at`), for one
+that waited on the phone while he was out of reach: if that's more than a
+couple of minutes ago he's told so, and that it may be old news. See
+[[Phone App#What a message carries]].
+
 ## Conversations, chats and topics
 
 - **One conversation**, shared by every way in. The model sees the last

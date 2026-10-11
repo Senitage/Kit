@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/bodies]
 aliases: [Robot bodies, The arm, One brain many bodies]
 summary: One brain, many bodies - how the desk app, home_app, the Pod and later the arm all act out the same Kit, and what each body is.
-related: ["[[The Pod]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Life In Depth]]", "[[Face In Depth]]", "[[Roadmap]]"]
+related: ["[[The Pod]]", "[[Phone App]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Life In Depth]]", "[[Face In Depth]]", "[[Roadmap]]"]
 ---
 
 # Bodies
@@ -35,6 +35,11 @@ flowchart LR
   its `use` table names (`desk`, `home_app`, `robot`). See [[Face]].
 - Each body plays the same **gestures** and **body moves** by name, scaled to
   what it can do.
+- A body can **say hello** when it starts (`POST /api/bodies/hello`) with what
+  it can do, and the brain answers with what *it* can do, so each side only
+  uses what the other has. The brain keeps a list of the bodies it has heard
+  from and when Dan last used each one: the place to pick one body to speak a
+  pipe-up, and to keep one PC report per desk. See [[Phone App#Saying hello]].
 
 ## The desk app
 
@@ -70,6 +75,12 @@ or his mood's posture. Fidgets stay on the screen.
 > The brain's side of the Pod (the body feed, pats, and Kit knowing who in the
 > room can hear him) is pull request #36. Next: a speaker and microphone in
 > the Pod, so he can talk and listen in the room, one voice at a time.
+
+## The phone
+
+Kit on Android: the body that goes out of the house with you, with his face
+at the top of the chat, his voice, and notifications for his pipe-ups. It
+pairs with a token of its own. See [[Phone App]].
 
 ## The arm
 

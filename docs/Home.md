@@ -103,6 +103,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[Desk App]]: his home on the Windows PC: tray, face, chat and window.
 - [[Bodies]]: one brain, many bodies: the desk, the Pod, the arm.
 - [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
+- [[Phone App]]: Kit on Android, the body that leaves the house with you.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
@@ -124,6 +125,7 @@ The full detail behind the plain-words notes.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
 - [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
+- [[Phone Stage 0 - Pairing]]
 
 ### 5. Reference
 - [[Commands]]: every `kit` command.

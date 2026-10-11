@@ -81,6 +81,8 @@ flowchart TB
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
+| `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
+| `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
 
 ## Setup and settings
 

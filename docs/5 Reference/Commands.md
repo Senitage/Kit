@@ -21,6 +21,9 @@ the options for any of them.
 | `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one) |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
+| `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
+| `kit devices` | List paired devices (`kit devices list` does the same) |
+| `kit devices forget NAME` | Unpair a device; its token stops working at once |
 
 ## Talking to him
 

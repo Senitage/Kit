@@ -20,8 +20,12 @@ Every `/api/...` call except `/api/health` needs Kit's token:
 Authorization: Bearer TOKEN
 ```
 
-`kit token` shows it. The pages (`/`, `/settings`, `/memory`) and the 3D face
-(`/face/...`) load without one: the pages ask for it, and the face is only a
+`kit token` shows it. A paired device, like a phone, uses a token of its own
+instead (`kit pair`): it opens the same API, and `kit devices forget` stops
+it. See [[Phone App#Pairing]].
+
+The pages (`/`, `/settings`, `/memory`) and the 3D face (`/face/...`) load
+without one: the pages ask for it, and the face is only a
 cartoon. See [[Privacy#Tokens and secrets]].
 
 ## Talking
@@ -30,7 +34,13 @@ cartoon. See [[Privacy#Tokens and secrets]].
 |---|---|
 | `POST /api/chat` | Send `{"text": ..., "channel": "desk"}`. The answer streams back as one JSON event per line (below) |
 | `POST /api/chat/new` | Start a fresh conversation |
-| `GET /api/messages?limit=50` | Recent messages, with their replies |
+| `GET /api/messages?limit=50` | The current conversation, each message with its `id` and replies |
+| `GET /api/messages?before=ID` | A page of the whole history just before message `ID`, oldest first, even from before a new chat (`after=ID` for the ones after it) |
+
+A chat message can also carry `body` (the body it came through, from its
+hello), `sent_at` (when it was written, if it waited to be sent) and `spoken`
+(said out loud). Each is kept in the message's `meta`. See
+[[Phone App#What a message carries]].
 
 A chat streams events like these, one per line:
 
@@ -97,6 +107,29 @@ carries the line (`reply`), the line as his voice says it with any sounds
 (`voice`), and whether to say it out loud (`aloud`: false when his eyes see
 nobody there).
 
+## Kit's bodies and paired devices
+
+| Method and path | What it does |
+|---|---|
+| `POST /api/bodies/hello` | A body says what it is and can do: `{"id", "kind", "name", "app", "abilities": ["screen", "speaker", ...], "faces"}`. A paired device is known by its device name |
+| `GET /api/bodies` | The bodies heard from since the brain started (online, last seen, last used) and the paired devices |
+
+The hello's answer is what the brain can do:
+
+```json
+{"api": 1, "kit": "0.1.0", "name": "Kit",
+ "body": {"id": "phone", "kind": "phone", "online": true, ...},
+ "features": {"chat": 2, "messages": 2, "life": 1, "life_events": 1, "bodies": 1,
+              "pairing": 1, "voice_out": 1, ...},
+ "events": ["mood", "fidget", "react", "state", "look", "doing", "quiet", "dials", "pipe_up"],
+ "face": {"character": "kit3d", "style": "model", "page": "/face/?app=phone"},
+ "unknown_abilities": []}
+```
+
+A body uses only the features listed, at the version given. Features and
+fields are only ever added; a change of meaning is a new version number. A
+body should skip events and fields it doesn't know. See [[Phone App#Saying hello]].
+
 ## What he senses
 
 | Method and path | What it does |
@@ -121,5 +154,6 @@ nobody there).
 
 ## Under the hood
 - `src/kit/server.py`: every route.
+- `src/kit/body_registry.py` and `src/kit/devices.py`: bodies saying hello, and paired devices.
 - `src/kit/desk/client.py`: the desk app's side.
 - `src/kit/eyes/link.py`: the eyes' side.
