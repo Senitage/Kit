@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, inner-life]
+tags: [guide, stage, topic/inner-life]
 aliases: [stage-inner-life]
 summary: The inner life side stage - thoughts, the notebook, nightly reflection and the local model bake-off - with its costs and test checklist.
 ---

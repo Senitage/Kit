@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, memory]
+tags: [how-it-works, topic/memory]
 aliases: [Things, kit.things, Tag register]
 summary: The register of things - one entry per person, pet, vehicle, place, project or piece of equipment, with where each one lives in every system.
+related: ["[[Memory In Depth]]", "[[Stage 1 - Text Brain]]"]
 ---
 
 # Register of things
@@ -58,6 +59,6 @@ kit eval routing      # do questions bring back the right entry and place?
 - [[Memory In Depth#The register of things]]
 - [[Stage 1 - Text Brain]]: the test checklist, and your own routing questions.
 
-## Under the hood
-- `src/kit/things.py`: entries, suggestions, links and history.
-- `src/kit/recall.py`: how entries reach each turn.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/things.py`: entries, suggestions, links and history.
+> - `src/kit/recall.py`: how entries reach each turn.

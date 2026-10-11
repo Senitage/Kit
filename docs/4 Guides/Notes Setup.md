@@ -1,5 +1,5 @@
 ---
-tags: [guide, notes, nas]
+tags: [guide, topic/notes, topic/nas]
 aliases: [notes.md, Your notes]
 summary: Setting up Kit's access to your Obsidian notes vault on the NAS, and the test checklist.
 ---

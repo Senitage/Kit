@@ -1,5 +1,5 @@
 ---
-tags: [reference, api]
+tags: [reference, topic/api]
 aliases: [HTTP API, Endpoints, Kit's API, Routes]
 summary: Every web address the brain answers on - chat, settings, memory, the register, life events, the PC and eyes feeds, speech, spend and the 3D face - and how the token works.
 ---

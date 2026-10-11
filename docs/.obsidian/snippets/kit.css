@@ -27,3 +27,19 @@
 /* Tables: a little air. */
 .markdown-rendered table td,
 .markdown-rendered table th { padding: 6px 12px; }
+
+/* Kit's own callouts. "> [!kit]" is Kit talking, in his mint glow. */
+.callout[data-callout="kit"] {
+  --callout-color: 46, 196, 160;
+  --callout-icon: lucide-bot;
+}
+.theme-dark .callout[data-callout="kit"] {
+  --callout-color: 110, 255, 205;
+  box-shadow: 0 0 22px rgba(77, 255, 192, 0.12);
+}
+
+/* "> [!under-the-hood]-" folds the code paths away until you want them. */
+.callout[data-callout="under-the-hood"] {
+  --callout-color: 130, 140, 150;
+  --callout-icon: lucide-wrench;
+}

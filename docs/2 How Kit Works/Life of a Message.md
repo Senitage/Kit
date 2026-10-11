@@ -1,5 +1,5 @@
 ---
-tags: [how-it-works, brain]
+tags: [how-it-works, topic/brain]
 aliases: [A message start to finish, What happens when you talk to Kit]
 summary: One message followed from the keyboard to Kit's face and voice - how he hears it, feels it, recalls, picks who answers, acts, and shows the answer.
 ---
@@ -96,9 +96,9 @@ sequenceDiagram
 > and the local model answers, knowing what's in progress and for how long.
 > The slow answer turns up when it's ready, marked with its question.
 
-## Under the hood
-- `src/kit/server.py`: `POST /api/chat` streams the events.
-- `src/kit/brain.py`: `Brain.chat` and `_run_turn`, the whole journey above.
-- `src/kit/recall.py`, `src/kit/prompt.py`, `src/kit/reply.py`: recall, the
-  prompt and the shape of a reply.
-- `src/kit/desk/chat.py`, `src/kit/desk/voice.py`: the desk side.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/server.py`: `POST /api/chat` streams the events.
+> - `src/kit/brain.py`: `Brain.chat` and `_run_turn`, the whole journey above.
+> - `src/kit/recall.py`, `src/kit/prompt.py`, `src/kit/reply.py`: recall, the
+>   prompt and the shape of a reply.
+> - `src/kit/desk/chat.py`, `src/kit/desk/voice.py`: the desk side.

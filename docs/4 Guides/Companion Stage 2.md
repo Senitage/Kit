@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, companion]
+tags: [guide, stage, topic/companion]
 aliases: [stage-companion-2]
 summary: Companion stage 2, he follows your life - threads, chat openers, getting to know you and nudges, with the settings and test checklist.
 ---

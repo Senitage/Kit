@@ -1,5 +1,5 @@
 ---
-tags: [deep-dive, desk-app, releases]
+tags: [deep-dive, topic/desk-app, topic/releases]
 aliases: [Desk app builds, Installer, Releases, Test builds]
 summary: How the desk app's Windows installer is built by GitHub, published as a release, and updated on the PC, including pull request test builds.
 ---

@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, settings, data]
+tags: [how-it-works, topic/settings, topic/data]
 aliases: [Data folder, Settings, settings.toml, Secrets, kit.paths, Moving Kit]
 summary: Where Kit keeps everything - one data folder holding his settings, secrets, memory, backups and logs - how settings are changed and undone, and why moving Kit is a folder copy.
+related: ["[[Settings Reference]]", "[[Stage 0 - Server Setup]]", "[[Commands]]"]
 ---
 
 # Settings and data
@@ -95,9 +96,9 @@ voice engine's own Python is the one thing to set up again: see
 - [[Stage 0 - Server Setup]]: the data folder's permissions, and the service.
 - [[Commands#Settings]]: `kit config` in full.
 
-## Under the hood
-- `src/kit/paths.py`: where everything lives.
-- `src/kit/settings.py`: every setting, its default and description.
-- `src/kit/settings_store.py`: changes, history, undo and the last good copy.
-- `src/kit/credentials.py`: API keys and the token.
-- `src/kit/settings.example.toml`: an example settings file.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/paths.py`: where everything lives.
+> - `src/kit/settings.py`: every setting, its default and description.
+> - `src/kit/settings_store.py`: changes, history, undo and the last good copy.
+> - `src/kit/credentials.py`: API keys and the token.
+> - `src/kit/settings.example.toml`: an example settings file.

@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, companion]
+tags: [guide, stage, topic/companion]
 aliases: [stage-companion-3]
 summary: Companion stage 3 - a life of his own while you're out, mixed feelings and reading your mood - with its settings and test checklist.
 ---

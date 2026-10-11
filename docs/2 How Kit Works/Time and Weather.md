@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, time, weather]
+tags: [how-it-works, topic/time, topic/weather]
 aliases: [Time, Weather, The forecast, kit.weather, kit.when]
 summary: How Kit knows the time, follows "Thursday arvo", feels the shape of the week, and gets the weather from a forecast service instead of guessing.
+related: ["[[Companion]]", "[[Face In Depth]]"]
 ---
 
 # Time and weather
@@ -83,9 +84,9 @@ playing around him.*
 - [[Companion]]: threads, hellos, nudges and games.
 - [[Face In Depth]]: how each show is drawn.
 
-## Under the hood
-- `src/kit/weather.py`: the forecast from Open-Meteo.
-- `src/kit/when.py`: "Thursday arvo" and friends.
-- `src/kit/holidays.py`: the shape of the week and public holidays.
-- `src/kit/shows.py`: the time, date and weather shows on his face.
-- `src/kit/daily.py`: the daily nudges and Monday's question.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/weather.py`: the forecast from Open-Meteo.
+> - `src/kit/when.py`: "Thursday arvo" and friends.
+> - `src/kit/holidays.py`: the shape of the week and public holidays.
+> - `src/kit/shows.py`: the time, date and weather shows on his face.
+> - `src/kit/daily.py`: the daily nudges and Monday's question.

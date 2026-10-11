@@ -2,6 +2,7 @@
 tags: [meet-kit]
 aliases: [About Kit, Kit's personality]
 summary: Who Kit is - a small, cheeky desk companion with feelings, a memory and a life of his own - and a tour of what he does today.
+related: ["[[The Big Picture]]", "[[Where Kit Is Up To]]", "[[Glossary]]"]
 ---
 
 # Who Kit is
@@ -79,7 +80,7 @@ the brain what it senses. See [[Bodies]] and [[The Big Picture]].
 ![[pod-v2-views.jpg]]
 
 *The Pod: Kit's first robot body, designed around a small screen, two hobby
-servos and an ESP32.*
+servos and an ESP32. Meet him in [[The Pod]].*
 
 ## Related
 - [[The Big Picture]] for how the parts fit.

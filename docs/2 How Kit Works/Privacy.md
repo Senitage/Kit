@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, privacy]
+tags: [how-it-works, topic/privacy]
 aliases: [Keep it local, What Kit sees, The switches, Security]
 summary: What Kit sees, what leaves the house and what never does - keep it local, the desk app's switches, the eyes' no-pictures rule, read-only shares, tokens and secrets.
+related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 ---
 
 # Privacy
@@ -94,8 +95,8 @@ network details and the names of people and pets stay in your own
 - [[Stage 2 - Desk App]]: what the desk app shares, in detail.
 - [[Vision Stage 1]]: the eyes' privacy, in detail.
 
-## Under the hood
-- `src/kit/desk/watch.py`, `src/kit/desk/config.py`: what's read on the PC, and the hidden apps and words.
-- `src/kit/memory.py`: private messages and what comes from them.
-- `src/kit/eyes/recognise.py`: face numbers.
-- `src/kit/credentials.py`: keys and the token.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/desk/watch.py`, `src/kit/desk/config.py`: what's read on the PC, and the hidden apps and words.
+> - `src/kit/memory.py`: private messages and what comes from them.
+> - `src/kit/eyes/recognise.py`: face numbers.
+> - `src/kit/credentials.py`: keys and the token.

@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, setup]
+tags: [guide, stage, topic/setup]
 aliases: [stage-0-setup, Server setup]
 summary: Stage 0, setting up the server - Ubuntu under WSL on the GPU PC, the data folder, Ollama, the NAS mounts and the service.
 ---
@@ -222,8 +222,8 @@ slower from Linux.
 
 ```
 cd ~
-git clone https://github.com/Senitage/Kit kit
-cd kit
+git clone https://github.com/Senitage/Kit
+cd Kit
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .

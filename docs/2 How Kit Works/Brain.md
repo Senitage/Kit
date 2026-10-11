@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, brain]
+tags: [how-it-works, topic/brain]
 aliases: [The brain, Conversation loop, kit.brain]
 summary: The brain is Kit's conversation loop on the server - every message, pipe-up and thought goes through it, and it answers in one shape whichever model speaks.
+related: ["[[Models and Routing]]", "[[Memory]]", "[[Inner Life]]", "[[API]]"]
 ---
 
 # The brain
@@ -112,10 +113,10 @@ thoughts), the **nightly upkeep** (day summaries, reflection, backups) and the
 - [[Inner Life]]: what colours the answer.
 - [[API]]: the routes the bodies and pages call.
 
-## Under the hood
-- `src/kit/brain.py`: the conversation loop, actions, pipe-ups, thoughts.
-- `src/kit/prompt.py`: what the model sees each turn.
-- `src/kit/reply.py`: the reply shape, emotions and gestures, the streaming reader.
-- `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.
-- `src/kit/channels.py`: where you're talking from.
-- `src/kit/server.py`: the pages, the API and the background loops.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/brain.py`: the conversation loop, actions, pipe-ups, thoughts.
+> - `src/kit/prompt.py`: what the model sees each turn.
+> - `src/kit/reply.py`: the reply shape, emotions and gestures, the streaming reader.
+> - `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.
+> - `src/kit/channels.py`: where you're talking from.
+> - `src/kit/server.py`: the pages, the API and the background loops.

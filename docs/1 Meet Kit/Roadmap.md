@@ -1,5 +1,5 @@
 ---
-tags: [meet-kit, roadmap]
+tags: [meet-kit, topic/roadmap]
 aliases: [Stages, The plan]
 summary: The stages Kit is built in, one at a time and each tested before the next, from server setup to the robot arm.
 ---
@@ -51,7 +51,7 @@ Some work runs beside the main line because it makes Kit feel alive sooner:
 - **Eyes**: stages 1 and 2 done ([[Vision Stage 1]], [[Vision Stage 2]]).
   Still to come: gestures and moods, a proper look at a still frame with a
   vision model, and eyes on a Raspberry Pi at the arm.
-- **The Pod**: Kit's first robot body. See [[Bodies]].
+- **The Pod**: Kit's first robot body. See [[The Pod]] and [[Building the Pod]].
 
 ## Ideas waiting for a stage
 

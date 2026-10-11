@@ -15,14 +15,95 @@
     {
       "type": "file",
       "ctime": 1791691200000,
-      "path": "2 How Kit Works/The Big Picture.md",
-      "title": "The Big Picture"
+      "path": "All Notes.base",
+      "title": "All notes"
     },
     {
       "type": "file",
       "ctime": 1791691200000,
-      "path": "1 Meet Kit/Where Kit Is Up To.md",
-      "title": "Where Kit Is Up To"
+      "path": "4 Guides/Running Kit.md",
+      "title": "Running Kit"
+    },
+    {
+      "type": "group",
+      "ctime": 1791691200000,
+      "title": "How Kit works",
+      "items": [
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "2 How Kit Works/The Big Picture.md",
+          "title": "The Big Picture"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "2 How Kit Works/Life of a Message.md",
+          "title": "Life of a Message"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "1 Meet Kit/Where Kit Is Up To.md",
+          "title": "Where Kit Is Up To"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "ctime": 1791691200000,
+      "title": "The Pod",
+      "items": [
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "2 How Kit Works/The Pod.md",
+          "title": "The Pod"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "3 Deep Dives/Pod In Depth.md",
+          "title": "Pod In Depth"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "4 Guides/Building the Pod.md",
+          "title": "Building the Pod"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "ctime": 1791691200000,
+      "title": "Reference",
+      "items": [
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "5 Reference/Commands.md",
+          "title": "Commands"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "5 Reference/Settings Reference.md",
+          "title": "Settings Reference"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "5 Reference/Code Map.md",
+          "title": "Code Map"
+        },
+        {
+          "type": "file",
+          "ctime": 1791691200000,
+          "path": "5 Reference/Glossary.md",
+          "title": "Glossary"
+        }
+      ]
     }
   ]
 }

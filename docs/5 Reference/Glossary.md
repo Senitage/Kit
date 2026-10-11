@@ -1,5 +1,5 @@
 ---
-tags: [reference, glossary]
+tags: [reference, topic/glossary]
 aliases: [Words, Terms, Jargon]
 summary: The words these docs use for Kit's parts, in alphabetical order, each with a line of meaning and the note that explains it.
 ---
@@ -12,9 +12,10 @@ Up: [[Home]] · Reference
 |---|---|---|
 | **Action** | Something Kit does mid-answer: remember, recall, take a note, look at the PC, look around | [[Brain#What he can do mid-answer]] |
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
-| **Body feed** | The plain-text events a small board like the Pod's reads | [[Bodies#The Pod]] |
+| **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
+| **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
 | **Cheek** | How cheeky he is, 0 to 1 (`life.cheek`) | [[Inner Life]] |
@@ -35,7 +36,7 @@ Up: [[Home]] · Reference
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
-| **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[Bodies#The Pod]] |
+| **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Register of things** | The list of people, vehicles, places, projects and equipment, and where each lives | [[Register of Things]] |
 | **Retro** | The default character: Glow's pill eyes | [[Face]] |
 | **Rig** | What turns emotions and gestures into face numbers | [[Face#The rig, in three layers]] |

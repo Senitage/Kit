@@ -228,7 +228,7 @@
 			"x": 180,
 			"y": 40,
 			"width": 740,
-			"height": 1152,
+			"height": 1192,
 			"color": "3"
 		},
 		{
@@ -259,20 +259,30 @@
 			"height": 150
 		},
 		{
+			"id": "pod",
+			"type": "text",
+			"text": "### [[The Pod]]\nHis first robot: a screen face, a calm neck, pats.",
+			"x": 220,
+			"y": 535,
+			"width": 320,
+			"height": 150,
+			"color": "3"
+		},
+		{
 			"id": "pod-img",
 			"type": "file",
 			"file": "Assets/pod-v2-hero.jpg",
 			"x": 580,
 			"y": 345,
 			"width": 300,
-			"height": 300
+			"height": 340
 		},
 		{
 			"id": "pod-screen",
 			"type": "file",
 			"file": "Assets/pod-screen-moods.png",
 			"x": 220,
-			"y": 685,
+			"y": 725,
 			"width": 660,
 			"height": 467
 		},
@@ -281,17 +291,35 @@
 			"type": "group",
 			"label": "Running Kit, and the reference shelf",
 			"x": -1120,
-			"y": 1272,
-			"width": 1480,
+			"y": 1312,
+			"width": 1840,
 			"height": 420,
 			"color": "1"
+		},
+		{
+			"id": "running",
+			"type": "text",
+			"text": "### [[Running Kit]]\nStart, stop, restart and check Kit, his eyes and the Pod.",
+			"x": -1080,
+			"y": 1352,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "building",
+			"type": "text",
+			"text": "### [[Building the Pod]]\nPrint, wire, upload and link the Pod.",
+			"x": -720,
+			"y": 1352,
+			"width": 320,
+			"height": 150
 		},
 		{
 			"id": "privacy",
 			"type": "text",
 			"text": "### [[Privacy]]\nWhat he sees, what stays home, the switches.",
-			"x": -1080,
-			"y": 1312,
+			"x": -360,
+			"y": 1352,
 			"width": 320,
 			"height": 150
 		},
@@ -299,8 +327,8 @@
 			"id": "updating",
 			"type": "text",
 			"text": "### [[Updating Kit]]\nPull, install, restart; trying a pull request.",
-			"x": -720,
-			"y": 1312,
+			"x": 0,
+			"y": 1352,
 			"width": 320,
 			"height": 150
 		},
@@ -308,8 +336,8 @@
 			"id": "commands",
 			"type": "text",
 			"text": "### [[Commands]]\nEvery kit command.",
-			"x": -360,
-			"y": 1312,
+			"x": 360,
+			"y": 1352,
 			"width": 320,
 			"height": 150
 		},
@@ -317,8 +345,8 @@
 			"id": "settingsref",
 			"type": "text",
 			"text": "### [[Settings Reference]]\nEvery setting and its default.",
-			"x": 0,
-			"y": 1312,
+			"x": -1080,
+			"y": 1542,
 			"width": 320,
 			"height": 150
 		},
@@ -326,8 +354,8 @@
 			"id": "api",
 			"type": "text",
 			"text": "### [[API]]\nEvery route and event the brain answers.",
-			"x": -1080,
-			"y": 1502,
+			"x": -720,
+			"y": 1542,
 			"width": 320,
 			"height": 150
 		},
@@ -335,8 +363,8 @@
 			"id": "evals",
 			"type": "text",
 			"text": "### [[Evals]]\nChecking how the real models behave.",
-			"x": -720,
-			"y": 1502,
+			"x": -360,
+			"y": 1542,
 			"width": 320,
 			"height": 150
 		},
@@ -344,8 +372,8 @@
 			"id": "codemap",
 			"type": "text",
 			"text": "### [[Code Map]]\nEvery module, and the note that explains it.",
-			"x": -360,
-			"y": 1502,
+			"x": 0,
+			"y": 1542,
 			"width": 320,
 			"height": 150
 		},
@@ -353,8 +381,8 @@
 			"id": "howdocs",
 			"type": "text",
 			"text": "### [[How These Docs Work]]\nThe vault, and keeping it up to date.",
-			"x": 0,
-			"y": 1502,
+			"x": 360,
+			"y": 1542,
 			"width": 320,
 			"height": 150
 		}
@@ -459,6 +487,13 @@
 			"toNode": "bodies",
 			"toSide": "left",
 			"label": "events: mood, sleep, pipe-ups"
+		},
+		{
+			"id": "bodies-pod",
+			"fromNode": "bodies",
+			"fromSide": "bottom",
+			"toNode": "pod",
+			"toSide": "top"
 		}
 	]
 }

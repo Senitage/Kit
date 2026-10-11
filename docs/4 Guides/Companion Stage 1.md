@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, companion]
+tags: [guide, stage, topic/companion]
 aliases: [stage-companion-1]
 summary: Companion stage 1, he knows you were gone - goodbyes, hellos and being missed, with the settings and test checklist.
 ---

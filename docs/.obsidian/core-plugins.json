@@ -5,6 +5,7 @@
   "graph": true,
   "backlink": true,
   "canvas": true,
+  "bases": true,
   "outgoing-link": true,
   "tag-pane": true,
   "properties": true,

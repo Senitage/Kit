@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, companion]
+tags: [how-it-works, topic/companion]
 aliases: [Kit as a companion, Hellos and goodbyes]
 summary: What makes Kit a companion rather than a chat window - he knows you were gone, says hello and goodbye well, follows your life, has a life of his own while you're out, and cares on a bad night.
+related: ["[[Inner Life In Depth]]", "[[Memory]]"]
 ---
 
 # Companion
@@ -93,9 +94,9 @@ goodbyes, hellos and honesty on any local model ([[Evals]]).
 - [[Inner Life In Depth]]: "Knowing you were gone" onwards has every rule.
 - [[Memory]]: "now" facts and plans with dates.
 
-## Under the hood
-- `src/kit/life.py`: hellos, goodbyes, miffs, closeness, games, bad nights.
-- `src/kit/daily.py`: the once-a-day questions and nudges.
-- `src/kit/notebook.py`: threads, wants and running jokes.
-- `src/kit/pastimes.py`: what he does while you're out.
-- `src/kit/when.py`: reading "Thursday arvo".
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/life.py`: hellos, goodbyes, miffs, closeness, games, bad nights.
+> - `src/kit/daily.py`: the once-a-day questions and nudges.
+> - `src/kit/notebook.py`: threads, wants and running jokes.
+> - `src/kit/pastimes.py`: what he does while you're out.
+> - `src/kit/when.py`: reading "Thursday arvo".

@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, models]
+tags: [how-it-works, topic/models]
 aliases: [Routing, Local and cloud, Which model answers]
 summary: Which model answers what - the local model, the cloud chat, work and expert roles, the routing modes, and the monthly budget.
+related: ["[[Stage 1 - Text Brain]]", "[[Evals]]", "[[Inner Life In Depth]]"]
 ---
 
 # Models and routing
@@ -100,8 +101,8 @@ kit memory spend                             # this month's spend
 - [[Evals]]: comparing models properly.
 - [[Inner Life In Depth#In conversation]]: what the local model is coached with.
 
-## Under the hood
-- `src/kit/cloud.py`: Claude, GPT and Gemini behind one interface, the budget and skip order.
-- `src/kit/local_model.py`: the local model through Ollama.
-- `src/kit/settings.py`: `RoutingSettings`, `ModelProfile`, `CloudSettings`.
-- `src/kit/brain.py`: `route` and the hand-offs.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/cloud.py`: Claude, GPT and Gemini behind one interface, the budget and skip order.
+> - `src/kit/local_model.py`: the local model through Ollama.
+> - `src/kit/settings.py`: `RoutingSettings`, `ModelProfile`, `CloudSettings`.
+> - `src/kit/brain.py`: `route` and the hand-offs.

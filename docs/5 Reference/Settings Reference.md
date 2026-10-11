@@ -1,5 +1,5 @@
 ---
-tags: [reference, settings]
+tags: [reference, topic/settings]
 aliases: [All settings, settings.toml reference, Config reference]
 summary: Every setting Kit has, section by section, with its default and what it does. Change them on the settings page, in the desk app, in home_app or with kit config set.
 ---

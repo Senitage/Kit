@@ -26,9 +26,16 @@ Good first reads:
 [Where Kit Is Up To](docs/1%20Meet%20Kit/Where%20Kit%20Is%20Up%20To.md)
 
 Running Kit:
+[Running Kit](docs/4%20Guides/Running%20Kit.md) (start, stop, restart, his eyes) ·
 [Updating Kit](docs/4%20Guides/Updating%20Kit.md) ·
 [Commands](docs/5%20Reference/Commands.md) ·
 [Settings Reference](docs/5%20Reference/Settings%20Reference.md)
+
+The Pod, his first robot body:
+[The Pod](docs/2%20How%20Kit%20Works/The%20Pod.md) ·
+[Pod In Depth](docs/3%20Deep%20Dives/Pod%20In%20Depth.md) ·
+[Building the Pod](docs/4%20Guides/Building%20the%20Pod.md).
+His program, printed parts and network helper are in [`pod/`](pod/README.md).
 
 Kit is built in tested stages. The plan and each stage's test checklist are in
 the [roadmap](https://claude.ai/code/artifact/bdf67b43-5085-4ef9-bb29-9517f2dfee91)

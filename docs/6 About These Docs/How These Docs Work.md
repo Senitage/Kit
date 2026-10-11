@@ -1,7 +1,8 @@
 ---
-tags: [about, docs, conventions]
+tags: [about, topic/docs, topic/conventions]
 aliases: [About the docs, Docs conventions, Keeping the docs up to date, Writing docs]
 summary: How this vault is laid out, how to open it in Obsidian, the writing conventions, and the checklist for keeping it up to date whenever Kit changes.
+related: ["[[Code Map]]"]
 ---
 
 # How these docs work
@@ -21,11 +22,28 @@ alive.
 3. If Obsidian asks, trust the vault so its look (the `kit` CSS snippet)
    switches on.
 4. Start at **Home**, or open **Kit Map** for the whole of Kit on one canvas.
-   Both are bookmarked in the left sidebar.
+   Both are bookmarked in the left sidebar, with **All notes**, **Running
+   Kit**, and groups for how Kit works, the Pod and the reference shelf.
 
-The **graph view** (`Ctrl+G`) shows every note and link, coloured by layer.
-Hover any link to preview it; the backlinks pane shows what links to the
-note you're on.
+## What Obsidian adds
+
+Everything below is plain markdown underneath, so the notes still read on
+GitHub; Obsidian just brings it to life.
+
+| Feature | Where to find it | What it gives you |
+|---|---|---|
+| **Graph view** | `Ctrl+G` | Every note and link, coloured by layer; the Pod's notes in orange |
+| **Kit Map** canvas | `Kit Map.canvas` | The whole of Kit on one board: cards open their notes, with pictures |
+| **All notes** base | `All Notes.base`, also at the bottom of [[Home]] | Every note and its summary as a live table, with tabs: by layer, how Kit works (as cards), guides, deep dives, reference, the Pod |
+| **Properties** | The properties panel (right sidebar) | Each note's `summary`, `tags`, `aliases` and `related` (read next) |
+| **Hover previews** | Hover any link | A peek at the note without leaving the one you're on |
+| **Backlinks and outgoing links** | Right sidebar | What links here, and where this note leads |
+| **Embeds** | `![[Pod In Depth#Wiring]]` in [[Building the Pod]] | A section shown live inside another note, so it's written once |
+| **Folded callouts** | **Under the hood** at the end of each How Kit Works note | The code paths stay out of the way until you open them |
+| **Kit's callouts** | `> [!kit]` on [[Home]] | Kit talking, in his mint glow (the `kit` CSS snippet) |
+| **Clickable diagrams** | The map on [[Home]] | Boxes named after notes open them |
+| **Nested tags** | The tags pane | Layer tags (`how-it-works`, `guide`, ...) and `topic/...` tags, folded under `topic` |
+| **Search by property** | `Ctrl+Shift+F`, then `[summary:memory]` or `tag:#topic/pod` | Find notes by what they're about |
 
 ## The layers
 
@@ -38,6 +56,7 @@ note you're on.
 | `5 Reference` | Looking something up | Commands, settings, API, evals, the code map, the glossary |
 | `6 About These Docs` | Whoever writes them | This note |
 | `Assets` | | Pictures |
+| `Home.md`, `Kit Map.canvas`, `All Notes.base` | Everyone | The front door, the map, and every note as a table |
 | `Templates` | | Starting points for new notes |
 
 Each **How Kit Works** note has the same shape, so you always know where to
@@ -46,7 +65,8 @@ look:
 1. An **In short** box: the whole idea in a few lines.
 2. The middle: how it works, with a diagram or a picture where it helps.
 3. **Go deeper**: the deep dive, the guide, the neighbouring notes.
-4. **Under the hood**: the source files, for anyone who wants the code.
+4. **Under the hood**: a folded callout with the source files, for anyone
+   who wants the code.
 
 ## Writing conventions
 
@@ -56,9 +76,13 @@ look:
   `[[Bodies#The Pod|the Pod]]`. Inside a table, escape the alias bar:
   `[[Bodies#The Pod\|the Pod]]`. Don't link to a heading with a colon in it;
   reword the heading instead.
-- **Every note starts with properties** (`tags`, `aliases`, `summary`), then
-  its title as a `#` heading. The `summary` is one sentence, written for
-  someone, or something like Claude, deciding whether to read the note.
+- **Every note starts with properties** (`tags`, `aliases`, `summary`, and
+  `related` where it has neighbours), then its title as a `#` heading. The
+  `summary` is one sentence, written for someone, or something like Claude,
+  deciding whether to read the note. `tags` has the note's layer
+  (`meet-kit`, `how-it-works`, `deep-dive`, `guide`, `reference`) and what
+  it's about as `topic/...`. `related` lists the notes to read next, as
+  links: `related: ["[[Pod In Depth]]", "[[Bodies]]"]`.
 - **Guides and reference notes** start with an `Up:` line back to [[Home]].
 - **Plain words first.** Short sentences, everyday examples, no jargon in a
   How Kit Works note that the [[Glossary]] doesn't explain.
@@ -68,7 +92,11 @@ look:
 - **Diagrams** are Mermaid code blocks. In a flowchart, a node named after a
   note becomes clickable with `class NodeA,NodeB internal-link`.
 - **Callouts** for asides: `> [!ABSTRACT] In short`, `> [!TIP]`,
-  `> [!NOTE]`.
+  `> [!NOTE]`, `> [!WARNING]`. A `-` after the type folds it shut:
+  `> [!example]- Every mood`. Kit's own: `> [!kit]` when he's talking and
+  `> [!under-the-hood]-` for code paths.
+- **Write it once.** To show a table or section from another note, embed it
+  (`![[Pod In Depth#Wiring]]`) rather than copying it.
 - **Code paths** in backticks, from the repo root: `src/kit/brain.py`.
 
 > [!WARNING] This repo is public
@@ -95,6 +123,8 @@ updates the matching notes **in the same pull request**:
 | How he looks | Fresh pictures in `Assets/` |
 | A pull request opened or merged | [[Where Kit Is Up To]], and [[Roadmap]] when a stage moves |
 | A new word | [[Glossary]] |
+| The Pod's program, printed parts or wiring (`pod/`) | [[The Pod]], [[Pod In Depth]], [[Building the Pod]] |
+| How to start, stop or restart something | [[Running Kit]] |
 
 A new stage brings a guide in `4 Guides` with its setup and test checklist,
 named like the others.
@@ -107,12 +137,13 @@ when the vault drifts from the code:
 - every wiki-link and `#heading` link points at a note and heading that exist;
 - every embedded picture is in `Assets/`;
 - note names are unique, and every note has `tags` and a `summary`;
-- every `src/...` path a note mentions exists;
+- every `src/...` or `pod/...` path a note mentions exists;
+- every embedded view of a base (`![[All Notes.base#Guides]]`) exists;
 - every module in `src/kit` is in [[Code Map]];
 - every setting is in [[Settings Reference]], and every `kit` command in
   [[Commands]];
-- every `docs/...` path mentioned in the code, `README.md` or `CLAUDE.md`
-  exists.
+- every `docs/...` path mentioned in the code, the Pod's files, `README.md`
+  or `CLAUDE.md` exists.
 
 It can't tell whether the words are still true; that part is on whoever
 makes the change.

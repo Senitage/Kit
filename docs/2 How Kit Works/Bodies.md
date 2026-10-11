@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, bodies]
-aliases: [Robot bodies, The Pod, The arm, One brain many bodies]
+tags: [how-it-works, topic/bodies]
+aliases: [Robot bodies, The arm, One brain many bodies]
 summary: One brain, many bodies - how the desk app, home_app, the Pod and later the arm all act out the same Kit, and what each body is.
+related: ["[[The Pod]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Life In Depth]]", "[[Face In Depth]]", "[[Roadmap]]"]
 ---
 
 # Bodies
@@ -49,30 +50,26 @@ same events and sheet as the desk. See [[Other Apps]].
 
 ## The Pod
 
-Kit's first robot: a small desk Pod with the whole front as his face. A 1.5"
-128 x 128 OLED screen shows **Kit 2D**, two hobby servos **turn and tilt** his
-head, an **ESP32** runs it over Wi-Fi, and a touch pad on top feels a **pat**.
-It's about 13 cm tall and 3D printed.
+Kit's first robot: a small printed desk Pod with the whole front as his face.
+A 1.5" screen shows **Kit 2D**, two hobby servos **turn and tilt** his head,
+an **ESP32** runs it over Wi-Fi, and a touch pad on top feels a **pat**. It
+reads the brain's **body feed**, plain lines like `emotion happy`, so a small
+board can act Kit out without a JSON library. Its program and print files are
+in the repo under `pod/`. See [[The Pod]].
 
 | | |
 |---|---|
 | ![[pod-v2-hero.jpg]] | ![[pod-v2-inside.jpg]] |
 | The Pod | Inside: screen, tilt servo, turn servo, ESP32 |
 
-![[pod-screen-moods.png]]
-
-*Every mood on the Pod's screen, drawn by the ESP32 from Kit 2D's shapes.*
-
 His neck stays calm: the face is as lively as on the desk, but the head only
 moves for a glance round the room, something catching his eye, a real gesture
 or his mood's posture. Fidgets stay on the screen.
 
 > [!NOTE] In progress
-> The brain's side of the Pod (a plain-text **body feed** a small board can
-> read, pats, and Kit knowing who in the room can hear him) is pull request
-> #36. The Pod's firmware and print files live outside this repo for now.
-> Next: a speaker and microphone in the Pod, so he can talk and listen in the
-> room, one voice at a time.
+> The brain's side of the Pod (the body feed, pats, and Kit knowing who in the
+> room can hear him) is pull request #36. Next: a speaker and microphone in
+> the Pod, so he can talk and listen in the room, one voice at a time.
 
 ## The arm
 
@@ -94,12 +91,13 @@ little noise, so no two look the same.
 | Sulky | sighs, looks away | turns away a little, droops |
 
 ## Go deeper
+- [[The Pod]], [[Pod In Depth]] and [[Building the Pod]]: Kit's first robot.
 - [[Inner Life In Depth]], under "One brain, many bodies" and "The arm".
 - [[Face In Depth]], under "On the arm" and Kit 2D's shapes for painter ports.
 - [[Roadmap]]: when each body comes.
 
-## Under the hood
-- `src/kit/life.py`: the events every body hears.
-- `src/kit/face/body.py`: body moves by name.
-- `src/kit/face/characters/kit2d.json`: the `kit2d_screen` look the Pod draws.
-- `src/kit/desk/alive.py`: how the desk acts out sleep, waking and glances.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/life.py`: the events every body hears.
+> - `src/kit/face/body.py`: body moves by name.
+> - `src/kit/face/characters/kit2d.json`: the `kit2d_screen` look the Pod draws.
+> - `src/kit/desk/alive.py`: how the desk acts out sleep, waking and glances.

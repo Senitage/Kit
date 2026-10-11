@@ -43,7 +43,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = ["assets"]  # Blender build scripts, run inside Blender
+extend-exclude = ["assets", "pod"]  # Blender scripts, and the Pod's firmware and CAD tools
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

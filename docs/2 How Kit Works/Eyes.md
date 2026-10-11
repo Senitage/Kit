@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, eyes]
+tags: [how-it-works, topic/eyes]
 aliases: [Vision, kit.eyes, Camera, Who's who]
 summary: How Kit sees - a camera process beside the webcam that tells the brain who's at the desk and what they're doing, in words and numbers, never pictures.
+related: ["[[Vision Stage 1]]", "[[Vision Stage 2]]", "[[Inner Life]]"]
 ---
 
 # Eyes
@@ -76,9 +77,9 @@ kit eyes faces          # who his eyes know
 - [[Vision Stage 2]]: introducing people, and how recognition works.
 - [[Inner Life]]: what the brain does with arrivals and sightings.
 
-## Under the hood
-- `src/kit/eyes/`: the camera side: `camera`, `detect`, `faces`, `body`,
-  `actions`, `recognise`, `enrol`, `scene`, `run`, `link`, `preview`.
-- `src/kit/scene_context.py`: the brain's side: the latest scene, the day's
-  comings and goings, the prompt line and `look_around`.
-- `src/kit/known_faces.py`: the people Kit has been introduced to.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/eyes/`: the camera side: `camera`, `detect`, `faces`, `body`,
+>   `actions`, `recognise`, `enrol`, `scene`, `run`, `link`, `preview`.
+> - `src/kit/scene_context.py`: the brain's side: the latest scene, the day's
+>   comings and goings, the prompt line and `look_around`.
+> - `src/kit/known_faces.py`: the people Kit has been introduced to.

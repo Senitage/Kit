@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, desk-app]
+tags: [how-it-works, topic/desk-app]
 aliases: [kit.desk, Tray app, Kit Desk]
 summary: Kit's home on the Windows PC - his face on the desktop, the chat, Kit's window, what's on the PC, the Chrome extension, his voice, and updates from GitHub.
+related: ["[[Stage 2 - Desk App]]", "[[Desk App Builds and Updates]]", "[[Bodies]]"]
 ---
 
 # Desk app
@@ -83,11 +84,11 @@ contains its changes. See [[Desk App Builds and Updates]].
 - [[Desk App Builds and Updates]]: how the installer is built, published and updated.
 - [[Bodies]]: the desk app as one of Kit's bodies.
 
-## Under the hood
-- `src/kit/desk/app.py`: the tray, the face window, the threads that talk to the brain.
-- `src/kit/desk/chat.py`, `src/kit/desk/window.py`, `src/kit/desk/mood.py`: the chat and Kit's window.
-- `src/kit/desk/watch.py`, `src/kit/desk/browser.py`: what's on the PC, and the extension's listener.
-- `src/kit/desk/glow.py`, `src/kit/desk/face3d.py`, `src/kit/desk/scenes.py`, `src/kit/desk/alive.py`: his face and body.
-- `src/kit/desk/voice.py`, `src/kit/desk/sound.py`: his voice and the boop.
-- `src/kit/desk/update.py`: updates. `packaging/windows/`: the installer recipe.
-- `src/kit/pc_context.py`: the brain's side of the PC feed.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/desk/app.py`: the tray, the face window, the threads that talk to the brain.
+> - `src/kit/desk/chat.py`, `src/kit/desk/window.py`, `src/kit/desk/mood.py`: the chat and Kit's window.
+> - `src/kit/desk/watch.py`, `src/kit/desk/browser.py`: what's on the PC, and the extension's listener.
+> - `src/kit/desk/glow.py`, `src/kit/desk/face3d.py`, `src/kit/desk/scenes.py`, `src/kit/desk/alive.py`: his face and body.
+> - `src/kit/desk/voice.py`, `src/kit/desk/sound.py`: his voice and the boop.
+> - `src/kit/desk/update.py`: updates. `packaging/windows/`: the installer recipe.
+> - `src/kit/pc_context.py`: the brain's side of the PC feed.

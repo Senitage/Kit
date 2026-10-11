@@ -12,11 +12,15 @@ cssclasses: [kit-home]
 Kit is a small AI companion who lives on Dan's desk. He chats, remembers,
 has moods and thoughts of his own, sees who's at the desk, talks out loud,
 and pulls faces. He starts life on the PC screen and is growing into little
-robot bodies, first the [[Bodies#The Pod|Pod]] and later a desk arm.
+robot bodies, first the [[The Pod|Pod]] and later a desk arm.
 
 These docs explain how he works, from the big picture down to the code. Read
 top to bottom for the story, or jump in anywhere: every note links to the
 ones around it, and the deeper notes are always one click further.
+
+> [!kit] Hi, I'm Kit
+> These notes are all about me. Have a wander: start with who I am, open the
+> map and click on anything, or hover over a link for a peek before you jump.
 
 > [!TIP] New here? Read these four, in order
 > 1. [[Who Kit Is]]: what he's like, and what he can do today.
@@ -25,6 +29,7 @@ ones around it, and the deeper notes are always one click further.
 > 4. [[Where Kit Is Up To]]: what's built, what's being tested, what's next.
 >
 > Prefer a picture? Open the [[Kit Map.canvas|Kit Map]].
+> Looking after Kit day to day? [[Running Kit]] has the few commands you need.
 
 ## The map
 
@@ -39,6 +44,7 @@ flowchart LR
         Eyes["Eyes"]
         Voice["Voice"]
         Bodies["Bodies"]
+        Pod["The Pod"]
         OtherApps["Other Apps"]
     end
     subgraph Mind["The brain, on the server"]
@@ -61,6 +67,7 @@ flowchart LR
     Brain --> Voice
     OtherApps <--> Brain
     Bodies <--> Brain
+    Bodies --- Pod
     Brain <--> Routing
     Brain <--> Memory
     Memory --- Things
@@ -69,7 +76,7 @@ flowchart LR
     Brain --> Face
     Notes --> Memory
     Weather --> Brain
-    class DeskApp,Eyes,Voice,Bodies,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
+    class DeskApp,Eyes,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
 ```
 
 ## Everything in these docs
@@ -95,6 +102,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[Eyes]]: the camera process that tells him, in words, who's there.
 - [[Desk App]]: his home on the Windows PC: tray, face, chat and window.
 - [[Bodies]]: one brain, many bodies: the desk, the Pod, the arm.
+- [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
@@ -107,9 +115,12 @@ The full detail behind the plain-words notes.
 - [[Inner Life In Depth]]
 - [[Face In Depth]]
 - [[Desk App Builds and Updates]]
+- [[Pod In Depth]]
 
 ### 4. Guides: set up and test
+- [[Running Kit]]: start, stop, restart and check Kit, his eyes and the Pod.
 - [[Updating Kit]]: pull, install, restart. The same every time.
+- [[Building the Pod]]: print, wire, upload and link the Pod, step by step.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
 - [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
@@ -125,3 +136,10 @@ The full detail behind the plain-words notes.
 
 ### 6. About these docs
 - [[How These Docs Work]]: how the vault is laid out, and how to keep it up to date.
+
+### Or browse them as a table
+Every note with its one-line summary, live from the notes' properties. The
+tabs along the top switch views: every note by layer, how Kit works, guides,
+deep dives, reference, and the Pod.
+
+![[All Notes.base]]

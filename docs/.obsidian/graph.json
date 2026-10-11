@@ -8,6 +8,13 @@
   "collapse-color-groups": false,
   "colorGroups": [
     {
+      "query": "tag:#topic/pod",
+      "color": {
+        "a": 1,
+        "rgb": 16747520
+      }
+    },
+    {
       "query": "path:\"1 Meet Kit\"",
       "color": {
         "a": 1,

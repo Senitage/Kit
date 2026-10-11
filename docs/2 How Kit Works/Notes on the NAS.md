@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, notes, nas]
+tags: [how-it-works, topic/notes, topic/nas]
 aliases: [Notes, The notes vault, NAS, Obsidian vault]
 summary: How Kit reads and writes your Obsidian notes on the NAS, the one place there he may write, and why everything else on the NAS is read-only.
+related: ["[[Notes Setup]]", "[[Stage 0 - Server Setup]]", "[[Memory]]"]
 ---
 
 # Notes on the NAS
@@ -61,8 +62,8 @@ he could write to. Nothing else on the NAS changes because of Kit.
 - [[Stage 0 - Server Setup]]: mounting the NAS shares read-only.
 - [[Memory]]: how notes are found alongside everything else he knows.
 
-## Under the hood
-- `src/kit/notes.py`: reading the vault, taking notes, `asks_for_note`.
-- `src/kit/checks.py`: the `nas:` lines in `kit check`.
-- Settings: `nas.vault`, `nas.notes_folder`, `nas.read_only_shares`
-  ([[Settings Reference#nas]]).
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/notes.py`: reading the vault, taking notes, `asks_for_note`.
+> - `src/kit/checks.py`: the `nas:` lines in `kit check`.
+> - Settings: `nas.vault`, `nas.notes_folder`, `nas.read_only_shares`
+>   ([[Settings Reference#nas]]).

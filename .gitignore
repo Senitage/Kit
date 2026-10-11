@@ -21,3 +21,12 @@ docs/.obsidian/workspace*.json
 docs/.obsidian/cache
 docs/.obsidian/plugins/
 docs/.trash/
+
+# The Pod's own secrets (copied from the .example.h files)
+pod/firmware/*/wifi_settings.h
+pod/firmware/*/kit_server.h
+# Files the Pod's CAD script makes
+pod/cad/*.step
+pod/cad/*.stl
+pod/cad/assembly/
+pod/cad/render/

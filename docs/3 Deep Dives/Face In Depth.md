@@ -1,5 +1,5 @@
 ---
-tags: [deep-dive, face]
+tags: [deep-dive, topic/face]
 aliases: [Character sheet format, Glow in depth, Kit 2D shapes, 3D packs]
 summary: The full detail of Kit's face - the rig, the character sheet format, Kit 2D's shapes for painter ports, 3D packs, shows and body moves.
 ---

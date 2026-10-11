@@ -1,5 +1,5 @@
 ---
-tags: [deep-dive, inner-life]
+tags: [deep-dive, topic/inner-life]
 aliases: [life.md, Inner life design]
 summary: The full design of Kit's inner life - drives, moods, feelings, thoughts, the notebook, pipe-ups, sleep, reflection and how bodies act it out.
 ---

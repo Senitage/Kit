@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, inner-life]
+tags: [how-it-works, topic/inner-life]
 aliases: [Life, kit.life, Drives and feelings, Mood]
 summary: Kit's inner life - drives that rise and fall, a mood and feelings with reasons, private thoughts, a notebook, piping up with manners, and a nightly look back that slowly changes him.
+related: ["[[Inner Life In Depth]]", "[[Companion]]", "[[Side Stage - Inner Life]]"]
 ---
 
 # Inner life
@@ -113,9 +114,9 @@ kit life reflect    # look back on today so far (a few cents)
 - [[Companion]]: what he does with all this when you come and go.
 - [[Side Stage - Inner Life]]: setting it up, costs, and picking his voice.
 
-## Under the hood
-- `src/kit/life.py`: drives, mood, feelings, sleep, manners, the events bodies hear.
-- `src/kit/thinking.py`: his private thoughts.
-- `src/kit/notebook.py`: his notebook.
-- `src/kit/reflection.py`: the nightly look back and the weekly review.
-- `src/kit/desk/mood.py`: the Mood page.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/life.py`: drives, mood, feelings, sleep, manners, the events bodies hear.
+> - `src/kit/thinking.py`: his private thoughts.
+> - `src/kit/notebook.py`: his notebook.
+> - `src/kit/reflection.py`: the nightly look back and the weekly review.
+> - `src/kit/desk/mood.py`: the Mood page.

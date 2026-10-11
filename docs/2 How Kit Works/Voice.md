@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, voice]
+tags: [how-it-works, topic/voice]
 aliases: [Speech, kit.speech, Talking out loud]
 summary: How Kit talks out loud - a swappable voice engine on the server, speaking each sentence as soon as it's written, with his mood in his voice.
+related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 ---
 
 # Voice
@@ -71,9 +72,9 @@ kit speech bench --engines chatterbox-turbo kokoro
   Kit to another machine, and the test checklist.
 - [[Desk App]]: where the sound comes out.
 
-## Under the hood
-- `src/kit/speech/service.py`: runs the chosen engine and asks it for speech.
-- `src/kit/speech/worker.py`: one engine behind a tiny local web server.
-- `src/kit/speech/sentences.py`: cutting words into speakable pieces.
-- `src/kit/speech/bench.py`: `kit speech bench`.
-- `src/kit/desk/voice.py`: playing it on the desk PC.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/speech/service.py`: runs the chosen engine and asks it for speech.
+> - `src/kit/speech/worker.py`: one engine behind a tiny local web server.
+> - `src/kit/speech/sentences.py`: cutting words into speakable pieces.
+> - `src/kit/speech/bench.py`: `kit speech bench`.
+> - `src/kit/desk/voice.py`: playing it on the desk PC.

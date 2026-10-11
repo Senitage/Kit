@@ -2,6 +2,7 @@
 tags: [how-it-works]
 aliases: []
 summary: One sentence on what this part of Kit does, for someone deciding whether to read on.
+related: ["[[A neighbouring note]]"]
 ---
 
 # {{title}}
@@ -28,5 +29,5 @@ kit ...
 - [[A deep dive or guide]]: what's in it.
 - [[A neighbouring note]]: how it connects.
 
-## Under the hood
-- `src/kit/....py`: what it does.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/....py`: what it does.

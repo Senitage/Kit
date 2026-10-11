@@ -1,5 +1,5 @@
 ---
-tags: [reference, commands, cli]
+tags: [reference, topic/commands, topic/cli]
 aliases: [CLI, kit command, Terminal commands]
 summary: Every kit command in one place, grouped by what it's for, with a pointer to the note that explains each part.
 ---

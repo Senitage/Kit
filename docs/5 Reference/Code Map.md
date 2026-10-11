@@ -1,5 +1,5 @@
 ---
-tags: [reference, code]
+tags: [reference, topic/code]
 aliases: [Source map, Where the code is, Modules]
 summary: Every module in the repo, what it does in a line, and which note explains it - the bridge from these docs into the code.
 ---
@@ -161,5 +161,8 @@ flowchart TB
 | `tests/` | The unit tests; `tests/fakes.py` holds the fakes for outside effects | [[How These Docs Work]] |
 | `packaging/windows/` | The desk app installer recipe | [[Desk App Builds and Updates]] |
 | `assets/kit_3d_face/` | Blender scripts that build Kit 3D and its pack | [[Face In Depth]] |
+| `pod/firmware/` | The Pod's program (Arduino, ESP32) and its bench tests | [[Pod In Depth]] |
+| `pod/cad/` | The Pod's printed parts as CadQuery code, and the renders | [[Building the Pod]] |
+| `pod/network/` | The Windows port forward that lets the Pod reach Kit in WSL | [[Pod In Depth#Reaching Kit inside WSL]] |
 | `.github/workflows/` | CI (`ci.yml`) and the desk app build (`desk-app.yml`) | [[Desk App Builds and Updates]] |
 | `docs/` | This vault | [[How These Docs Work]] |

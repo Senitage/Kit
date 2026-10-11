@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, architecture]
+tags: [how-it-works, topic/architecture]
 aliases: [Architecture, How Kit fits together]
 summary: Kit's parts and how they connect - one brain on the server, bodies and senses that connect out to it, one data folder, local and cloud models.
+related: ["[[Life of a Message]]", "[[Code Map]]", "[[API]]"]
 ---
 
 # The big picture

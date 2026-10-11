@@ -1,5 +1,5 @@
 ---
-tags: [reference, ideas]
+tags: [reference, topic/ideas]
 aliases: [improvements.md, Future improvements, Backlog]
 summary: Things Dan has asked for that aren't built yet, with what was seen and ideas for fixing them.
 ---

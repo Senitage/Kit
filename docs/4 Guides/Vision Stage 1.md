@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, eyes]
+tags: [guide, stage, topic/eyes]
 aliases: [stage-vision]
 summary: Vision stage 1, Kit sees you - installing the eyes on the PC, connecting them, the switch, privacy and the test checklist.
 ---

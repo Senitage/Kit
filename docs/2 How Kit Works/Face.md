@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, face]
+tags: [how-it-works, topic/face]
 aliases: [Kit's face, Character sheets, kit.face, Glow]
 summary: How Kit's face works - one expression rig, character sheets that say how he looks (Retro, Kit 3D, Kit 2D), shows for the time and weather, and body moves.
+related: ["[[Face In Depth]]", "[[Desk App]]", "[[Bodies]]"]
 ---
 
 # Face
@@ -97,12 +98,12 @@ folder Blender writes, for live tuning.
 - [[Desk App]]: the Look page (eye colour, face size, how much he moves).
 - [[Bodies]]: his face on the Pod and the arm.
 
-## Under the hood
-- `src/kit/face/rig.py`: the expression rig.
-- `src/kit/face/character.py`: loading and checking character sheets.
-- `src/kit/face/characters/`: `retro.json`, `kit2d.json`, `kit3d.json` and the 3D pack.
-- `src/kit/face/body.py`: body moves.
-- `src/kit/face/serve.py`, `src/kit/web/face/`: the 3D face page.
-- `src/kit/shows.py`: picking a show; `src/kit/desk/scenes.py`: drawing it on the desk.
-- `src/kit/desk/glow.py`: the 2D painter; `src/kit/desk/face3d.py`: the 3D overlay.
-- `assets/kit_3d_face/`: the Blender build scripts for Kit 3D.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/face/rig.py`: the expression rig.
+> - `src/kit/face/character.py`: loading and checking character sheets.
+> - `src/kit/face/characters/`: `retro.json`, `kit2d.json`, `kit3d.json` and the 3D pack.
+> - `src/kit/face/body.py`: body moves.
+> - `src/kit/face/serve.py`, `src/kit/web/face/`: the 3D face page.
+> - `src/kit/shows.py`: picking a show; `src/kit/desk/scenes.py`: drawing it on the desk.
+> - `src/kit/desk/glow.py`: the 2D painter; `src/kit/desk/face3d.py`: the 3D overlay.
+> - `assets/kit_3d_face/`: the Blender build scripts for Kit 3D.

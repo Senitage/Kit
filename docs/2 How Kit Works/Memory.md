@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, memory]
+tags: [how-it-works, topic/memory]
 aliases: [How Kit remembers, kit.memory, Knowledge index]
 summary: How Kit remembers - one index for everything he knows, searched by words and by meaning every turn, with facts that update instead of piling up.
+related: ["[[Memory In Depth]]", "[[Register of Things]]", "[[Stage 1 - Text Brain]]"]
 ---
 
 # Memory
@@ -99,9 +100,9 @@ recall, not in the nightly reflection. See [[Privacy]].
 - [[Register of Things]]: facts say what's true; the register says where things are.
 - [[Stage 1 - Text Brain]]: setting it up and testing it.
 
-## Under the hood
-- `src/kit/knowledge.py`: the one index (full-text and vectors, supersede, history).
-- `src/kit/memory.py`: the SQLite file: conversation, facts, days, spend, migrations.
-- `src/kit/recall.py`: what goes into each turn, and the weighting.
-- `src/kit/learning.py`: same, update or new; the end-of-day pass.
-- `src/kit/embed.py`: meaning vectors from Ollama.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/knowledge.py`: the one index (full-text and vectors, supersede, history).
+> - `src/kit/memory.py`: the SQLite file: conversation, facts, days, spend, migrations.
+> - `src/kit/recall.py`: what goes into each turn, and the weighting.
+> - `src/kit/learning.py`: same, update or new; the end-of-day pass.
+> - `src/kit/embed.py`: meaning vectors from Ollama.

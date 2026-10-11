@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, eyes]
+tags: [guide, stage, topic/eyes]
 aliases: [stage-vision-2]
 summary: Vision stage 2, who's who - introducing people to Kit's eyes, how recognition works, and the test checklist.
 ---

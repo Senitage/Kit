@@ -1,5 +1,5 @@
 ---
-tags: [guide, updating]
+tags: [guide, topic/updating]
 aliases: [Update Kit, Testing a pull request, Restart Kit]
 summary: How to update the server to the latest Kit, try a pull request before it's merged and go back afterwards, and update the desk app and the eyes.
 ---

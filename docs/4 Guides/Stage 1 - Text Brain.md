@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, brain]
+tags: [guide, stage, topic/brain]
 aliases: [stage-1-text-brain]
 summary: Stage 1, the text brain - chat in a browser or terminal, memory, the register, model routing and settings, with the test checklist.
 ---
@@ -24,7 +24,7 @@ folder, GPU, Ollama and the cloud models.
 In the Ubuntu terminal, in the Kit repo:
 
 ```
-cd ~/kit
+cd ~/Kit
 git pull
 source .venv/bin/activate
 pip install -e .

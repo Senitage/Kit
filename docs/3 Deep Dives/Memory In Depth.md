@@ -1,5 +1,5 @@
 ---
-tags: [deep-dive, memory]
+tags: [deep-dive, topic/memory]
 aliases: [memory.md, Memory design]
 summary: The full design of Kit's memory - one index, finding by words and meaning, the register of things, what matters, learning tidily, keeping things local.
 ---

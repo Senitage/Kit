@@ -1,7 +1,8 @@
 ---
-tags: [how-it-works, apps, home-app, mettools]
+tags: [how-it-works, topic/apps, topic/home-app, topic/mettools]
 aliases: [home_app, MetTools, Configurators, Home Assistant]
 summary: How Kit fits with Dan's other apps - home_app shows and configures Kit, MetTools and Home Assistant become tools for him later - and the one rule, that Kit never depends on any of them.
+related: ["[[API]]", "[[Roadmap]]", "[[Privacy]]"]
 ---
 
 # Other apps
@@ -67,7 +68,7 @@ matters confirmed first.
 - [[Roadmap]]: stage 4, tools.
 - [[Privacy]]: tokens, and what stays local.
 
-## Under the hood
-- `src/kit/server.py`: the API other apps call.
-- `src/kit/channels.py`: the `home` channel.
-- `src/kit/settings.py`, `src/kit/settings_store.py`: the settings, their schema, and changes with undo.
+> [!under-the-hood]- Under the hood: the code
+> - `src/kit/server.py`: the API other apps call.
+> - `src/kit/channels.py`: the `home` channel.
+> - `src/kit/settings.py`, `src/kit/settings_store.py`: the settings, their schema, and changes with undo.

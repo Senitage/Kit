@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, desk-app]
+tags: [guide, stage, topic/desk-app]
 aliases: [stage-2-desk-app]
 summary: Stage 2, the Windows desk app - installing it, connecting it to the brain, the Chrome extension, privacy and the test checklist.
 ---

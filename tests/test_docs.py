@@ -23,7 +23,7 @@ FENCE = re.compile(r"^[ \t]*(```|~~~)[^\n]*\n.*?^[ \t]*\1[ \t]*$", re.MULTILINE 
 INLINE_CODE = re.compile(r"`[^`\n]*`")
 WIKI = re.compile(r"(!?)\[\[([^\]\n]+?)\]\]")
 HEADING = re.compile(r"^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", re.MULTILINE)
-CODE_PATH = re.compile(r"`((?:src|tests|packaging|assets|\.github)/[^`\s]*)`")
+CODE_PATH = re.compile(r"`((?:src|tests|packaging|assets|pod|\.github)/[^`\s]*)`")
 DOCS_PATH = re.compile(r"docs/[^\n`'\"()\[\]<>]*?\.(?:md|canvas|png|jpg)")
 
 
@@ -66,6 +66,11 @@ def _links(text: str) -> list[tuple[bool, str, str]]:
 
 def _resolve(name: str) -> Path | None:
     return BY_NAME.get(name) or FILES.get(name)
+
+
+def _base_views(path: Path) -> set[str]:
+    """The view names in a base (an Obsidian Bases .base file)."""
+    return set(re.findall(r"^\s+name:\s*(.+?)\s*$", _read(path), re.MULTILINE))
 
 
 def _canvas_texts() -> list[tuple[Path, str]]:
@@ -118,6 +123,9 @@ def test_links_and_headings_resolve():
             elif heading and target.suffix == ".md":
                 if _norm(heading) not in _headings(_read(target)):
                     broken.append(f"{path.name}: [[{name}#{heading}]] has no such heading")
+            elif heading and target.suffix == ".base":
+                if heading not in _base_views(target):
+                    broken.append(f"{path.name}: [[{name}#{heading}]] has no such view")
             elif embed and target.suffix in {".png", ".jpg"} and target.parent != ASSETS:
                 broken.append(f"{path.name}: pictures go in docs/Assets ({name})")
     assert not broken, "\n".join(broken)
@@ -151,6 +159,16 @@ def test_obsidian_settings_are_valid_json():
         json.loads(_read(path))
 
 
+def test_bases_have_named_views():
+    for path in DOCS.rglob("*.base"):
+        text = _read(path)
+        assert "\t" not in text, f"{path.name}: indent with spaces (it's YAML)"
+        views = re.findall(r"^\s+- type:\s*(\w+)", text, re.MULTILINE)
+        names = re.findall(r"^\s+name:\s*(.+?)\s*$", text, re.MULTILINE)
+        assert views and len(views) == len(names), f"{path.name}: give every view a type and name"
+        assert len(set(names)) == len(names), f"{path.name}: view names must differ"
+
+
 def test_code_paths_in_notes_exist():
     missing = []
     for path in NOTES:
@@ -165,6 +183,7 @@ def test_docs_paths_in_code_exist():
     files = [ROOT / "README.md", ROOT / "CLAUDE.md", ROOT / "pyproject.toml"]
     files += [p for p in SRC.rglob("*") if p.suffix in {".py", ".json", ".toml", ".html", ".js"}]
     files += list((ROOT / ".github").rglob("*.yml")) + list((ROOT / "assets").rglob("*.md"))
+    files += [p for p in (ROOT / "pod").rglob("*") if p.suffix in {".md", ".ino", ".h", ".py"}]
     missing = []
     for path in files:
         for found in DOCS_PATH.findall(_read(path)):

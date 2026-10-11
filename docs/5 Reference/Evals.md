@@ -1,7 +1,8 @@
 ---
-tags: [reference, evals, testing]
+tags: [reference, topic/evals, topic/testing]
 aliases: [kit eval, Eval suites, Measuring Kit]
 summary: Kit's evals - repeatable checks of reply format and speed, memory recall, knowing where things live, cloud model comparisons, how alive he sounds, how good a companion he is, and reading your mood.
+related: ["[[Stage 1 - Text Brain]]", "[[Side Stage - Inner Life]]", "[[Companion Stage 1]]"]
 ---
 
 # Evals

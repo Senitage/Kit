@@ -26,6 +26,12 @@ in the docs vault: start at docs/Home.md.
   docs/3 Deep Dives/Memory In Depth.md.
 - Memory schema changes are new entries in `kit.memory.MIGRATIONS`, never edits
   to old ones.
+- The Pod (Kit's first robot body) lives in `pod/`: the ESP32 program
+  (Arduino), its printed parts (CadQuery) and a Windows network helper. It
+  isn't part of the Python package and ruff skips it. Its Wi-Fi password and
+  Kit's token go in `wifi_settings.h` and `kit_server.h`, which are gitignored;
+  only the `.example.h` copies are committed. When Kit 2D's character sheet
+  changes, rebuild `kit2d_sheet.h` with `pod/firmware/kit_pod_face/make_sheet.py`.
 
 ## Docs
 
@@ -37,11 +43,14 @@ in the docs vault: start at docs/Home.md.
   `6 About These Docs`. Conventions are in
   docs/6 About These Docs/How These Docs Work.md.
 - Links are wiki-links by note name (`[[Memory]]`, `[[Memory#Finding things]]`).
-  Note names are unique across the vault. Every note starts with `tags`,
-  `aliases` and `summary` properties. Pictures go in `docs/Assets/`, embedded
-  as `![[name.png]]`.
+  Note names are unique across the vault. Every note starts with `tags` (its
+  layer plus `topic/...`), `aliases`, `summary` and, where it has neighbours,
+  `related` properties. Pictures go in `docs/Assets/`, embedded as
+  `![[name.png]]`. A section shown in two notes is embedded
+  (`![[Note#Heading]]`), not copied. `docs/All Notes.base` lists every note.
 - Every change updates the docs in the same PR: the part's How Kit Works note
-  and deep dive, its guide or docs/4 Guides/Updating Kit.md, Code Map for
+  and deep dive, its guide or docs/4 Guides/Updating Kit.md (and
+  docs/4 Guides/Running Kit.md if how to run it changes), Code Map for
   modules, Commands, Settings Reference, API and Evals for those, Where Kit Is
   Up To for PRs opened or merged, the Glossary for new words, and fresh
   pictures when how Kit looks changes. A new part of Kit gets a note from

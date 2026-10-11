@@ -2,6 +2,7 @@
 tags: [guide]
 aliases: []
 summary: One sentence on what this guide sets up or tests.
+related: ["[[A neighbouring note]]"]
 ---
 
 # {{title}}

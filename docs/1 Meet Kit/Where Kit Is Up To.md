@@ -1,5 +1,5 @@
 ---
-tags: [meet-kit, status]
+tags: [meet-kit, topic/status]
 aliases: [Status, What's built]
 summary: What's built and merged into main, what's open, and what's next. Update this note whenever a pull request lands.
 ---
@@ -22,7 +22,8 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Character sheets: Retro, Kit 3D, Kit 2D | Done | [[Face]] |
 | Voice, part 1 of stage 3: Kit talks | Done | [[Voice]] |
 | Eyes, vision stages 1 and 2: he sees you, and knows who's who | Done | [[Eyes]] |
-| Body feed and knowing who can hear him (the Pod) | Open, pull request #36 | [[Bodies]] |
+| The Pod: program, printed parts, build guide | Done, in `pod/` | [[The Pod]] |
+| Body feed and knowing who can hear him (the Pod's link to the brain) | Open, pull request #36 | [[Pod In Depth#The body feed]] |
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
@@ -67,6 +68,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 10 Oct | Kit 2D: the 3D face drawn flat, as a new character | #34 |
 | 10 Oct | Eyes stage 1: Kit sees you | #22 |
 | 10 Oct | Eyes stage 2: who's who | #35 |
+| 11 Oct | These docs as an Obsidian vault; the Pod's program, printed parts and build guide in the repo | #38 |
 
 ## Keeping this note true
 

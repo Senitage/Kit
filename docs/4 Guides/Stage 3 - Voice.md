@@ -1,5 +1,5 @@
 ---
-tags: [guide, stage, voice]
+tags: [guide, stage, topic/voice]
 aliases: [stage-3-voice]
 summary: Stage 3 part 1, Kit's voice - setting up each engine, changing his voice, moving to another machine, and the test checklist.
 ---
