@@ -25,6 +25,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | The Pod: program, printed parts, build guide | Done, in `pod/` | [[The Pod]] |
 | Body feed and knowing who can hear him (the Pod's link to the brain) | Open, pull request #36 | [[Pod In Depth#The body feed]] |
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
+| The Pod's neck fits the real servo horns, arms joined to the base | Open, pull request #39 | [[Building the Pod]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

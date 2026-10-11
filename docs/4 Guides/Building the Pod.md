@@ -52,7 +52,11 @@ python3 kit_pod_v2.py check    # reports any parts that hit, head level and nodd
    middle of the square window.
 2. `top`: the turn servo drops into its cutout and its tab holes line up.
 3. `neck`: the servo's cross horn presses into the pocket underneath, and the
-   single horn into the pocket on the right arm.
+   single horn into the pocket on the right arm. The pockets are drawn for a
+   36 mm cross horn and a 22 mm single horn with 0.5 mm to spare; if yours
+   differ, change `horn_double_len` and `horn_single_len` in `kit_pod_v2.py`.
+   The two arms flare out at 45° where they meet the round base, so they
+   print as one piece with it.
 
 Then print the rest:
 
