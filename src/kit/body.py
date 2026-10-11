@@ -1,6 +1,7 @@
 """Kit's robot bodies: what a body needs from the brain to act Kit out.
 
-The brain decides what Kit feels and does; a body only plays it (see docs/body.md).
+The brain decides what Kit feels and does; a body only plays it
+(see docs/3 Deep Dives/Pod In Depth.md).
 A small body such as the Pod (an ESP32 with a screen and two servos) can't do much
 parsing, so it reads one plain-text feed: a few lines with his resting face, whether
 he's asleep, how lively he is, and what just happened (a reply's emotion, talking,

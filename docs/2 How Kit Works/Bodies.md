@@ -71,6 +71,23 @@ or his mood's posture. Fidgets stay on the screen.
 > room can hear him) is pull request #36. Next: a speaker and microphone in
 > the Pod, so he can talk and listen in the room, one voice at a time.
 
+## Who can hear him
+
+Kit is one mind wherever you reach him, but how he talks depends on who can
+hear. **Out loud** (his voice at the desk, or the Pod) anyone in the room hears
+him, so he's told who his eyes see there, people and pets, and talks to them
+directly: "Hi Sam!", or "Milo, you'd better not eat me." **On a screen** only
+Dan reads him, so a hello for someone else goes through Dan: "tell Sam I said
+hi."
+
+- A message can say **who sent it**, so a visitor can talk to him themselves.
+  Out loud, if nobody says, it's the one person his eyes know in the room (when
+  that isn't Dan). The history keeps it: "(Sam said) hello Kit".
+- A pet gets its name when it's in the [[Register of Things]] as a pet with its
+  kind (like "cat") in its description, and it's the only pet of that kind.
+- When his first words are for someone in the room, bodies get a `turn_to`
+  line and face them while he talks. See [[Pod In Depth#The body feed]].
+
 ## The arm
 
 The last stage: Kit in a desk robot arm, with his face on a small screen in
@@ -98,6 +115,8 @@ little noise, so no two look the same.
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/life.py`: the events every body hears.
+> - `src/kit/body.py`: the plain-text body feed, chat moments and pats.
+> - `src/kit/audience.py`: who can hear him, and who his words are for.
 > - `src/kit/face/body.py`: body moves by name.
 > - `src/kit/face/characters/kit2d.json`: the `kit2d_screen` look the Pod draws.
 > - `src/kit/desk/alive.py`: how the desk acts out sleep, waking and glances.

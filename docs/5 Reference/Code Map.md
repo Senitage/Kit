@@ -81,6 +81,13 @@ flowchart TB
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
 
+## Bodies
+
+| Module | What it does | Explained in |
+|---|---|---|
+| `src/kit/body.py` | The plain-text body feed, chat moments and pats | [[Pod In Depth#The body feed]] |
+| `src/kit/audience.py` | Who can hear him, and who his words are for | [[Bodies#Who can hear him]] |
+
 ## Setup and settings
 
 | Module | What it does | Explained in |
