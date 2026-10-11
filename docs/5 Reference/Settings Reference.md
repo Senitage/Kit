@@ -167,7 +167,10 @@ His inner life and the companion habits. See [[Inner Life]] and [[Companion]].
 | `max_per_hour` | `3` | Most times an hour Kit pipes up unprompted. |
 | `quiet_from` | `22:00` | Kit doesn't pipe up from this time... |
 | `quiet_until` | `07:00` | ...until this time. |
-| `sleep_after_minutes` | `10` | Kit dozes off after you've been away this long. |
+| `sleep_after_minutes` | `10` | Kit dozes off after you've been away this long. Dozing while you're out lasts about two naps, then he gets up for this long before dozing again. |
+| `naps` | on | Kit sometimes nods off for a nap when he's bored, nobody's talked to him for half an hour and nothing's going on, even with you at the PC. Never mid-conversation or in quiet hours, at most twice a day. Talking to him wakes him. |
+| `nap_minutes` | `20` | Roughly how long a nap lasts (give or take a third). |
+| `turns_in` | on | Past bedtime, once nobody's talked to him for a quarter of an hour, Kit goes to bed himself, even if you're still up. He gets up around the end of quiet hours. |
 | `think_every_minutes` | `8` | Roughly how often Kit has a private thought in a quiet moment while you're around. Things happening (you coming back, something new on screen, a build failing, a chat ending) prompt one sooner. |
 | `thoughts_per_hour` | `6` | Most thoughts Kit has in an hour (each is a quick local model call). 0 stops him thinking between conversations. |
 | `reflect_with` | `cloud` | Who writes Kit's journal and self-sheet each night. cloud: the work model, a few cents a day, logged as spend (the local model steps in if the cloud can't). local: the local model only. off: Kit doesn't reflect or change. |
@@ -181,7 +184,7 @@ His inner life and the companion habits. See [[Inner Life]] and [[Companion]].
 | `chat_opener` | on | When you come back to a new chat, Kit picks up one thing from the last one (how something went), the way a friend would. |
 | `interview` | on | Kit gets to know you by chat: at most one everyday question a day (your partner's name, the cat's, your mates, what you like doing), until he knows. He skips what he already knows. |
 | `nudges` | on | Once a day each: a nudge toward bed when you're still up past bedtime, and toward getting outside or seeing someone after a long stretch at the desk. |
-| `bedtime` | `22:30` | When Kit starts nudging you toward bed (with nudges on). |
+| `bedtime` | `22:30` | When Kit starts nudging you toward bed (with nudges on), and from when he may turn in himself (with turns_in on). |
 | `desk_hours` | `3.0` | Hours at the desk without a break before Kit nudges you outside (with nudges on, in the daytime). |
 | `work_triggers` | off | Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) and reacts to builds and tests on screen. Off: only everyday things catch his eye. |
 | `alone_thoughts_per_hour` | `0` | While you're away and he's awake, Kit entertains himself (watching the weather, rereading yesterday's journal, thinking about someone in the register, listening to what's playing if the desk app shares it) and has this many private thoughts an hour about it, always with the local model, never in quiet hours. The desk face shows what he's doing. 0: he just waits, then dozes. |

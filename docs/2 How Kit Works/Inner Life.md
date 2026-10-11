@@ -72,8 +72,10 @@ or down.
 ## Asleep and awake
 
 When you've been away `life.sleep_after_minutes` (or the PC is locked), he
-dozes off; a message, or you coming back, wakes him. The brain decides; every
-body acts it out. While you're out he can keep himself busy (watching the
+dozes off. He also naps when he's bored and ignored, and turns in himself past
+bedtime. A message, you coming back to the PC, or his own body clock wakes
+him; his eyes never do, and they shut (models unloaded) while he sleeps. The
+brain decides; every body acts it out. Details: [[Inner Life In Depth#Sleep, naps and waking up]]. While you're out he can keep himself busy (watching the
 weather, rereading his journal) before dozing: see [[Companion#While you're out]].
 
 ## Each night he looks back
