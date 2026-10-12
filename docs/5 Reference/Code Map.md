@@ -167,5 +167,7 @@ flowchart TB
 | `pod/firmware/` | The Pod's program (Arduino, ESP32) and its bench tests | [[Pod In Depth]] |
 | `pod/cad/` | The Pod's printed parts as CadQuery code, and the renders | [[Building the Pod]] |
 | `pod/network/` | The Windows port forward that lets the Pod reach Kit in WSL | [[Pod In Depth#Reaching Kit inside WSL]] |
-| `.github/workflows/` | CI (`ci.yml`) and the desk app build (`desk-app.yml`) | [[Desk App Builds and Updates]] |
+| `android/core/` | Kit for Android's plain-Kotlin core: talking to Kit, the chat and outbox, the face rig | [[Phone App In Depth]] |
+| `android/app/` | Kit for Android itself: the screens, his face, updates | [[Phone App In Depth]] |
+| `.github/workflows/` | CI (`ci.yml`), the desk app build (`desk-app.yml`) and the phone app build (`android.yml`) | [[Desk App Builds and Updates]], [[Phone App In Depth]] |
 | `docs/` | This vault | [[How These Docs Work]] |

@@ -39,6 +39,7 @@ Up: [[Home]] · Reference
 | **Kit 2D** | The 3D face drawn flat, for small screens like the Pod's | [[Face]] |
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
+| **Outbox** | Messages typed on the phone while Kit's out of reach, kept on the phone and sent with the time they were written | [[Phone App#Never losing a message]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
 | **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |

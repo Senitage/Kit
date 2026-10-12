@@ -26,7 +26,8 @@ it. See [[Phone App#Pairing]].
 
 The pages (`/`, `/settings`, `/memory`) and the 3D face (`/face/...`) load
 without one: the pages ask for it, and the face is only a
-cartoon. See [[Privacy#Tokens and secrets]].
+cartoon. The face files carry an ETag, so a page that already has one (the
+phone's, on mobile data) gets "not changed" instead of the whole model again. See [[Privacy#Tokens and secrets]].
 
 ## Talking
 
