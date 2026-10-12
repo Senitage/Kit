@@ -80,7 +80,7 @@
 			"x": -1120,
 			"y": 40,
 			"width": 400,
-			"height": 800,
+			"height": 990,
 			"color": "5"
 		},
 		{
@@ -116,6 +116,15 @@
 			"text": "### [[Other Apps]]\nhome_app shows and configures him; MetTools and Home Assistant come later.",
 			"x": -1080,
 			"y": 650,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "phone",
+			"type": "text",
+			"text": "### [[Phone App]]\nKit on Android: the body that leaves the house with you.",
+			"x": -1080,
+			"y": 840,
 			"width": 320,
 			"height": 150
 		},
@@ -494,6 +503,14 @@
 			"fromSide": "bottom",
 			"toNode": "pod",
 			"toSide": "top"
+		},
+		{
+			"id": "phone-brain",
+			"fromNode": "phone",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "chat and hello, over Tailscale"
 		}
 	]
 }

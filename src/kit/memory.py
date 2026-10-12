@@ -243,6 +243,28 @@ class Memory:
         return [Message(*row) for row in reversed(rows)]
 
     @_locked
+    def page(
+        self, limit: int, before: int | None = None, after: int | None = None
+    ) -> list[Message]:
+        """A page of the whole history, oldest first, recall steps left out: up to
+        ``limit`` messages just before message ``before`` (scrolling back), or just
+        after message ``after`` (catching up). Unlike ``recent``, new chats don't stop
+        it."""
+        if after is not None:
+            where, args, order = "id > ?", [after], "ASC"
+            if before is not None:
+                where, args = "id > ? AND id < ?", [after, before]
+        else:
+            where, args, order = "id < ?", [before], "DESC"
+        rows = self.db.execute(
+            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f" WHERE {where} AND (source IS NULL OR source != ?) ORDER BY id {order} LIMIT ?",
+            (*args, RECALL_STEP, limit),
+        ).fetchall()
+        found = [Message(*row) for row in rows]
+        return found if order == "ASC" else list(reversed(found))
+
+    @_locked
     def new_chat(self) -> None:
         """Start a fresh conversation: earlier turns leave the chat history (and stop
         being copied by the model) but stay in the log, day summaries and recall."""
