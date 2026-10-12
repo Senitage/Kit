@@ -25,7 +25,8 @@ related: ["[[Vision Stage 1]]", "[[Vision Stage 2]]", "[[Inner Life]]"]
   hand. They go into his thoughts, and arrivals and animals into his memory
   (`seen`), so "when did I get in this morning?" has an answer.
 - **Have a proper look** when you ask ("what am I holding?") with the
-  `look_around` action.
+  `look_around` action. In `cloud-only` routing that look goes to the cloud
+  chat model, as words ([[Privacy#What a cloud model sees of your PC and the room]]).
 - **Mind his manners**: no pipe-ups while you're on your phone or talking to
   someone, and nothing said out loud to an empty room.
 
