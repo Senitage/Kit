@@ -2063,6 +2063,15 @@ class Brain:
             user = with_now(user, now, settings.persona.owner)
         return [{"role": "system", "content": system}, *past, {"role": "user", "content": user}]
 
+    @staticmethod
+    def _cloud_messages(settings: Settings, system: str, past: list[dict], user: str) -> list[dict]:
+        """A cloud model's prompt: this turn's part of the instructions goes beside
+        Dan's message, so the instructions and the conversation so far read the same
+        every turn and the provider serves them from its prompt cache (kit.cloud)."""
+        system, now = split_turn(system)
+        user = with_now(user, now, settings.persona.owner)
+        return [{"role": "system", "content": system}, *past, {"role": "user", "content": user}]
+
     def _keep_warm(self) -> None:
         """Once Kit has finished, read the conversation into the local model ahead of
         Dan's next message (``reads_ahead``)."""
@@ -2138,11 +2147,7 @@ class Brain:
         if role == LOCAL:
             messages = self._local_messages(settings, system, past, user)
         else:
-            messages = [
-                {"role": "system", "content": system},
-                *past,
-                {"role": "user", "content": user},
-            ]
+            messages = self._cloud_messages(settings, system, past, user)
         job = None
         if role != LOCAL:
             job = Job(next(self._job_ids), question or text, settings.profile(role).name)

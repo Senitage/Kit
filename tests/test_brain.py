@@ -211,12 +211,15 @@ def test_local_model_hands_off_with_memories(memory):
     assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_usd"] > 0
     call = claude.calls[0]
     assert call["model"] == "claude-sonnet-5-5"
-    assert call["messages"][-1]["content"] == "Explain Kalman filters properly"
-    fixed, this_turn = (block["text"] for block in call["system"])
-    assert "flotation model" in this_turn and "search the web" in fixed
-    system = fixed + this_turn
-    assert "ask_cloud" not in system  # nowhere further to hand it but the expert
-    assert "ask_expert" in system
+    # The fixed instructions are the (cached) system prompt; this turn's part, the
+    # time and memories, rides with Dan's message so the cache holds between turns.
+    (fixed,) = (block["text"] for block in call["system"])
+    asked = call["messages"][-1]["content"]
+    assert asked.endswith("\n\nExplain Kalman filters properly")
+    assert "flotation model" in asked and "It is Monday" in asked
+    assert "search the web" in fixed and "It is" not in fixed and "flotation" not in fixed
+    assert "ask_cloud" not in fixed  # nowhere further to hand it but the expert
+    assert "ask_expert" in fixed
     assert memory.recent(1)[0].source == "cloud"
 
 
@@ -256,7 +259,7 @@ def test_saying_ask_claude_skips_the_local_model(memory):
     events = collect(brain.chat("Ask Claude why the sky is blue"))
     assert model.calls == []
     assert events[0] == {"type": "say", "text": "Sure, asking Sonnet."}
-    assert claude.calls[0]["messages"][-1]["content"] == "Ask Claude why the sky is blue"
+    assert claude.calls[0]["messages"][-1]["content"].endswith("Ask Claude why the sky is blue")
     assert events[-1]["source"] == "cloud"
 
 

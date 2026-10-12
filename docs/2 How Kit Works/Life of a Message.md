@@ -74,7 +74,11 @@ sequenceDiagram
 7. **The prompt.** The model sees who Kit is (his self-sheet and persona), how
    he feels and why, how long since you talked, how close you two are, the
    channel, one line about your PC, one line about what his eyes see, the
-   recalled memories and things, and the recent conversation.
+   recalled memories and things, and the recent conversation. The part that
+   changes every turn (the time, his mood, the memories) goes in front of your
+   message rather than in the instructions, so the instructions and the
+   conversation read the same as last turn and a cloud model serves them from
+   its cache. See [[Models and Routing#Caching]].
 8. **The answer.** The local model answers in two passes: a quick plan in JSON
    (emotion, gesture, action), then his words in plain text, streamed as they
    come. A cloud model answers in the same shape, streamed too, so he starts
