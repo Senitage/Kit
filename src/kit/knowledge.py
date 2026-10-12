@@ -129,14 +129,30 @@ class Index:
         self.lock = lock
         self.clock = clock
         self._version = 0
+        self._source_versions: dict[str, int] = {}  # changes to each source's items
         self._cache = _VectorCache()
 
     def _now(self) -> str:
         return self.clock().isoformat(timespec="seconds")
 
-    def _changed(self) -> None:
+    def _changed(self, *sources: str | None) -> None:
+        """A write happened, to items of ``sources`` where known."""
         with self.lock:
             self._version += 1
+            for source in sources:
+                if source is not None:
+                    self._source_versions[source] = self._source_versions.get(source, 0) + 1
+
+    def _source_of(self, item_id: int) -> str | None:
+        with self.lock:
+            row = self.db.execute("SELECT source FROM items WHERE id = ?", (item_id,)).fetchone()
+        return row[0] if row else None
+
+    def changes(self, source: str) -> int:
+        """How many times ``source``'s items have changed since start-up (not their
+        vectors), so a cached view of them (the notes' names) knows when it's stale."""
+        with self.lock:
+            return self._source_versions.get(source, 0)
 
     def _row(self, row) -> Item:
         return Item(
@@ -185,7 +201,7 @@ class Index:
                     int(pinned),
                 ),
             )
-        self._changed()
+        self._changed(source)
         return int(cur.lastrowid)
 
     def supersede(self, old_id: int, new_id: int) -> None:
@@ -201,7 +217,7 @@ class Index:
                 " (SELECT pinned FROM items WHERE id = ?) = 1",
                 (new_id, old_id),
             )
-        self._changed()
+        self._changed(self._source_of(new_id))
 
     def update(self, item_id: int, text: str | None = None, kind: str | None = None) -> None:
         with self.lock, self.db:
@@ -212,7 +228,7 @@ class Index:
                 )
             if kind is not None:
                 self.db.execute("UPDATE items SET kind = ? WHERE id = ?", (kind, item_id))
-        self._changed()
+        self._changed(self._source_of(item_id))
 
     def set_meta(self, item_id: int, meta: dict) -> bool:
         """Replace an item's meta, e.g. to mark one of Kit's wants as said. Its text and
@@ -241,19 +257,20 @@ class Index:
             cur = self.db.execute(
                 "UPDATE items SET pinned = ? WHERE id = ?", (int(pinned), item_id)
             )
-        self._changed()
+        self._changed(self._source_of(item_id))
         return cur.rowcount > 0
 
     def delete(self, item_id: int) -> bool:
         """Delete an item and every earlier version of it, so nothing of it is recalled."""
-        ids = [i.id for i in self.history(item_id)]
+        versions = self.history(item_id)
+        ids = [i.id for i in versions]
         if not ids:
             return False
         marks = ",".join("?" * len(ids))
         with self.lock, self.db:
             self.db.execute(f"UPDATE items SET superseded_by = NULL WHERE id IN ({marks})", ids)
             self.db.execute(f"DELETE FROM items WHERE id IN ({marks})", ids)
-        self._changed()
+        self._changed(*{i.source for i in versions})
         return True
 
     def delete_source(self, source: str, ref: str | None = None) -> int:
@@ -265,7 +282,7 @@ class Index:
                 cur = self.db.execute(
                     "DELETE FROM items WHERE source = ? AND ref = ?", (source, ref)
                 )
-        self._changed()
+        self._changed(source)
         return cur.rowcount
 
     # Reading

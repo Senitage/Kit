@@ -23,6 +23,15 @@ related: ["[[Notes Setup]]", "[[Stage 0 - Server Setup]]", "[[Memory]]"]
 - Every five minutes he picks up new, changed and deleted notes.
 - He sees the names of your most recent notes, so "what's in my holiday
   planner?" opens that note (`read_note`) and answers from it.
+- A plain request about a note ("what's in my holiday planner?", "add milk to
+  the shopping list") is spotted in your own words before any model answers,
+  against every note's name, typos allowed. On a vault of thousands of notes
+  that is real work, so it's done off the brain's main line: the names are
+  read from his memory once and kept until a note changes, only notes that
+  share a word with your message are compared carefully, and the comparison
+  runs in a thread while recall goes on. Finding a note by name goes by his
+  memory too, not by asking the NAS about every note; a note deleted since the
+  last sync is simply reported as unreadable.
 - Folders starting with a dot (`.obsidian`, `.trash`, Synology's own) are
   skipped.
 

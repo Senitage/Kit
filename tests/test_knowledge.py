@@ -109,6 +109,21 @@ def test_delete_source_and_count(memory):
     assert memory.index.count("notes") == 1
 
 
+def test_each_source_counts_its_own_changes(memory):
+    """A cached view of one source (the notes' names) goes stale only when that
+    source changes, not every time a chat exchange is indexed."""
+    index = memory.index
+    before = index.changes("notes")
+    a = index.add("notes", "chunk", "a", ref="file1")
+    assert index.changes("notes") == before + 1
+    index.add(CONVERSATION, "exchange", "Dan: hi")
+    memory.add_fact("Rex is Dan's dog.", "person")
+    assert index.changes("notes") == before + 1  # other sources don't count
+    index.set_pinned(a, True)
+    index.delete_source("notes", ref="file1")
+    assert index.changes("notes") == before + 3
+
+
 def test_meaning_search_in_one_source_is_not_starved_by_another(memory):
     """Thousands of close chat snippets must not hide the one fact of the same meaning."""
     embedder = FakeEmbedder()
