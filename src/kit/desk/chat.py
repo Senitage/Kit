@@ -478,6 +478,7 @@ class ChatWindow(QWidget):
         self.client = client
         self.speaker: Speaker | None = None  # says Kit's replies aloud, if speech is on
         self.in_step = True  # with his voice on, show his words as he says them
+        self.voicing = False  # while ``replied`` is sent: his voice is saying that reply
         self.palette = palette or theme.palette()
         self.font_pt = font_pt
         self.setObjectName("root")
@@ -760,13 +761,13 @@ class ChatWindow(QWidget):
             if held is not None and held.text.strip():
                 held.final = line  # shown when his voice gets to the end
                 if turn in self._current:  # he's started talking
-                    self.replied.emit(reply)
+                    self._act(turn, reply)
                 else:
                     held.reply = reply
             else:
                 self._held.pop(turn, None)
                 self._show_reply(turn, line)
-                self.replied.emit(reply)
+                self._act(turn, reply)
         elif kind == "show":
             self.shown.emit(ev.get("show") or {})
         elif kind == "handing_off":
@@ -801,16 +802,20 @@ class ChatWindow(QWidget):
             self.state.emit("error")
         self._show_typing()
 
-    def pipe_up(self, reply: dict, lead_in_ms: int = 0) -> None:
+    def pipe_up(
+        self, reply: dict, lead_in_ms: int = 0, voice: str = "", aloud: bool = True
+    ) -> None:
         """A line Kit came out with by himself: said aloud unless he's talking, and
-        shown as he says it (or after ``lead_in_ms``, if his voice is off)."""
+        shown as he says it (or after ``lead_in_ms``, if his voice is off). ``voice``
+        is the line as his voice says it, with any sounds; ``aloud`` False keeps it
+        to the screen (his eyes see nobody there to hear it)."""
         turn = next(self._turns)
         said = " ".join(s.get("say", "") for s in reply.get("segments", [])).strip()
         line = Line("kit", said, reply.get("detail", ""))
         speaker = self.speaker
-        speaking = bool(said) and speaker is not None
+        speaking = bool(said) and speaker is not None and aloud
         if speaking:
-            speaking = speaker.pipe_up(turn, said, reply.get("emotion") or "neutral")
+            speaking = speaker.pipe_up(turn, voice or said, reply.get("emotion") or "neutral")
         if speaking and self._holding(turn):
             self._hold(turn, "kit", said)
             self._held[turn].final, self._held[turn].reply = line, reply
@@ -819,7 +824,17 @@ class ChatWindow(QWidget):
 
     def _show_pipe_up(self, turn: int, line: Line, reply: dict) -> None:
         self._show_reply(turn, line)
-        self.replied.emit(reply)
+        self._act(turn, reply)
+
+    def _act(self, turn: int, reply: dict) -> None:
+        """His face acts the reply out. ``voicing`` says, while it does, whether his
+        voice is saying it (his face then keeps time with his voice)."""
+        speaker = self.speaker
+        self.voicing = speaker is not None and speaker.saying(turn)
+        try:
+            self.replied.emit(reply)
+        finally:
+            self.voicing = False
 
     def _show_reply(self, turn: int, line: Line) -> None:
         if turn in self._current:
@@ -833,6 +848,8 @@ class ChatWindow(QWidget):
         speaker = self.speaker
         if kind == "mood":
             speaker.mood(turn, ev.get("emotion", "neutral"))
+        elif kind == "sound":  # said before the words that come next, never shown
+            speaker.sound(turn, ev.get("sound", ""))
         elif kind == "say":
             speaker.say(turn, ev.get("text", ""))
         elif kind in ("spoken", "reply", "error", "handing_off"):
@@ -893,7 +910,7 @@ class ChatWindow(QWidget):
         finished = not held.text.strip() and held.final is not None
         if held.reply is not None and (shown.strip() or finished):
             reply, held.reply = held.reply, None
-            self.replied.emit(reply)  # his face acts it out as his voice starts
+            self._act(turn, reply)  # his face acts it out as his voice starts
         if finished:
             del self._held[turn]
             self._show_reply(turn, held.final)

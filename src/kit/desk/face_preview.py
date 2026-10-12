@@ -118,18 +118,36 @@ class Performer:
     """Acts out a reply's cues on a face widget, and shows the words.
 
     The words build up in the caption as he says them (a long reply shows one
-    sentence at a time) and stay up long enough to read once he's finished."""
+    sentence at a time) and stay up long enough to read once he's finished.
+
+    With his voice on (``voiced``), his voice keeps the time instead of a guess from
+    the words' length: each sentence, as it starts playing, makes him talk for
+    exactly as long as it lasts (``spoken``), and a segment's gesture plays as its
+    first words do. If his voice doesn't come (it couldn't be made), the guess
+    takes over after a few seconds."""
 
     WHOLE_UP_TO = 220  # characters: longer replies show a sentence at a time
+    NO_VOICE_S = 5.0  # a voiced reply whose voice hasn't started by then is acted out anyway
+    TAIL_S = 0.15  # the mouth stays a moment after the sound stops
 
     def __init__(self, widget: FaceWidget, caption: QLabel) -> None:
         self.widget = widget
         self.caption = caption
         self._timers: list[QTimer] = []
         self._said: list[str] = []
+        self._reply: dict | None = None  # the voiced reply being acted out
+        self._gestured: set[int] = set()  # its segments whose gesture has played
+        self._turn: int | None = None  # the reply his voice is saying
+        self._quiet = QTimer(singleShot=True)  # his voice stops: his mouth does too
+        self._quiet.timeout.connect(self._voice_stopped)
+        self._waiting = QTimer(singleShot=True)  # a voice that never came
+        self._waiting.timeout.connect(self._no_voice)
 
-    def perform(self, reply: dict) -> None:
+    def perform(self, reply: dict, voiced: bool = False) -> None:
         self.stop()
+        if voiced:
+            self._voiced(reply)
+            return
         self._said = []
         cues = plan_reply(reply)
         hold = cues[-1].at + 2.5
@@ -143,6 +161,74 @@ class Performer:
         for t in self._timers:
             t.stop()
         self._timers.clear()
+        self._waiting.stop()
+        self._reply = None
+
+    def _voiced(self, reply: dict) -> None:
+        """His feeling now; his mouth, words and the rest of his gestures follow his
+        voice. Whatever his voice has already said of it gets its gestures now."""
+        face, now = self.widget.face, time.monotonic()
+        estimate = plan_reply(reply)[-1].at
+        face.set_emotion(reply.get("emotion", "neutral"), now, hold_s=2 * estimate + 4)
+        self._reply, self._gestured = reply, set()
+        # His voice may have got there first (a streamed answer): those sentences'
+        # gestures play now. Otherwise the first one does, and his voice is awaited.
+        if not [s for s in self._said if self._gesture_for(s)]:
+            self._gesture_at(0)
+            self._waiting.start(int(self.NO_VOICE_S * 1000))
+
+    def spoken(self, turn: int, sentence: str, seconds: float) -> None:
+        """His voice has started saying ``sentence`` of the reply for ``turn``: he
+        talks for ``seconds``, and the words go up."""
+        self._waiting.stop()
+        if turn != self._turn:  # a new reply: the caption starts afresh
+            self._turn, self._said = turn, []
+            for t in self._timers:
+                t.stop()
+            self._timers.clear()
+        if not sentence:
+            return
+        face = self.widget.face
+        self._said.append(sentence)
+        whole = " ".join(self._said)
+        self.caption.setText(whole if len(whole) <= self.WHOLE_UP_TO else sentence)
+        self._gesture_for(sentence)
+        face.set_state("speaking")
+        self._quiet.start(int(max(0.3, seconds + self.TAIL_S) * 1000))
+
+    def _voice_stopped(self) -> None:
+        self.widget.face.set_state("idle")
+        clear = QTimer(singleShot=True)
+        clear.timeout.connect(lambda: self.caption.setText(""))
+        clear.start(int(self.linger(self.caption.text()) * 1000))
+        self._timers.append(clear)
+
+    def _no_voice(self) -> None:
+        reply = self._reply
+        if reply is not None:
+            self.perform(reply)
+
+    def _gesture_for(self, sentence: str) -> bool:
+        """Play the gesture of the segment this sentence starts, once. True if it's
+        one of this reply's."""
+        reply = self._reply
+        if reply is None:
+            return False
+        words = sentence.split()[:3]
+        for n, seg in enumerate(reply.get("segments", [])):
+            if words and seg.get("say", "").split()[: len(words)] == words:
+                self._gesture_at(n)
+                return True
+        return False
+
+    def _gesture_at(self, n: int) -> None:
+        segments = (self._reply or {}).get("segments", [])
+        if n in self._gestured or n >= len(segments):
+            return
+        self._gestured.add(n)
+        gesture = segments[n].get("gesture", "none")
+        if gesture != "none":
+            self.widget.face.play(gesture, time.monotonic())
 
     @staticmethod
     def linger(text: str) -> float:

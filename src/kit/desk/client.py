@@ -20,6 +20,18 @@ TIMEOUT = httpx.Timeout(5.0)
 SPEAK_TIMEOUT = httpx.Timeout(5.0, read=300.0)
 
 
+def transport_for(url: str) -> httpx.HTTPTransport:
+    """How to reach the brain at ``url``: over IPv4, unless it's an IPv6 address.
+
+    The brain listens on IPv4 (``brain.host``). On Windows a name with an IPv6
+    address too (``localhost``, a Tailscale name) is tried there first, nothing
+    answers, and Windows takes 2 s to give up. Every new connection waited that
+    out, which held up the first sentence of every reply by 2 s."""
+    if ":" in httpx.URL(url).host:
+        return httpx.HTTPTransport()
+    return httpx.HTTPTransport(local_address="0.0.0.0")  # IPv4 sockets only
+
+
 class BrainError(Exception):
     """The brain couldn't be reached, or said no. The message is fit to show Dan."""
 
@@ -35,7 +47,7 @@ class BrainClient:
             base_url=self.url,
             headers={"Authorization": f"Bearer {token}", "X-Changed-By": "desk app"},
             timeout=TIMEOUT,
-            transport=transport,
+            transport=transport or transport_for(self.url),
         )
 
     def close(self) -> None:

@@ -42,7 +42,9 @@ steps: a quick plan in JSON (emotion, gesture, action), then his words in
 plain text at a livelier temperature. Small models sound stiff when they
 write speech inside JSON; in plain text they sound like themselves. His
 opening is checked against what he said lately, so he doesn't repeat himself.
-Cloud models answer in one piece. More in [[Inner Life In Depth]], under "Two passes".
+Cloud models answer in the same JSON, read as it streams in, so he starts
+talking as soon as the first words arrive. More in [[Inner Life In Depth]],
+under "Two passes".
 
 ## What he can do mid-answer
 
@@ -79,6 +81,12 @@ told on each turn:
 It's one conversation and one memory whichever way you talk. Each message is
 stored with its channel, so a message from your phone shows as "(from their
 phone) ..." when you pick up at the desk.
+
+A message can also say it was **said out loud** (`spoken`), so he keeps it
+short whatever the channel, and **when it was written** (`sent_at`), for one
+that waited on the phone while he was out of reach: if that's more than a
+couple of minutes ago he's told so, and that it may be old news. See
+[[Phone App#What a message carries]].
 
 ## Conversations, chats and topics
 

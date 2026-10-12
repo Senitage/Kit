@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import shutil
+import subprocess
 import time
 import tomllib
 from importlib import resources
@@ -186,7 +187,8 @@ def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
         return 1
     s = store.current().speech
     if action == "show":
-        print(f"speech: {'on' if s.enabled else 'off'}   engine: {s.engine}\n")
+        fallback = f"   fallback: {s.fallback}" if s.fallback else ""
+        print(f"speech: {'on' if s.enabled else 'off'}   engine: {s.engine}{fallback}\n")
         print(f"  {'name':<18} {'kind':<17} {'python':<28} voice")
         for name, e in s.engines.items():
             mark = "*" if name == s.engine else " "
@@ -768,6 +770,76 @@ def cmd_eyes(
         print("eyes closed")
     finally:
         client.close()
+    return 0
+
+
+def tailscale_address(run: checks.Runner = checks.run_command) -> str | None:
+    """This machine's Tailscale address, for a pairing code, if Tailscale is up."""
+    try:
+        result = run(["tailscale", "ip", "-4"])
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = result.stdout.split() if result.returncode == 0 else []
+    return lines[0] if lines else None
+
+
+def _print_qr(text: str) -> None:
+    try:
+        import qrcode
+    except ImportError:
+        print("(install the qrcode package to see this as a QR code: pip install qrcode)")
+        return
+    qr = qrcode.QRCode(border=2)
+    qr.add_data(text)
+    qr.print_ascii(invert=True)
+
+
+def cmd_pair(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.devices import DEVICES_FILE, DeviceError, Devices, pairing_link
+
+    paths.ensure()
+    port = SettingsStore(paths).current().brain.port
+    url = args.address
+    if not url:
+        address = tailscale_address()
+        if address is None:
+            print("Tailscale isn't up here, so give Kit's address: kit pair phone --address URL")
+            return 1
+        url = f"http://{address}:{port}"
+    if not url.startswith(("http://", "https://")):
+        url = f"http://{url}"
+    devices = Devices(paths.secrets_dir / DEVICES_FILE)
+    again = any(d.name == args.name for d in devices.all())
+    try:
+        token = devices.pair(args.name, args.kind)
+    except DeviceError as e:
+        print(e)
+        return 2
+    link = pairing_link(url, args.name, token)
+    print(f"Scan this with Kit's app on the {args.kind} to pair it as {args.name!r}:\n")
+    _print_qr(link)
+    print(f"\nor enter it by hand:\n  {link}\n")
+    if again:
+        print(f"{args.name} was paired before; its old token has stopped working.")
+    print(f"Kit's address in the code is {url}. Unpair it with: kit devices forget {args.name}")
+    return 0
+
+
+def cmd_devices(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.devices import DEVICES_FILE, Devices
+
+    devices = Devices(paths.secrets_dir / DEVICES_FILE)
+    if args.devices_action == "forget":
+        if devices.forget(args.name):
+            print(f"forgot {args.name}; its token no longer works")
+            return 0
+        print(f"no paired device called {args.name}")
+        return 1
+    found = devices.all()
+    if not found:
+        print("no devices paired; pair one with: kit pair phone")
+    for d in found:
+        print(f"{d.name:<20} {d.kind:<8} paired {d.created}")
     return 0
 
 
@@ -1445,6 +1517,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("chat", help="talk to Kit in this terminal")
     sub.add_parser("new-chat", help="start a fresh conversation (the old one stays in memory)")
     sub.add_parser("token", help="show the API token for the pages and home_app")
+    pair = sub.add_parser("pair", help="pair a device (a phone) with a token of its own")
+    pair.add_argument("name", help="what to call it, e.g. phone")
+    pair.add_argument("--kind", default="phone", help="phone, tablet, watch, pc, robot or other")
+    pair.add_argument("--address", help="Kit's address for the device (default: Tailscale's)")
+    devices = sub.add_parser("devices", help="list paired devices, or forget one")
+    dsub = devices.add_subparsers(dest="devices_action")
+    dsub.add_parser("list", help="list paired devices")
+    dsub.add_parser("forget", help="unpair a device; its token stops working").add_argument("name")
     life = sub.add_parser(
         "life", help="Kit's mood and thoughts; poke, think or reflect now; his notebook"
     )
@@ -1602,6 +1682,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_config(paths, args)
     if args.command == "token":
         return cmd_token(paths)
+    if args.command == "pair":
+        return cmd_pair(paths, args)
+    if args.command == "devices":
+        return cmd_devices(paths, args)
     if args.command == "serve":
         return cmd_serve(paths, args)
     if args.command == "chat":

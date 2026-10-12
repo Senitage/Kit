@@ -24,6 +24,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -166,7 +167,11 @@ class ConnectionForm(QWidget):
         form = QFormLayout(self)
         form.setContentsMargins(0, 0, 0, 0)
         form.addRow("Kit's address", self.url)
-        form.addRow("Token", self.token)
+        token_row = QHBoxLayout()
+        token_row.addWidget(self.token, 1)
+        # Copy it into Kit's phone app (with the address above) to pair the phone.
+        token_row.addWidget(_button("Copy", self.copy_token))
+        form.addRow("Token", token_row)
         row = QHBoxLayout()
         row.addWidget(test)
         row.addWidget(self.result, 1)
@@ -176,6 +181,10 @@ class ConnectionForm(QWidget):
         form.addRow("or titles with the words", self.hidden_words)
         form.addRow(self.show_face)
         form.addRow(self.at_logon)
+
+    def copy_token(self) -> None:
+        QApplication.clipboard().setText(self.token.text().strip())
+        self.result.setText("Token copied")
 
     def test(self) -> None:
         client = BrainClient(self.url.text().strip(), self.token.text().strip())

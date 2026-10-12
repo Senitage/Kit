@@ -8,6 +8,10 @@ budget, and logs what every call cost, so swapping models is a settings change.
 As the budget runs low, calls give way in a set order (``SKIP_ORDER``): evals
 first, then fact checks and key moments, then chat, so Kit's nightly reflection
 always has the last of it.
+
+Claude's answers can also stream (``on_text``): the brain hears the words as they
+are written, so Kit starts talking a few words in rather than after the whole
+answer. The other providers answer in one piece.
 """
 
 from __future__ import annotations
@@ -90,6 +94,8 @@ class Where:
 # Called with a short note of progress, e.g. "searched the web for 'x'", while a
 # model is still working, so Kit can say how it's going.
 Step = Callable[[str], None]
+# Called with each new piece of an answer's text as it's written (cloud.stream).
+Text = Callable[[str], None]
 
 
 class Provider(Protocol):
@@ -101,6 +107,7 @@ class Provider(Protocol):
         key: str,
         on_step: Step | None = None,
         where: Where | None = None,
+        on_text: Text | None = None,
     ) -> Completion: ...
 
 
@@ -167,7 +174,9 @@ class AnthropicProvider:
         key: str,
         on_step: Step | None = None,
         where: Where | None = None,
+        on_text: Text | None = None,
     ) -> Completion:
+        """``on_text`` hears the answer's text as it's written (it's streamed)."""
         client = self.make_client(key)
         haiku = profile.model.startswith("claude-haiku")
         tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
@@ -177,15 +186,19 @@ class AnthropicProvider:
         text: list[str] = []
         try:
             for _ in range(MAX_RESUMES + 1):
-                response = await client.beta.messages.create(
-                    model=profile.model,
-                    max_tokens=profile.max_tokens,
-                    system=system_blocks(system),
-                    messages=messages,
-                    output_config={"effort": profile.effort},
+                request = {
+                    "model": profile.model,
+                    "max_tokens": profile.max_tokens,
+                    "system": system_blocks(system),
+                    "messages": messages,
+                    "output_config": {"effort": profile.effort},
                     **fallback,
                     **({"tools": tools} if tools else {}),
-                )
+                }
+                if on_text is None:
+                    response = await client.beta.messages.create(**request)
+                else:
+                    response = await _streamed(client, request, on_text)
                 _add_anthropic_usage(usage, response.usage)
                 text += [b.text for b in response.content if getattr(b, "type", "") == "text"]
                 if response.stop_reason != "pause_turn":
@@ -214,6 +227,16 @@ class AnthropicProvider:
             truncated=response.stop_reason == "max_tokens",
             refused=response.stop_reason == "refusal",
         )
+
+
+async def _streamed(client: anthropic.AsyncAnthropic, request: dict, on_text: Text):
+    """One Claude request, streamed: ``on_text`` hears each piece of text as it comes,
+    and the whole response is returned at the end, as ``create`` would."""
+    async with client.beta.messages.stream(**request) as stream:
+        async for event in stream:
+            if getattr(event, "type", "") == "text" and event.text:
+                on_text(event.text)
+        return await stream.get_final_message()
 
 
 def anthropic_web_tools(where: Where | None, basic: bool = False) -> list[dict]:
@@ -289,6 +312,7 @@ class OpenAIProvider:
         key: str,
         on_step: Step | None = None,
         where: Where | None = None,
+        on_text: Text | None = None,
     ) -> Completion:
         body: dict = {
             "model": profile.model,
@@ -350,6 +374,7 @@ class GoogleProvider:
         key: str,
         on_step: Step | None = None,
         where: Where | None = None,
+        on_text: Text | None = None,
     ) -> Completion:
         body: dict = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -435,10 +460,12 @@ class Cloud:
         question: str = "",
         on_step: Step | None = None,
         priority: str = "chat",
+        on_text: Text | None = None,
     ) -> CloudAnswer:
         """``question`` is what Dan asked, for the spend log. ``on_step`` hears about
         progress (web searches so far) while the model is still working. ``priority``
-        is the call's place in ``SKIP_ORDER``."""
+        is the call's place in ``SKIP_ORDER``. ``on_text`` hears the answer as it's
+        written, where the provider can stream (Claude); the rest answer in one go."""
         provider = self.providers.get(profile.provider)
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
@@ -459,7 +486,10 @@ class Cloud:
             )
         system, turns = split_messages(messages)
         where = Where.of(settings.persona)
-        done = await provider.complete(profile, system, turns, key, on_step, where)
+        if on_text is None:
+            done = await provider.complete(profile, system, turns, key, on_step, where)
+        else:
+            done = await provider.complete(profile, system, turns, key, on_step, where, on_text)
         cost = estimate_cost(profile, done.usage)
         question = question or turns[-1]["content"]
         self.memory.record_spend(

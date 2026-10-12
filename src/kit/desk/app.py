@@ -63,6 +63,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from kit.body_registry import desk_id, speaks_here
 from kit.desk import face3d, startup, theme
 from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
@@ -411,6 +412,7 @@ class _Signals(QObject):
     life = Signal(dict)
     eyes = Signal(bool)  # the "Let Kit see me" switch, as the brain has it
     character = Signal()
+    spoke = Signal(int, str, float)  # his voice started a sentence: (turn, sentence, seconds)
 
 
 class DeskApp(QObject):
@@ -425,6 +427,7 @@ class DeskApp(QObject):
         self.online: bool | None = None
         self._doing = ""  # what Kit's doing on his own, shown in his bubble
         self._quiet = ""  # why he's keeping quiet, shown in the tray's tooltip
+        self._hush = ""  # why he's keeping quiet while you're busy, shown in his bubble
         self._stop = threading.Event()
         self._signals = _Signals()
         self._signals.online.connect(self._show_online)
@@ -441,7 +444,7 @@ class DeskApp(QObject):
         self.face.face.on_emotion = lambda emotion, _now: self._move(emotion=emotion)
         self._moved_at: dict[str, float] = {}
         self.bubble = SpeechBubble(self.face, self.body, lambda: not self._asleep())
-        self.bubble.idle_text = lambda: f"{self._doing}..." if self._doing else ""
+        self.bubble.idle_text = self._idle_text
         self.sounds = Sounds(desk_dir() / "sounds")
         self._next_sound = "boop"
         self.performer = Performer(self.face, self.bubble)
@@ -455,7 +458,10 @@ class DeskApp(QObject):
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
-        self.chat.speaker = Speaker(self._speak, heard=self.chat.heard)
+        self._signals.spoke.connect(self.performer.spoken)
+        self.chat.speaker = Speaker(
+            self._speak, heard=self.chat.heard, spoke=self._signals.spoke.emit
+        )
         self._save_soon = QTimer(self)
         self._save_soon.setSingleShot(True)
         self._save_soon.timeout.connect(lambda: self.config.save())
@@ -955,6 +961,10 @@ class DeskApp(QObject):
             face.set_dials(float(event.get("arousal", 0.5)), float(event.get("valence", 0.0)))
         elif event.get("type") == "quiet":  # why he's keeping quiet, in the tray's tooltip
             self._quiet = str(event.get("because") or "")
+            hush = str(event.get("bubble") or "")  # you're on your phone: his bubble says so
+            if hush != self._hush:
+                self._hush = hush
+                self._show_doing()
             if self.online:
                 self._show_online(True, "online")
         elif event.get("type") == "pipe_up":
@@ -966,7 +976,14 @@ class DeskApp(QObject):
             if event.get("reason") == "back":  # Dan's home: a happy loop
                 QTimer.singleShot(400, lambda: self._move(reason="back"))
             # His voice is made while he perks up; his words show as he starts saying it.
-            self.chat.pipe_up(reply, lead_in_ms=700)
+            self.chat.pipe_up(
+                reply,
+                lead_in_ms=700,
+                voice=str(event.get("voice") or ""),
+                # Out loud only on the PC Dan's using (or wherever the brain says).
+                aloud=bool(event.get("aloud", True))
+                and speaks_here(event.get("to"), desk_id(self.reporter.host)),
+            )
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))
                 self.tray.showMessage("Kit", said, face_icon(), 8000)
@@ -978,6 +995,13 @@ class DeskApp(QObject):
             return
         self.bubble.enabled = True
         self.bubble.setText("")  # an empty bubble shows what he's doing (``idle_text``)
+
+    def _idle_text(self) -> str:
+        """His bubble with nothing to say: what he's doing, or why he's keeping
+        quiet while you're busy ("keeping quiet, you're on your phone")."""
+        if self._doing:
+            return f"{self._doing}..."
+        return f"{self._hush}..." if self._hush else ""
 
     def _move(self, gesture: str = "", emotion: str = "", reason: str = "") -> None:
         """A whole-body move to go with a gesture, an emotion or a reason, if one
@@ -1039,7 +1063,7 @@ class DeskApp(QObject):
             return
         if self.config.boop:
             self.sounds.play(sound)
-        self.performer.perform(reply)
+        self.performer.perform(reply, voiced=self.chat.voicing)
         self._answered = True
         if self._showing is not None:
             self.face.play_show(self._showing)

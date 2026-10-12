@@ -21,6 +21,9 @@ the options for any of them.
 | `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one) |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
+| `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
+| `kit devices` | List paired devices (`kit devices list` does the same) |
+| `kit devices forget NAME` | Unpair a device; its token stops working at once |
 
 ## Talking to him
 
@@ -109,11 +112,11 @@ See [[Register of Things]].
 
 | Command | What it does |
 |---|---|
-| `kit speech` (`kit speech show`) | The voice engines, which one's in use, on or off |
+| `kit speech` (`kit speech show`) | The voice engines, which one's in use and the fallback, on or off |
 | `kit speech use ENGINE` | Switch engine, e.g. `kit speech use chatterbox-turbo` |
 | `kit speech on` / `off` | Speak replies in the desk app, or stop (frees the engine's memory) |
 | `kit speech say TEXT` | Say a line and show how long it took (`--engine`, `--mood`) |
-| `kit speech bench` | Compare engines on the same lines (`--engines`) |
+| `kit speech bench` | Compare engines on the same lines (`--engines`), with whether each fits the graphics card |
 
 See [[Voice]].
 

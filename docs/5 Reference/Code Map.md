@@ -68,6 +68,7 @@ flowchart TB
 | `src/kit/reflection.py` | The nightly look back and weekly review | [[Inner Life#Each night he looks back]] |
 | `src/kit/daily.py` | Once-a-day questions and nudges | [[Companion]] |
 | `src/kit/pastimes.py` | What he does while you're out | [[Companion#While you're out]] |
+| `src/kit/noticing.py` | The small moments his eyes catch that he feels: waves, thumbs, smiles, frowns, sleepy eyes | [[Eyes#Moments he feels]] |
 | `src/kit/when.py` | "Thursday arvo" and friends | [[Time and Weather]] |
 | `src/kit/holidays.py` | The shape of the week and public holidays | [[Time and Weather]] |
 | `src/kit/weather.py` | The forecast from Open-Meteo | [[Time and Weather]] |
@@ -80,6 +81,8 @@ flowchart TB
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
+| `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
+| `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
 
 ## Setup and settings
 
@@ -110,6 +113,7 @@ flowchart TB
 |---|---|---|
 | `src/kit/speech/service.py` | Runs the chosen engine and asks it for speech | [[Voice]] |
 | `src/kit/speech/worker.py` | One engine behind a tiny local web server | [[Voice#Engines]] |
+| `src/kit/speech/turbo.py` | Chatterbox Turbo's token loop recorded as a CUDA graph | [[Voice#Faster on a graphics card]] |
 | `src/kit/speech/sentences.py` | Cutting words into speakable pieces | [[Voice]] |
 | `src/kit/speech/bench.py` | `kit speech bench` | [[Commands#Voice]] |
 

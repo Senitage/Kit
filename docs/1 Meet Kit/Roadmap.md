@@ -36,7 +36,7 @@ flowchart LR
 | 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools | Next big stage |
 | 5 NAS files and photos | NAS documents and photos as new memory sources | Planned |
 | 6 Notes, email, calendar | Gmail, Google Calendar, a daily brief (notes are already in) | Planned |
-| 7 Remote access | The phone as a first-class way in, notifications | Planned |
+| 7 Remote access | The phone as a first-class way in, notifications: the [[Phone App]] | Phase 0 (pairing, hello) open |
 | 8 Deeper smarts | Computer use and bigger jobs | Planned |
 | 9 The arm | Kit in a desk robot arm | Planned |
 
@@ -47,7 +47,8 @@ Some work runs beside the main line because it makes Kit feel alive sooner:
 - **Inner life**: feelings, thoughts, a notebook, nightly reflection. Done:
   [[Side Stage - Inner Life]].
 - **Companion**: stages 1 to 3 done ([[Companion Stage 1]],
-  [[Companion Stage 2]], [[Companion Stage 3]]); stages 4 and 5 next.
+  [[Companion Stage 2]], [[Companion Stage 3]]); stage 4 open
+  ([[Companion Stage 4]]); stage 5, hearing, next.
 - **Eyes**: stages 1 and 2 done ([[Vision Stage 1]], [[Vision Stage 2]]).
   Still to come: gestures and moods, a proper look at a still frame with a
   vision model, and eyes on a Raspberry Pi at the arm.
