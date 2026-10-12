@@ -81,6 +81,7 @@ Each profile has these fields:
 | `model` | The provider's model id. |
 | `effort` | How hard the model thinks before answering. Higher costs more. |
 | `max_tokens` | Longest answer, thinking included, in tokens. |
+| `thinking` | Let the model think before it answers. Off, the first words come sooner; only Claude Haiku takes it (Sonnet and Opus always think). The built-in `haiku` profile has it off. |
 | `web_search` | Let the model search the web (the provider's own search). |
 | `input_usd_per_mtok` | Price per million input tokens. |
 | `cached_input_usd_per_mtok` | Price per million input tokens read from the prompt cache. |

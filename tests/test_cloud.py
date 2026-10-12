@@ -78,6 +78,24 @@ def test_web_search_can_be_turned_off(memory):
     assert "tools" not in fake.calls[0]
 
 
+def test_haiku_skips_thinking_unless_the_profile_says_to_think(memory):
+    """The built-in haiku profile has thinking off, so the first words come sooner;
+    Sonnet and Opus don't take the request, so their flag changes nothing."""
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake), "haiku")
+    assert fake.calls[0]["thinking"] == {"type": "disabled"}
+    assert fake.calls[0]["output_config"] == {"effort": "low"}
+    thinking = Settings.model_validate({"models": {"haiku": {"thinking": True}}})
+    ask(make_cloud(memory, fake), "haiku", thinking)
+    assert "thinking" not in fake.calls[1]
+    too_hard = Settings.model_validate({"models": {"haiku": {"effort": "max"}}})
+    ask(make_cloud(memory, fake), "haiku", too_hard)
+    assert "thinking" not in fake.calls[2]  # only up to high effort
+    no_think = Settings.model_validate({"models": {"opus": {"thinking": False}}})
+    ask(make_cloud(memory, fake), "opus", no_think)
+    assert "thinking" not in fake.calls[3]
+
+
 def test_haiku_gets_the_basic_web_tools_and_no_fallback(memory):
     fake = FakeAnthropic()
     answer = ask(make_cloud(memory, fake), "haiku")

@@ -155,6 +155,7 @@ MAX_SEARCHES = 5
 MAX_FETCHES = 3
 MAX_FETCH_TOKENS = 20_000  # a page is cut to this much text
 MAX_RESUMES = 3
+NO_THINKING_EFFORTS = ("low", "medium", "high")  # thinking can only be turned off at these
 AnthropicFactory = Callable[[str], anthropic.AsyncAnthropic]
 
 
@@ -206,6 +207,13 @@ class AnthropicProvider:
         haiku = profile.model.startswith("claude-haiku")
         tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
         fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
+        # Haiku can skip thinking (at effort up to high) and answer straight away;
+        # Sonnet and Opus refuse the request, so for them the flag changes nothing.
+        thinking = (
+            {"thinking": {"type": "disabled"}}
+            if haiku and not profile.thinking and profile.effort in NO_THINKING_EFFORTS
+            else {}
+        )
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
@@ -217,6 +225,7 @@ class AnthropicProvider:
                     "system": system_blocks(system),
                     "messages": messages,
                     "output_config": {"effort": profile.effort},
+                    **thinking,
                     **fallback,
                     **({"tools": tools} if tools else {}),
                 }
