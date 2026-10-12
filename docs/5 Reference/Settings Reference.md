@@ -274,6 +274,7 @@ His voice. See [[Voice]].
 | `exaggeration` | chatterbox: how strongly each emotion is acted out, 0 to 2. |
 | `cfg_weight` | chatterbox: lower is slower and more deliberate. |
 | `mood_tags` | chatterbox-turbo: a sound that opens a reply in that emotion, such as [sigh] or [chuckle]. |
+| `cuda_graph` | chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop. On by default. See [[Voice#Faster on a graphics card]]. |
 
 ## face
 

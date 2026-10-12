@@ -66,7 +66,8 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
-from kit.channels import channel_line, known
+from kit.body_registry import BodyRegistry
+from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
 from kit.heard import (
@@ -150,7 +151,7 @@ from kit.notes import (
     title_for,
 )
 from kit.pastimes import Pastime, Pastimes, Readers, weather_doing
-from kit.pc_context import PcContext
+from kit.pc_context import PcContext, away_on
 from kit.prompt import (
     IN_WORDS,
     about_yourself,
@@ -253,6 +254,8 @@ DEEP_RECALL = 10
 # Where the message being answered came from. Each turn is its own task, so each
 # sees its own channel without passing it through every call.
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
+# How it came (said aloud, written earlier, through which body), the same way.
+ARRIVAL: contextvars.ContextVar[Arrival | None] = contextvars.ContextVar("arrival", default=None)
 # Reading the conversation into the local model ahead of Dan's next message
 # (ollama.warm_up): a moment after Kit has finished, once his voice has been quiet
 # for a moment too (they share the GPU, and his voice mustn't stutter).
@@ -533,15 +536,15 @@ def reads_ahead(settings: Settings) -> bool:
     return settings.ollama.warm_up and own_role(settings) == LOCAL
 
 
-def _heard_meta(heard: Utterance | None, speaker: str, owner: str) -> str | None:
+def _heard_meta(heard: Utterance | None, speaker: str, owner: str) -> dict:
     """What's kept with a message that came in out loud: how it sounded, and who
     said it when that wasn't Dan (the history marks their lines)."""
     if heard is None:
-        return None
+        return {}
     meta: dict = {"heard": {k: v for k, v in (("tone", heard.tone), ("sound", heard.sound)) if v}}
     if speaker != owner:
         meta["speaker"] = speaker
-    return json.dumps(meta)
+    return meta
 
 
 class Brain:
@@ -560,6 +563,7 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.pc = PcContext(memory.clock)
+        self.bodies = BodyRegistry(memory.clock)  # the desk apps, the phone, the Pod...
         self.scene = SceneContext(memory.clock)
         self.hearing = Hearing(memory.clock)  # his ears, and his voice in the room
         self.heard_turns = HeardTurns()  # replies to what he heard, for bodies to read
@@ -608,17 +612,32 @@ class Brain:
         """The quirks Kit picked for himself; the nightly reflection may change one."""
         return self.notebook.quirks()
 
+    def voice_body(self) -> str | None:
+        """Which body should say a pipe-up out loud (kit.body_registry.speaker)."""
+        snap = self.pc.latest if self.pc.online() else None
+        in_use = snap is not None and not away_on(snap)
+        return self.bodies.speaker(self.pc.host(), in_use)
+
     def talking(self) -> bool:
         """A chat turn is under way."""
         return bool(self._turns)
 
     async def chat(
-        self, text: str, channel: str | None = None, heard: Utterance | None = None
+        self,
+        text: str,
+        channel: str | None = None,
+        *,
+        sent_at: datetime | None = None,
+        spoken: bool = False,
+        body: str | None = None,
+        heard: Utterance | None = None,
     ) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
-        even if whoever asked stops listening. ``heard`` is how it sounded, when it
-        came in through Kit's ears (kit.heard)."""
+        even if whoever asked stops listening. ``sent_at`` is when it was written if
+        it waited to be sent, ``spoken`` that it was said aloud, ``body`` which of
+        Kit's bodies it came through (kit.body_registry) and ``heard`` how it
+        sounded, when it came in through Kit's ears (kit.heard)."""
         text = text.strip()
         if not text:
             return
@@ -627,6 +646,8 @@ class Brain:
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         context = contextvars.copy_context()
         context.run(CHANNEL.set, known(channel))
+        if sent_at is not None or spoken or body:
+            context.run(ARRIVAL.set, Arrival(spoken=spoken, sent_at=sent_at, body=body))
         context.run(HEARD.set, heard)
         self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
@@ -657,12 +678,14 @@ class Brain:
             history = []
             emit({"type": "new_topic"})
         owner = settings.persona.owner
+        arrival = ARRIVAL.get()
         heard = HEARD.get()
         speaker = owner  # who said it: someone else in the house, when his ears know them
         if heard is not None and heard.who and heard.who.casefold() != owner.casefold():
             speaker = heard.who
+        meta = {**(arrival.meta() if arrival else {}), **_heard_meta(heard, speaker, owner)}
         user_id = self.memory.add_message(
-            "user", text, channel=CHANNEL.get(), meta_json=_heard_meta(heard, speaker, owner)
+            "user", text, channel=CHANNEL.get(), meta_json=json.dumps(meta) if meta else None
         )
         now = self.memory.clock()
         game = self.life.game_out  # a game he suggested, which this may answer
@@ -2098,7 +2121,9 @@ class Brain:
             quirks=self.quirks,
             voice=voice,
             pc=self.pc.now_line(settings.persona.owner),
-            channel=channel_line(CHANNEL.get(), settings.persona.owner),
+            channel=channel_line(
+                CHANNEL.get(), settings.persona.owner, ARRIVAL.get(), self.memory.clock()
+            ),
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
             note_names=self.notes.names() if settings.nas.vault else None,

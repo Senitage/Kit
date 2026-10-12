@@ -67,6 +67,24 @@ one he's `using` and why. `kit speech bench` ends each engine's line with
 whether it fits the graphics card: at most about 7.5 of 8 GB used at the peak,
 measured with everything else Kit keeps on the card.
 
+## Faster on a graphics card
+
+Chatterbox Turbo makes speech in two halves. A language model picks his
+speech sounds one at a time (25 make a second of speech), then a decoder turns
+them into sound. Picking the sounds is about 90% of the work, and on an RTX
+2070 Super it only just kept up with real time: Python was handing the card a
+few hundred tiny jobs for every sound.
+
+So on a graphics card that step is recorded once as a **CUDA graph** and
+replayed with one call per sound (`cuda_graph`, on by default). It's the same
+sums, so his voice doesn't change, but it's about 2.4 times faster: 76 to 80
+sounds a second instead of 32. A short first sentence is ready in about 0.8 s
+instead of 1.6 s, and every sentence after it is made well before the one
+before it finishes playing. It holds about 0.3 GB more graphics card memory.
+
+If the graph can't be recorded, Turbo uses Chatterbox's own loop and says why
+in `logs/speech.log`. `GET /api/speech` shows `cuda_graph: true` when it's on.
+
 ## Engines
 
 | Profile | Engine | Runs on | Mood shows as |
@@ -103,6 +121,7 @@ kit speech bench --engines chatterbox-turbo kokoro
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/speech/service.py`: runs the chosen engine and asks it for speech.
 > - `src/kit/speech/worker.py`: one engine behind a tiny local web server.
+> - `src/kit/speech/turbo.py`: Chatterbox Turbo's token loop as a CUDA graph.
 > - `src/kit/speech/sentences.py`: cutting words into speakable pieces.
 > - `src/kit/speech/bench.py`: `kit speech bench`.
 > - `src/kit/desk/voice.py`: playing it on the desk PC.

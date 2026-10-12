@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=1.26",
     "fastapi>=0.110",
     "pydantic>=2.7",
+    "qrcode>=7.4",  # kit pair shows the pairing code as a QR code in the terminal
     "tomli-w>=1.0",
     "uvicorn>=0.29",
 ]

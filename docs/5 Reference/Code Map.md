@@ -85,6 +85,8 @@ flowchart TB
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
 | `src/kit/heard.py` | The brain's side of what the ears hear: spoken to, a laugh, an echo, tone, who | [[Hearing]] |
 | `src/kit/known_voices.py` | The people his ears know, by voice print | [[Hearing]] |
+| `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
+| `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
 
 ## Setup and settings
 
@@ -115,6 +117,7 @@ flowchart TB
 |---|---|---|
 | `src/kit/speech/service.py` | Runs the chosen engine and asks it for speech | [[Voice]] |
 | `src/kit/speech/worker.py` | One engine behind a tiny local web server | [[Voice#Engines]] |
+| `src/kit/speech/turbo.py` | Chatterbox Turbo's token loop recorded as a CUDA graph | [[Voice#Faster on a graphics card]] |
 | `src/kit/speech/sentences.py` | Cutting words into speakable pieces | [[Voice]] |
 | `src/kit/speech/bench.py` | `kit speech bench` | [[Commands#Voice]] |
 
