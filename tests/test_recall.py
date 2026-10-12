@@ -68,3 +68,27 @@ def test_one_turn_embeds_the_message_once(memory):
     before = embedder.calls
     asyncio.run(recall.for_turn("How is Rex?", set()))
     assert embedder.calls == before + 1
+
+
+def test_the_topic_check_and_recall_share_one_embed_call(memory):
+    memory.add_fact("Rex is Dan's dog.", "person")
+    embedder = FakeEmbedder()
+    recall = make(memory, embedder)
+    asyncio.run(recall.index_pending())
+    before = embedder.calls
+    asyncio.run(recall.closeness("How is Rex?", ["What's the time?", "Any mail?"]))
+    recalled = asyncio.run(recall.for_turn("How is Rex?", set()))
+    assert embedder.calls == before + 1  # closeness embedded the message already
+    assert [h.item.text for h in recalled.memories] == ["Rex is Dan's dog."]
+
+
+def test_recall_takes_a_vector_it_is_handed(memory):
+    memory.add_fact("Rex is Dan's dog.", "person")
+    embedder = FakeEmbedder()
+    recall = make(memory, embedder)
+    asyncio.run(recall.index_pending())
+    vector = asyncio.run(embedder.embed(["How is Rex?"], "query"))[0]
+    before = embedder.calls
+    recalled = asyncio.run(recall.for_turn("How is Rex?", set(), vector))
+    assert embedder.calls == before
+    assert [h.item.text for h in recalled.memories] == ["Rex is Dan's dog."]

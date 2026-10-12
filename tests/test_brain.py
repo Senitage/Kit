@@ -593,6 +593,38 @@ def test_weather_question_is_answered_locally_from_the_forecast(memory):
     assert not claude.calls
 
 
+def test_the_forecast_is_fetched_while_kit_recalls(memory):
+    """The forecast lookup (200 ms to 15 s) starts before recall, not after it."""
+
+    class SlowEmbedder(FakeEmbedder):
+        busy = False
+
+        async def embed(self, texts, purpose):
+            self.busy = True
+            await asyncio.sleep(0)  # a real embedder waits on Ollama
+            self.busy = False
+            return await super().embed(texts, purpose)
+
+    class WatchingWeather(FakeWeather):
+        def __init__(self, embedder):
+            super().__init__()
+            self.embedder, self.while_embedding = embedder, None
+
+        async def forecast(self, place, country=""):
+            self.while_embedding = self.embedder.busy
+            return await super().forecast(place, country)
+
+    embedder = SlowEmbedder()
+    brain, model, claude = make(
+        memory, reply("Clear tonight."), settings=Settings.model_validate(HOME), embedder=embedder
+    )
+    brain.weather = WatchingWeather(embedder)
+    events = collect(brain.chat("What's the weather like tonight?"))
+    assert brain.weather.while_embedding is True
+    assert next(e for e in events if e["type"] == "weather")["place"] == "Richmond, NSW"
+    assert "Forecast for Richmond, NSW" in model.calls[0][0]["content"]
+
+
 def test_engineering_temperatures_are_not_weather(memory):
     brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(HOME))
     brain.weather = FakeWeather()
