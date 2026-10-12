@@ -297,6 +297,7 @@ class SpeechService:
             "running": self.running(),
             "loaded": self.health.get("engine") if self.running() else None,
             "device": self.health.get("device") if self.running() else None,
+            "cuda_graph": bool(self.health.get("cuda_graph")) if self.running() else None,
             "load_s": self.load_s,
             "note": self.note,
             "engines": {name: e.kind for name, e in s.engines.items()},

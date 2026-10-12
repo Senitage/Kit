@@ -4,6 +4,7 @@ None of this needs Windows, Qt or a network: the desktop is a fake, and the
 brain is the real API in-process.
 """
 
+import socket
 import sys
 from types import SimpleNamespace
 
@@ -243,6 +244,27 @@ def test_client_explains_a_wrong_token_and_no_brain(brain_api):
         down.check()
     with pytest.raises(BrainError, match="Lost touch"):
         list(down.chat("hi"))
+
+
+def test_client_connects_over_ipv4_unless_kits_address_is_ipv6(monkeypatch):
+    """On Windows ``localhost`` (or a Tailscale name) gives its IPv6 address first,
+    the brain doesn't listen there, and each new connection waited 2 s for that to
+    fail: his voice started 2 s late on every reply."""
+    tried = []
+
+    def connect(address, timeout=None, source_address=None):
+        tried.append((address, source_address))
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(socket, "create_connection", connect)
+    for url in ("http://localhost:8600", "http://kit-server:8600", "http://[::1]:8600"):
+        with pytest.raises(BrainError, match="Can't reach Kit"):
+            BrainClient(url, "t").check()
+    assert tried == [
+        (("localhost", 8600), ("0.0.0.0", 0)),  # IPv4 sockets only
+        (("kit-server", 8600), ("0.0.0.0", 0)),
+        (("::1", 8600), None),  # an IPv6 address is used as given
+    ]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="reads real Windows windows")

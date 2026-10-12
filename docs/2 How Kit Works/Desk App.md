@@ -82,6 +82,11 @@ both, and **Copy** puts the token on the clipboard, for pairing the
 is `127.0.0.1:8765`, for the Chrome extension, which nothing off the PC can
 reach. Its own few settings and the token live in `%APPDATA%\Kit Desk`.
 
+It connects over IPv4, which is what the brain listens on. Windows tries a
+name's IPv6 address first (`localhost` gives `::1`) and waits about 2 s for an
+answer that never comes, which made his voice start 2 s late on every reply.
+Kit's eyes use the same connection.
+
 ## Updates
 
 Every change merged into `main` is built into an installer by GitHub and

@@ -1,0 +1,127 @@
+"""The faster Chatterbox Turbo token loop does the same sums as Chatterbox's own.
+
+These need torch and chatterbox-tts (the voice's own Python), so they're skipped
+where those aren't installed, as in Kit's own test run. The model is built with
+random weights: no download, no graphics card.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("chatterbox")
+
+from transformers.generation.logits_process import (  # noqa: E402
+    LogitsProcessorList,
+    RepetitionPenaltyLogitsProcessor,
+    TemperatureLogitsWarper,
+    TopKLogitsWarper,
+    TopPLogitsWarper,
+)
+
+from kit.speech import turbo  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def t3():
+    from chatterbox.models.t3 import T3
+    from chatterbox.models.t3.modules.cond_enc import T3Cond
+    from chatterbox.models.t3.modules.t3_config import T3Config
+
+    torch.manual_seed(0)
+    hp = T3Config(text_tokens_dict_size=50276)  # Chatterbox Turbo's settings
+    hp.llama_config_name = "GPT2_medium"
+    hp.speech_tokens_dict_size = 6563
+    hp.input_pos_emb = None
+    hp.speech_cond_prompt_len = 375
+    hp.use_perceiver_resampler = False
+    hp.emotion_adv = False
+    model = T3(hp)
+    del model.tfmr.wte
+    model.eval()
+    model.cond = T3Cond(
+        speaker_emb=torch.randn(1, 256),
+        cond_prompt_speech_tokens=torch.randint(0, 6561, (1, 375)),
+        emotion_adv=0.5 * torch.ones(1, 1, 1),
+    )
+    return model
+
+
+class FakeTTS:
+    """Just the parts of ChatterboxTurboTTS the token loop uses."""
+
+    def __init__(self, t3) -> None:
+        self.t3, self.device = t3, "cpu"
+        self.conds = type("Conds", (), {"t3": t3.cond})()
+
+    def tokenizer(self, text, return_tensors="pt"):
+        ids = torch.tensor([[(ord(c) * 37) % 50000 for c in text[:20]]])
+        return type("Ids", (), {"input_ids": ids})()
+
+
+def test_one_step_gives_the_same_logits_as_chatterbox(t3):
+    graph = turbo.GraphTokens(FakeTTS(t3), max_len=500, max_new=50)
+    with torch.inference_mode():
+        start = t3.hp.start_speech_token * torch.ones(1, 1, dtype=torch.long)
+        embeds, _ = t3.prepare_input_embeds(
+            t3_cond=t3.cond,
+            text_tokens=torch.randint(0, 50000, (1, 10)),
+            speech_tokens=start,
+            cfg_weight=0.0,
+        )
+        n = embeds.shape[1]
+        out = t3.tfmr(inputs_embeds=embeds, use_cache=True)
+        past = out.past_key_values
+        for i in range(len(t3.tfmr.h)):
+            k, v = turbo._kv(past, i)
+            graph.keys[i, :, :, :n].copy_(k)
+            graph.values[i, :, :, :n].copy_(v)
+        graph.pos.fill_(n)
+        for token in (5, 100, 4000, 17):
+            t = torch.tensor([[token]])
+            graph.token.copy_(t)
+            ours = graph.logits()
+            o = t3.tfmr(inputs_embeds=t3.speech_emb(t), past_key_values=past, use_cache=True)
+            past = o.past_key_values
+            theirs = t3.speech_head(o[0])[:, -1, :].float()
+            assert torch.allclose(ours, theirs, atol=1e-4)
+            graph.pos.add_(1)
+
+
+def test_choosing_rules_match_transformers():
+    procs = LogitsProcessorList(
+        [
+            TemperatureLogitsWarper(0.8),
+            TopKLogitsWarper(1000),
+            TopPLogitsWarper(0.95),
+            RepetitionPenaltyLogitsProcessor(1.2),
+        ]
+    )
+    torch.manual_seed(1)
+    for _ in range(5):
+        logits = torch.randn(1, 6563) * 3
+        said = torch.randint(0, 6561, (1, 30))
+        seen = torch.zeros(1, 6563, dtype=torch.bool).scatter_(1, said, True)
+        theirs = procs(said, logits.clone()).softmax(-1)
+        ours = turbo.rules(logits.clone(), seen).softmax(-1)
+        assert torch.allclose(ours, theirs, atol=1e-6)
+
+
+def test_picking_follows_the_odds():
+    torch.manual_seed(2)
+    probs = torch.tensor([[0.5, 0.3, 0.2]])
+    seen = torch.zeros(1, 3, dtype=torch.bool)
+    logits = probs.log() * 0.8  # undo the temperature
+    picks = torch.cat([turbo.pick(logits, seen)[0] for _ in range(4000)])
+    share = torch.bincount(picks, minlength=3).float() / 4000
+    # top-p 0.95 keeps all three; the shares come out near the odds
+    assert torch.allclose(share, probs[0], atol=0.04)
+
+
+def test_the_loop_yields_tokens_and_stops(t3):
+    graph = turbo.GraphTokens(FakeTTS(t3), max_len=500, max_new=12, check_every=4)
+    tokens = list(graph("Yeah, I reckon so."))
+    assert 1 <= len(tokens) <= 13
+    assert all(0 <= t < 6563 for t in tokens)
+    assert t3.hp.stop_speech_token not in tokens
