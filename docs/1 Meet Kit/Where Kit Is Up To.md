@@ -29,6 +29,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Faster voice: Chatterbox Turbo's token loop as a CUDA graph, and no 2 s wait connecting from Windows | Done | [[Voice#Faster on a graphics card]], [[Desk App#Connections]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done | [[Phone Stage 0 - Pairing]] |
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
+| Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request (number to come) | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

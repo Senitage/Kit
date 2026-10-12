@@ -34,6 +34,7 @@ from kit.speech.sentences import SentenceSplitter, without_sounds
 log = logging.getLogger(__name__)
 
 Fetch = Callable[[str, str, bool], bytes]  # (sentence, emotion, first) -> WAV
+Connect = Callable[[], None]  # open the way to the server, so the first sentence needn't
 Heard = Callable[[int, str], None]  # (turn, sentence): its turn to be heard has come
 Spoke = Callable[[int, str, float], None]  # (turn, sentence, seconds it plays for)
 
@@ -300,7 +301,9 @@ class Speaker:
     his words as he says them. ``spoke`` is told the same moment how long the
     sentence plays for (0 when it couldn't be made), so his face talks for as long
     as his voice does. Both get the sentence without its sounds. ``live`` says
-    whether his voice is on, as far as the server last said."""
+    whether his voice is on, as far as the server last said. ``connect``, if
+    given, is called when a reply is coming, so the way to the server is open
+    before the first sentence is asked for."""
 
     def __init__(
         self,
@@ -310,8 +313,10 @@ class Speaker:
         fallback: Callable[[], Output] = fallback_output,
         clock: Callable[[], float] = time.monotonic,
         spoke: Spoke | None = None,
+        connect: Connect | None = None,
     ) -> None:
         self.fetch = fetch
+        self.connect = connect
         self.output = output if output is not None else default_output()
         self.heard = heard
         self.spoke = spoke
@@ -350,6 +355,8 @@ class Speaker:
             self._emotion = "neutral"
             self._sent = 0
             self._warm = self.enabled and self.live  # wake the speakers while he thinks
+            if self._warm and self.connect is not None:
+                self._lines.put((self._generation, turn, None, "", False))  # and the server
             self._awake_until = max(self._awake_until, self.clock() + WAIT_S)
             return True
 
@@ -433,6 +440,9 @@ class Speaker:
             generation, turn, text, emotion, first = self._lines.get()
             if not self._current(generation):
                 continue
+            if text is None:  # he's about to talk: have the connection open for his words
+                self._connect()
+                continue
             self._making = True
             try:
                 clip = self._made(text, emotion, first)
@@ -440,6 +450,14 @@ class Speaker:
                     self._audio.put((generation, turn, text, clip))
             finally:
                 self._making = False
+
+    def _connect(self) -> None:
+        try:
+            self.connect()
+        except BrainError as e:
+            log.info("couldn't reach Kit ahead of his words: %s", e)
+        except Exception:
+            log.exception("couldn't reach Kit ahead of his words")
 
     def _made(self, text: str, emotion: str, first: bool) -> Clip | None:
         try:

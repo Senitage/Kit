@@ -39,6 +39,11 @@ sequenceDiagram
   Chatterbox makes a whole piece before any of it plays.
 - **One steady sound output** stays open while he talks, so there are no
   gaps and his first word isn't clipped.
+- **The way to the server is open before he speaks**: when you send a message
+  the desk app wakes the speakers and makes one cheap call to the brain, and
+  connections (desk to brain, brain to voice worker) are kept for a minute
+  between sentences, so the first sentence isn't held up opening one. See
+  [[Desk App#Connections]].
 - **His words show as he says them**, and his face acts the reply out as his
   voice starts (a Look page option). Each sentence tells the face how long it
   plays, so his mouth stops when the sound does, and each gesture lands as its

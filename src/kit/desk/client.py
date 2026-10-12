@@ -18,6 +18,9 @@ CHAT_TIMEOUT = httpx.Timeout(10.0, read=300.0)
 TIMEOUT = httpx.Timeout(5.0)
 # A voice engine that's still loading (Chatterbox, the first time) can take minutes.
 SPEAK_TIMEOUT = httpx.Timeout(5.0, read=300.0)
+# A connection idles between Kit's sentences and between messages; keeping it a
+# minute (httpx's default is 5 s) saves opening a new one before the first word.
+KEEP_ALIVE = httpx.Limits(keepalive_expiry=60.0)
 
 
 def transport_for(url: str) -> httpx.HTTPTransport:
@@ -28,8 +31,8 @@ def transport_for(url: str) -> httpx.HTTPTransport:
     answers, and Windows takes 2 s to give up. Every new connection waited that
     out, which held up the first sentence of every reply by 2 s."""
     if ":" in httpx.URL(url).host:
-        return httpx.HTTPTransport()
-    return httpx.HTTPTransport(local_address="0.0.0.0")  # IPv4 sockets only
+        return httpx.HTTPTransport(limits=KEEP_ALIVE)
+    return httpx.HTTPTransport(local_address="0.0.0.0", limits=KEEP_ALIVE)  # IPv4 sockets only
 
 
 class BrainError(Exception):

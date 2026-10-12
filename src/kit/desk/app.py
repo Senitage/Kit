@@ -460,7 +460,10 @@ class DeskApp(QObject):
         self.chat.resized.connect(self._chat_resized)
         self._signals.spoke.connect(self.performer.spoken)
         self.chat.speaker = Speaker(
-            self._speak, heard=self.chat.heard, spoke=self._signals.spoke.emit
+            self._speak,
+            heard=self.chat.heard,
+            spoke=self._signals.spoke.emit,
+            connect=self._connect_voice,
         )
         self._save_soon = QTimer(self)
         self._save_soon.setSingleShot(True)
@@ -579,6 +582,12 @@ class DeskApp(QObject):
         fade.setEndValue(1.0)
         fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _connect_voice(self) -> None:
+        """A cheap call to the server while Kit thinks, so the connection is open
+        (and not idled out) before his first sentence is asked for."""
+        if self.client is not None:
+            self.client.health()
 
     def _speak(self, text: str, emotion: str, first: bool) -> bytes:
         """One sentence of Kit's speech from the server (SpeechOff if it's turned off)."""

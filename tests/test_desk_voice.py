@@ -278,6 +278,43 @@ def test_a_sound_output_that_wont_open_falls_back_to_one_sentence_at_a_time():
     assert plain.said() == ["Still heard."] and speaker.output is plain
 
 
+def test_the_way_to_the_server_is_opened_before_the_first_sentence():
+    order = []
+    out = FakeOutput(expect=1)
+
+    def fetch(text, emotion, first):
+        order.append("speak")
+        return wav(text)
+
+    def connect():
+        order.append("connect")
+
+    speaker = Speaker(fetch, out, connect=connect)
+    speaker.stop(1)  # his voice isn't known to be on: nothing to open
+    speaker.end(1)
+    speaker.live = True
+    speaker.stop(2)  # Dan sends a message: the connection opens while Kit thinks
+    speaker.say(2, "Hi there. ")
+    speaker.end(2)
+    assert out.done.wait(5)
+    assert order == ["connect", "speak"]
+
+
+def test_a_failed_warm_up_call_is_only_logged():
+    out = FakeOutput(expect=1)
+
+    def connect():
+        raise BrainError("Can't reach Kit")
+
+    speaker = Speaker(lambda text, emotion, first: wav(text), out, connect=connect)
+    speaker.live = True
+    speaker.stop(1)
+    speaker.say(1, "Hi there. ")
+    speaker.end(1)
+    assert out.done.wait(5)
+    assert out.said() == ["Hi there."]
+
+
 def test_the_speakers_wake_while_kit_thinks_and_sleep_after_he_stops():
     clock = Clock()
     out = FakeOutput(expect=1)
