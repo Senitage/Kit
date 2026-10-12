@@ -56,13 +56,17 @@ sequenceDiagram
 3. **Quick answers skip the model.** "Yes" to a suggested note, a "shush", or
    a yes to a new entry in the register get answered on the spot.
 4. **He looks things up while he thinks.** If you asked the time or the
-   weather, a **show** for his face is fetched in parallel. If you put a fact
+   weather, a **show** for his face is fetched in parallel. A weather question
+   for the local model starts the **forecast** lookup now too, rather than
+   after recall. A plain request about your notes is spotted in a thread
+   meanwhile ([[Notes on the NAS#Reading your notes]]). If you put a fact
    to him ("Sydney's the capital, isn't it?"), the work model checks it in
    the background.
 5. **Recall.** His memory is searched by words and by meaning: up to 8 facts
    or day summaries, 4 old conversation snippets, 5 entries from the register
    of things and 3 notes from his own notebook. Pinned facts are always in.
-   See [[Memory]].
+   Your message is turned into a meaning vector **once** a turn: the new-topic
+   check and recall share it. See [[Memory]].
 6. **Route.** The routing mode picks who answers: the local model, the cloud
    chat model, or the work model; "keep it local", "ask Claude" and "think
    hard" choose for one message. Bad news that hits hard is a **key moment**

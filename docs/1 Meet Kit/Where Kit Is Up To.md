@@ -30,6 +30,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done | [[Phone Stage 0 - Pairing]] |
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
 | Review fixes: the settings file holds only what you changed, every desk test runs in CI, the privacy note says what reaches the cloud, `kit docs check` | Open, pull request (number to come) | [[Settings Reference#What the file holds]], [[Privacy]], [[Commands#The docs]] |
+| Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request #48 | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

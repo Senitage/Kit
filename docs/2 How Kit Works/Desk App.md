@@ -88,6 +88,13 @@ name's IPv6 address first (`localhost` gives `::1`) and waits about 2 s for an
 answer that never comes, which made his voice start 2 s late on every reply.
 Kit's eyes use the same connection.
 
+A connection is kept open for a minute between calls (httpx would drop it
+after 5 s, so every sentence after a pause opened a new one), and the moment
+you send a message the app makes one cheap call to `/api/health`, so the
+connection is open and warm before his first sentence is asked for. The
+server's speech service keeps its connection to the voice worker the same way.
+See [[Voice#How a sentence becomes sound]].
+
 ## Updates
 
 Every change merged into `main` is built into an installer by GitHub and

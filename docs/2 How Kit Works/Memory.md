@@ -61,6 +61,9 @@ Every search runs two ways at once and merges the results:
 A match only counts if it's close enough in meaning (`memory.min_similarity`),
 which is what lets him say "I don't know" instead of guessing. If the
 embedding model is down he searches by words alone, and catches up later.
+Your message goes to the embedding model once a turn: the same vector serves
+the new-topic check ([[Brain#Conversations, chats and topics]]) and every search of
+the turn.
 
 Among relevant facts, the ones that **matter more** (people, things about
 you) and the ones **recalled lately** come first, the way a person's memory

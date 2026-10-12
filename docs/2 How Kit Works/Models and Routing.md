@@ -31,6 +31,13 @@ Built-in profiles are `sonnet`, `opus`, `haiku`, `gpt-sol` (OpenAI) and
 one, under `[models]`. Each provider needs its own API key in the secrets
 folder ([[Settings and Data#Secrets]]).
 
+A profile's `thinking` flag says whether the model thinks before it answers.
+The built-in `haiku` profile has it **off**: everyday chat doesn't need it, and
+the first words arrive sooner without thinking tokens ahead of them. Only
+Claude Haiku takes the request (at `effort` up to `high`); Sonnet and Opus
+always think, so for them the flag changes nothing. Turn it back on with
+`thinking = true` under `[models.haiku]`.
+
 ## How much stays local
 
 | `routing.mode` | Local model answers | Cloud answers |

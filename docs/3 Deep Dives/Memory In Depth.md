@@ -55,6 +55,12 @@ Kit say "I don't know" instead of guessing.
 If the embedding model is down, Kit searches by words alone and the status
 says so. Nothing is lost: missing vectors are filled in once it's back.
 
+The message is embedded **once a turn**. The new-topic check
+(`Recall.closeness`) embeds it with your last few messages in one batch and
+keeps its vector as the turn's query, so `Recall.for_turn` and each of its
+searches reuse it; a caller that already has the vector can hand it to
+`for_turn` instead. One Ollama round trip a turn, not two.
+
 ## Every turn
 
 1. Kit searches for memories relevant to your message: up to 8 facts or day

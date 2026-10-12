@@ -114,8 +114,13 @@ class Recall:
         model = self.embedder.model if self.embedder else ""
         return self.memory.index.search(query, vec, model, sources, k, s.min_similarity, exclude)
 
-    async def for_turn(self, text: str, recent_refs: set[str]) -> Recalled:
-        """What to put in front of the model for this message."""
+    async def for_turn(
+        self, text: str, recent_refs: set[str], vector: list[float] | None = None
+    ) -> Recalled:
+        """What to put in front of the model for this message. ``vector``: the
+        message's meaning if the caller already has it, so it isn't embedded again."""
+        if vector is not None and self.embedder is not None:
+            self._last_query = (self.embedder.model, text, vector)
         s = self.settings().memory
         pinned = self.memory.pinned_facts()
         memories = await self.search(
@@ -153,6 +158,9 @@ class Recall:
         except EmbedError as e:
             self.embed_problem = str(e)
             return None
+        self.embed_problem = None
+        # The message's vector serves the turn's recall too: one embed call, not two.
+        self._last_query = (self.embedder.model, text, vecs[0])
         unit = [_unit(v) for v in vecs]
         return max(sum(a * b for a, b in zip(unit[0], u, strict=True)) for u in unit[1:])
 

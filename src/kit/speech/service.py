@@ -85,7 +85,11 @@ class SpeechService:
         self.settings = settings
         self.paths = paths
         self.launcher = launcher
-        self.http = http or httpx.Client(timeout=httpx.Timeout(5.0, read=120.0), trust_env=False)
+        self.http = http or httpx.Client(
+            timeout=httpx.Timeout(5.0, read=120.0),
+            limits=httpx.Limits(keepalive_expiry=60.0),  # the worker's socket stays open
+            trust_env=False,
+        )
         self.port_offset = port_offset
         self.sleep, self.clock = sleep, clock
         self._lock = threading.RLock()
