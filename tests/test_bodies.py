@@ -117,10 +117,8 @@ def test_a_message_that_waited_is_old_news():
     assert "wrote this at 09:11, 29 minutes ago" in late
     soon = channel_line("phone", "Dan", Arrival(sent_at=now - timedelta(seconds=30)), now)
     assert "wrote this" not in soon
-    # Two hours earlier, given in UTC: the gap is the same whatever zone this PC is in.
-    local = now.astimezone()
-    aware = (local - timedelta(hours=2)).astimezone(UTC)
-    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), local)
+    aware = datetime.fromisoformat("2026-10-05T07:40:00+00:00")
+    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), now.replace(tzinfo=UTC))
 
 
 # The API
