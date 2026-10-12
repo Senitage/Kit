@@ -723,8 +723,42 @@ class EyesSettings(_Section):
         "graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper "
         "still. Downloaded the first time the eyes run.",
     )
+    detector_format: Literal["pytorch", "openvino", "onnx", "ncnn"] = Field(
+        "pytorch",
+        description="How the detector runs. pytorch suits a graphics card; openvino is quickest "
+        "on an Intel CPU, ncnn on a Raspberry Pi, onnx anywhere. Anything but pytorch is made "
+        "from the downloaded model the first time, at detector_size.",
+    )
+    detector_size: int = Field(
+        640,
+        ge=160,
+        le=1280,
+        multiple_of=32,
+        description="The picture size the detector works at. 320 is about three times quicker "
+        "on a CPU and still finds people and pets at desk distance; small things across the "
+        "room get missed.",
+    )
+    device: Literal["auto", "cpu"] = Field(
+        "auto",
+        description="Where the detector runs: auto uses the graphics card if there is one, cpu "
+        "leaves the graphics card free for other things.",
+    )
     confidence: float = Field(
         0.4, ge=0.05, le=0.95, description="How sure the detector must be before something counts."
+    )
+    looks_per_second: float = Field(
+        0,
+        ge=0,
+        le=60,
+        description="How many frames a second the eyes look at. 0 looks at every frame the "
+        "camera gives; 5 is plenty to follow a face on a CPU.",
+    )
+    detect_every: int = Field(
+        1,
+        ge=1,
+        le=30,
+        description="Run the detector on one look in this many. Faces and hands are still read "
+        "on every look, so his eyes keep following you while the detector rests.",
     )
     forget_after_s: float = Field(
         3.0,

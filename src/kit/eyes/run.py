@@ -78,6 +78,8 @@ class Eyes:
         self._last_report = self._start - 1e9
         self._camera_failed_at: float | None = None
         self._error_at: float | None = None
+        self._looks = 0  # frames looked at, for ``detect_every``
+        self._detections: list = []  # the detector's last answer, reused while it rests
 
     # One pass of the loop
 
@@ -103,7 +105,10 @@ class Eyes:
         if self.settings.mirror:
             frame = np.ascontiguousarray(frame[:, ::-1])
         h, w = frame.shape[:2]
-        detections = self.detector.detect(frame)
+        if self._looks % self.settings.detect_every == 0:
+            self._detections = self.detector.detect(frame)
+        self._looks += 1
+        detections = self._detections
         faces, hands, poses = [], [], []
         if self.faces is not None or self.body is not None:
             rgb = np.ascontiguousarray(frame[:, :, ::-1])
@@ -127,7 +132,17 @@ class Eyes:
             self._send(report, now)
         if self.on_frame is not None and not self.on_frame(frame, self.scene, report):
             raise StopIteration
+        self._rest(now)
         return events
+
+    def _rest(self, started: float) -> None:
+        """Wait out the rest of this look's share of a second (``looks_per_second``),
+        so a CPU isn't kept busy looking at frames nobody needs."""
+        if self.settings.looks_per_second <= 0:
+            return
+        left = 1 / self.settings.looks_per_second - (self.clock() - started)
+        if left > 0:
+            self.sleep(left)
 
     def run(self, stop: threading.Event | None = None, max_steps: int | None = None) -> None:
         """Loop until ``stop`` is set, the preview is closed, or ``max_steps`` passes."""
@@ -215,6 +230,9 @@ class Eyes:
                     "width",
                     "height",
                     "detector",
+                    "detector_format",
+                    "detector_size",
+                    "device",
                     "faces",
                     "hands",
                     "poses",
@@ -320,7 +338,14 @@ def build_eyes(
 
     models = models_dir(folder)
     index = settings.camera if camera is None else camera
-    detector = YoloDetector(settings.detector, models, settings.confidence)
+    detector = YoloDetector(
+        settings.detector,
+        models,
+        settings.confidence,
+        device="cpu" if settings.device == "cpu" else None,
+        fmt=settings.detector_format,
+        size=settings.detector_size,
+    )
     faces = body = None
     if settings.faces or settings.hands or settings.poses:
         from kit.eyes.body import model_path

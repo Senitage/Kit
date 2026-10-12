@@ -6,7 +6,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 
 # Where Kit is up to
 
-*As of 11 October 2026.* The plan behind this is in [[Roadmap]].
+*As of 12 October 2026.* The plan behind this is in [[Roadmap]].
 
 ## At a glance
 
@@ -27,6 +27,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
 | Companion stage 4: his voice and eyes carry it | Open, pull request #40 | [[Companion Stage 4]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Open, pull request #44 | [[Phone Stage 0 - Pairing]] |
+| Lite eyes: the eyes on a CPU, a few looks a second | Open, pull request #PR | [[Eyes#Without a graphics card]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

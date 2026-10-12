@@ -66,7 +66,8 @@ flowchart LR
 ```
 
 - **Detector**: YOLO11 finds people and objects, and ByteTrack keeps their ids
-  from frame to frame. It runs on the PC's GPU (or CPU).
+  from frame to frame. It runs on the PC's GPU, or on the CPU: see
+  [[#Without a graphics card]].
 - **Faces, hands and pose** come from MediaPipe: where someone's looking,
   their expression, hand gestures, body pose.
 - **Actions** like nodding, waving, talking and drinking come from a few
@@ -77,6 +78,43 @@ flowchart LR
   deletes them.
 - **Settings come from the brain** (`[eyes]`), so there's one place to change
   them, and running eyes pick changes up.
+
+## Without a graphics card
+
+The eyes don't need a GPU. "Lite eyes" look 5 times a second instead of at
+every frame, run a small detector at a smaller size through OpenVINO (the
+quick way on an Intel CPU), and let the detector rest between looks while the
+face reader keeps up, so his eyes still follow you. That's enough for hellos,
+who's who, following your face and spotting the cat. Small things across the
+room get missed more often.
+
+```
+pip install openvino                      # in the eyes' venv; on a Pi: pip install ncnn pnnx
+kit config set eyes.device cpu
+kit config set eyes.detector yolo11n
+kit config set eyes.detector_format openvino   # ncnn on a Raspberry Pi
+kit config set eyes.detector_size 320
+kit config set eyes.width 640
+kit config set eyes.height 360
+kit config set eyes.looks_per_second 5
+kit config set eyes.detect_every 3
+kit config set eyes.poses 0
+```
+
+Then restart `kit eyes`. The first start makes the OpenVINO copy of the
+detector (about a minute, once). What it costs, measured on two cores of a
+recent server CPU held to the same instructions as a desktop from 2013 (expect
+about half as fast again on an old i5, so roughly half a core for lite eyes):
+
+| Setup | Looks a second | CPU |
+|---|---|---|
+| Today's settings with no GPU (yolo11n at 640, every frame) | about 6 | 120% of a core |
+| Lite eyes, as above | 5 | 35% of a core |
+| Lite eyes with `eyes.hands` off too | 5 | 19% of a core |
+
+On a Raspberry Pi 5, use `ncnn` (it's built for ARM chips); the detector
+should take tens of milliseconds there. `onnx` works anywhere but kept the CPU
+busier than OpenVINO in the same test.
 
 ## The switch
 
@@ -98,6 +136,7 @@ kit eyes faces          # who his eyes know
 ## Go deeper
 - [[Vision Stage 1]]: installing the eyes, privacy and the test checklist.
 - [[Vision Stage 2]]: introducing people, and how recognition works.
+- [[Settings Reference#eyes]]: every eyes setting.
 - [[Inner Life]]: what the brain does with arrivals and sightings.
 - [[Companion Stage 4]]: moments he feels, and keeping quiet while you're busy.
 

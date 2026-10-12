@@ -459,6 +459,48 @@ def test_paused_eyes_let_the_camera_go_and_check_back():
     assert not eyes.paused and len(opened) == 2 and brain.reports[-1]["people"]
 
 
+def test_the_detector_can_rest_between_looks_while_faces_keep_up():
+    brain = FakeBrain()
+    eyes, _, detector = make_eyes(brain, detect_every=3)
+    for _ in range(9):
+        eyes.step()
+    assert len(detector.frames) == 3  # looks 1, 4 and 7
+    assert eyes.scene.memory.tracks[1].frames_seen == 9  # the last boxes stand in between
+
+
+def test_looks_per_second_rests_the_cpu_between_frames():
+    brain = FakeBrain()
+    eyes, _, _ = make_eyes(brain, looks_per_second=5)
+    rests = []
+    eyes.sleep = rests.append
+    eyes.step()
+    # Each look takes 0.1 s on the fake clock, so it rests the other 0.1 s of a fifth.
+    assert rests == [pytest.approx(0.1)]
+    eyes.settings = EyesSettings(looks_per_second=0)
+    rests.clear()
+    eyes.step()
+    assert rests == []
+
+
+def test_cpu_detector_settings_are_checked():
+    s = EyesSettings(detector_format="openvino", detector_size=320, device="cpu")
+    assert (s.detector_format, s.detector_size, s.device) == ("openvino", 320, "cpu")
+    for bad in ({"detector_size": 300}, {"detector_format": "tensorrt"}, {"device": "gpu"}):
+        with pytest.raises(ValueError):
+            EyesSettings(**bad)
+
+
+def test_exports_are_named_by_format_and_size(tmp_path, monkeypatch):
+    from kit.eyes import detect
+
+    assert detect.export_name("yolo11n.pt", "openvino", 320) == "yolo11n_320_openvino_model"
+    assert detect.export_name("yolo11n.pt", "onnx", 640) == "yolo11n_640.onnx"
+    ready = tmp_path / "yolo11n_320_ncnn_model"
+    ready.mkdir()
+    # Already made: no Ultralytics needed.
+    assert detect.exported(tmp_path / "yolo11n.pt", "ncnn", 320) == ready
+
+
 def test_settings_from_the_brain_apply_to_a_running_pair_of_eyes(caplog):
     brain = FakeBrain(settings={"mirror": False, "forget_after_s": 7.5, "camera": 2})
     eyes, _, detector = make_eyes(brain)

@@ -210,7 +210,12 @@ The camera, read by `kit eyes` on the PC. See [[Eyes]].
 | `height` | `720` | Frame height to ask the camera for. |
 | `mirror` | on | Flip the picture like a mirror. On for a webcam facing you at the desk, so left is your left; off for a camera on the arm. |
 | `detector` | `yolo11s` | The model that finds people and objects: yolo11s suits a PC with a graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper still. Downloaded the first time the eyes run. |
+| `detector_format` | `pytorch` | How the detector runs. pytorch suits a graphics card; openvino is quickest on an Intel CPU, ncnn on a Raspberry Pi, onnx anywhere. Anything but pytorch is made from the downloaded model the first time, at detector_size. |
+| `detector_size` | `640` | The picture size the detector works at. 320 is about three times quicker on a CPU and still finds people and pets at desk distance; small things across the room get missed. |
+| `device` | `auto` | Where the detector runs: auto uses the graphics card if there is one, cpu leaves the graphics card free for other things. |
 | `confidence` | `0.4` | How sure the detector must be before something counts. |
+| `looks_per_second` | `0` | How many frames a second the eyes look at. 0 looks at every frame the camera gives; 5 is plenty to follow a face on a CPU. |
+| `detect_every` | `1` | Run the detector on one look in this many. Faces and hands are still read on every look, so his eyes keep following you while the detector rests. |
 | `forget_after_s` | `3.0` | Seconds out of view before someone or something has left. |
 | `report_every_s` | `1.0` | How often the eyes tell the brain what they see. |
 | `faces` | on | Read faces: where each person is looking and their expression. |

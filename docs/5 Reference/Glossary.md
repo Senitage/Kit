@@ -38,6 +38,7 @@ Up: [[Home]] · Reference
 | **Keep it local** | Words that keep a message and all that comes of it away from cloud models | [[Privacy#Keep it local]] |
 | **Kit 2D** | The 3D face drawn flat, for small screens like the Pod's | [[Face]] |
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
+| **Lite eyes** | The eyes set up to run on a CPU: a small detector a few times a second, faces read in between | [[Eyes#Without a graphics card]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
 | **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
