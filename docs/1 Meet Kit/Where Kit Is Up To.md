@@ -26,7 +26,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Body feed and knowing who can hear him (the Pod's link to the brain) | Open, pull request #36 | [[Pod In Depth#The body feed]] |
 | Naps, turning in and waking by himself | Open, pull request #37 | [[Inner Life]] |
 | Companion stage 4: his voice and eyes carry it | Open, pull request #40 | [[Companion Stage 4]] |
-| Phone app, phase 0 (the brain's side): pairing, hello, history pages | Open, pull request #44 | [[Phone Stage 0 - Pairing]] |
+| Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Open, pull request #44 | [[Phone Stage 0 - Pairing]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

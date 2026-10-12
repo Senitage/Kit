@@ -40,7 +40,7 @@ Up: [[Home]] · Reference
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
-| **Pairing** | Giving a device its own token by scanning a QR code from `kit pair` | [[Phone App#Pairing]] |
+| **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
 | **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Register of things** | The list of people, vehicles, places, projects and equipment, and where each lives | [[Register of Things]] |

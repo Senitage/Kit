@@ -1,7 +1,7 @@
 ---
 tags: [guide, topic/phone]
 aliases: [Phone phase 0, Pairing a phone]
-summary: Test the brain's side of the phone app before there is an app - pairing with a token of its own, saying hello, history pages, and messages written earlier or said aloud.
+summary: Test the brain's side of the phone app before there is an app - pairing from the app with a token of its own, saying hello, history pages, messages written earlier or said aloud, and several PCs.
 related: ["[[Phone App]]", "[[Bodies]]", "[[API]]"]
 ---
 
@@ -22,15 +22,15 @@ which draws the pairing code in the terminal. Nothing else is needed.
 
 ## 2. Pair a pretend phone
 
-On the server:
+The app will do this itself from Kit's address and token. Do what it does,
+with Kit's token from the desk app's **This PC** page (**Copy**):
 
 ```
-kit pair phone
+curl -X POST -H "Authorization: Bearer KIT_TOKEN" -H "Content-Type: application/json" -d '{"name":"phone"}' http://ADDRESS:8600/api/devices/pair
 ```
 
-It shows a QR code and the same thing as a `kit://pair?...` line. Copy the
-`token=` part for the checks below (call it `PHONE`). Kit's address comes from
-Tailscale; if Tailscale isn't up there, add `--address 192.168.1.50:8600`.
+It answers with the phone's own `token`; call it `PHONE` below. (On the
+server, `kit pair phone` does the same and shows it as a QR code.)
 
 ## 3. Test before moving on
 
@@ -49,6 +49,12 @@ Tailscale; if Tailscale isn't up there, add `--address 192.168.1.50:8600`.
 - [ ] **Scrolling back:** `/api/messages` now has an `id` on each message;
   `/api/messages?before=ID&limit=20` gives the 20 before it, even from before
   a new chat.
+- [ ] **The phone can't pair others:** the pair call above with the phone's
+  token answers `403`.
+- [ ] **Two PCs:** with the desk app on two PCs, lock one. `/api/pc/context`
+  names the other as `host`, Kit doesn't think you've gone, and
+  `kit life poke` is said out loud only on the PC you're using (once both desk
+  apps have updated to this version).
 - [ ] **Forgetting the phone:** `kit devices forget phone`, then the first
   check answers `401`. The desk app still works.
 
@@ -56,6 +62,8 @@ Tailscale; if Tailscale isn't up there, add `--address 192.168.1.50:8600`.
 
 - **`401` with the phone's token:** it was paired again (which replaces the
   token) or forgotten. `kit devices` lists what's paired; pair it again.
+- **`403` when pairing:** that was the phone's token; pairing needs Kit's
+  own token.
 - **`kit pair` says Tailscale isn't up:** start it (`sudo tailscale up`) or
   give the address with `--address`.
 - **No QR code, just the line:** the `qrcode` package is missing; run

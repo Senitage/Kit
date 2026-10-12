@@ -63,6 +63,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from kit.body_registry import desk_id, speaks_here
 from kit.desk import face3d, startup, theme
 from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
@@ -979,7 +980,9 @@ class DeskApp(QObject):
                 reply,
                 lead_in_ms=700,
                 voice=str(event.get("voice") or ""),
-                aloud=bool(event.get("aloud", True)),
+                # Out loud only on the PC Dan's using (or wherever the brain says).
+                aloud=bool(event.get("aloud", True))
+                and speaks_here(event.get("to"), desk_id(self.reporter.host)),
             )
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))

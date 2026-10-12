@@ -66,6 +66,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
+from kit.body_registry import BodyRegistry
 from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
 from kit.daily import Daily
@@ -142,7 +143,7 @@ from kit.notes import (
     title_for,
 )
 from kit.pastimes import Pastime, Pastimes, Readers, weather_doing
-from kit.pc_context import PcContext
+from kit.pc_context import PcContext, away_on
 from kit.prompt import (
     IN_WORDS,
     about_yourself,
@@ -540,6 +541,7 @@ class Brain:
         self.cloud = cloud
         self.recall = recall
         self.pc = PcContext(memory.clock)
+        self.bodies = BodyRegistry(memory.clock)  # the desk apps, the phone, the Pod...
         self.scene = SceneContext(memory.clock)
         self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
         self.notebook = Notebook(memory)
@@ -584,6 +586,12 @@ class Brain:
     def quirks(self) -> list[str]:
         """The quirks Kit picked for himself; the nightly reflection may change one."""
         return self.notebook.quirks()
+
+    def voice_body(self) -> str | None:
+        """Which body should say a pipe-up out loud (kit.body_registry.speaker)."""
+        snap = self.pc.latest if self.pc.online() else None
+        in_use = snap is not None and not away_on(snap)
+        return self.bodies.speaker(self.pc.host(), in_use)
 
     def talking(self) -> bool:
         """A chat turn is under way."""

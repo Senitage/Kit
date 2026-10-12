@@ -104,15 +104,18 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 [[Bodies]]. A `quiet` event says why he's keeping quiet (`because`) and, while
 his eyes see you busy, what his bubble should say (`bubble`). A `pipe_up`
 carries the line (`reply`), the line as his voice says it with any sounds
-(`voice`), and whether to say it out loud (`aloud`: false when his eyes see
-nobody there).
+(`voice`), whether to say it out loud (`aloud`: false when his eyes see
+nobody there), and which body says it (`to`, a body id: the PC Dan's using,
+else the device he last talked through). Other bodies only show the words.
 
 ## Kit's bodies and paired devices
 
 | Method and path | What it does |
 |---|---|
 | `POST /api/bodies/hello` | A body says what it is and can do: `{"id", "kind", "name", "app", "abilities": ["screen", "speaker", ...], "faces"}`. A paired device is known by its device name |
-| `GET /api/bodies` | The bodies heard from since the brain started (online, last seen, last used) and the paired devices |
+| `GET /api/bodies` | The bodies heard from since the brain started (online, last seen, last used) and the paired devices. Each PC running the desk app is one, `desk:` and its name |
+| `POST /api/devices/pair` | Pair a device from the device: send `{"name": "phone", "kind": "phone"}` with Kit's own token, get back the device's token. Pairing a name again replaces its token |
+| `DELETE /api/devices/{name}` | Unpair a device (Kit's token, or the device's own) |
 
 The hello's answer is what the brain can do:
 
@@ -134,7 +137,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 
 | Method and path | What it does |
 |---|---|
-| `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC |
+| `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC. With several PCs, Kit keeps one report each; `GET` names the PC Dan's on (`host`) and lists them all (`pcs`) |
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
 | `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know |

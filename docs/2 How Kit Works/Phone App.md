@@ -45,11 +45,16 @@ flowchart LR
 
 ### Pairing
 
-`kit pair phone` makes a token just for the phone and shows a QR code holding
-Kit's address, the name and the token. The app scans it once. If the phone is
-lost, `kit devices forget phone` stops that one token working, and the desk,
-home_app and the eyes carry on with the shared token. The brain keeps only a
-hash of each device's token.
+No console needed: type Kit's address and token into the app once. Both are
+on the desk app's **This PC** page, where **Copy** puts the token on the
+clipboard. The app swaps that token for one of its own
+(`POST /api/devices/pair`) and keeps only the new one. On the server,
+`kit pair phone` does the same with a QR code instead.
+
+If the phone is lost, `kit devices forget phone` (or
+`DELETE /api/devices/phone` with Kit's token) stops that one token working,
+and the desk, home_app and the eyes carry on with the shared token. The brain
+keeps only a hash of each device's token.
 
 ### Saying hello
 

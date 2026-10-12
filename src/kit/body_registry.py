@@ -8,8 +8,10 @@ the brain offers, so a new feature lights up in an app that knows it and an old
 app carries on without it.
 
 The registry also keeps when each body was last heard from and when Dan last used
-it, so later work can pick one body to speak a pipe-up and keep one PC report per
-desk. It lives in memory: bodies say hello again after a restart.
+it. Each PC running the desk app is a body too (``desk_id``), found from its
+reports, and ``speaker`` picks the one body that says a pipe-up out loud, so Kit
+never talks from two rooms at once. It lives in memory: bodies say hello again
+after a restart.
 """
 
 from __future__ import annotations
@@ -47,6 +49,21 @@ ABILITIES = (
     "earbuds",
     "pc",
 )
+
+
+DESK_ABILITIES = ("screen", "speaker", "pc")
+
+
+def desk_id(host: str) -> str:
+    """The body id of the desk app on the PC called ``host`` (the name it reports,
+    kit.pc_context). The desk app works out its own id the same way."""
+    return "desk:" + (host.strip().lower() or "pc")
+
+
+def speaks_here(to: str | None, body_id: str) -> bool:
+    """Should the body ``body_id`` say a pipe-up out loud? Only if it's the one the
+    brain named (``to``), or the brain named none (an older brain)."""
+    return not to or to == body_id
 
 
 class Hello(BaseModel):
@@ -124,6 +141,30 @@ class BodyRegistry:
         )
         self._bodies[body_id] = body
         return body
+
+    def desk_report(self, host: str) -> Body:
+        """A PC's desk app reported in: it's a body, whether or not it said hello."""
+        body_id = desk_id(host)
+        body = self._bodies.get(body_id)
+        if body is None:
+            hello = Hello(
+                id=body_id, kind="desk", name=host or "PC", abilities=list(DESK_ABILITIES)
+            )
+            return self.hello(hello)
+        self.seen(body_id)
+        return self._bodies[body_id]
+
+    def speaker(self, pc_host: str | None, pc_in_use: bool) -> str | None:
+        """The one body that says a pipe-up out loud: the PC Dan's using; else the
+        body he last talked to Kit through, if it's still around and has a speaker
+        (his phone while he's out); else the PC he was last on. None when no body
+        is known, and then each body decides for itself, as before."""
+        if pc_host is not None and pc_in_use:
+            return desk_id(pc_host)
+        last = self.last_used()
+        if last is not None and "speaker" in last.abilities:
+            return last.id
+        return desk_id(pc_host) if pc_host is not None else None
 
     def seen(self, body_id: str | None) -> None:
         """A body checked in (any call from a paired device counts)."""

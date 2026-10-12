@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 import kit
 from kit.body_registry import API_VERSION, LIFE_EVENTS, BodyRegistry, Hello
 from kit.brain import Brain
-from kit.devices import DEVICES_FILE, Devices
+from kit.devices import DEVICES_FILE, DeviceError, Devices
 from kit.face import character as characters
 from kit.face import serve as face_files
 from kit.knowledge import Item
@@ -72,6 +72,11 @@ class ChatIn(BaseModel):
     sent_at: datetime | None = None
     # Said out loud rather than typed (the phone's talk mode).
     spoken: bool = False
+
+
+class PairIn(BaseModel):
+    name: str = Field(min_length=1, max_length=40)  # what to call it, e.g. phone
+    kind: str = Field("phone", max_length=20)
 
 
 class SpeakIn(BaseModel):
@@ -174,7 +179,8 @@ def create_app(
     if devices is None:
         devices = Devices(paths.secrets_dir / DEVICES_FILE if paths is not None else None)
     if registry is None:
-        registry = BodyRegistry()
+        registry = brain.bodies
+    brain.bodies = registry
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -541,6 +547,7 @@ def create_app(
     def pc_report(snap: Snapshot) -> dict:
         """The desk app's report: open windows, focus, idle time and PC health."""
         brain.pc.update(snap)
+        brain.bodies.desk_report(snap.host)
         brain.life.on_report()
         return {"ok": True}
 
@@ -753,6 +760,38 @@ def create_app(
             "unknown_abilities": list(body.unknown),
         }
 
+    def _shared_only(device: str | None) -> None:
+        if device is not None:
+            raise HTTPException(403, "only Kit's own token can pair or unpair devices")
+
+    @app.post("/api/devices/pair")
+    def pair_device(
+        body: PairIn,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """Pair a device from the device itself: the app is given Kit's address and
+        token once, swaps the token for one of its own, and keeps only that. Pairing
+        a name again replaces its old token."""
+        _shared_only(device)
+        try:
+            token = devices.pair(body.name, body.kind)
+        except DeviceError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"name": body.name, "kind": body.kind, "token": token}
+
+    @app.delete("/api/devices/{name}")
+    def unpair_device(
+        name: str,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """Unpair a device: its token stops working. A device may unpair itself."""
+        if device is not None and device != name:
+            _shared_only(device)
+        if not devices.forget(name):
+            raise HTTPException(404, f"no paired device called {name}")
+        registry.forget(name)
+        return {"ok": True}
+
     @app.get("/api/bodies", dependencies=auth)
     def bodies_list() -> dict:
         """Every body that's said hello since the brain started, and the paired devices."""
@@ -936,6 +975,8 @@ async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
                 "message_id": reply["message_id"],
                 "voice": voiced(Reply.model_validate(reply["reply"]), sounds) if sounds else "",
                 "aloud": not brain.scene.nobody_here(),
+                # The one body that says it out loud; the others only show it.
+                "to": brain.voice_body(),
             }
         )
         return reply["reply"]

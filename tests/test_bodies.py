@@ -151,7 +151,7 @@ def api(paths):
         registry=registry,
     )
     with TestClient(app) as client:
-        yield client, devices, registry, model, memory, clock
+        yield client, devices, registry, model, memory, clock, brain
     memory.close()
 
 
@@ -177,7 +177,7 @@ def test_hello_answers_with_what_the_brain_can_do(api):
 
 
 def test_chat_from_a_body_is_remembered_with_how_it_came(api):
-    client, devices, registry, model, memory, clock = api
+    client, devices, registry, model, memory, clock, _ = api
     phone = {"Authorization": f"Bearer {devices.pair('phone')}"}
     client.post("/api/bodies/hello", json=PHONE, headers=phone)
     written = (clock.now - timedelta(minutes=20)).isoformat()
@@ -199,7 +199,7 @@ def test_the_shared_token_can_name_its_body(api):
 
 
 def test_history_pages_reach_past_a_new_chat(api):
-    client, *_, memory, _ = api
+    client, *_, memory, _, _ = api
     for i in range(6):
         memory.add_message("user", f"m{i}")
         if i == 3:
@@ -257,3 +257,64 @@ def test_tailscale_address_reads_the_first_one():
     assert tailscale_address(run) == "100.64.0.9"
     assert tailscale_address(broken) is None
     assert tailscale_address(lambda c: subprocess.CompletedProcess(c, 1, "", "")) is None
+
+
+# Several PCs and one voice
+
+
+def test_each_pc_is_a_body_and_one_speaks():
+    from kit.body_registry import desk_id, speaks_here
+
+    clock = Clock()
+    registry = BodyRegistry(clock)
+    assert registry.speaker(None, False) is None  # nothing known: every body decides
+    registry.desk_report("DESK")
+    registry.desk_report("LAPTOP")
+    assert {b.id for b in registry.online()} == {"desk:desk", "desk:laptop"}
+    assert registry.speaker("DESK", True) == "desk:desk"
+    registry.hello(Hello(id="phone", kind="phone", abilities=["screen", "speaker"]))
+    clock.now += timedelta(seconds=5)
+    registry.used("phone")
+    assert registry.speaker("DESK", True) == "desk:desk"  # he's at the desk
+    assert registry.speaker("DESK", False) == "phone"  # he's out, chatting on his phone
+    clock.now += ONLINE_FOR * 2
+    registry.desk_report("DESK")
+    assert registry.speaker("DESK", False) == "desk:desk"  # the phone's gone quiet
+    assert speaks_here("desk:desk", desk_id("DESK")) and not speaks_here("phone", "desk:desk")
+    assert speaks_here(None, "desk:desk")
+
+
+def test_pipe_ups_name_the_pc_dan_is_on(api):
+    import asyncio
+
+    from kit.server import pipe_up_now
+
+    client, *_, brain = api
+    pc = {"host": "DESK", "focus": {"app": "Excel", "title": "x"}}
+    client.post("/api/pc/context", json=pc, headers=AUTH)
+    client.post("/api/pc/context", json={"host": "LAPTOP", "locked": True}, headers=AUTH)
+    listed = client.get("/api/bodies", headers=AUTH).json()["bodies"]
+    assert {b["id"] for b in listed} == {"desk:desk", "desk:laptop"}
+    assert brain.voice_body() == "desk:desk"
+    asyncio.run(pipe_up_now(brain, "bored"))
+    events = client.get("/api/life/events?after=0&wait=0", headers=AUTH).json()["events"]
+    pipe_ups = [e for e in events if e["type"] == "pipe_up"]
+    assert pipe_ups and pipe_ups[-1]["to"] == "desk:desk"
+
+
+# Pairing from the app
+
+
+def test_the_app_pairs_itself_with_kits_token(api):
+    client, devices, registry, *_ = api
+    got = client.post("/api/devices/pair", json={"name": "phone"}, headers=AUTH).json()
+    phone = {"Authorization": f"Bearer {got['token']}"}
+    assert got["kind"] == "phone" and client.get("/api/life", headers=phone).status_code == 200
+    # A device can't pair others, but can unpair itself.
+    assert client.post("/api/devices/pair", json={"name": "x"}, headers=phone).status_code == 403
+    assert client.delete("/api/devices/tablet", headers=phone).status_code == 403
+    bad = client.post("/api/devices/pair", json={"name": "My Phone"}, headers=AUTH)
+    assert bad.status_code == 422
+    assert client.delete("/api/devices/phone", headers=phone).json() == {"ok": True}
+    assert client.get("/api/life", headers=phone).status_code == 401
+    assert client.delete("/api/devices/phone", headers=AUTH).status_code == 404
