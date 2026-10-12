@@ -10,6 +10,7 @@ from kit.cloud import (
     ANTHROPIC_SEARCH_TOOL,
     BASIC_FETCH_TOOL,
     BASIC_SEARCH_TOOL,
+    CACHE,
     FALLBACK_BETA,
     CloudError,
     GoogleProvider,
@@ -17,10 +18,12 @@ from kit.cloud import (
     Usage,
     Where,
     _web_steps,
+    cached_turns,
     estimate_cost,
     split_messages,
 )
 from kit.memory import Memory
+from kit.prompt import with_now
 from kit.settings import ModelProfile, Settings
 
 
@@ -199,6 +202,67 @@ def test_cached_tokens_are_billed_at_the_cache_rate(memory):
     assert answer.cost_usd == pytest.approx(0.0442)
 
 
+def test_spend_log_shows_cache_use_and_searches(memory):
+    """ "cached 1830/2400": the log keeps how much of each call's input was read from
+    the cache, written to it, and how many searches it ran, so caching can be seen."""
+    fake = FakeAnthropic(cache_read_input_tokens=1830, cache_creation_input_tokens=400, searches=2)
+    ask(make_cloud(memory, fake))
+    (spent,) = memory.spend_log()
+    assert spent.input_tokens == 3230 and spent.cached_tokens == 1830
+    assert spent.cache_write_tokens == 400 and spent.searches == 2
+
+
+# --- Streaming and the cache layout -----------------------------------------
+
+CONVERSATION = [
+    {"role": "system", "content": "You are Kit."},
+    {"role": "user", "content": "Hi"},
+    {"role": "assistant", "content": "Hello Dan."},
+    {"role": "user", "content": "How are you?"},
+    {"role": "assistant", "content": "Well, thanks."},
+    {"role": "user", "content": with_now("Why?", "It is Monday.\nMemories.", "Dan")},
+]
+
+
+def test_streamed_answer_is_heard_as_written_and_resumes_after_a_pause(memory):
+    fake = FakeAnthropic(answer=["Looking. ", "Found it."], stop_reason=["pause_turn", "end_turn"])
+    cloud, heard = make_cloud(memory, fake), []
+    answer = asyncio.run(
+        cloud.answer(Settings().models["opus"], MESSAGES, Settings(), on_text=heard.append)
+    )
+    assert fake.streamed == 2 and len(heard) > 2  # a few characters at a time, both calls
+    assert "".join(heard) == "Looking. Found it." == answer.text
+    resumed = fake.calls[1]["messages"]
+    assert resumed[-1]["role"] == "assistant" and resumed[:-1] == fake.calls[0]["messages"]
+    assert answer.cost_usd == pytest.approx(0.088)  # both calls billed
+
+
+def test_cache_breakpoints_are_on_the_fixed_prompt_and_the_last_turn_only(memory):
+    """The system prompt (one breakpoint) and the conversation so far (a breakpoint on
+    Kit's last turn) read the same every turn, so Claude serves them from its cache;
+    only Dan's new message, with this turn's part in front of it, is new."""
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake), messages=CONVERSATION)
+    call = fake.calls[0]
+    assert call["system"] == [{"type": "text", "text": "You are Kit.", "cache_control": CACHE}]
+    sent = call["messages"]
+    assert [m["role"] for m in sent] == ["user", "assistant", "user", "assistant", "user"]
+    assert sent[1] == {"role": "assistant", "content": "Hello Dan."}  # no breakpoint
+    assert sent[3] == {
+        "role": "assistant",
+        "content": [{"type": "text", "text": "Well, thanks.", "cache_control": CACHE}],
+    }
+    assert sent[4]["content"].startswith("[Not from Dan: how things stand right now")
+    assert "It is Monday." in sent[4]["content"] and sent[4]["content"].endswith("\n\nWhy?")
+    assert "cache_control" not in sent[4]
+    assert json.dumps(call).count("cache_control") == 2
+
+
+def test_a_first_message_has_no_turn_to_cache():
+    turns = [{"role": "user", "content": "Hi"}]
+    assert cached_turns(turns) == turns and "cache_control" not in turns[0]
+
+
 def test_cap_stops_calls(memory):
     memory.record_spend("m", 0, 0, 40.0, "earlier")
     fake = FakeAnthropic()
@@ -343,12 +407,52 @@ def test_openai_errors(memory, status, words):
         ask(cloud, "gpt-sol")
 
 
-def test_openai_offline(memory):
+def test_openai_offline(memory, monkeypatch):
+    monkeypatch.setattr("kit.cloud.RETRY_BACKOFF_S", (0, 0))
+
     def down(request):
         raise httpx.ConnectError("no route", request=request)
 
+    seen = []
     with pytest.raises(CloudError, match="reach"):
-        ask(openai_cloud(memory, down, []), "gpt-sol")
+        ask(openai_cloud(memory, down, seen), "gpt-sol")
+    assert len(seen) == 3  # tried again twice first
+
+
+def test_openai_and_gemini_try_again_when_rate_limited_or_the_server_stumbles(memory, monkeypatch):
+    monkeypatch.setattr("kit.cloud.RETRY_BACKOFF_S", (0, 0))
+    replies = iter([429, 503, 200])
+
+    def flaky(request):
+        return httpx.Response(next(replies), json=OPENAI_OK)
+
+    seen = []
+    answer = ask(openai_cloud(memory, flaky, seen), "gpt-sol")
+    assert answer.text == "Sunny, 24." and len(seen) == 3
+    seen = []
+    cloud = gemini_cloud(memory, lambda r: httpx.Response(500, json={}), seen)
+    with pytest.raises(CloudError, match="500"):
+        ask(cloud, "gemini-flash")
+    assert len(seen) == 3  # two more goes, then the error
+    seen = []
+    cloud = openai_cloud(memory, lambda r: httpx.Response(400, json={}), seen)
+    with pytest.raises(CloudError, match="400"):
+        ask(cloud, "gpt-sol")
+    assert len(seen) == 1  # a bad request won't get better
+
+
+def test_openai_effort_above_high_is_sent_as_high(memory):
+    """The Responses API takes low, medium and high, as Gemini's thinking levels do."""
+    seen = []
+    cloud = openai_cloud(memory, lambda r: httpx.Response(200, json=OPENAI_OK), seen)
+    s = Settings.model_validate({"models": {"gpt-sol": {"effort": "max"}}})
+    ask(cloud, "gpt-sol", settings=s)
+    assert json.loads(seen[0].content)["reasoning"] == {"effort": "high"}
+
+
+def test_opus_has_room_for_a_long_think():
+    models = Settings().models
+    assert models["opus"].max_tokens == 32000 and models["sonnet"].max_tokens == 16000
 
 
 GEMINI_OK = {

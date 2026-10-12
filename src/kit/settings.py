@@ -179,6 +179,8 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-opus-5-5",
         "effort": "medium",
+        # An expert answer thinks at length first; room for both (answers stream).
+        "max_tokens": 32000,
         "input_usd_per_mtok": 4.0,
         "cached_input_usd_per_mtok": 0.2,
         "output_usd_per_mtok": 20.0,
