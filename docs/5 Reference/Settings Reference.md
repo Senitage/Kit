@@ -19,6 +19,27 @@ next message and can be undone. How that works is in [[Settings and Data]].
 > `kit config show` prints what's in force now. A test checks every setting
 > is listed here.
 
+## What the file holds
+
+`settings.toml` starts with `schema_version = 2` and then holds **only what
+you changed**. A setting that isn't in the file is at its default, so when a
+default moves in a Kit update (a model's price or id in `models`, a voice
+engine's field in `speech.engines`, a line of his character in `persona`), it
+reaches you by itself. A built-in model or voice engine profile is written the
+same way, field by field; a profile you added yourself is written whole.
+
+- `kit config show` prints everything in force, defaults included; the file
+  is the short version. Set a value equal to its default and it leaves the
+  file.
+- A value you type into the file by hand is yours, even if it equals today's
+  default, until the next save from a page or `kit config set` tidies it out.
+- **Version 1 files** (before October 2026) held every value, chosen or not.
+  The first time Kit reads one he drops everything that was a default in
+  version 1 (the built-in profiles and persona lines of the day are kept in
+  the code for this; for every other setting, version 1's default is today's)
+  and rewrites the file as version 2, with no history entry. What you had
+  changed stays. See [[Updating Kit#Settings from an older Kit]].
+
 ## ollama
 
 The local model, run by Ollama on the server. See [[Models and Routing]].
@@ -121,7 +142,7 @@ Who Kit is and who he's with. See [[Who Kit Is]].
 | `location` | empty | Where the owner is, for weather and local searches, as 'city, state', e.g. Richmond, NSW. |
 | `country` | empty | The owner's country as a two-letter code, e.g. AU. |
 | `timezone` | empty | The owner's time zone, e.g. Australia/Sydney. |
-| `knows` | built in | What Kit knows about the owner. |
+| `knows` | "Only what they've told you so far; you're still getting to know them." | What Kit knows about the owner: who's at home, what they do for work, what they're into. A few lines in your own words; the built-in line says he's still getting to know you. Your real details belong here in your own `settings.toml`, never in the code: the repo is public. |
 | `rules` | built in | Rules Kit always follows. {owner} stands for the owner's name. |
 | `examples` | built in | Sample exchanges. Small models keep character best with a few of these. |
 

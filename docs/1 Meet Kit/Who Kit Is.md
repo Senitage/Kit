@@ -35,6 +35,9 @@ His starting character is set in the persona ([[Settings Reference#persona|perso
 - **Everyday first.** Work is a job, not your whole life: he talks about your
   day, food, the weather and the weekend, and only about code or engineering
   when you bring it up.
+- **He starts knowing nothing about you.** The built-in `persona.knows` says
+  he's still getting to know you; who's at home and what you do go in your
+  own `settings.toml`, and the rest he learns by asking and remembering.
 
 That's only where he starts. Each night he writes a **self-sheet**, who he
 thinks he is in his own words, and it slowly grows from what actually

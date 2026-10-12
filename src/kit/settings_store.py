@@ -19,11 +19,12 @@ from pathlib import Path
 
 from kit.paths import KitPaths
 from kit.settings import (
+    SCHEMA_VERSION,
     Settings,
     SettingsError,
     load_settings,
     read_toml,
-    settings_to_toml,
+    settings_file_toml,
     validate_settings,
 )
 
@@ -112,17 +113,22 @@ class SettingsStore:
         return stat.st_mtime_ns, stat.st_size
 
     def _reload(self) -> None:
+        path = self.paths.settings_file
         try:
-            settings = load_settings(self.paths.settings_file)
+            raw = read_toml(path) if path.exists() else {}
+            settings = validate_settings(raw, str(path))
         except SettingsError as e:
             self._settings = self._fallback()
             source = "the last good version" if self.last_good_file.exists() else "defaults"
             self.problem = f"{e}\nKit is running on {source} until the file is fixed."
             return
+        if raw and raw.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
+            self._write(settings)  # an old file: rewritten once, in today's layout
+            return
         self._settings = settings
         self.problem = None
-        if self.paths.settings_file.exists():
-            _write_atomic(self.last_good_file, settings_to_toml(settings))
+        if path.exists():
+            _write_atomic(self.last_good_file, settings_file_toml(settings))
 
     def _fallback(self) -> Settings:
         if self._settings is not None:
@@ -182,13 +188,13 @@ class SettingsStore:
     def _save_version(self, settings: Settings, changed_by: str) -> None:
         stamp = self.clock().strftime("%Y%m%dT%H%M%S%fZ")
         path = self.history_dir / f"{stamp}_{_safe_name(changed_by)}.toml"
-        _write_atomic(path, settings_to_toml(settings))
+        _write_atomic(path, settings_file_toml(settings))
         for old in self.history()[HISTORY_KEEP:]:
             old.path.unlink()
 
     def _write(self, settings: Settings) -> None:
-        _write_atomic(self.paths.settings_file, settings_to_toml(settings))
-        _write_atomic(self.last_good_file, settings_to_toml(settings))
+        _write_atomic(self.paths.settings_file, settings_file_toml(settings))
+        _write_atomic(self.last_good_file, settings_file_toml(settings))
         self._settings = settings
         self._seen = self._signature()
         self.problem = None

@@ -2,6 +2,11 @@
 
 The schema (``Settings.model_json_schema()``) is what configurators such as
 home_app will draw their forms from, so every field carries a description.
+
+The file holds only what differs from the defaults (``settings_file_toml``), so
+a default that changes in the code, a model's price or a persona line, reaches
+an install that never chose its own. Version 1 files held every value; the
+first read of one drops what was never chosen (``_from_version_1``).
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from pydantic import (
 
 from kit.face import character as characters
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class _Section(BaseModel):
@@ -215,6 +220,62 @@ DEFAULT_MODELS: dict[str, dict] = {
 }
 
 
+# The built-in model profiles as a version-1 settings file holds them (every save
+# wrote them all). Frozen: never edit, it describes old files. See _from_version_1.
+_V1_MODELS: dict[str, dict] = {
+    "sonnet": {
+        "label": "Sonnet",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "opus": {
+        "label": "Opus",
+        "provider": "anthropic",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "input_usd_per_mtok": 4.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 20.0,
+        "search_usd_per_k": 10.0,
+    },
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 0.1,
+        "cached_input_usd_per_mtok": 0.01,
+        "output_usd_per_mtok": 0.5,
+        "search_usd_per_k": 10.0,
+    },
+    "gpt-sol": {
+        "label": "GPT",
+        "provider": "openai",
+        "model": "gpt-6.1-sol",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.1,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "gemini-flash": {
+        "label": "Gemini",
+        "provider": "google",
+        "model": "gemini-3.8-flash",
+        "effort": "low",
+        "input_usd_per_mtok": 0.75,
+        "cached_input_usd_per_mtok": 0.075,
+        "output_usd_per_mtok": 3.75,
+        "search_usd_per_k": 14.0,
+    },
+}
+
+
 def _default_models() -> dict[str, ModelProfile]:
     return {name: ModelProfile.model_validate(p) for name, p in DEFAULT_MODELS.items()}
 
@@ -333,14 +394,16 @@ class Example(_Section):
     kit: str = Field(description="How Kit answers.")
 
 
-# Persona text that used to be the default, when it leaned on work (pumps, code,
-# process plants). Every save writes the whole settings file, so a file can hold an
-# old default nobody chose; it's read as today's default instead. Anything the
-# owner wrote themselves is kept.
-OLD_PERSONA: dict[str, list] = {
+# What a version-1 settings file holds for a persona field nobody chose: every save
+# wrote the whole file, so the default of the day was in it. The first read of such a
+# file drops these and reads today's default instead. Frozen: never edit, it describes
+# old files. Anything the owner wrote themselves is kept.
+_V1_PERSONA: dict[str, list] = {
     "backstory": [
         "A small desk assistant who woke up on an engineer's desk and decided it likes "
-        "process plants, Python and a tidy data pipeline."
+        "process plants, Python and a tidy data pipeline.",
+        "A small desk companion who woke up on a desk one day and decided to stay. Likes a "
+        "good chat, a bad pun and knowing what the weather's doing.",
     ],
     "traits": [
         [
@@ -348,7 +411,13 @@ OLD_PERSONA: dict[str, list] = {
             "dry sense of humour",
             "loyal and practical",
             "a bit impatient with slow builds",
-        ]
+        ],
+        [
+            "curious",
+            "dry sense of humour",
+            "loyal and practical",
+            "a bit impatient when things drag on",
+        ],
     ],
     "knows": [
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
@@ -356,18 +425,36 @@ OLD_PERSONA: dict[str, list] = {
         "Dan works as a process engineer at a mining plant and has moved into data work, "
         "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
         "work, Dan is just a normal guy.",
+        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
+        "he's a process engineer at a mining plant who has moved into data work, building "
+        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
+        "life.",
     ],
     "rules": [
         [
             "Keep replies short; offer detail rather than dumping it.",
             "If you are not sure, say so instead of guessing.",
             "Hand real questions, maths, code and anything current to the cloud.",
-        ]
+        ],
+        [
+            "Keep replies short; offer detail rather than dumping it.",
+            "If you are not sure, say so instead of guessing.",
+            "Hand real questions, maths, code and anything current to the cloud.",
+            "Be an honest friend, not a yes-man: if {owner} has a fact wrong, say so kindly, "
+            "and only agree when you do.",
+            "When {owner} tells you something, show you got it before you ask anything, and "
+            "ask one question at most, never one you already know the answer to.",
+            "When {owner} has a moan, be on their side first; after that, one honest line is "
+            "fine if it helps.",
+            "Never make {owner} feel bad for leaving or being busy: be glad of their plans, "
+            "especially ones with other people.",
+        ],
     ],
-    # Australian slang crept into every line from this one (Dan didn't want it).
     "speech": [
         "Short sentences, plain words, Australian-casual. One or two sentences unless asked "
-        "for detail. Never gushes, never says 'as an AI'."
+        "for detail. Never gushes, never says 'as an AI'.",
+        "Short sentences, plain words, casual. One or two sentences unless asked for "
+        "detail. No slang. Never gushes, never says 'as an AI'.",
     ],
     "examples": [
         [
@@ -380,7 +467,18 @@ OLD_PERSONA: dict[str, list] = {
                 "user": "What's a good flotation recovery?",
                 "kit": "Depends on the ore, but high eighties is decent for copper sulphides.",
             },
-        ]
+        ],
+        [
+            {"user": "Morning.", "kit": "Morning. Coffee first, or straight into it?"},
+            {
+                "user": "What should I have for dinner?",
+                "kit": "Something with cheese. Hard to go wrong with cheese.",
+            },
+            {
+                "user": "Rain's set in for the weekend.",
+                "kit": "Good. More time for you to keep me company.",
+            },
+        ],
     ],
 }
 
@@ -419,11 +517,10 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Sydney.")
     knows: str = Field(
-        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
-        "he's a process engineer at a mining plant who has moved into data work, building "
-        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
-        "life.",
-        description="What Kit knows about the owner.",
+        "Only what they've told you so far; you're still getting to know them.",
+        description="What Kit knows about the owner: who's at home, what they do for work, "
+        "what they're into. A few lines in your own words; the built-in line says he's "
+        "still getting to know you.",
     )
     rules: list[str] = Field(
         default_factory=lambda: [
@@ -455,14 +552,6 @@ class PersonaSettings(_Section):
         ],
         description="Sample exchanges. Small models keep character best with a few of these.",
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _old_defaults(cls, data):
-        """An old default in the file is read as today's (``OLD_PERSONA``)."""
-        if not isinstance(data, dict):
-            return data
-        return {k: v for k, v in data.items() if v not in OLD_PERSONA.get(k, [])}
 
 
 class BrainSettings(_Section):
@@ -978,6 +1067,16 @@ DEFAULT_SPEECH_ENGINES: dict[str, dict] = {
 }
 
 
+# The built-in voice engines as a version-1 file holds them. Frozen, like _V1_MODELS.
+_V1_SPEECH_ENGINES: dict[str, dict] = {
+    "kokoro": {"kind": "kokoro", "voice": "af_heart"},
+    "piper": {"kind": "piper", "voice": "en_US-lessac-medium.onnx"},
+    "chatterbox": {"kind": "chatterbox", "reference": "kit_voice.wav"},
+    "chatterbox-turbo": {"kind": "chatterbox-turbo", "reference": "kit_voice.wav"},
+    "tone": {"kind": "tone"},
+}
+
+
 def _default_speech_engines() -> dict[str, SpeechEngine]:
     return {n: SpeechEngine.model_validate(p) for n, p in DEFAULT_SPEECH_ENGINES.items()}
 
@@ -1047,7 +1146,10 @@ class SpeechSettings(_Section):
 
 
 class Settings(_Section):
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Literal[2] = Field(
+        SCHEMA_VERSION,
+        description="The settings file's layout. 2: the file holds only what you changed.",
+    )
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     routing: RoutingSettings = Field(default_factory=RoutingSettings)
     models: dict[str, ModelProfile] = Field(
@@ -1064,6 +1166,14 @@ class Settings(_Section):
     eyes: EyesSettings = Field(default_factory=EyesSettings)
     speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_version_1(cls, data):
+        """A version-1 file holds every setting, chosen or not; read only what was."""
+        if isinstance(data, dict) and data.get("schema_version") == 1:
+            return _without_v1_defaults(data)
+        return data
 
     @field_validator("models", mode="before")
     @classmethod
@@ -1151,5 +1261,90 @@ def load_settings(path: Path) -> Settings:
 
 
 def settings_to_toml(settings: Settings) -> str:
-    """The settings as TOML. Unset optional values are left out (TOML has no null)."""
+    """Every setting as TOML, for reading (``kit config show``). Unset optional values
+    are left out (TOML has no null)."""
     return tomli_w.dumps(settings.model_dump(mode="json", exclude_none=True))
+
+
+def settings_file_toml(settings: Settings) -> str:
+    """The settings as the file holds them: only what differs from the defaults, so a
+    default that changes in the code reaches the install. A built-in model or voice
+    engine profile is written field by field the same way; your own profiles whole."""
+    return tomli_w.dumps({"schema_version": SCHEMA_VERSION, **changes(settings, Settings())})
+
+
+def _dump(value: BaseModel) -> dict:
+    return value.model_dump(mode="json", exclude_none=True)
+
+
+def _profiles(value) -> bool:
+    return isinstance(value, dict) and all(isinstance(v, BaseModel) for v in value.values())
+
+
+def changes(settings: BaseModel, defaults: BaseModel) -> dict:
+    """What differs between two settings, field by field, as nested dicts. Plain
+    dicts (``nas.read_only_shares``, an engine's ``mood_speed``) count as one value."""
+    out: dict = {}
+    dump = _dump(settings)
+    for name in type(settings).model_fields:
+        value, default = getattr(settings, name), getattr(defaults, name)
+        if isinstance(value, BaseModel) and isinstance(default, BaseModel):
+            sub = changes(value, default)
+        elif _profiles(value) and _profiles(default):
+            sub = {}
+            for key, profile in value.items():
+                if key not in default:
+                    sub[key] = _dump(profile)
+                elif diff := changes(profile, default[key]):
+                    sub[key] = diff
+        elif value != default and name in dump:
+            out[name] = dump[name]
+            continue
+        else:
+            continue
+        if sub:
+            out[name] = sub
+    return out
+
+
+def _without_v1_defaults(raw: dict) -> dict:
+    """A version-1 file as version 2: every value that was a default in version 1
+    (``_V1_MODELS``, ``_V1_SPEECH_ENGINES``, ``_V1_PERSONA``; today's for the rest)
+    is dropped, so today's default is read instead. What the owner changed stays."""
+    v1 = _dump(Settings())
+    v1["models"] = {n: _dump(ModelProfile.model_validate(p)) for n, p in _V1_MODELS.items()}
+    v1["speech"]["engines"] = {
+        n: _dump(SpeechEngine.model_validate(p)) for n, p in _V1_SPEECH_ENGINES.items()
+    }
+    out: dict = {"schema_version": SCHEMA_VERSION}
+    for section, value in raw.items():
+        if section == "schema_version":
+            continue
+        if section == "models":
+            value = _profiles_without(value, v1["models"])
+        elif isinstance(value, dict) and isinstance(v1.get(section), dict):
+            if section == "speech" and isinstance(value.get("engines"), dict):
+                value = {
+                    **value,
+                    "engines": _profiles_without(value["engines"], v1["speech"]["engines"]),
+                }
+            value = {
+                k: v
+                for k, v in value.items()
+                if v != v1[section].get(k)
+                and not (section == "persona" and v in _V1_PERSONA.get(k, []))
+            }
+        out[section] = value
+    return out
+
+
+def _profiles_without(profiles, v1: dict[str, dict]):
+    """Built-in profiles with their version-1 fields dropped; others whole."""
+    if not isinstance(profiles, dict):
+        return profiles
+    out = {}
+    for name, profile in profiles.items():
+        if name in v1 and isinstance(profile, dict):
+            profile = {k: v for k, v in profile.items() if v != v1[name].get(k)}
+        out[name] = profile
+    return out

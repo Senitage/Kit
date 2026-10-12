@@ -1,7 +1,12 @@
 # Kit's settings. Lives in Kit's data folder (run `kit paths` to see where).
 # Secrets such as API keys never go in this file; see docs/4 Guides/Stage 0 - Server Setup.md.
+#
+# Every value here is the default, shown so you can see what there is. When Kit
+# saves the file he keeps only what you changed, so a default that moves in a
+# Kit update (a model's price, a line of his character) reaches you by itself.
+# `kit config show` prints everything in force.
 
-schema_version = 1
+schema_version = 2
 
 [ollama]
 # Ollama on this machine, and the local model for everyday chat.
@@ -133,6 +138,9 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # country = "AU"
 # timezone = "Australia/Sydney"
 # traits = ["curious", "dry sense of humour", "loyal and practical"]
+# What Kit knows about you, in your own words: who's at home, your work, what
+# you're into. Built in, he only knows what you tell him.
+# knows = "Lives in Richmond with a partner and a dog called Biscuit. Teaches maths; into trail running and old motorbikes."
 #
 # [[persona.examples]]
 # user = "Morning."
