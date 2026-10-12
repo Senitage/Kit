@@ -22,21 +22,25 @@ Up: [[Home]] · Reference
 | **Cheek** | How cheeky he is, 0 to 1 (`life.cheek`) | [[Inner Life]] |
 | **Data folder** | The one folder holding everything Kit owns | [[Settings and Data]] |
 | **Day summary** | What Kit writes after midnight about each finished day | [[Memory]] |
+| **Device token** | A token just for one paired device, like a phone, so it can be unpaired alone (`kit pair`) | [[Phone App#Pairing]] |
 | **Drives** | What rises and falls in him: boredom, curiosity, wanting a chat, something to say, energy | [[Inner Life#Drives and mood]] |
 | **Embedding** | A meaning vector: numbers that let him find things by what they mean | [[Memory#Finding things]] |
 | **Emotion** | One of 17 feelings a reply is acted out in | [[Face#Emotions and gestures]] |
 | **Eval** | A repeatable check of how the real models behave | [[Evals]] |
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
+| **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |
 | **Held pipe-up** | Something he wanted to say while you were busy, saved till you're free | [[Inner Life In Depth#Busy and held pipe-ups]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |
+| **Hello** | A body introducing itself to the brain with what it can do (`/api/bodies/hello`) | [[Phone App#Saying hello]] |
 | **Key moment** | A moment that matters, where a stronger model writes his words | [[Models and Routing]] |
 | **Keep it local** | Words that keep a message and all that comes of it away from cloud models | [[Privacy#Keep it local]] |
 | **Kit 2D** | The 3D face drawn flat, for small screens like the Pod's | [[Face]] |
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
+| **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
 | **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Register of things** | The list of people, vehicles, places, projects and equipment, and where each lives | [[Register of Things]] |

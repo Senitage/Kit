@@ -221,3 +221,60 @@ def test_check_again_after_a_pc_question_looks_again(paths):
     collect(brain.chat("how's the thickener?"))
     assert "fresh look" not in brain.model.calls[2][-1]["content"]
     memory.close()
+
+
+# Several PCs
+
+
+def test_a_locked_laptop_doesnt_hide_the_pc_dan_is_on():
+    clock = Clock()
+    pc = PcContext(clock)
+    for _ in range(4):
+        clock.now += timedelta(seconds=15)
+        pc.update(snap(host="DESK"))
+        pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "DESK" and pc.latest.host == "DESK"
+    assert pc.now_line("Dan").startswith("On Dan's PC right now: Visual Studio Code")
+    assert all(not s.away for s in pc.spans)  # the laptop's reports don't chop his day up
+    assert "other PC LAPTOP, locked" in pc.detail("Dan")
+    listed = {p["host"]: p["in_use"] for p in pc.as_dict("Dan")["pcs"]}
+    assert listed == {"DESK": True, "LAPTOP": False}
+
+
+def test_dan_moves_to_the_other_pc():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP", app="Excel", title="Budget.xlsx", idle=400))
+    assert pc.host() == "DESK"  # the laptop's idle
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="DESK", idle=20))
+    pc.update(snap(host="LAPTOP", app="Excel", title="Budget.xlsx", idle=1))
+    assert pc.host() == "LAPTOP" and pc.spans[-1].app == "Excel"
+
+
+def test_away_only_once_every_pc_is_idle():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "DESK" and not pc.latest.locked
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="DESK", locked=True))
+    assert pc.latest.locked  # both locked: he's away, and the PC he used last counts
+    assert pc.host() == "LAPTOP"  # the one he was on last
+    assert pc.now_line("Dan").endswith("PC is locked.")
+
+
+def test_a_pc_that_stops_reporting_drops_out():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    pc.update(snap(host="LAPTOP", locked=True))
+    clock.now += timedelta(minutes=4)
+    pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "LAPTOP" and pc.online() and pc.others() == []
