@@ -59,6 +59,18 @@ def test_claude_answer_and_spend_logged(memory):
     assert memory.month_spend() == pytest.approx(0.044)
 
 
+def test_one_client_is_kept_per_key(memory):
+    """Every call reuses the connection rather than opening a new one first."""
+    fake = FakeAnthropic()
+    cloud = make_cloud(memory, fake)
+    ask(cloud)
+    ask(cloud)
+    assert fake.keys == ["sk-test"] and len(fake.calls) == 2
+    asyncio.run(cloud.close())
+    ask(cloud)
+    assert fake.keys == ["sk-test", "sk-test"]
+
+
 def test_web_search_can_be_turned_off(memory):
     fake = FakeAnthropic()
     s = Settings.model_validate({"models": {"opus": {"web_search": False}}})

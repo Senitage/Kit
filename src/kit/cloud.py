@@ -158,13 +158,38 @@ MAX_RESUMES = 3
 AnthropicFactory = Callable[[str], anthropic.AsyncAnthropic]
 
 
+# A dead connection is given up on quickly, so the local model can step in; a long
+# answer (a web search) may still take minutes to write.
+CONNECT_TIMEOUT_S = 10.0
+READ_TIMEOUT_S = 300.0
+
+
 def make_anthropic_client(api_key: str) -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=api_key, max_retries=2, timeout=300)
+    return anthropic.AsyncAnthropic(
+        api_key=api_key,
+        max_retries=2,
+        timeout=httpx.Timeout(READ_TIMEOUT_S, connect=CONNECT_TIMEOUT_S),
+    )
 
 
 class AnthropicProvider:
+    """One client per API key, kept for the life of the process: every call reuses
+    its connection, rather than paying a new TLS handshake before the first word."""
+
     def __init__(self, make_client: AnthropicFactory = make_anthropic_client) -> None:
         self.make_client = make_client
+        self._clients: dict[str, anthropic.AsyncAnthropic] = {}
+
+    def _client(self, key: str) -> anthropic.AsyncAnthropic:
+        client = self._clients.get(key)
+        if client is None:
+            client = self._clients[key] = self.make_client(key)
+        return client
+
+    async def close(self) -> None:
+        clients, self._clients = list(self._clients.values()), {}
+        for client in clients:
+            await client.close()
 
     async def complete(
         self,
@@ -177,7 +202,7 @@ class AnthropicProvider:
         on_text: Text | None = None,
     ) -> Completion:
         """``on_text`` hears the answer's text as it's written (it's streamed)."""
-        client = self.make_client(key)
+        client = self._client(key)
         haiku = profile.model.startswith("claude-haiku")
         tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
         fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
@@ -218,8 +243,6 @@ class AnthropicProvider:
             raise CloudError(f"I couldn't reach {profile.name}. Is the internet up?") from e
         except anthropic.APIStatusError as e:
             raise CloudError(f"{profile.name} returned an error ({e.status_code}).") from e
-        finally:
-            await client.close()
         return Completion(
             "".join(text).strip(),
             response.model,
@@ -451,6 +474,13 @@ class Cloud:
         self.memory = memory
         self.api_key = api_key
         self.providers = providers
+
+    async def close(self) -> None:
+        """Let go of the providers' connections (when Kit stops)."""
+        for provider in self.providers.values():
+            close = getattr(provider, "close", None)
+            if close is not None:
+                await close()
 
     async def answer(
         self,

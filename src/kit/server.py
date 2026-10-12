@@ -196,6 +196,7 @@ def create_app(
         yield
         for task in tasks:
             task.cancel()
+        await brain.cloud.close()
         if speech is not None:
             await asyncio.to_thread(speech.close)
 
@@ -401,7 +402,7 @@ def create_app(
     ) -> list[dict]:
         """The current conversation; or, with ``before`` or ``after`` (a message id),
         a page of the whole history, for scrolling back and catching up."""
-        limit = min(limit, 500)
+        limit = max(1, min(limit, 500))  # SQLite reads -1 as no limit at all
         if before is None and after is None:
             found = memory.recent(limit)
         else:

@@ -794,6 +794,13 @@ class MemorySettings(_Section):
         description="Ollama model that turns text into meaning vectors, so Kit can find "
         "memories by meaning as well as by words. Changing it re-indexes everything.",
     )
+    embed_keep_alive: str = Field(
+        "24h",
+        description="How long the embedding model stays loaded after it was last used "
+        "(Ollama's keep_alive, e.g. 24h, 30m, -1 for always). It is small, and recall "
+        "needs it before every reply, so loading it again after a quiet spell would hold "
+        "up the first answer.",
+    )
     query_prefix: str = Field(
         "search_query: ", description="Text the embedding model wants before a search."
     )

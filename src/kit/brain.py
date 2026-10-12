@@ -553,7 +553,6 @@ class Brain:
         self._weather_at: datetime | None = None  # when Kit last looked at a forecast
         self._pc_at: datetime | None = None  # when Kit last looked at the PC for Dan
         self._scene_at: datetime | None = None  # when Kit last looked around for Dan
-        self.learner = Learner(memory, recall, model)
         self.learner = Learner(memory, recall, model, asking(cloud, settings))
         # His thoughts in the cloud (routing.background chat): the chat model, giving way
         # first as the month's budget runs low.

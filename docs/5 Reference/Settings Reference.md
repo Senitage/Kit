@@ -144,6 +144,7 @@ How memories are found and kept. See [[Memory]].
 | Setting | Default | What it does |
 |---|---|---|
 | `embed_model` | `nomic-embed-text` | Ollama model that turns text into meaning vectors, so Kit can find memories by meaning as well as by words. Changing it re-indexes everything. |
+| `embed_keep_alive` | `24h` | How long the embedding model stays loaded after it was last used (Ollama's keep_alive, e.g. 24h, 30m, -1 for always). It is small, and recall needs it before every reply, so loading it again after a quiet spell would hold up the first answer. |
 | `query_prefix` | `search_query: ` | Text the embedding model wants before a search. |
 | `document_prefix` | `search_document: ` | Text the embedding model wants before stored text. |
 | `relevant_memories` | `8` | Memories recalled into each turn, most relevant first. |

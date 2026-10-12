@@ -101,6 +101,7 @@ history_messages = 20
 # embedding model in Ollama (`ollama pull nomic-embed-text`). Without it Kit
 # still remembers, but only finds things by matching words.
 embed_model = "nomic-embed-text"
+embed_keep_alive = "24h"      # keep it loaded: recall needs it before every reply
 relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
