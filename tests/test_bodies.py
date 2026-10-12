@@ -1,7 +1,7 @@
 """Kit's bodies saying hello, paired devices with their own tokens, and what a
 phone needs from the API: history pages, messages written earlier, spoken ones."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -118,7 +118,7 @@ def test_a_message_that_waited_is_old_news():
     soon = channel_line("phone", "Dan", Arrival(sent_at=now - timedelta(seconds=30)), now)
     assert "wrote this" not in soon
     aware = datetime.fromisoformat("2026-10-05T07:40:00+00:00")
-    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), now.astimezone())
+    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), now.replace(tzinfo=UTC))
 
 
 # The API
