@@ -7,7 +7,7 @@ library, numpy and the engine itself.
 
     python worker.py --engine kokoro --port 8611 --options '{"voice": "af_heart"}'
 
-GET  /health  -> {"engine", "kind", "sample_rate", "device", "ready"}
+GET  /health  -> {"engine", "kind", "sample_rate", "device", "cuda_graph", "ready"}
 POST /speak   {"text": "...", "mood": "happy", "first": true} -> audio/wav (16-bit mono), with
               X-Synth-Ms (time to make it) and X-Audio-Ms (how long it plays)
 
@@ -20,7 +20,8 @@ Engines (``kind``):
   piper             piper-tts; very fast on a CPU; mood changes the speed
   chatterbox        Chatterbox; expressive, GPU; mood turns the emotion dial
   chatterbox-turbo  Chatterbox Turbo; faster, GPU; no emotion dial, but a sound tag
-                    such as [sigh] can open a reply
+                    such as [sigh] can open a reply. Its token loop runs as a CUDA
+                    graph (turbo.py) on a graphics card
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from pathlib import Path
 
 import numpy as np
 
+WORKER_DIR = Path(__file__).resolve().parent
 KOKORO_FILES = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 # The sounds Chatterbox Turbo knows (its tokenizer's tags); other engines would read
 # them out as words, so they're taken out first.
@@ -176,8 +178,21 @@ class ChatterboxEngine:
         return wav.squeeze(0).cpu().numpy()
 
 
+def sibling(name: str):
+    """A module next to this file (``turbo.py``), loaded by path so it works however
+    the worker was started and without Kit installed."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"kit_speech_{name}", WORKER_DIR / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ChatterboxTurboEngine:
-    """Chatterbox Turbo: about two and a half times faster, but no emotion dial."""
+    """Chatterbox Turbo: about two and a half times faster, but no emotion dial. On a
+    graphics card its token loop is recorded as a CUDA graph (``turbo.py``), which
+    makes it about 2.4 times faster again; ``cuda_graph: false`` turns that off."""
 
     def __init__(self, options: dict, models_dir: Path) -> None:
         from chatterbox.tts_turbo import ChatterboxTurboTTS
@@ -189,12 +204,26 @@ class ChatterboxTurboEngine:
             self.tts.prepare_conditionals(reference)
         self.mood_tags = options.get("mood_tags", {})
         self.sample_rate = self.tts.sr
+        self.turbo, self.graph = None, None
+        if options.get("cuda_graph", True) and self.device.startswith("cuda"):
+            try:
+                self.turbo = sibling("turbo")
+                self.graph = self.turbo.GraphTokens(self.tts)
+            except Exception as e:  # his voice still works, just at Chatterbox's own pace
+                self.turbo, self.graph = None, None
+                log(f"no CUDA graph, so Chatterbox's own token loop: {type(e).__name__}: {e}")
 
     def speak(self, text: str, mood: str, first: bool = False) -> np.ndarray:
         # A reply that opens with a sound of its own doesn't get the mood's one too.
         opens = text.lstrip().startswith("[")
         tag = self.mood_tags.get(mood, "") if first and not opens else ""
-        return self.tts.generate(f"{tag} {text}".strip()).squeeze(0).cpu().numpy()
+        line = f"{tag} {text}".strip()
+        if self.graph is not None:
+            try:
+                return self.turbo.generate(self.tts, self.graph, line)
+            except ValueError as e:  # a line too long for the graph's store
+                log(f"{e}: using Chatterbox's own token loop for it")
+        return self.tts.generate(line).squeeze(0).cpu().numpy()
 
 
 ENGINES = {
@@ -222,6 +251,7 @@ class Worker:
             "kind": self.kind,
             "sample_rate": self.engine.sample_rate,
             "device": getattr(self.engine, "device", "cpu"),
+            "cuda_graph": getattr(self.engine, "graph", None) is not None,
             "ready": True,
         }
 

@@ -50,6 +50,12 @@ open tabs and the site you're on. Kit sees one line on every message
 ("VS Code: pumps.py, for 25 min. Also open: Excel, Chrome.") and the full
 picture when he needs it (`look_at_pc`).
 
+With the desk app on **several PCs**, Kit keeps each PC's report and follows
+the one you're using; a locked laptop in the other room doesn't make him
+think you've gone. He counts you as away only once every PC is locked or
+idle. When he pipes up, only the PC you're on (or last used) says it out
+loud; the others show the words.
+
 Password managers, banking and private-browsing titles are blanked **on the
 PC** before anything is sent, addresses lose everything after `?` or `#`, and
 **Share what I'm working on** pauses it all. See [[Privacy]].
@@ -70,9 +76,16 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 ## Connections
 
 The app only ever connects **out** to the brain (`http://kit-server:8600`
-over Tailscale, with the token from `kit token`). The one thing it listens on
+over Tailscale, with the token from `kit token`). The **This PC** page shows
+both, and **Copy** puts the token on the clipboard, for pairing the
+[[Phone App]]. The one thing it listens on
 is `127.0.0.1:8765`, for the Chrome extension, which nothing off the PC can
 reach. Its own few settings and the token live in `%APPDATA%\Kit Desk`.
+
+It connects over IPv4, which is what the brain listens on. Windows tries a
+name's IPv6 address first (`localhost` gives `::1`) and waits about 2 s for an
+answer that never comes, which made his voice start 2 s late on every reply.
+Kit's eyes use the same connection.
 
 ## Updates
 

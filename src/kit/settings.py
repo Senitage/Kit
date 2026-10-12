@@ -975,6 +975,11 @@ class SpeechEngine(_Section):
         description="chatterbox-turbo: a sound that opens a reply in that emotion, such as "
         "[sigh] or [chuckle].",
     )
+    cuda_graph: bool = Field(
+        True,
+        description="chatterbox-turbo on a graphics card: record its token loop as a CUDA "
+        "graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop.",
+    )
 
 
 DEFAULT_SPEECH_ENGINES: dict[str, dict] = {
