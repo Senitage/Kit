@@ -119,6 +119,13 @@ MIGRATIONS = [
     # 5: who answered each of Kit's replies and what it cost (role, model, cost_usd...),
     # so the desk chat can colour old replies and show their details.
     "ALTER TABLE messages ADD COLUMN meta_json TEXT;",
+    # 6: how much of each cloud call was read from the prompt cache, written to it,
+    # and how many web searches it ran, so cache use can be seen (kit memory spend).
+    """
+    ALTER TABLE spend ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spend ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spend ADD COLUMN searches INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
@@ -142,6 +149,9 @@ class Spend:
     output_tokens: int
     cost_usd: float
     question: str
+    cached_tokens: int = 0  # input tokens read from the prompt cache
+    cache_write_tokens: int = 0  # input tokens written to it
+    searches: int = 0
 
 
 def local_now() -> datetime:
@@ -434,13 +444,24 @@ class Memory:
 
     @_locked
     def record_spend(
-        self, model: str, input_tokens: int, output_tokens: int, cost_usd: float, question: str
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+        question: str,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        searches: int = 0,
     ) -> None:
+        """One cloud call. ``input_tokens`` counts every input token; ``cached_tokens``
+        of them were read from the prompt cache and ``cache_write_tokens`` written to it."""
         now = self.clock()
         with self.db:
             self.db.execute(
                 "INSERT INTO spend (at, month, model, input_tokens, output_tokens, cost_usd,"
-                " question) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " question, cached_tokens, cache_write_tokens, searches)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.strftime("%Y-%m"),
@@ -449,6 +470,9 @@ class Memory:
                     output_tokens,
                     cost_usd,
                     question[:500],
+                    cached_tokens,
+                    cache_write_tokens,
+                    searches,
                 ),
             )
 
@@ -463,8 +487,8 @@ class Memory:
     @_locked
     def spend_log(self, limit: int = 50) -> list[Spend]:
         rows = self.db.execute(
-            "SELECT at, model, input_tokens, output_tokens, cost_usd, question FROM spend"
-            " ORDER BY id DESC LIMIT ?",
+            "SELECT at, model, input_tokens, output_tokens, cost_usd, question, cached_tokens,"
+            " cache_write_tokens, searches FROM spend ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [Spend(*row) for row in rows]
@@ -472,17 +496,19 @@ class Memory:
     @_locked
     def spend_summary(self, days: int = 30) -> dict:
         """Cloud spend over the last ``days`` days (today included): a row per day
-        with each model's cost, and each model's totals, for charts and tables."""
+        with each model's cost, and each model's totals (cached input tokens among
+        them, to see the prompt cache working), for charts and tables."""
         today = self.clock().date()
         first = today - timedelta(days=days - 1)
         rows = self.db.execute(
             "SELECT substr(at, 1, 10), model, COUNT(*), SUM(input_tokens), SUM(output_tokens),"
-            " SUM(cost_usd) FROM spend WHERE at >= ? GROUP BY 1, 2 ORDER BY 1",
+            " SUM(cost_usd), SUM(cached_tokens) FROM spend WHERE at >= ? GROUP BY 1, 2"
+            " ORDER BY 1",
             (first.isoformat(),),
         ).fetchall()
         by_day = {(first + timedelta(days=i)).isoformat(): {} for i in range(days)}
         models: dict[str, dict] = {}
-        for day, model, calls, tokens_in, tokens_out, cost in rows:
+        for day, model, calls, tokens_in, tokens_out, cost, cached in rows:
             if day not in by_day:
                 continue
             by_day[day][model] = round(cost, 6)
@@ -492,12 +518,14 @@ class Memory:
                     "model": model,
                     "calls": 0,
                     "input_tokens": 0,
+                    "cached_tokens": 0,
                     "output_tokens": 0,
                     "cost_usd": 0.0,
                 },
             )
             m["calls"] += calls
             m["input_tokens"] += tokens_in
+            m["cached_tokens"] += cached
             m["output_tokens"] += tokens_out
             m["cost_usd"] += cost
         for m in models.values():

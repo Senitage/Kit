@@ -176,7 +176,7 @@ class FakeMessages:
             usage=SimpleNamespace(
                 input_tokens=1000,
                 output_tokens=2000,
-                cache_creation_input_tokens=None,
+                cache_creation_input_tokens=owner.cache_creation_input_tokens or None,
                 cache_read_input_tokens=owner.cache_read_input_tokens,
                 server_tool_use=SimpleNamespace(web_search_requests=owner.searches),
             ),
@@ -192,6 +192,7 @@ class FakeAnthropic:
         error=None,
         stop_reason="end_turn",
         cache_read_input_tokens=0,
+        cache_creation_input_tokens=0,
         searches=0,
         queries=(),
     ):
@@ -201,6 +202,7 @@ class FakeAnthropic:
         self.error = error
         self.stop_reason = stop_reason if isinstance(stop_reason, list) else [stop_reason]
         self.cache_read_input_tokens = cache_read_input_tokens
+        self.cache_creation_input_tokens = cache_creation_input_tokens
         self.searches = searches
         self.calls: list[dict] = []
         self.streamed = 0  # calls that streamed their answer

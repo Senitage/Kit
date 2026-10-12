@@ -42,7 +42,7 @@ flowchart TB
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
-| `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with spend | [[Models and Routing]] |
+| `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |
 | `src/kit/cli.py` | The `kit` command | [[Commands]] |
 | `src/kit/__main__.py` | `python -m kit` runs the `kit` command | [[Commands]] |
 

@@ -56,13 +56,17 @@ sequenceDiagram
 3. **Quick answers skip the model.** "Yes" to a suggested note, a "shush", or
    a yes to a new entry in the register get answered on the spot.
 4. **He looks things up while he thinks.** If you asked the time or the
-   weather, a **show** for his face is fetched in parallel. If you put a fact
+   weather, a **show** for his face is fetched in parallel. A weather question
+   for the local model starts the **forecast** lookup now too, rather than
+   after recall. A plain request about your notes is spotted in a thread
+   meanwhile ([[Notes on the NAS#Reading your notes]]). If you put a fact
    to him ("Sydney's the capital, isn't it?"), the work model checks it in
    the background.
 5. **Recall.** His memory is searched by words and by meaning: up to 8 facts
    or day summaries, 4 old conversation snippets, 5 entries from the register
    of things and 3 notes from his own notebook. Pinned facts are always in.
-   See [[Memory]].
+   Your message is turned into a meaning vector **once** a turn: the new-topic
+   check and recall share it. See [[Memory]].
 6. **Route.** The routing mode picks who answers: the local model, the cloud
    chat model, or the work model; "keep it local", "ask Claude" and "think
    hard" choose for one message. Bad news that hits hard is a **key moment**
@@ -70,7 +74,11 @@ sequenceDiagram
 7. **The prompt.** The model sees who Kit is (his self-sheet and persona), how
    he feels and why, how long since you talked, how close you two are, the
    channel, one line about your PC, one line about what his eyes see, the
-   recalled memories and things, and the recent conversation.
+   recalled memories and things, and the recent conversation. The part that
+   changes every turn (the time, his mood, the memories) goes in front of your
+   message rather than in the instructions, so the instructions and the
+   conversation read the same as last turn and a cloud model serves them from
+   its cache. See [[Models and Routing#Caching]].
 8. **The answer.** The local model answers in two passes: a quick plan in JSON
    (emotion, gesture, action), then his words in plain text, streamed as they
    come. A cloud model answers in the same shape, streamed too, so he starts

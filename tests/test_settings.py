@@ -9,6 +9,7 @@ def test_missing_file_gives_defaults(tmp_path):
     assert settings == Settings()
     assert settings.profile("work").model == "claude-sonnet-5-5"
     assert settings.profile("expert").model == "claude-opus-5-5"
+    assert settings.profile("chat").thinking is False and settings.profile("work").thinking
 
 
 def test_loads_values_and_windows_paths(tmp_path):

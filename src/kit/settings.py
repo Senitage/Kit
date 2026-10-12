@@ -140,6 +140,11 @@ class ModelProfile(_Section):
     max_tokens: int = Field(
         16000, ge=1000, le=128000, description="Longest answer, thinking included, in tokens."
     )
+    thinking: bool = Field(
+        True,
+        description="Let the model think before it answers. Off, the first words come "
+        "sooner; only Claude Haiku takes it (Sonnet and Opus always think).",
+    )
     web_search: bool = Field(
         True, description="Let the model search the web (the provider's own search)."
     )
@@ -174,6 +179,8 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-opus-5-5",
         "effort": "medium",
+        # An expert answer thinks at length first; room for both (answers stream).
+        "max_tokens": 32000,
         "input_usd_per_mtok": 4.0,
         "cached_input_usd_per_mtok": 0.2,
         "output_usd_per_mtok": 20.0,
@@ -185,6 +192,7 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-haiku-5-5",
         "effort": "low",
+        "thinking": False,  # everyday chat: the first words sooner
         "input_usd_per_mtok": 0.1,
         "cached_input_usd_per_mtok": 0.01,
         "output_usd_per_mtok": 0.5,

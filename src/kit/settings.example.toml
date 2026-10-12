@@ -85,6 +85,11 @@ reserve_usd = 3.0
 # [models.sonnet]
 # effort = "medium"
 #
+# Haiku answers without thinking first (his first words come sooner); this turns
+# thinking back on. Sonnet and Opus always think, whatever this says.
+# [models.haiku]
+# thinking = true
+#
 # [models.big-local]
 # provider = "ollama"
 # model = "qwen3.8:27b"

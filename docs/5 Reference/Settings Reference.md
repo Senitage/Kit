@@ -80,7 +80,8 @@ Each profile has these fields:
 | `provider` | Who runs it. anthropic, openai and google need an API key in Kit's secrets folder; ollama runs on this machine. |
 | `model` | The provider's model id. |
 | `effort` | How hard the model thinks before answering. Higher costs more. |
-| `max_tokens` | Longest answer, thinking included, in tokens. |
+| `max_tokens` | Longest answer, thinking included, in tokens. 16000 unless set; the built-in `opus` profile has 32000, since an expert answer thinks at length first. |
+| `thinking` | Let the model think before it answers. Off, the first words come sooner; only Claude Haiku takes it (Sonnet and Opus always think). The built-in `haiku` profile has it off. |
 | `web_search` | Let the model search the web (the provider's own search). |
 | `input_usd_per_mtok` | Price per million input tokens. |
 | `cached_input_usd_per_mtok` | Price per million input tokens read from the prompt cache. |

@@ -360,8 +360,6 @@ def system_prompt(
             f"the note before answering. To find notes about something without knowing "
             f"which, use recall: it searches {owner}'s notes too."
         )
-        if note_names:
-            lines.append(f"{owner}'s notes (newest first): " + "; ".join(note_names) + ".")
     lines.append(
         f"- thing: when {owner} names a specific person, pet, vehicle, place, project or "
         f"piece of equipment that isn't under 'Things you know' yet, or tells you where "
@@ -433,6 +431,12 @@ def system_prompt(
         *([scene] if scene else []),
         *voice_block(voice, owner, name, brief=cloud),
         *forecast_block(forecast, owner),
+        # The list reorders whenever a note is edited, so it lives here, not above.
+        *(
+            [f"{owner}'s notes (newest first): " + "; ".join(note_names) + "."]
+            if note_names
+            else []
+        ),
         *note_block(note_done, owner),
     ]
     return "\n".join(lines)

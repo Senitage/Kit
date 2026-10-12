@@ -155,7 +155,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
 | `GET /api/status` | Version, models, spend, memory size, what the PC and eyes last said |
 | `GET /api/health` | Is he up (no token) |
-| `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log or per day and model |
+| `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log (each call with its `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (with each model's `cached_tokens`) |
 
 ## Under the hood
 - `src/kit/server.py`: every route.

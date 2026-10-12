@@ -895,10 +895,11 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     elif args.action == "spend":
         cap = SettingsStore(paths).current().cloud.monthly_cap_usd
         print(f"Cloud models this month: ${memory.month_spend():.2f} of ${cap:.2f}")
+        # "cached 1830/2400": how much of the input was read from the prompt cache.
         for s in memory.spend_log(20):
             print(
-                f"  {s.at}  {s.model}  in {s.input_tokens}  out {s.output_tokens}"
-                f"  ${s.cost_usd:.4f}  {s.question[:60]}"
+                f"  {s.at}  {s.model}  in {s.input_tokens}  cached {s.cached_tokens}/"
+                f"{s.input_tokens}  out {s.output_tokens}  ${s.cost_usd:.4f}  {s.question[:60]}"
             )
     memory.close()
     return code

@@ -12,10 +12,18 @@ always has the last of it.
 Claude's answers can also stream (``on_text``): the brain hears the words as they
 are written, so Kit starts talking a few words in rather than after the whole
 answer. The other providers answer in one piece.
+
+Claude reads a prompt from its cache when it starts the same way as the last one,
+so the request is laid out stable-first: the fixed persona text (one cache
+breakpoint), then the conversation so far (a breakpoint on Kit's last turn), then
+Dan's new message carrying this turn's part (the time, memories, mood...). The
+spend log keeps how much of each call was read from the cache.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Protocol
@@ -26,6 +34,8 @@ import httpx
 from kit.memory import Memory
 from kit.prompt import TURN_PART
 from kit.settings import ModelProfile, PersonaSettings, Settings
+
+log = logging.getLogger(__name__)
 
 CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
 # Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
@@ -155,6 +165,7 @@ MAX_SEARCHES = 5
 MAX_FETCHES = 3
 MAX_FETCH_TOKENS = 20_000  # a page is cut to this much text
 MAX_RESUMES = 3
+NO_THINKING_EFFORTS = ("low", "medium", "high")  # thinking can only be turned off at these
 AnthropicFactory = Callable[[str], anthropic.AsyncAnthropic]
 
 
@@ -206,6 +217,14 @@ class AnthropicProvider:
         haiku = profile.model.startswith("claude-haiku")
         tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
         fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
+        # Haiku can skip thinking (at effort up to high) and answer straight away;
+        # Sonnet and Opus refuse the request, so for them the flag changes nothing.
+        thinking = (
+            {"thinking": {"type": "disabled"}}
+            if haiku and not profile.thinking and profile.effort in NO_THINKING_EFFORTS
+            else {}
+        )
+        turns = cached_turns(turns)
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
@@ -217,6 +236,7 @@ class AnthropicProvider:
                     "system": system_blocks(system),
                     "messages": messages,
                     "output_config": {"effort": profile.effort},
+                    **thinking,
                     **fallback,
                     **({"tools": tools} if tools else {}),
                 }
@@ -296,14 +316,34 @@ def _web_steps(content) -> list[str]:
     return out
 
 
+CACHE = {"type": "ephemeral"}
+
+
 def system_blocks(system: str) -> list[dict]:
     """The system prompt as Claude blocks, cached up to where this turn's part (the
     time and recalled memories, which Kit's prompt puts last) begins, so the fixed
-    persona text is read from the cache on later turns."""
+    persona text is read from the cache on later turns. The brain moves that part
+    into Dan's message (``prompt.with_now``) before it gets here, so the whole
+    system prompt is usually the fixed part; a caller that leaves it in still
+    gets the split."""
     fixed, found, turn = system.rpartition(TURN_PART)
-    cached = {"type": "text", "text": fixed if found else system}
-    cached["cache_control"] = {"type": "ephemeral"}
+    cached = {"type": "text", "text": fixed if found else system, "cache_control": CACHE}
     return [cached, {"type": "text", "text": found + turn}] if found else [cached]
+
+
+def cached_turns(turns: list[dict]) -> list[dict]:
+    """The turns with a cache breakpoint on the last assistant one, so the whole
+    conversation up to Dan's new message is read from the cache next turn (the
+    system prompt comes first in the cache, so it's covered too). Nothing to mark
+    on a first message: the system prompt's breakpoint does the work."""
+    last = max((i for i, t in enumerate(turns) if t["role"] == "assistant"), default=-1)
+    if last < 0:
+        return list(turns)
+    marked = {
+        "role": "assistant",
+        "content": [{"type": "text", "text": turns[last]["content"], "cache_control": CACHE}],
+    }
+    return [*turns[:last], marked, *turns[last + 1 :]]
 
 
 def _add_anthropic_usage(total: Usage, u) -> None:
@@ -320,6 +360,8 @@ def _add_anthropic_usage(total: Usage, u) -> None:
 # --- OpenAI (GPT), through the Responses API --------------------------------
 
 OPENAI_URL = "https://api.openai.com/v1/responses"
+# The Responses API takes low, medium and high; the two efforts above are high there.
+OPENAI_EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}
 
 
 class OpenAIProvider:
@@ -342,7 +384,7 @@ class OpenAIProvider:
             "instructions": system,
             "input": [{"role": t["role"], "content": t["content"]} for t in turns],
             "max_output_tokens": profile.max_tokens,
-            "reasoning": {"effort": profile.effort},
+            "reasoning": {"effort": OPENAI_EFFORT[profile.effort]},
             "store": False,
         }
         if profile.web_search:
@@ -441,13 +483,33 @@ class GoogleProvider:
         )
 
 
+# A busy or stumbling provider (429, 5xx, a dropped connection) gets this many more
+# goes, this long apart, the way the Anthropic SDK retries for Claude.
+RETRY_BACKOFF_S = (1.0, 2.0)
+
+
 async def _post_json(
     client: httpx.AsyncClient, url: str, body: dict, headers: dict, profile: ModelProfile
 ) -> dict:
-    try:
-        response = await client.post(url, json=body, headers=headers, timeout=300)
-    except httpx.HTTPError as e:
-        raise CloudError(f"I couldn't reach {profile.name}. Is the internet up?") from e
+    for attempt, wait in enumerate((*RETRY_BACKOFF_S, None)):
+        try:
+            response = await client.post(url, json=body, headers=headers, timeout=300)
+        except httpx.HTTPError as e:
+            if wait is None:
+                raise CloudError(f"I couldn't reach {profile.name}. Is the internet up?") from e
+            log.info("%s didn't answer (%s); trying again in %ss", profile.name, e, wait)
+            await asyncio.sleep(wait)
+            continue
+        if wait is None or (response.status_code != 429 and response.status_code < 500):
+            break
+        log.info(
+            "%s answered %s (go %s); trying again in %ss",
+            profile.name,
+            response.status_code,
+            attempt + 1,
+            wait,
+        )
+        await asyncio.sleep(wait)
     if response.status_code in (401, 403):
         raise CloudError(f"{profile.name} rejected my API key.")
     if response.status_code == 429:
@@ -523,7 +585,14 @@ class Cloud:
         cost = estimate_cost(profile, done.usage)
         question = question or turns[-1]["content"]
         self.memory.record_spend(
-            done.model, done.usage.input_tokens, done.usage.output_tokens, cost, question
+            done.model,
+            done.usage.input_tokens,
+            done.usage.output_tokens,
+            cost,
+            question,
+            cached_tokens=done.usage.cached_tokens,
+            cache_write_tokens=done.usage.cache_write_tokens,
+            searches=done.usage.searches,
         )
         if done.refused:
             raise CloudError(f"{profile.name} declined to answer that one.")

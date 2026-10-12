@@ -31,6 +31,13 @@ Built-in profiles are `sonnet`, `opus`, `haiku`, `gpt-sol` (OpenAI) and
 one, under `[models]`. Each provider needs its own API key in the secrets
 folder ([[Settings and Data#Secrets]]).
 
+A profile's `thinking` flag says whether the model thinks before it answers.
+The built-in `haiku` profile has it **off**: everyday chat doesn't need it, and
+the first words arrive sooner without thinking tokens ahead of them. Only
+Claude Haiku takes the request (at `effort` up to `high`); Sonnet and Opus
+always think, so for them the flag changes nothing. Turn it back on with
+`thinking = true` under `[models.haiku]`.
+
 ## How much stays local
 
 | `routing.mode` | Local model answers | Cloud answers |
@@ -80,6 +87,28 @@ checks and key moments, then chat, so the nightly reflection always has the
 last few dollars. If the cloud can't answer for any reason, the local model
 answers and says why (`routing.fallback_to_local`).
 
+## Caching
+
+Claude charges a tenth of the price for the part of a prompt it has just read,
+and starts answering sooner, as long as the new prompt begins exactly as the
+last one did. So Kit lays every cloud request out stable-first:
+
+1. the fixed instructions (who Kit is, his self-sheet, the actions), with a
+   cache breakpoint at the end;
+2. the conversation so far, with a breakpoint on Kit's last turn;
+3. your new message, with this turn's part in front of it: the time, the
+   memories he recalled, how he feels, the one line about your PC, the
+   forecast and the list of your notes.
+
+Only part 3 is new each turn; the rest is read from the cache. A list that
+reorders itself (your notes, newest first) lives in part 3 for that reason.
+The local model gets the same layout when it reads ahead
+(`ollama.warm_up`), for the same reason.
+
+You can see it working: `kit memory spend` shows `cached 1830/2400` beside
+each call, the input tokens read from the cache over all of them. From the
+second message of a conversation that should be most of the input.
+
 ## Weather and web search
 
 Weather comes from a forecast service rather than a web search, and is usually
@@ -102,7 +131,7 @@ kit memory spend                             # this month's spend
 - [[Inner Life In Depth#In conversation]]: what the local model is coached with.
 
 > [!under-the-hood]- Under the hood: the code
-> - `src/kit/cloud.py`: Claude, GPT and Gemini behind one interface, the budget and skip order.
+> - `src/kit/cloud.py`: Claude, GPT and Gemini behind one interface, the cache breakpoints (`system_blocks`, `cached_turns`), the budget and skip order.
 > - `src/kit/local_model.py`: the local model through Ollama.
 > - `src/kit/settings.py`: `RoutingSettings`, `ModelProfile`, `CloudSettings`.
 > - `src/kit/brain.py`: `route` and the hand-offs.

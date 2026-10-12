@@ -717,7 +717,8 @@ def test_the_cloud_gets_his_mood_and_time_but_not_the_local_coaching(memory):
     brain, model, _ = make(memory, claude=claude, routing={"mode": "cloud-first"})
     collect(brain.chat("What's 17 times 23?"))
     system = " ".join(block["text"] for block in claude.calls[0]["system"])
-    assert "How you feel right now:" in system and "You and Dan:" in system
+    asked = claude.calls[0]["messages"][-1]["content"]  # this turn's part rides with the message
+    assert "How you feel right now:" in asked and "You and Dan:" in asked
     assert "The kind of thing you'd say" not in system and "Your last few lines" not in system
     assert "Examples of how you talk" in system
     assert "perk_up" in reactions(brain)  # the answer came back

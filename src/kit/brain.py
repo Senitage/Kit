@@ -751,6 +751,19 @@ class Brain:
         recent_refs = {str(m.id) for m in history if m.role == "user"}
         # The check runs while he recalls, so it costs next to no time.
         checking = asyncio.create_task(self._check_fact(text, settings)) if check_fact else None
+        role, chosen = route(text, settings)
+        # A weather question: the forecast is fetched while he recalls, not after.
+        forecasting = None
+        if role == LOCAL and self.weather is not None:
+            plainly = bool(WEATHER.search(text))
+            if plainly or (WHEN.search(text) and self._weather_recently()):
+                forecasting = asyncio.create_task(self._home_forecast(settings))
+        # The plain note request is spotted in a thread: a big vault is real work.
+        noting = (
+            asyncio.create_task(asyncio.to_thread(self._note_request, text))
+            if settings.nas.vault
+            else None
+        )
         recalled = await self.recall.for_turn(text, recent_refs)
         if checking is not None and (checked := await checking):
             asides[-1] = wrong_fact_aside(owner, checked)
@@ -762,7 +775,6 @@ class Brain:
         shown = {e.id for e in self.notebook.on_mind()}
         own = [h for h in recalled.own if h.item.id not in shown]
         recalled = replace(recalled, conversation=fresh, own=own)
-        role, chosen = route(text, settings)
         if expert_ask:
             role, chosen = EXPERT, True  # Dan said yes to the expert
         if self.jobs and not chosen:
@@ -800,14 +812,15 @@ class Brain:
             scene_detail = self.scene.detail(settings.persona.owner)
             emit({"type": "looked_around", "in_view": self.scene.in_view()})
         forecast = ""
-        if role == LOCAL and self.weather is not None:
-            plainly = bool(WEATHER.search(text))
-            if plainly or (WHEN.search(text) and self._weather_recently()):
-                forecast = await self._home_forecast(settings)
-                emit({"type": "weather", "place": settings.persona.location})
-                chosen = chosen or plainly  # a weather question stays local
-        if settings.nas.vault:
-            asked = request(text, self.notes.names(limit=ALL))
+        if forecasting is not None and role != LOCAL:
+            forecasting.cancel()  # bad news or a cloud job: the weather can wait
+        elif forecasting is not None:
+            forecast = await forecasting
+            self._weather_at = self.memory.clock()
+            emit({"type": "weather", "place": settings.persona.location})
+            chosen = chosen or bool(WEATHER.search(text))  # a weather question stays local
+        if noting is not None:
+            asked = await noting
             if asked is not None:
                 done, events = await asyncio.to_thread(self._do_note, asked, settings)
                 NOTE_DONE.set(done)
@@ -1077,7 +1090,6 @@ class Brain:
         )
 
     async def _home_forecast(self, settings: Settings) -> str:
-        self._weather_at = self.memory.clock()
         place = settings.persona.location
         try:
             return await self.weather.forecast(place, settings.persona.country)
@@ -1921,6 +1933,11 @@ class Brain:
         note = reply.action.text.strip() or heard.strip()
         self.pending_note = (reply.action.title.strip(), note) if note else None
 
+    def _note_request(self, text: str) -> Request | None:
+        """A plain note request in Dan's words (kit.notes.request), against every
+        note's name. Called in a thread: a big vault takes real time."""
+        return request(text, self.notes.names(limit=ALL))
+
     def _do_note(self, asked: Request, settings: Settings) -> tuple[str, list[Event]]:
         """Carry out a plain note request before the model answers, so a small model
         can't mistake "what's in my planner?" for "write that down", or ask first.
@@ -2077,6 +2094,15 @@ class Brain:
             user = with_now(user, now, settings.persona.owner)
         return [{"role": "system", "content": system}, *past, {"role": "user", "content": user}]
 
+    @staticmethod
+    def _cloud_messages(settings: Settings, system: str, past: list[dict], user: str) -> list[dict]:
+        """A cloud model's prompt: this turn's part of the instructions goes beside
+        Dan's message, so the instructions and the conversation so far read the same
+        every turn and the provider serves them from its prompt cache (kit.cloud)."""
+        system, now = split_turn(system)
+        user = with_now(user, now, settings.persona.owner)
+        return [{"role": "system", "content": system}, *past, {"role": "user", "content": user}]
+
     def _keep_warm(self) -> None:
         """Once Kit has finished, read the conversation into the local model ahead of
         Dan's next message (``reads_ahead``)."""
@@ -2152,11 +2178,7 @@ class Brain:
         if role == LOCAL:
             messages = self._local_messages(settings, system, past, user)
         else:
-            messages = [
-                {"role": "system", "content": system},
-                *past,
-                {"role": "user", "content": user},
-            ]
+            messages = self._cloud_messages(settings, system, past, user)
         job = None
         if role != LOCAL:
             job = Job(next(self._job_ids), question or text, settings.profile(role).name)
@@ -2208,7 +2230,7 @@ class Brain:
             elif reply.action.kind == "read_note" and not NOTE_DONE.get():
                 name = reply.action.text.strip() or reply.action.title.strip()
                 yield {"type": "reading_note", "note": name}
-                look_up = self._read_note(name, settings)
+                look_up = await asyncio.to_thread(self._read_note, name, settings)
                 if job:
                     job.steps.append(f"read your note '{name}'")
             if look_up is not None:

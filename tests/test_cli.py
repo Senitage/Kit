@@ -4,6 +4,7 @@ import pytest
 
 from fakes import FakeEmbedder, FakeModel
 from kit.cli import main
+from kit.memory import Memory
 
 OFFLINE = ["--skip", "gpu", "--skip", "ollama", "--skip", "tailscale", "--skip", "cloud"]
 
@@ -127,8 +128,12 @@ def test_memory_commands(paths, capsys, offline_models):
     assert "backed up to" in capsys.readouterr().out
     assert main(["memory", "forget", "2"]) == 0
     assert main(["memory", "forget", "2"]) == 1
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.record_spend("claude-haiku-5-5", 2400, 100, 0.001, "q", cached_tokens=1830)
+    memory.close()
     main(["memory", "spend"])
-    assert "$0.00 of $40.00" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "$0.00 of $40.00" in out and "in 2400  cached 1830/2400  out 100" in out
 
 
 def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):

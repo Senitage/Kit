@@ -31,7 +31,7 @@ Kit data folder/
 │   └── history/                 every earlier version, for undo
 ├── secrets/                     API keys and the API token (owner-only)
 ├── state/
-│   ├── memory.db                his memory: messages, facts, register, notebook, spend
+│   ├── memory.db                his memory: messages, facts, register, notebook, spend log
 │   ├── faces.json               people his eyes know (numbers, never pictures)
 │   ├── speech/                  his voice clip and recent speech
 │   └── evals/                   eval reports
