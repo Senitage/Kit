@@ -15,7 +15,7 @@ import os
 import re
 import secrets
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -35,6 +35,9 @@ class Device:
     kind: str
     created: str
     token_hash: str
+    # How to nudge it when Kit pipes up and its app is closed (kit.push): the push
+    # service ("kind": fcm) and the phone's token there. None until the app registers.
+    push: dict | None = None
 
 
 def _hash(token: str) -> str:
@@ -66,6 +69,7 @@ class Devices:
         try:
             raw = json.loads(self.file.read_text(encoding="utf-8"))
             found = {d["name"]: Device(**d) for d in raw.get("devices", [])}
+            found = {n: d for n, d in found.items() if isinstance(d.push, dict | None)}
         except (ValueError, TypeError, KeyError):
             found = {}  # a broken file pairs nothing, rather than letting anything in
         self._devices, self._mtime = found, mtime
@@ -93,9 +97,31 @@ class Devices:
         self._load()
         token = secrets.token_urlsafe(32)
         now = self.clock().isoformat(timespec="seconds")
-        self._devices[name] = Device(name, kind, now, _hash(token))
+        old = self._devices.get(name)
+        self._devices[name] = Device(name, kind, now, _hash(token), old.push if old else None)
         self._save()
         return token
+
+    def set_push(self, name: str, kind: str, token: str) -> bool:
+        """Remember how to nudge a device (the phone registered for notifications).
+        False if there's no such device."""
+        self._load()
+        device = self._devices.get(name)
+        if device is None:
+            return False
+        self._devices[name] = replace(device, push={"kind": kind, "token": token})
+        self._save()
+        return True
+
+    def clear_push(self, name: str) -> bool:
+        """Stop nudging a device (notifications turned off, or its token died)."""
+        self._load()
+        device = self._devices.get(name)
+        if device is None or device.push is None:
+            return False
+        self._devices[name] = replace(device, push=None)
+        self._save()
+        return True
 
     def forget(self, name: str) -> bool:
         """Unpair a device: its token stops working at once."""

@@ -82,7 +82,9 @@ flowchart TB
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
 | `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
-| `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
+| `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) and, for a phone, its push token | [[Phone App#Pairing]] |
+| `src/kit/push.py` | Nudging a phone through Firebase when Kit pipes up and its app is closed: the service account, the signed token, the content-free message, the per-hour cap | [[Phone App#He's with you]], [[Phone App In Depth#Nudges]] |
+| `src/kit/phone_context.py` | What the phone tells him, home or out and the battery, kept per phone and turned into one line for his prompt | [[Phone App#What the phone tells him]] |
 
 ## Setup and settings
 
@@ -168,5 +170,7 @@ flowchart TB
 | `pod/firmware/` | The Pod's program (Arduino, ESP32) and its bench tests | [[Pod In Depth]] |
 | `pod/cad/` | The Pod's printed parts as CadQuery code, and the renders | [[Building the Pod]] |
 | `pod/network/` | The Windows port forward that lets the Pod reach Kit in WSL | [[Pod In Depth#Reaching Kit inside WSL]] |
-| `.github/workflows/` | CI (`ci.yml`) and the desk app build (`desk-app.yml`) | [[Desk App Builds and Updates]] |
+| `android/core/` | Kit for Android's plain-Kotlin core: talking to Kit, the chat and outbox, the face rig, which pipe-ups to notify, home or out, the settings form | [[Phone App In Depth]] |
+| `android/app/` | Kit for Android itself: the screens, his face, nudges and notifications, the senses, the widget and tile, updates | [[Phone App In Depth]] |
+| `.github/workflows/` | CI (`ci.yml`), the desk app build (`desk-app.yml`) and the phone app build (`android.yml`) | [[Desk App Builds and Updates]], [[Phone App In Depth]] |
 | `docs/` | This vault | [[How These Docs Work]] |

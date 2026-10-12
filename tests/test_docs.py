@@ -184,6 +184,11 @@ def test_docs_paths_in_code_exist():
     files += [p for p in SRC.rglob("*") if p.suffix in {".py", ".json", ".toml", ".html", ".js"}]
     files += list((ROOT / ".github").rglob("*.yml")) + list((ROOT / "assets").rglob("*.md"))
     files += [p for p in (ROOT / "pod").rglob("*") if p.suffix in {".md", ".ino", ".h", ".py"}]
+    files += [
+        p
+        for p in (ROOT / "android").rglob("*")
+        if p.suffix in {".kt", ".kts", ".xml"} and "build" not in p.relative_to(ROOT).parts
+    ]
     missing = []
     for path in files:
         for found in DOCS_PATH.findall(_read(path)):

@@ -839,8 +839,40 @@ def cmd_devices(paths: KitPaths, args: argparse.Namespace) -> int:
     if not found:
         print("no devices paired; pair one with: kit pair phone")
     for d in found:
-        print(f"{d.name:<20} {d.kind:<8} paired {d.created}")
+        notifies = "  notifies" if d.push else ""
+        print(f"{d.name:<20} {d.kind:<8} paired {d.created}{notifies}")
     return 0
+
+
+def cmd_nudge(paths: KitPaths, transport: httpx.BaseTransport | None = None) -> int:
+    """Send a test nudge to every phone registered for notifications, through the
+    running brain (it has the Firebase service account loaded)."""
+    s = SettingsStore(paths).current().brain
+    host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
+    headers = {"Authorization": f"Bearer {api_token(paths)}"}
+    with httpx.Client(
+        base_url=f"http://{host}:{s.port}", headers=headers, timeout=60, transport=transport
+    ) as client:
+        try:
+            r = client.post("/api/nudge")
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            print(f"couldn't ask Kit: {e}. Is he running (kit serve)?")
+            return 1
+    got = r.json()
+    if not got.get("enabled"):
+        print(
+            "nudges are off: put the Firebase service account in the secrets folder as "
+            "firebase_service_account.json (docs: Phone Stage 2) and restart Kit"
+        )
+        return 1
+    sent = got.get("sent") or {}
+    if not sent:
+        print("no phone is registered for notifications yet; open the app with them on")
+        return 1
+    for name, how in sent.items():
+        print(f"{name:<20} {how}")
+    return 0 if all(how == "sent" for how in sent.values()) else 1
 
 
 def cmd_new_chat(paths: KitPaths) -> int:
@@ -1525,6 +1557,7 @@ def main(argv: list[str] | None = None) -> int:
     dsub = devices.add_subparsers(dest="devices_action")
     dsub.add_parser("list", help="list paired devices")
     dsub.add_parser("forget", help="unpair a device; its token stops working").add_argument("name")
+    sub.add_parser("nudge", help="send a test nudge to every phone registered for notifications")
     life = sub.add_parser(
         "life", help="Kit's mood and thoughts; poke, think or reflect now; his notebook"
     )
@@ -1686,6 +1719,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_pair(paths, args)
     if args.command == "devices":
         return cmd_devices(paths, args)
+    if args.command == "nudge":
+        return cmd_nudge(paths)
     if args.command == "serve":
         return cmd_serve(paths, args)
     if args.command == "chat":

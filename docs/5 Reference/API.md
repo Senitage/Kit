@@ -26,7 +26,8 @@ it. See [[Phone App#Pairing]].
 
 The pages (`/`, `/settings`, `/memory`) and the 3D face (`/face/...`) load
 without one: the pages ask for it, and the face is only a
-cartoon. See [[Privacy#Tokens and secrets]].
+cartoon. The face files carry an ETag, so a page that already has one (the
+phone's, on mobile data) gets "not changed" instead of the whole model again. See [[Privacy#Tokens and secrets]].
 
 ## Talking
 
@@ -116,6 +117,8 @@ else the device he last talked through). Other bodies only show the words.
 | `GET /api/bodies` | The bodies heard from since the brain started (online, last seen, last used) and the paired devices. Each PC running the desk app is one, `desk:` and its name |
 | `POST /api/devices/pair` | Pair a device from the device: send `{"name": "phone", "kind": "phone"}` with Kit's own token, get back the device's token. Pairing a name again replaces its token |
 | `DELETE /api/devices/{name}` | Unpair a device (Kit's token, or the device's own) |
+| `POST /api/devices/{name}/push`, `DELETE` | The device's push token, so Kit can nudge it when he pipes up and its app is closed: `{"kind": "fcm", "token": "..."}` (the device's own token, or Kit's). The answer's `nudges` says whether Kit can nudge at all (the Firebase account is set up). See [[Phone App#He's with you]] |
+| `POST /api/nudge` | A test nudge to every device with a push token (`kit nudge`; Kit's token only): `{"enabled", "sent": {"phone": "sent"}}` |
 
 The hello's answer is what the brain can do:
 
@@ -123,7 +126,7 @@ The hello's answer is what the brain can do:
 {"api": 1, "kit": "0.1.0", "name": "Kit",
  "body": {"id": "phone", "kind": "phone", "online": true, ...},
  "features": {"chat": 2, "messages": 2, "life": 1, "life_events": 1, "bodies": 1,
-              "pairing": 1, "voice_out": 1, ...},
+              "pairing": 1, "voice_out": 1, "push": 1, "phone_context": 1, ...},
  "events": ["mood", "fidget", "react", "state", "look", "doing", "quiet", "dials", "pipe_up"],
  "face": {"character": "kit3d", "style": "model", "page": "/face/?app=phone"},
  "unknown_abilities": []}
@@ -138,6 +141,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | Method and path | What it does |
 |---|---|
 | `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC. With several PCs, Kit keeps one report each; `GET` names the PC Dan's on (`host`) and lists them all (`pcs`) |
+| `POST /api/phone/context`, `GET /api/phone/context` | The phone's report, in words only: `{"place": "home" \| "out" \| "unknown", "since", "battery": 0-100, "charging"}` (the phone's own token, or Kit's as `phone`). The answer carries the `line` Kit sees; `GET` gives the latest report per phone. See [[Phone App#What the phone tells him]] |
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
 | `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know |
@@ -151,7 +155,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend, memory size, what the PC and eyes last said |
+| `GET /api/status` | Version, models, spend, memory size, what the PC, the phone and the eyes last said |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log or per day and model |
 

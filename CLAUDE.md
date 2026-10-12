@@ -32,6 +32,11 @@ in the docs vault: start at docs/Home.md.
   Kit's token go in `wifi_settings.h` and `kit_server.h`, which are gitignored;
   only the `.example.h` copies are committed. When Kit 2D's character sheet
   changes, rebuild `kit2d_sheet.h` with `pod/firmware/kit_pod_face/make_sheet.py`.
+- Kit for Android lives in `android/` (Kotlin): `android/core` is plain Kotlin
+  (`cd android && ./gradlew -p core test`), `android/app` the Android app. It
+  isn't part of the Python package and only uses the brain's API. When a
+  character sheet changes, rebuild the face numbers it's tested against with
+  `python tests/test_android.py`. Its signing key lives only in GitHub secrets.
 
 ## Docs
 

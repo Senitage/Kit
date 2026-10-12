@@ -82,6 +82,12 @@ which a face can't be rebuilt; `kit eyes forget NAME` deletes them. See
   can't pair or unpair other devices. Only a hash of it is kept. See [[Phone App#Pairing]].
 - **API keys** live in the data folder's `secrets/` or the environment, never
   in settings or the repo. See [[Settings and Data#Secrets]].
+- The phone's **nudges** go through Firebase (Google), but a nudge is only
+  "look at me": what he said never leaves the house, the phone fetches it over
+  Tailscale. The phone tells him only **home or out** and the battery, worked
+  out on the phone from a scrambled fingerprint of your home Wi-Fi; no
+  location, network name or address is ever sent or kept. Each sense has a
+  switch. See [[Phone App#What the phone tells him]].
 - The brain answers on this PC only (`brain.host = 127.0.0.1`) until you open
   it to the home network or Tailscale.
 - Cloud spend has a **monthly cap** (`cloud.monthly_cap_usd`). See

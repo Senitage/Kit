@@ -117,6 +117,7 @@ The full detail behind the plain-words notes.
 - [[Face In Depth]]
 - [[Desk App Builds and Updates]]
 - [[Pod In Depth]]
+- [[Phone App In Depth]]
 
 ### 4. Guides: set up and test
 - [[Running Kit]]: start, stop, restart and check Kit, his eyes and the Pod.
@@ -125,7 +126,7 @@ The full detail behind the plain-words notes.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
 - [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
-- [[Phone Stage 0 - Pairing]]
+- [[Phone Stage 0 - Pairing]], [[Phone Stage 1 - Pocket Kit]], [[Phone Stage 2 - He's With You]]
 
 ### 5. Reference
 - [[Commands]]: every `kit` command.

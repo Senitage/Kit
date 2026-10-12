@@ -261,3 +261,12 @@ How he looks. See [[Face]].
 | `character` | `retro` | Which character Kit is: how he looks and moves in the desk app, home_app and on his robots. Retro is the original glowing pill eyes; switch back any time. |
 | `hot_c` | `35.0` | When you ask about the weather, a dry day this hot or hotter (°C) shows as a hot day on his face: the sun beating down and him sweating. |
 | `pack_folder` | empty | A folder holding a 3D face pack (face.json and the .glb) to use for a 3D character instead of the one built into Kit, e.g. the pack folder your Blender project writes. Each rebuild shows on the desk within seconds. Empty: built in. |
+
+## phone
+
+Kit on your phone (the Android app). See [[Phone App#He's with you]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `notify` | `away` | When a pipe-up is sent to your phone as a notification, for when the app is closed. `away`: only while no PC is in use (the desk app shows it otherwise). `always`: every pipe-up. `never`: none. Needs the Firebase service account in the secrets folder; without it the phone looks for pipe-ups now and then instead. |
+| `notify_per_hour` | `2` | At most this many nudges an hour per phone, 0 to 20 (0: no cap). A pipe-up held back still shows the next time the app looks in. |

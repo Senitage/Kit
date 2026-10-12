@@ -72,6 +72,13 @@ menu checks now. A pull request's **test build** comes from that pull
 request's "Desk app" check; skip the Update offer while you test it, or it
 swaps back to the latest release. See [[Desk App Builds and Updates]].
 
+## The phone app
+
+Kit for Android checks GitHub for a new release when it opens (at most every
+six hours) and offers it in a banner; **Update** downloads and installs it.
+Menu > **Check for a new version** checks now. A pull request's test build is
+a pre-release on the Releases page. See [[Phone App In Depth#How updates reach the phone]].
+
 ## The eyes
 
 On the desk PC, `git pull` in the eyes' copy of Kit, `pip install -e ".[eyes]"`

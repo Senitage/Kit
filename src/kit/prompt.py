@@ -185,6 +185,7 @@ def system_prompt(
     pc: str = "",
     channel: str = "",
     quirks: list[str] | None = None,
+    phone: str = "",
     weather: bool = False,
     notes: bool = False,
     note_names: list[str] | None = None,
@@ -206,7 +207,8 @@ def system_prompt(
     handing to the expert waits for the owner's yes. ``busy`` describes work a
     cloud model is still doing in the background. ``pc`` is the desk app's one-line
     "right now" from Dan's PC, empty when it has never reported; ``scene`` the same
-    from Kit's eyes (kit.scene_context). ``channel`` says
+    from Kit's eyes (kit.scene_context) and ``phone`` from his phone (home or out,
+    kit.phone_context). ``channel`` says
     where Dan is talking from (kit.channels). ``sheet`` is Kit's self-sheet in his
     own words (kit.notebook), which replaces the list of traits unless ``traits``
     (the persona's backstory or traits changed since he wrote it). ``two_pass``: the
@@ -430,6 +432,7 @@ def system_prompt(
         *busy_block(busy or [], owner),
         *([channel] if channel else []),
         *([pc] if pc else []),
+        *([phone] if phone else []),
         *([scene] if scene else []),
         *voice_block(voice, owner, name, brief=cloud),
         *forecast_block(forecast, owner),

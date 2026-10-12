@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import secrets
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 import kit
 from kit.body_registry import API_VERSION, LIFE_EVENTS, BodyRegistry, Hello
 from kit.brain import Brain
+from kit.credentials import firebase_service_account
 from kit.devices import DEVICES_FILE, DeviceError, Devices
 from kit.face import character as characters
 from kit.face import serve as face_files
@@ -35,6 +37,9 @@ from kit.memory import CONVERSATION, DAYS, FACTS, SELF, Memory
 from kit.notes import NOTES
 from kit.paths import KitPaths
 from kit.pc_context import Snapshot
+from kit.phone_context import PhoneReport
+from kit.push import KINDS as PUSH_KINDS
+from kit.push import PIPE_UP, TEST, Nudger, ServiceAccount, nudge_when
 from kit.reply import Reply, voiced
 from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
@@ -77,6 +82,13 @@ class ChatIn(BaseModel):
 class PairIn(BaseModel):
     name: str = Field(min_length=1, max_length=40)  # what to call it, e.g. phone
     kind: str = Field("phone", max_length=20)
+
+
+class PushIn(BaseModel):
+    """How to nudge a device when Kit pipes up and its app is closed (kit.push)."""
+
+    kind: str = Field("fcm", max_length=20)
+    token: str = Field(min_length=1, max_length=4096)
 
 
 class SpeakIn(BaseModel):
@@ -173,6 +185,7 @@ def create_app(
     faces: KnownFaces | None = None,
     devices: Devices | None = None,
     registry: BodyRegistry | None = None,
+    nudger: Nudger | None = None,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
@@ -181,6 +194,12 @@ def create_app(
     if registry is None:
         registry = brain.bodies
     brain.bodies = registry
+    if nudger is None:
+        account_text = firebase_service_account(paths) if paths is not None else None
+        account = ServiceAccount.parse(account_text) if account_text else None
+        if account_text and account is None:
+            log.warning("the Firebase service account file doesn't make sense; no nudges")
+        nudger = Nudger(devices, account)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -188,7 +207,7 @@ def create_app(
         if summarise_every_s:
             tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
         if life_every_s:
-            tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
+            tasks.append(asyncio.create_task(_life_loop(brain, life_every_s, nudger=nudger)))
         if notes_every_s:
             tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
         if speech is not None and speech_check_s:
@@ -237,25 +256,32 @@ def create_app(
 
     # Kit's 3D face page and its files. No token: it's a cartoon face, and the desk
     # app, home_app and robots open it as a plain page (kit.face.serve).
-    def _face_file(data: bytes, name: str, cache: bool = False) -> Response:
-        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache"}
+    def _face_file(
+        data: bytes, name: str, cache: bool = False, if_none_match: str = ""
+    ) -> Response:
+        """A face file, with an ETag: a page that has the file already (the phone's,
+        on mobile data, with a model of several megabytes) is told it hasn't changed."""
+        tag = '"' + hashlib.sha256(data).hexdigest()[:20] + '"'
+        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache", "ETag": tag}
+        if tag in (t.strip() for t in if_none_match.split(",")):
+            return Response(status_code=304, headers=headers)
         return Response(data, media_type=face_files.content_type(name), headers=headers)
 
     @app.get("/face/")
-    def face_page() -> Response:
-        return _face_file(face_files.page_file("index.html"), "index.html")
+    def face_page(if_none_match: Annotated[str, Header()] = "") -> Response:
+        return _face_file(face_files.page_file("index.html"), "index.html", False, if_none_match)
 
     @app.get("/face/{name}")
-    def face_page_file(name: str) -> Response:
+    def face_page_file(name: str, if_none_match: Annotated[str, Header()] = "") -> Response:
         try:
-            return _face_file(face_files.page_file(name), name)
+            return _face_file(face_files.page_file(name), name, False, if_none_match)
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
 
     @app.get("/face/vendor/{name}")
-    def face_vendor(name: str) -> Response:
+    def face_vendor(name: str, if_none_match: Annotated[str, Header()] = "") -> Response:
         try:
-            return _face_file(face_files.vendor_file(name), name, cache=True)
+            return _face_file(face_files.vendor_file(name), name, True, if_none_match)
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
 
@@ -283,7 +309,10 @@ def create_app(
 
     @app.get("/face/model/{character}/{file}")
     def face_model(
-        character: str, file: str, app_name: Annotated[str, Query(alias="app")] = "desk"
+        character: str,
+        file: str,
+        app_name: Annotated[str, Query(alias="app")] = "desk",
+        if_none_match: Annotated[str, Header()] = "",
     ) -> Response:
         if character not in characters.presets():
             raise HTTPException(404, "no such character")
@@ -293,7 +322,7 @@ def create_app(
             )
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
-        return _face_file(data, file)
+        return _face_file(data, file, False, if_none_match)
 
     @app.get("/api/face/presets", dependencies=auth)
     def face_presets() -> dict:
@@ -324,6 +353,7 @@ def create_app(
             if brain.recall.embed_problem
             else "words and meaning",
             "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
+            "phone": brain.phones.now_line(s.persona.owner) or "the phone hasn't reported yet",
             "eyes": brain.scene.now_line(s.persona.owner) or "the eyes haven't reported yet",
             "eyes_paused": brain.eyes_paused,
         }
@@ -734,6 +764,8 @@ def create_app(
             "eyes": 1,
             "bodies": 1,
             "pairing": 1,
+            "push": 1,  # nudges when a pipe-up should reach a closed app
+            "phone_context": 1,
         }
         if speech is not None:
             features["voice_out"] = 1
@@ -798,9 +830,68 @@ def create_app(
         return {
             "bodies": registry.listing(),
             "devices": [
-                {"name": d.name, "kind": d.kind, "created": d.created} for d in devices.all()
+                {
+                    "name": d.name,
+                    "kind": d.kind,
+                    "created": d.created,
+                    "notifies": d.push is not None,
+                }
+                for d in devices.all()
             ],
         }
+
+    # Nudging a phone when Kit pipes up and its app is closed (kit.push)
+
+    @app.post("/api/devices/{name}/push")
+    def register_push(
+        name: str,
+        body: PushIn,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """A device says how to nudge it (its push token). The device itself, or
+        Kit's token."""
+        if device is not None and device != name:
+            _shared_only(device)
+        if body.kind not in PUSH_KINDS:
+            raise HTTPException(422, f"push kind must be one of {', '.join(PUSH_KINDS)}")
+        if not devices.set_push(name, body.kind, body.token):
+            raise HTTPException(404, f"no paired device called {name}")
+        return {"ok": True, "nudges": nudger.enabled}
+
+    @app.delete("/api/devices/{name}/push")
+    def unregister_push(
+        name: str,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """Stop nudging a device (notifications turned off on the phone)."""
+        if device is not None and device != name:
+            _shared_only(device)
+        devices.clear_push(name)
+        return {"ok": True}
+
+    @app.post("/api/nudge")
+    async def nudge_phones(device: str | None = Depends(require_token)) -> dict:  # noqa: B008
+        """Send a test nudge to every phone registered for them (`kit nudge`)."""
+        _shared_only(device)
+        if not nudger.enabled:
+            return {"enabled": False, "sent": {}}
+        return {"enabled": True, "sent": await nudger.nudge_all(TEST)}
+
+    # Where Dan's phone says he is (kit.phone_context)
+
+    @app.post("/api/phone/context")
+    def phone_report(
+        report: PhoneReport,
+        device: str | None = Depends(require_token),  # noqa: B008
+    ) -> dict:
+        """The phone's report: home or out (decided on the phone), its battery."""
+        brain.phones.report(device or "phone", report)
+        return {"ok": True, "line": brain.phones.now_line(store.current().persona.owner)}
+
+    @app.get("/api/phone/context", dependencies=auth)
+    def phone_context() -> dict:
+        owner = store.current().persona.owner
+        return {**brain.phones.as_dict(), "line": brain.phones.now_line(owner)}
 
     @app.post("/api/life/poke", dependencies=auth)
     async def life_poke() -> dict:
@@ -904,7 +995,9 @@ async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: flo
         await asyncio.sleep(every_s)
 
 
-async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
+async def _life_loop(
+    brain: Brain, every_s: float, step_s: float = 1.0, nudger: Nudger | None = None
+) -> None:
     """Kit's heartbeat: drives move, he fidgets, and now and then he pipes up. A
     hello waiting to be said (Dan just sat down, or came back to the keyboard)
     gets a beat straight away rather than at the next one, so he says hi while
@@ -923,12 +1016,12 @@ async def _life_loop(brain: Brain, every_s: float, step_s: float = 1.0) -> None:
         greeted = home  # one early beat per hello: quiet hours or a snooze can hold it
         last = loop.time()
         try:
-            await life_tick(brain)
+            await life_tick(brain, nudger)
         except Exception:
             log.exception("Kit's heartbeat failed")
 
 
-async def life_tick(brain: Brain) -> None:
+async def life_tick(brain: Brain, nudger: Nudger | None = None) -> None:
     """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
     thought of his own. Neither happens while he's answering something. Once a day
     he may think of a small game to suggest, a getting-to-know-you question, or a
@@ -944,7 +1037,7 @@ async def life_tick(brain: Brain) -> None:
     if brain.jobs or brain.talking():
         return
     if reason is not None:
-        await pipe_up_now(brain, reason)
+        await pipe_up_now(brain, reason, nudger)
         return
     trigger = brain.life.think_now()
     if trigger is None:
@@ -957,10 +1050,12 @@ async def life_tick(brain: Brain) -> None:
     await asyncio.wait({brain._musing})
 
 
-async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
+async def pipe_up_now(brain: Brain, reason: str, nudger: Nudger | None = None) -> dict | None:
     """Kit says something unprompted, and every body (desk app, arm) is told: the
     line, the line as his voice says it (``voice``, with any sounds) and whether to
-    say it out loud (``aloud``: not when his eyes see nobody there to hear it)."""
+    say it out loud (``aloud``: not when his eyes see nobody there to hear it). A
+    phone whose app is closed is nudged to come and get it (kit.push), when the
+    ``phone`` settings say so."""
     reply = None
     async for event in brain.pipe_up(reason):
         if event["type"] == "reply":
@@ -979,6 +1074,14 @@ async def pipe_up_now(brain: Brain, reason: str) -> dict | None:
                 "to": brain.voice_body(),
             }
         )
+        if nudger is not None and nudger.enabled:
+            phone = brain.settings().phone
+            if nudge_when(phone.notify, brain.pc_in_use()):
+                sent = await nudger.nudge_all(
+                    PIPE_UP, {"id": str(reply["message_id"])}, phone.notify_per_hour
+                )
+                if sent:
+                    log.info("nudged: %s", ", ".join(f"{k} {v}" for k, v in sent.items()))
         return reply["reply"]
     return None
 
