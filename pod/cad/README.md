@@ -55,7 +55,7 @@ If those are good, print `head`, `body`, `cap`, `base`, `cover`, then the small 
 
 ## Screws
 
-- 4 x M3 x 10 countersunk + 4 x M3 nuts for the screen board (studs option; the pins option needs none)
+- 4 x M2 x 8 countersunk + 4 x M2 nuts for the screen board (studs option; the pins option needs none)
 - 4 x M3 x 10 for the back cover
 - 3 x M3 x 16 for the body, plate and cap
 - 3 x M3 x 8 countersunk for the base
@@ -69,11 +69,11 @@ Pictures for every step: `assembly/kit_pod_v2_assembly_guide.pdf` (one PNG per s
 2. Sandwich the plate between body and cap with the three long screws from below.
 3. Press the cross horn into the pocket under the neck (drop of glue). Push the neck onto the turn servo and fit the horn screw through the centre hole from above.
 4. Press the single horn into the pocket on the inside of the horn arm (the arm on your right as Kit faces you), arm pointing down, drop of glue.
-5. Lower the head onto the neck arms; the pin on the other arm drops into the notch.
+5. Hold the head behind the neck, level, and slide it forward: the arms go in through the open ends of the floor slots, and the pin on the other arm slides into its bracket until it seats on the shelf.
 6. Drop the tilt servo in through the back of the head, pushed over toward the pin side, lower it into the U-shaped wall, then slide it across so its shaft goes into the horn. There's 4.5 mm of room for this.
 7. Two tab screws into the wall, then the horn screw through the small hole below the ear on the horn side. The horn is then trapped between the shaft and the arm, so the head can't come off.
 8. Screen, two options (print both and pick):
-   - **studs** (`face`): push 4 countersunk M3 x 10 screws in from the front of the face plate, glue the plate into the head (keep glue off the screws), put the screen over the screw ends and add an M3 nut to each. The nuts come off from inside the head, so the screen can still come out.
+   - **studs** (`face`): push 4 countersunk M2 x 8 screws in from the front of the face plate, glue the plate into the head (keep glue off the screws), put the screen over the screw ends and add an M2 nut to each. The nuts come off from inside the head, so the screen can still come out.
    - **pins** (`face_pins`): glue the plate in, push the screen onto the four pins, a dab of hot glue on each pin end. Hot glue peels off if the screen needs to come out.
 9. Glue the ear rings into the side grooves. Back cover on with four screws.
 10. ESP32 stands in the base slots, USB to the hole at the back left. Base on with three screws, feet glued in.
@@ -89,5 +89,7 @@ Dan's measurements (2026-10-10) are in the model:
 - Servo shaft top is 12.2 mm above the top of the tabs.
 - Servo is 20 mm from the top of its tabs to its bottom (2026-10-11).
 - Servo horns, end to end: the cross horn 36 mm, the single horn 22 mm (2026-10-11). Their pockets in the neck are 0.5 mm bigger all round.
+- With the single horn on, the servo is 34.2 mm from its bottom to the horn's face, against 32 without (2026-10-12): the horn stands 2.2 mm past the shaft, and the horn arm sits that much further out so the servo's tabs meet their wall.
+- The screen board's fixing holes are 2 mm, so the studs face takes M2 screws and its pins are 1.6 mm (2026-10-12).
 
 The neck arms reach a little past the round base (the cap's opening limits its size), so their outer undersides flare out at 45 degrees from the base's edge.
