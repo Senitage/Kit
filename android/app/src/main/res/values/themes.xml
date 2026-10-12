@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; this is only the window behind it while it starts. -->
+    <style name="Theme.Kit" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/kit_night</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

@@ -30,3 +30,11 @@ pod/cad/*.step
 pod/cad/*.stl
 pod/cad/assembly/
 pod/cad/render/
+
+# Kit for Android's builds (android/)
+android/.gradle/
+android/**/build/
+android/.kotlin/
+android/core/.gradle/
+android/core/.kotlin/
+android/local.properties

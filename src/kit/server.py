@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import secrets
@@ -237,25 +238,32 @@ def create_app(
 
     # Kit's 3D face page and its files. No token: it's a cartoon face, and the desk
     # app, home_app and robots open it as a plain page (kit.face.serve).
-    def _face_file(data: bytes, name: str, cache: bool = False) -> Response:
-        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache"}
+    def _face_file(
+        data: bytes, name: str, cache: bool = False, if_none_match: str = ""
+    ) -> Response:
+        """A face file, with an ETag: a page that has the file already (the phone's,
+        on mobile data, with a model of several megabytes) is told it hasn't changed."""
+        tag = '"' + hashlib.sha256(data).hexdigest()[:20] + '"'
+        headers = {"Cache-Control": "max-age=86400" if cache else "no-cache", "ETag": tag}
+        if tag in (t.strip() for t in if_none_match.split(",")):
+            return Response(status_code=304, headers=headers)
         return Response(data, media_type=face_files.content_type(name), headers=headers)
 
     @app.get("/face/")
-    def face_page() -> Response:
-        return _face_file(face_files.page_file("index.html"), "index.html")
+    def face_page(if_none_match: Annotated[str, Header()] = "") -> Response:
+        return _face_file(face_files.page_file("index.html"), "index.html", False, if_none_match)
 
     @app.get("/face/{name}")
-    def face_page_file(name: str) -> Response:
+    def face_page_file(name: str, if_none_match: Annotated[str, Header()] = "") -> Response:
         try:
-            return _face_file(face_files.page_file(name), name)
+            return _face_file(face_files.page_file(name), name, False, if_none_match)
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
 
     @app.get("/face/vendor/{name}")
-    def face_vendor(name: str) -> Response:
+    def face_vendor(name: str, if_none_match: Annotated[str, Header()] = "") -> Response:
         try:
-            return _face_file(face_files.vendor_file(name), name, cache=True)
+            return _face_file(face_files.vendor_file(name), name, True, if_none_match)
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
 
@@ -283,7 +291,10 @@ def create_app(
 
     @app.get("/face/model/{character}/{file}")
     def face_model(
-        character: str, file: str, app_name: Annotated[str, Query(alias="app")] = "desk"
+        character: str,
+        file: str,
+        app_name: Annotated[str, Query(alias="app")] = "desk",
+        if_none_match: Annotated[str, Header()] = "",
     ) -> Response:
         if character not in characters.presets():
             raise HTTPException(404, "no such character")
@@ -293,7 +304,7 @@ def create_app(
             )
         except face_files.FaceFileMissing as e:
             raise HTTPException(404, "no such face file") from e
-        return _face_file(data, file)
+        return _face_file(data, file, False, if_none_match)
 
     @app.get("/api/face/presets", dependencies=auth)
     def face_presets() -> dict:

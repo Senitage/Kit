@@ -1,0 +1,94 @@
+name: Android app
+
+# Tests and builds Kit for Android (android/), the phone app. Each run's APK is
+# attached to the run as an artifact. When Kit's signing key is in the repo's
+# secrets (KIT_ANDROID_KEYSTORE, KIT_ANDROID_KEYSTORE_PASSWORD), builds of main are
+# published as a GitHub Release tagged android-v<version>, which is where the app's
+# update check looks, and a pull request's build as a pre-release test build.
+# See docs/3 Deep Dives/Phone App In Depth.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "src/kit/face/characters/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "src/kit/face/characters/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to publish releases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    env:
+      KIT_BUILD_NUMBER: ${{ github.run_number }}
+      KIT_BUILD_PULL: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Kit's signing key (from the repo's secrets)
+        env:
+          KEYSTORE: ${{ secrets.KIT_ANDROID_KEYSTORE }}
+          PASSWORD: ${{ secrets.KIT_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/kit.jks"
+            echo "KIT_KEYSTORE_FILE=$RUNNER_TEMP/kit.jks" >> "$GITHUB_ENV"
+            echo "KIT_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+            echo "SIGNED=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No KIT_ANDROID_KEYSTORE secret: this build can't update an installed Kit, so it isn't published."
+          fi
+      - name: Core tests (talking to Kit, the chat, the face rig)
+        run: ./gradlew -p core test
+      - name: Build the app
+        run: ./gradlew assembleRelease
+      - name: Name the APK
+        id: apk
+        run: |
+          version="0.1.${KIT_BUILD_NUMBER}"
+          mv app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/Kit-${version}.apk"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kit-for-Android
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - name: Publish the release (main)
+        if: env.SIGNED == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.apk.outputs.version }}
+        run: |
+          gh release create "android-v$VERSION" app/build/outputs/apk/release/*.apk \
+            --title "Kit for Android $VERSION" --target "$GITHUB_SHA" --latest=false \
+            --notes "Kit for Android $VERSION, built from $GITHUB_SHA. Install: open this page on your phone and tap the .apk below. Kit already installed? It offers this update by itself."
+      - name: Publish the test build (pull request)
+        if: env.SIGNED == '1' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.apk.outputs.version }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # One test build per pull request: the last one goes first.
+          gh release list --limit 100 --json tagName,name,isPrerelease \
+            --jq ".[] | select(.isPrerelease and (.name | endswith(\"(PR #$PR)\"))) | .tagName" |
+            while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done
+          gh release create "android-v$VERSION" app/build/outputs/apk/release/*.apk \
+            --title "Kit for Android $VERSION test build (PR #$PR)" --target "$SHA" --prerelease --latest=false \
+            --notes "A test build of pull request #$PR, built from $SHA. Install it over Kit for Android to try it; the next release of main replaces it."

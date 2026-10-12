@@ -130,3 +130,19 @@ def test_the_version_is_steady_while_nothing_changes(pack):
     assert serve.version("kit3d", "desk") == serve.version("kit3d", "desk")
     assert serve.version("kit3d", "desk", str(pack)) != serve.version("kit3d", "desk")
     assert serve.version("retro", "desk") != serve.version("kit3d", "desk")
+
+
+def test_face_files_answer_not_changed_to_a_page_that_has_them(client):
+    # The phone on mobile data keeps the model it has (several megabytes).
+    first = client.get("/face/model/kit3d/kit_face.glb?app=phone")
+    assert first.status_code == 200
+    tag = first.headers["etag"]
+    again = client.get("/face/model/kit3d/kit_face.glb?app=phone", headers={"If-None-Match": tag})
+    assert again.status_code == 304
+    assert again.content == b""
+    assert again.headers["etag"] == tag
+    url = "/face/model/kit3d/kit_face.glb?app=phone"
+    changed = client.get(url, headers={"If-None-Match": '"old"'})
+    assert changed.status_code == 200
+    page = client.get("/face/")
+    assert client.get("/face/", headers={"If-None-Match": page.headers["etag"]}).status_code == 304

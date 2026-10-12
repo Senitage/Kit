@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kit's two glowing eyes, on the 108dp adaptive icon (the middle 72dp shows). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF4DFFC0"
+        android:pathData="M38,42 h6 a4.5,4.5 0 0 1 4.5,4.5 v15 a4.5,4.5 0 0 1 -4.5,4.5 h-6 a4.5,4.5 0 0 1 -4.5,-4.5 v-15 a4.5,4.5 0 0 1 4.5,-4.5 z" />
+    <path
+        android:fillColor="#FF4DFFC0"
+        android:pathData="M64,42 h6 a4.5,4.5 0 0 1 4.5,4.5 v15 a4.5,4.5 0 0 1 -4.5,4.5 h-6 a4.5,4.5 0 0 1 -4.5,-4.5 v-15 a4.5,4.5 0 0 1 4.5,-4.5 z" />
+    <path
+        android:strokeColor="#FF4DFFC0"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M50,74 q4,3.5 8,0" />
+</vector>
