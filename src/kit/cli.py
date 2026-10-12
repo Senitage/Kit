@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 
-from kit import checks
+from kit import checks, docs_check
 from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
@@ -1649,6 +1649,15 @@ def main(argv: list[str] | None = None) -> int:
     ]:
         tsub.add_parser(name, help=text).add_argument("id", type=int)
 
+    docs = sub.add_parser("docs", help="the docs vault: what's gone stale")
+    dosub = docs.add_subparsers(dest="docs_action", required=True)
+    dcheck = dosub.add_parser(
+        "check", help="report rows of Where Kit Is Up To that say open for a landed pull request"
+    )
+    dcheck.add_argument(
+        "--vault", type=Path, default=None, help="the docs folder (default: the checkout's)"
+    )
+
     ev = sub.add_parser(
         "eval",
         help="test the local model's replies, memory recall, routing, voice, how good a "
@@ -1706,6 +1715,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_eyes(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "docs":
+        return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":
         return asyncio.run(_weather(paths, args.place))
     if args.command == "eval":

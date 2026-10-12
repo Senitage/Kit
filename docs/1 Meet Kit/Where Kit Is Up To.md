@@ -6,7 +6,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 
 # Where Kit is up to
 
-*As of 11 October 2026.* The plan behind this is in [[Roadmap]].
+*As of 12 October 2026.* The plan behind this is in [[Roadmap]].
 
 ## At a glance
 
@@ -29,6 +29,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Faster voice: Chatterbox Turbo's token loop as a CUDA graph, and no 2 s wait connecting from Windows | Done | [[Voice#Faster on a graphics card]], [[Desk App#Connections]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done | [[Phone Stage 0 - Pairing]] |
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
+| Review fixes: the settings file holds only what you changed, every desk test runs in CI, the privacy note says what reaches the cloud, `kit docs check` | Open, pull request (number to come) | [[Settings Reference#What the file holds]], [[Privacy]], [[Commands#The docs]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
@@ -78,4 +79,6 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 
 When a pull request merges, move its row from "Open" to "Done" above, add it
 to the history table, and update the notes it changed. The checklist is in
-[[How These Docs Work#When you change Kit]].
+[[How These Docs Work#When you change Kit]]. `kit docs check` reads this note
+and points out a row that says open for a pull request the history table
+says landed ([[Commands#The docs]]).
