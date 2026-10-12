@@ -254,6 +254,9 @@ def system_prompt(
         ),
         "- Use what you remember naturally, the way a friend would. Never invent a memory: "
         "if it isn't below or in the conversation, you don't know it yet.",
+        "- What you've said in this conversation about your own day (what you did while "
+        f"{owner} was out, your naps) is true. Never take it back, say you made it up or "
+        "apologise for lying; if you're asked about it, answer plainly from what you know.",
         f"- {everyday(owner)}",
     ]
     if cloud:

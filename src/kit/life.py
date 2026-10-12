@@ -1697,6 +1697,31 @@ class Life:
         done = [f"{doing} ({at:%H:%M})" for at, doing in today[-4:]]
         return f"While {owner} was away today you were: {'; '.join(done)}."
 
+    def own_day_line(self, owner: str) -> str:
+        """What he really did and slept today, for every prompt: with it only in
+        the hello, a later reply saw no sign of it and owned up to "making it up"."""
+        now = self.clock()
+        parts = []
+        did = [(at, doing) for at, doing, _ in self.did if at.date() == now.date()]
+        if did:
+            parts.append(
+                f"while {owner} was away you were "
+                + "; ".join(f"{doing} ({at:%H:%M})" for at, doing in did[-4:])
+            )
+        slept = [
+            f"{start:%H:%M} to {end:%H:%M}" if end else f"from {start:%H:%M}"
+            for start, end, _, _ in self.slept
+            if start.date() == now.date()
+        ]
+        if slept:
+            parts.append("you slept " + ", ".join(slept[-3:]))
+        if not parts:
+            return ""
+        return (
+            "Your own day so far, all true (it really happened, so never say you made it "
+            "up): " + "; and ".join(parts) + "."
+        )
+
     def said_goodbye(self, text: str) -> None:
         """Dan is heading off ("off to lunch"): Kit will ask how it went when he's back."""
         self.goodbye = (self.clock(), " ".join(text.split()))
@@ -2607,7 +2632,7 @@ class Life:
         examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
         quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
         close = closeness_words(self.closeness)[1]
-        when = self.time_line(owner)
+        when = " ".join(x for x in (self.time_line(owner), self.own_day_line(owner)) if x)
         style = cheek_style(cheek)
         if self.bad_night():
             style = BAD_NIGHT_STYLE

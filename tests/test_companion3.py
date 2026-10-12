@@ -175,6 +175,11 @@ def test_dan_coming_back_ends_the_pastime_and_the_hello_says_what_he_did():
     # A restart remembers what he did today.
     again = Life(life.settings, pc, clock, random.Random(2), store)
     assert "watching the rain" in again.did_line("Dan")
+    # Every later reply knows it's true, so he never "owns up" to making it up.
+    for _ in range(3):
+        life.note_chat("so what else?")
+        when = life.voice("Dan", [], [], []).when
+        assert "watching the rain" in when and "never say you made it up" in when
 
 
 def test_pastimes_follow_his_strongest_drive_and_rest_between_goes():

@@ -259,7 +259,9 @@ as usual, so raise it (45 is a good start) to give him time to himself. In
 quiet hours there's none of this: he just goes to sleep.
 
 Everything he did goes in his notebook. Ask "what did you get up to?" and he
-tells you just that; his hello when you're back mentions it; and on a day he
+tells you just that; his hello when you're back mentions it, and every reply
+that day knows it (and his naps) really happened, so he never takes it back as
+"made up"; and on a day he
 spent entirely alone, the nightly journal is one plain line saying so, written
 without a model. `kit life` shows where he is: here, away, alone or asleep.
 
