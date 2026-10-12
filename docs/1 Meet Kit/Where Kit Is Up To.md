@@ -29,6 +29,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Faster voice: Chatterbox Turbo's token loop as a CUDA graph, and no 2 s wait connecting from Windows | Done | [[Voice#Faster on a graphics card]], [[Desk App#Connections]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done | [[Phone Stage 0 - Pairing]] |
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
+| Inner life fixes: sulks pass, quiet on a bad night, the keyboard beats the camera, a restart mid-day, look events apart, the plan says what he brought up | Open, pull request (number to come) | [[Inner Life]], [[Inner Life In Depth]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

@@ -715,7 +715,10 @@ def create_app(
         """Fidgets and pipe-ups after event ``after``. Waits up to ``wait`` seconds for
         one, so the desk app (and later the arm) hears about them at once."""
         events = await brain.life.wait_for_events(after, wait)
-        return {"events": events, "last": brain.life.state()["last_event"]}
+        found = {"events": events, "last": brain.life.state()["last_event"]}
+        if brain.life.missed_since(after):
+            found["resync"] = True  # older events are gone: re-read /api/life
+        return found
 
     # Kit's bodies (kit.body_registry) and paired devices (kit.devices)
 

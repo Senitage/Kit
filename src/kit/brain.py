@@ -82,6 +82,7 @@ from kit.life import (
     LAUGH,
     REPLY_FEELINGS,
     SHUSH,
+    THOUGHT_FEELS,
     UNSHUSH,
     Homecoming,
     Life,
@@ -128,6 +129,7 @@ from kit.notebook import (
     asks_later,
     basis,
     later_want,
+    share_kind,
     thread_in,
     tomorrow_morning,
 )
@@ -283,6 +285,11 @@ MIND: contextvars.ContextVar[str] = contextvars.ContextVar("mind", default="")
 PRIORITY: contextvars.ContextVar[str] = contextvars.ContextVar("priority", default="chat")
 # How Dan seems, as the model answering this turn read it (``life.read_mood`` meaning).
 READ: contextvars.ContextVar[dict | None] = contextvars.ContextVar("read", default=None)
+# Which of the things on his mind this turn's plan says he's bringing up (by number), or
+# None when there was no plan to say (then the words are matched, ``Notebook.said_in``).
+BROUGHT_UP: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "brought_up", default=None
+)
 READ_ON: contextvars.ContextVar[bool] = contextvars.ContextVar("read_on", default=False)
 MOOD_CALIBRATION = "mood_calibration"  # kit_self: the last `kit eval mood` (kit.evals)
 CLOSE = re.compile(
@@ -659,6 +666,7 @@ class Brain:
         now = self.memory.clock()
         game = self.life.game_out  # a game he suggested, which this may answer
         READ.set(None)
+        BROUGHT_UP.set(None)
         READ_ON.set(self._reading_mood(settings))
         night = bad_night_in(text) if settings.life.bad_night else ""
         felt = feeling_from(text, owner)
@@ -812,7 +820,7 @@ class Brain:
         shown = showing.done()
         if shown:
             self._emit_show(showing, emit)
-        emotion, reply_id = "", None
+        emotion, reply_id, source = "", None, LOCAL
         async for event in self._converse(
             text,
             history,
@@ -827,6 +835,7 @@ class Brain:
         ):
             if event["type"] == "reply":
                 emotion, reply_id = event["reply"]["emotion"], event["message_id"]
+                source = str(event.get("source", LOCAL))
                 if self.jobs:
                     event = {**event, "question": text}
             emit(self._track(event, said))
@@ -853,7 +862,9 @@ class Brain:
             if picked is not None:  # the thread the new chat picked up: asked, once
                 self.notebook.mark_said(picked.id)
                 self._asked_in([picked.id], reply_id)
-            self._asked_in(self.notebook.said_in(whole, owner), reply_id)  # brought it up himself
+            # What he brought up himself: the plan says which (by number), or failing a
+            # plan (a cloud answer, one JSON pass), his words are matched to the wants.
+            self._asked_in(self._brought_up(whole, owner, voice, source), reply_id)
             if bit is not None and self.notebook.bit_said(bit, whole):
                 self.notebook.bit_used(bit.id)
                 self._bit_out = (bit.id, now)
@@ -893,6 +904,17 @@ class Brain:
         if not key:
             return "", ""
         return interview_aside(owner, self.daily.question(item)), self.daily.name_answer(key, text)
+
+    def _brought_up(self, said: str, owner: str, voice: Voice, source: str = LOCAL) -> list[int]:
+        """The wants his reply brought up, now said: as the plan declared (numbers into
+        ``voice.mind``), so a want asked in other words counts. The words are matched
+        too (``Notebook.said_in``) as a backstop, and alone when there was no plan to
+        say (a cloud answer, a one-pass reply)."""
+        numbers = BROUGHT_UP.get()
+        done = []
+        if numbers is not None and source == LOCAL:
+            done = self.notebook.brought_up(numbers, voice.mind_ids)
+        return done + [i for i in self.notebook.said_in(said, owner) if i not in done]
 
     def _asked_in(self, item_ids: list[int], message_id: int | None) -> None:
         """He just brought these up: a getting-to-know-you question counts as asked, and
@@ -1230,7 +1252,7 @@ class Brain:
             aim, about = aim_of(share, owner, self.memory.clock())  # "tell Dan", not read out
         now = self.memory.clock()
         bar = settings.life.pipe_up_bar
-        if bar > 0 and home is None and reason not in ("nag", "visitor"):
+        if bar > 0 and home is None and reason not in ("nag", "visitor", "check_in"):
             score, parts = self._pipe_up_score(reason, about, history, now)
             if score < bar:
                 why = f"had something to say, but it scored {score:.2f} of {bar:.2f} ({parts})"
@@ -1241,10 +1263,12 @@ class Brain:
         if home is not None and settings.life.chat_opener:
             also, picked = self._pick_up(history, now, owner)
         token = CHANNEL.set("desk")
-        voice_token = VOICE.set(self._voice(settings, history))
+        voice = self._voice(settings, history)
+        voice_token = VOICE.set(voice)
         lint_token = LINT.set(self._hello_lint(home) if home is not None else None)
         mind = homecoming_facts(home, owner, now, also) if home is not None else ""
         mind_token = MIND.set(mind)
+        BROUGHT_UP.set(None)
         said: list[str] = []
         message_id = None
         kept_quiet = False
@@ -1313,12 +1337,12 @@ class Brain:
         if picked is not None:  # the thread the hello picked up: asked, once
             self.notebook.mark_said(picked.id)
             self._asked_in([picked.id], message_id)
-        self._asked_in(self.notebook.said_in(" ".join(said), owner), message_id)
+        self._asked_in(self._brought_up(" ".join(said), owner, voice), message_id)
         why = self._why_piped(reason, aim, about, owner)
         if share is not None and share.meta.get("private") and message_id is not None:
             self.memory.said_privately(message_id)  # from what Dan kept local
         self._pipe_up = (message_id, why) if message_id is not None else None
-        self.life.piped_up(reason)
+        self.life.piped_up(reason, share_kind(share))
         self.life.wanting = self.notebook.pressing()
 
     def _pipe_up_score(
@@ -1789,8 +1813,8 @@ class Brain:
             due = {"after": when} if later else {}
             self.notebook.write("want", thought.want, trigger=kind, **due, **keep)
             self.life.wanting = self.notebook.pressing()
-        if thought.feeling:
-            self.life.feel(thought.feeling, thought.why or thought.text, 0.7)
+        if thought.feeling:  # felt, but never over something Dan did
+            self.life.feel(thought.feeling, thought.why or thought.text, THOUGHT_FEELS)
         await self.recall.index_pending()
         return thought
 
@@ -1821,9 +1845,12 @@ class Brain:
         said = [without_plans(m.text)[:SAID_CHARS] for m in history if m.role != "user"]
         said = [line for line in said if line][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
-        mind = self.notebook.mind(persona.owner)
+        mind = self.notebook.mind_with_ids(persona.owner)
         opinions = self._opinions(settings)
-        return self.life.voice(persona.owner, own, said, self.quirks, text, mind, opinions)
+        lines = [line for _, line in mind]
+        voice = self.life.voice(persona.owner, own, said, self.quirks, text, lines, opinions)
+        voice.mind_ids = [item_id for item_id, _ in mind]
+        return voice
 
     def _opinions(self, settings: Settings, shared: bool = False) -> list[str]:
         """His standing opinions (``life.opinions``): stances he's held at least a day,
@@ -1978,10 +2005,14 @@ class Brain:
         voice = VOICE.get()
         if role != LOCAL and voice is not None:
             said = [without_plans(m.text)[:SAID_CHARS] for m in history or [] if m.role != "user"]
-            mind = self.notebook.mind(settings.persona.owner, shared=True)
+            mind = self.notebook.mind_with_ids(settings.persona.owner, shared=True)
             opinions = self._opinions(settings, shared=True)
             voice = replace(
-                voice, said=[x for x in said if x][-SAID_SHOWN:], mind=mind, opinions=opinions
+                voice,
+                said=[x for x in said if x][-SAID_SHOWN:],
+                mind=[line for _, line in mind],
+                mind_ids=[item_id for item_id, _ in mind],
+                opinions=opinions,
             )
         work, expert = settings.profile(WORK), settings.profile(EXPERT)
         sheet = self.notebook.sheet()
@@ -2463,12 +2494,14 @@ class Brain:
                     break
         if read:
             READ.set(mood_read(raw))
-        if early is not None:
-            return early
-        try:
-            return parse_plan(raw)
-        except ReplyError:
-            return Plan.default()
+        plan = early
+        if plan is None:
+            try:
+                plan = parse_plan(raw)
+            except ReplyError:
+                plan = Plan.default()
+        BROUGHT_UP.set(list(plan.brought_up))
+        return plan
 
     def _repeats(self, line: str, voice: Voice | None) -> bool:
         return voice is not None and repeats(line, voice.said, voice.examples)

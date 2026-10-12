@@ -198,13 +198,22 @@ class Reply(BaseModel):
         )
 
 
+BROUGHT_UP = Field(
+    default_factory=list,
+    description="The numbers of the things on your mind lately that you bring up in this "
+    "reply, if any. Usually empty.",
+)
+
+
 class Plan(BaseModel):
-    """The quick first pass of a two-pass reply: how Kit feels, a gesture, and what
-    to do. His words come next, in plain text."""
+    """The quick first pass of a two-pass reply: how Kit feels, a gesture, which of
+    the things on his mind he's bringing up, and what to do. His words come next,
+    in plain text."""
 
     model_config = ConfigDict(extra="forbid")
     emotion: Emotion
     gesture: Gesture = Field(description="The gesture that goes with what you'll say.")
+    brought_up: list[int] = BROUGHT_UP
     action: Action
 
     @classmethod
@@ -223,6 +232,7 @@ class ReadingPlan(BaseModel):
     about: About
     for_whom: ForWhom
     expected: Expected
+    brought_up: list[int] = BROUGHT_UP
     action: Action
 
 
@@ -248,6 +258,15 @@ def mood_read(text: str) -> dict[str, str] | None:
 
 
 _PLAN_FIELD = re.compile(r'"(emotion|gesture|kind)"\s*:\s*"([a-z_]+)"')
+_BROUGHT_UP = re.compile(r'"brought_up"\s*:\s*\[([0-9,\s]*)\]')
+
+
+def brought_up_in(text: str) -> list[int]:
+    """The numbers in a plan's ``brought_up``, from its JSON so far."""
+    found = _BROUGHT_UP.search(text)
+    return [int(n) for n in found.group(1).split(",") if n.strip()] if found else []
+
+
 _MOOD_FIELD = re.compile(r'"(dan_mood|about|for_whom|expected)"\s*:\s*"([a-z_]+)"')
 
 
@@ -261,7 +280,12 @@ def early_plan(text: str, read: bool = False) -> Plan | None:
     if read and mood_read(text) is None:
         return None
     try:
-        return Plan(emotion=found["emotion"], gesture=found["gesture"], action=Action(kind="none"))
+        return Plan(
+            emotion=found["emotion"],
+            gesture=found["gesture"],
+            brought_up=brought_up_in(text),
+            action=Action(kind="none"),
+        )
     except ValidationError:
         return None
 

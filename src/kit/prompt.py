@@ -479,9 +479,10 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
     if voice.mind:
         lines.append(
             "On your mind lately (your own private thoughts; bring one up only if it fits, "
-            f"or if {owner} asks what you're thinking):"
+            f"or if {owner} asks what you're thinking; if you do, put its number in "
+            "brought_up):"
         )
-        lines += [f"- {m}" for m in voice.mind]
+        lines += [f"{n}. {m}" for n, m in enumerate(voice.mind, 1)]
     return lines
 
 

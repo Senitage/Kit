@@ -112,6 +112,8 @@ CALL_SITES = {"meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.
 PRESENTING = re.compile(r"slide ?show|presenting|full ?screen", re.IGNORECASE)
 TYPING_S = 15  # idle less than this: Dan is mid-flow, don't interrupt
 IGNORED_AFTER = timedelta(minutes=10)
+SULK_FOR = timedelta(minutes=40)  # a sulk lasts as long as the put-out feeling behind it
+IGNORED_KEEPS = timedelta(hours=1)  # being ignored is forgotten this long after the pipe-up
 AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
 CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
 NAG_AFTER = timedelta(minutes=3)
@@ -119,6 +121,8 @@ MAX_NAGS = 2
 SPOTTED_KEEPS = timedelta(minutes=5)  # how long a sighting stays worth mentioning
 LOOK_EVERY = timedelta(seconds=2.5)  # a body's look_at holds about 3 s: refresh it
 MAX_EVENTS = 200
+MAX_LOOKS = 8  # look events come every few seconds, so they have a small ring of their own
+MAX_PIPES = 60  # more than settings allow an hour (life.max_per_hour tops out at 30)
 LIFE_KEY = "life"  # kit_self key: drives, feeling and timings, so a restart keeps them
 THINK_GAP = timedelta(minutes=2)  # the least time between two thoughts
 THINK_AFTER_CHAT = timedelta(minutes=2)  # mid-conversation he listens rather than muses
@@ -432,9 +436,12 @@ TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
 # Feelings only things that happen can cause (Dan coming back), not a passing thought.
 EVENT_FEELINGS = {"glad", "miffed"}
+# Feelings only Dan can cause: a private thought can't leave him hurt or put out.
+DAN_FEELINGS = {"hurt", "put_out"}
 # Feelings about Dan being gone: they end the moment he's back.
 MISSING_FEELINGS = {"missing"}
-THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
+THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS | DAN_FEELINGS]
+THOUGHT_FEELS = 0.4  # how strongly a thought is felt: under anything Dan caused
 
 
 @dataclass
@@ -444,6 +451,14 @@ class Held:
     reason: str
     since: datetime
     busy: str  # what Dan was busy with (a BUSY_WORDS key)
+
+    def as_dict(self) -> dict:
+        since = self.since.isoformat(timespec="seconds")
+        return {"reason": self.reason, "since": since, "busy": self.busy}
+
+    @classmethod
+    def from_dict(cls, data: dict, like: datetime) -> Held:
+        return cls(str(data["reason"]), parse_time(data["since"], like), str(data["busy"]))
 
 
 @dataclass
@@ -906,11 +921,11 @@ class Life:
         self.last_tick = now
         self.last_chat = now
         self.last_pipe: datetime | None = None
-        self.pipes: deque[datetime] = deque(maxlen=20)
+        self.pipes: deque[datetime] = deque(maxlen=MAX_PIPES)
         self.awaiting_reply = False
         self.ignored = 0
         self.nags = 0
-        self.sulky = False
+        self.sulky_until: datetime | None = None  # sulking after being ignored, till then
         self.butting_in = False  # this pipe-up interrupts Dan mid-flow, on purpose
         self.snoozed_until: datetime | None = None
         self.held_until: datetime | None = None  # had nothing new to say: waits till then
@@ -924,6 +939,8 @@ class Life:
         self._seen: set[str] = set()
         self._day = now.date()
         self._events: deque[dict] = deque(maxlen=MAX_EVENTS)
+        self._looks: deque[dict] = deque(maxlen=MAX_LOOKS)  # where to look, kept apart
+        self._dropped = 0  # the newest event id the ring has let go of
         self._next_id = 1
         self._new: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -953,6 +970,7 @@ class Life:
         self.game_out = ""  # a game he suggested, waiting to hear back
         self.bad_night_until: datetime | None = None  # Dan's having a really bad time
         self.bad_night_named = False  # he's mentioned someone to talk to, this bad night
+        self.bad_night_checked = False  # he's checked in on Dan once, this bad night
         self.energy = 1.0  # with life.energy_need; else drives.energy follows the clock
         self.arousal, self.valence = 0.5, 0.0  # the mood dials (life.dials)
         self._dials_shown = (0.5, 0.0)
@@ -981,6 +999,15 @@ class Life:
     @feeling.setter
     def feeling(self, value: Feeling | None) -> None:
         self._feelings = [value] if value is not None else []
+
+    @property
+    def sulky(self) -> bool:
+        """Sulking after being ignored: it passes by itself in ``SULK_FOR``."""
+        return self.sulky_until is not None and self.clock() < self.sulky_until
+
+    @sulky.setter
+    def sulky(self, value: bool) -> None:
+        self.sulky_until = self.clock() + SULK_FOR if value else None
 
     # What happens to Kit
 
@@ -1113,7 +1140,7 @@ class Life:
             return
         now = self.clock()
         if not self.bad_night():
-            self.bad_night_named = False
+            self.bad_night_named = self.bad_night_checked = False
         self.bad_night_until = now + BAD_NIGHT_FOR
         self.feel("worried", why, 0.9, show=False, force=True)
         self.save()
@@ -1214,13 +1241,14 @@ class Life:
         now = self.clock()
         changed = False
         in_view = self._in_view()
+        seen = self.last_seen  # the keyboard's (or his eyes' last) reckoning, before this look
         if in_view:
             self.last_seen = now
             if self.present_since is None:
                 self.present_since = now
         for h in happenings:
             if h.kind == "arrived":
-                self._arrived(h, now)
+                self._arrived(h, now, seen)
                 changed = True
             elif h.kind == "left":
                 if self._at_the_pc():
@@ -1346,17 +1374,22 @@ class Life:
         at = self.eyes_closing_at
         return at is not None and (now or self.clock()) - at < timedelta(minutes=15)
 
-    def _arrived(self, h: Happening, now: datetime) -> None:
+    def _arrived(self, h: Happening, now: datetime, seen: datetime | None = None) -> None:
         """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
-        back, as far as his eyes can tell. The keyboard's reckoning of when he went
-        counts first, when the desk app saw him go. Someone Kit knows by face who
-        isn't Dan gets their own hello, and Dan is still away."""
+        back, as far as his eyes can tell. The keyboard's reckoning counts first:
+        when the desk app saw him go, and ``seen``, when it last saw him typing (so
+        someone who leant out of frame while typing never left). Someone Kit knows
+        by face who isn't Dan gets their own hello, and Dan is still away."""
         owner = self.settings().persona.owner
         if h.who and owner.casefold() not in {n.casefold() for n in h.who}:
             self.visitor = (join_names(h.who), now)
             self._think_about("visitor", h.text)
             return
+        if self._at_the_pc():
+            return  # the camera lost him for a while, but he's been at the keyboard
         start = self.away_since or (now - timedelta(seconds=h.away_s))
+        if seen is not None:
+            start = max(start, seen)
         self.away_since = None
         self.present_since = now
         self.stop_doing()  # Dan's back
@@ -1375,7 +1408,7 @@ class Life:
         moved = last is None or max(abs(a - b) for a, b in zip(look, last, strict=True)) >= 0.05
         if moved or self._look_at is None or now - self._look_at >= LOOK_EVERY:
             self._last_look, self._look_at = look, now
-            self.publish({"type": "look", "x": look[0], "y": look[1]})
+            self.publish({"type": "look", "x": look[0], "y": look[1]}, ring=self._looks)
 
     def _in_view(self) -> bool:
         return self.scene is not None and self.scene.in_view()
@@ -1838,11 +1871,15 @@ class Life:
                 "chat_ended", f"You and {owner} were chatting until {quiet:.0f} minutes ago."
             )
 
+        if self.ignored and self.last_pipe and now - self.last_pipe >= IGNORED_KEEPS:
+            self.ignored = 0  # an hour on, it's forgotten: no backing off all day
         if self.awaiting_reply and self.last_pipe and now - self.last_pipe > IGNORED_AFTER:
             self.awaiting_reply = False
-            # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody.
+            # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody. Nor did
+            # he if he was on a call or his phone the while.
             left = self.came_back is not None and self.came_back[1] > self.last_pipe
-            if present and not self.asleep and not left and not self.busy_with(now):
+            busy = self.busy_with(now) or self._on_call(snap)
+            if present and not self.asleep and not left and not busy:
                 self.ignored = min(self.ignored + 1, 3)
                 self.sulky = True
                 why = f"{owner} didn't answer when you piped up at {self.last_pipe:%H:%M}"
@@ -1949,6 +1986,15 @@ class Life:
             self._quiet_shown = shown
             self.publish({"type": "quiet", "because": self.quiet_because, "bubble": bubble})
 
+    @staticmethod
+    def _on_call(snap) -> bool:
+        """The PC shows a call or a presentation in focus."""
+        focus = snap.focus if snap is not None else None
+        if not focus:
+            return False
+        on_call = focus.app in CALL_APPS or focus.site in CALL_SITES
+        return on_call or bool(PRESENTING.search(focus.title))
+
     def _urge(self, now: datetime, snap, present: bool) -> tuple[str | None, str]:
         """(why Kit wants to talk, or None; and if not, why he's keeping quiet)."""
         life = self.settings().life
@@ -1961,10 +2007,7 @@ class Life:
             return None, f"quiet hours ({life.quiet_from} to {life.quiet_until})"
         if not present:
             return None, "you're away, or the desk app isn't reporting"
-        focus = snap.focus if snap is not None else None
-        if focus and (
-            focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
-        ):
+        if self._on_call(snap):
             return None, "you're on a call or presenting"
         busy = self.busy_with(now)
         if busy:  # talking or on the phone: never
@@ -1973,9 +2016,17 @@ class Life:
                 self.holding = Held(reason, now, busy)
             saving = ": saving something to say after" if self.holding else ""
             return None, BUSY_WORDS[busy][0] + saving
-        held, self.holding = self.holding, None
-        if held is not None and now - held.since <= HOLD_KEEPS:
-            self.delivering = held  # what he held back, now Dan's free
+        held = self.holding
+        if held is not None and now - held.since > HOLD_KEEPS:
+            held = self.holding = None  # it's gone stale
+        if held is not None:
+            # What he held back, now Dan's free: with the same manners as anything
+            # else (not mid-typing, not over the hourly limit, not while waiting on an
+            # answer), so it waits a little longer if it has to.
+            blocked = self._manners(now, snap, life)
+            if blocked:
+                return None, blocked
+            self.holding, self.delivering = None, held
             return held.reason, ""
         return self._urge_now(now, snap, life)
 
@@ -1986,7 +2037,7 @@ class Life:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
         if self.visitor is not None:
             return "visitor", ""  # hello to whoever just sat down, by name
-        if self.spotted is not None:
+        if self.spotted is not None and not self.bad_night():
             about, _ = self.spotted
             if snap is None or snap.idle_seconds >= TYPING_S:
                 # The cat just walked in: that's news now, whatever his drives or the
@@ -2004,27 +2055,15 @@ class Life:
             and now - self.last_pipe >= NAG_AFTER
         ):
             return "nag", ""  # a chatty Kit doesn't wait quietly to be answered
-        if self.awaiting_reply:
-            return None, "waiting for you to answer his last pipe-up"
-        self.butting_in = False
-        if snap is not None and snap.idle_seconds < TYPING_S:
-            if not (chatty and self.rng.random() < 0.04 * life.chattiness):
-                return None, "you're typing or clicking: waiting for a pause"
-            self.butting_in = True  # now and then he just can't help himself
-        after_chat = timedelta(minutes=AFTER_CHAT_MIN * (1.2 - life.chattiness))
-        if now - self.last_chat < after_chat:
-            wait = after_chat.total_seconds() / 60
-            return None, f"you chatted at {self.last_chat:%H:%M}: waits {wait:.0f} min after a chat"
-        backoff = 1 if chatty else 2**self.ignored  # a chatty Kit nags instead of backing off
-        quiet_min = AFTER_CHAT_MIN * (1.2 - life.chattiness)
-        gap = timedelta(minutes=max(60 / life.max_per_hour, quiet_min) * backoff)
-        if self.last_pipe and now - self.last_pipe < gap:
-            return (
-                None,
-                f"piped up at {self.last_pipe:%H:%M}: next chance {self.last_pipe + gap:%H:%M}",
-            )
-        if sum(1 for t in self.pipes if now - t < timedelta(hours=1)) >= life.max_per_hour:
-            return None, f"already piped up {life.max_per_hour} times this hour"
+        blocked = self._manners(now, snap, life, may_butt_in=True)
+        if blocked:
+            return None, blocked
+        if self.bad_night():
+            # Dan's having a really hard time: no bored or curious pipe-ups. He checks
+            # in once, gently, and otherwise stays quiet unless Dan wants to talk.
+            if not self.bad_night_checked:
+                return "check_in", ""
+            return None, "you're staying quiet: Dan's having a hard time"
         drives = {
             "bored": self.drives.boredom,
             "curious": self.drives.curiosity,
@@ -2041,6 +2080,31 @@ class Life:
             reason = "watching"
         return reason, ""
 
+    def _manners(self, now: datetime, snap, life, may_butt_in: bool = False) -> str:
+        """Why his manners say not now ("" if they don't): waiting on an answer, Dan
+        typing, too soon after a chat or his last pipe-up, or over the hourly limit.
+        A chatty Kit now and then butts in while Dan types (``may_butt_in``)."""
+        chatty = life.chattiness >= CHATTY
+        if self.awaiting_reply:
+            return "waiting for you to answer his last pipe-up"
+        self.butting_in = False
+        if snap is not None and snap.idle_seconds < TYPING_S:
+            if not (may_butt_in and chatty and self.rng.random() < 0.04 * life.chattiness):
+                return "you're typing or clicking: waiting for a pause"
+            self.butting_in = True  # now and then he just can't help himself
+        after_chat = timedelta(minutes=AFTER_CHAT_MIN * (1.2 - life.chattiness))
+        if now - self.last_chat < after_chat:
+            wait = after_chat.total_seconds() / 60
+            return f"you chatted at {self.last_chat:%H:%M}: waits {wait:.0f} min after a chat"
+        backoff = 1 if chatty else 2**self.ignored  # a chatty Kit nags instead of backing off
+        quiet_min = AFTER_CHAT_MIN * (1.2 - life.chattiness)
+        gap = timedelta(minutes=max(60 / life.max_per_hour, quiet_min) * backoff)
+        if self.last_pipe and now - self.last_pipe < gap:
+            return f"piped up at {self.last_pipe:%H:%M}: next chance {self.last_pipe + gap:%H:%M}"
+        if sum(1 for t in self.pipes if now - t < timedelta(hours=1)) >= life.max_per_hour:
+            return f"already piped up {life.max_per_hour} times this hour"
+        return ""
+
     def held_back(self, reason: str = "", home: Homecoming | None = None) -> None:
         """He went to pipe up but had nothing new to say (kit.brain keeps quiet rather
         than repeat himself, or the model didn't answer). The urge passes as if he'd
@@ -2051,6 +2115,8 @@ class Life:
         self.held_until = self.clock() + timedelta(minutes=gap)
         if reason == "nag":
             self.nags += 1
+        if reason == "check_in":
+            self.bad_night_checked = True  # one go at it: he doesn't keep trying
         home = home or self.homecoming
         if reason == "back" and home is not None and self.last_chat < home.back:
             home.tried = True  # his next reply says hello instead
@@ -2063,17 +2129,22 @@ class Life:
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
 
-    def piped_up(self, reason: str = "") -> None:
+    def piped_up(self, reason: str = "", kind: str = "") -> None:
+        """He said it. ``kind`` is what he brought up (a game, a nudge, a question
+        getting to know Dan, a thought), so how each lands is counted apart."""
         now = self.clock()
         if reason not in ("back", "nag"):
-            self._count_pipe_up(reason, taken=False)
-            self._pipe_out = (reason, now)
+            self._count_pipe_up(kind or reason, taken=False)
+            self._pipe_out = (kind or reason, now)
+        if reason == "check_in":
+            self.bad_night_checked = True
         self.nags = self.nags + 1 if reason == "nag" else 0
         self.butting_in = False
         self.holding = self.delivering = None
         self.last_pipe = now
         self.pipes.append(now)
-        self.awaiting_reply = reason not in ("back", "visitor")  # a hello needs no answer
+        # A hello needs no answer, nor does checking in on a bad night.
+        self.awaiting_reply = reason not in ("back", "visitor", "check_in")
         if reason == "back":
             self.homecoming = None
             felt = self.feeling_now()
@@ -2221,8 +2292,15 @@ class Life:
         data = {
             "saved": when(now),
             "drives": {k: round(v, 3) for k, v in asdict(self.drives).items() if k != "energy"},
-            "sulky": self.sulky,
+            "sulky_until": when(self.sulky_until),
             "ignored": self.ignored,
+            "nags": self.nags,
+            "pipes": [when(t) for t in self.pipes if now - t < timedelta(hours=1)],
+            "present_since": when(self.present_since),
+            "held_until": when(self.held_until),
+            "holding": self.holding.as_dict() if self.holding else None,
+            "to_think": [list(t) for t in self._to_think],
+            "bad_night_checked": self.bad_night_checked,
             "curious_about": self.curious_about,
             "curious_kind": self.curious_kind,
             "last_chat": when(self.last_chat),
@@ -2286,7 +2364,11 @@ class Life:
         drives = data.get("drives") or {}
         if off < 60:
             self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
-            self.sulky = bool(data.get("sulky"))
+        if data.get("sulky_until"):  # it passes at the same time it would have
+            until = parse_time(data["sulky_until"], now)
+            self.sulky_until = until if until > now else None
+        elif data.get("sulky") and off < 60:  # saved by a Kit whose sulks had no end
+            self.sulky = True
         self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
         self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
         self.ignored = int(data.get("ignored", 0))
@@ -2296,6 +2378,21 @@ class Life:
             self.last_chat = parse_time(data["last_chat"], now)
         if data.get("last_pipe"):
             self.last_pipe = parse_time(data["last_pipe"], now)
+        # The hourly limit and the nudge outside carry on across a restart mid-day.
+        pipes = (parse_time(x, now) for x in data.get("pipes") or [])
+        self.pipes.extend(t for t in pipes if now - t < timedelta(hours=1))
+        self.nags = int(data.get("nags", 0))
+        if data.get("present_since"):
+            self.present_since = parse_time(data["present_since"], now)
+        if data.get("held_until"):
+            until = parse_time(data["held_until"], now)
+            self.held_until = until if until > now else None
+        if isinstance(data.get("holding"), dict):
+            held = Held.from_dict(data["holding"], now)
+            self.holding = held if now - held.since <= HOLD_KEEPS else None
+        self._to_think.extend(
+            (str(kind), str(line)) for kind, line in data.get("to_think") or [] if kind and line
+        )
         if data.get("snoozed_until"):
             until = parse_time(data["snoozed_until"], now)
             self.snoozed_until = until if until > now else None
@@ -2315,6 +2412,7 @@ class Life:
         if data.get("bad_night_until"):
             self.bad_night_until = parse_time(data["bad_night_until"], now)
             self.bad_night_named = bool(data.get("bad_night_named"))
+            self.bad_night_checked = bool(data.get("bad_night_checked"))
         self.energy = _clamp(float(data.get("energy", 1.0)))
         if off >= 6 * 60:
             self.energy = 1.0  # a night off is a night's sleep
@@ -2375,10 +2473,16 @@ class Life:
 
     # Telling the desk app (and later the arm)
 
-    def publish(self, event: dict) -> int:
+    def publish(self, event: dict, ring: deque[dict] | None = None) -> int:
+        """Tell the bodies something. ``look`` events go on their own small ring
+        (``ring``), so a flood of them doesn't push out a state change or a pipe-up."""
         event = {"id": self._next_id, "at": self.clock().isoformat(timespec="seconds"), **event}
         self._next_id += 1
-        self._events.append(event)
+        if ring is None:
+            ring = self._events
+            if len(ring) == ring.maxlen:
+                self._dropped = ring[0]["id"]  # about to fall off
+        ring.append(event)
         if self._new is not None:
             self._new.set()
         return event["id"]
@@ -2389,7 +2493,14 @@ class Life:
         self.publish({"type": "react", "gesture": gesture, "why": why})
 
     def events_after(self, after: int) -> list[dict]:
-        return [e for e in self._events if e["id"] > after]
+        found = [e for e in self._events if e["id"] > after]
+        found += [e for e in self._looks if e["id"] > after]
+        return sorted(found, key=lambda e: e["id"])
+
+    def missed_since(self, after: int) -> bool:
+        """A body asking for events after ``after`` has missed some: older ones have
+        dropped off the ring, so it should re-read ``/api/life`` for where things stand."""
+        return 0 < after < self._dropped
 
     async def wait_for_events(self, after: int, timeout: float) -> list[dict]:
         """New events after ``after``, waiting up to ``timeout`` seconds for one."""
@@ -2440,7 +2551,9 @@ class Life:
             quirk = ""
         elif self.tired():
             style += TIRED_STYLE
-        voice = Voice(feeling, style, examples, said, quirk, list(mind or []), close, when)
+        voice = Voice(
+            feeling, style, examples, said, quirk, list(mind or []), close=close, when=when
+        )
         voice.opinions = list(opinions or [])
         return voice
 
@@ -2824,6 +2937,7 @@ class Voice:
     said: list[str]  # Kit's own recent lines, so he doesn't repeat them
     quirk: str = ""  # one quirk to let show this time, now and then
     mind: list[str] = field(default_factory=list)  # what's on his mind lately
+    mind_ids: list[int] = field(default_factory=list)  # the notebook item behind each line
     close: str = ""  # how close you two are, as it shows in the way he talks
     when: str = ""  # how long since you talked, and since Dan was at the PC
     bit: str = ""  # a running joke something Dan said could bring back (kit.notebook)
@@ -2915,6 +3029,8 @@ def pipe_up_prompt(
         f"{gap_words(timedelta(hours=hours_quiet))}",
         "nag": f"ignored: you said something a few minutes ago and {owner} hasn't answered. "
         f"Nag {owner} about it, playfully, in a fresh line",
+        "check_in": f"worried about {owner}, who's having a really hard time, and you want to "
+        f"check they're okay: one gentle line, no jokes, no questions beyond that",
     }[reason]
     if butting_in:
         feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"

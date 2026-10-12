@@ -105,6 +105,13 @@ Anything about hurting yourself gets "are you safe right now?", Lifeline and
 000, every time. `life.bad_night` is on by default; it's the one stage 3
 change that is, because it matters most the first time it's needed.
 
+He doesn't pipe up bored or curious while it lasts, and the cat walking in
+isn't news. Once he's been quiet the usual while after your last message, he
+**checks in**, one gentle line with no joke in it, and only once a bad night;
+it needs no answer, so not answering isn't ignoring him. After that he keeps
+quiet until you want to talk (`kit life` says so: "staying quiet: Dan's having
+a hard time").
+
 ## Energy
 
 His energy follows the clock by default. With `life.energy_need` it's a real
@@ -220,7 +227,9 @@ after the usual gap.
 A thought can:
 - turn into something he **wants to say or ask** you. It presses harder the
   longer it waits, and his next pipe-up brings it up;
-- change how he **feels**, with the reason;
+- change how he **feels**, with the reason. A thought is felt lightly: it never
+  displaces something you made him feel, and only you can leave him hurt or
+  put out;
 - become an **opinion** he keeps.
 
 Ask "what are you thinking about?" and he tells you his actual recent thoughts,
@@ -328,7 +337,11 @@ Facts in memory are about you. The notebook is Kit's own:
 
 - **thoughts** from quiet moments; small ones fade after two weeks;
 - **opinions** he's formed;
-- **wants**: things he means to say or ask, until he does (or a week passes);
+- **wants**: things he means to say or ask, until he does (or a week passes).
+  His reply's plan says which of the things on his mind it brings up, by
+  number, so a want asked in other words ("who's your other half?" for
+  "what's your partner's name?") counts as said and isn't asked again. Failing
+  a plan (a cloud answer), a reply in much the same words counts;
 - **threads**: things coming up in your life, to ask how they went once
   they're over;
 - **running jokes** you two share, and the words that bring each back;
@@ -433,8 +446,11 @@ He never pipes up:
 - within 10 minutes of a chat, or more than `life.max_per_hour` times an hour.
 
 If you ignore him, he sulks a little (a sigh) and waits twice as long next
-time, then four times, then eight. Leaving the PC, or him dozing off, isn't
-ignoring him: no sulk. Talking to him makes up for it. Say
+time, then four times, then eight. Leaving the PC, him dozing off, or you being
+on a call, presenting or on your phone isn't ignoring him: no sulk. The sulk
+passes by itself in forty minutes (as long as the put-out feeling behind it),
+and an hour after the pipe-up being ignored is forgotten, so an evening's
+sulk never colours the next morning. Talking to him makes up for it. Say
 **"shush"** or **"not now"** and he's quiet for an hour. "You can talk again"
 lets him back, and so does "Quiet for an hour" in the tray menu.
 `life.chattiness = 0` means he never speaks first but still fidgets.
@@ -445,7 +461,9 @@ how relevant it is to what you're doing, whether it's new or he's said it
 already, and how pressing it is, nudged up or down by how often you've taken
 his recent pipe-ups up (`kit life` shows the rate). Below the bar he keeps it
 to himself. 0.5 is a sensible bar. When he's keeping quiet, the desk tray's
-tooltip says why.
+tooltip says why. The rate is kept by what he brought up (a game, a nudge, a
+getting-to-know-you question, a thread, a thought), not by the drive behind
+it, so a game that flops doesn't count against his thoughts.
 
 ## Busy and held pipe-ups
 
@@ -462,9 +480,11 @@ With `life.hold_pipe_ups` on, what he'd have said while you were busy is
 **held**: his bubble says he's saving something ("saving something till
 you're off your phone"), and once you're free he says it, opening with why he
 waited ("8 minutes, while Dan was on the phone" goes into his prompt, and he
-puts it his way: "didn't want to interrupt, but..."). A held pipe-up goes
-stale after half an hour, and talking to him meanwhile clears it: the moment
-has passed.
+puts it his way: "didn't want to interrupt, but..."). A held pipe-up keeps
+his manners when it comes out: not while you're typing, not over the hourly
+limit, not while he's waiting on an answer, so it may wait a little longer. It
+goes stale after half an hour, and talking to him meanwhile clears it: the
+moment has passed. A restart mid-hold keeps it.
 
 When his eyes see nobody at the desk, a pipe-up isn't said out loud
 (`aloud` is false on its event): it shows in the chat for when you're back.
@@ -508,7 +528,16 @@ is so Glow (and the arm later) can look at them. Someone sitting down after the
 desk has been empty twenty minutes or more is a homecoming like any other (the
 hello above, with the keyboard's reckoning of when you went if the desk app
 saw it), except that he can't tell faces apart yet, so the hello is to
-"someone, most likely Dan" and he may ask.
+"someone, most likely Dan" and he may ask. The keyboard wins: if you've been
+typing the while, you only leant out of frame, and there's no hello; and the
+absence is counted from when the keyboard last saw you, not from when the
+camera did.
+
+`look` events come every couple of seconds while someone's in view, so they
+have a small ring of their own: they never push the state changes, pipe-ups
+and moods a body needs out of the main ring (the last 200). A body that asks
+for events after an id the ring has moved past gets `"resync": true` with
+them, and should re-read `/api/life` for where things stand.
 
 The desk app adds only reflexes, the way your body blinks without asking your
 brain. They're instant and need nothing from the server:
@@ -573,11 +602,13 @@ into each other, so no two look the same.
 - `GET /api/life/events?after=N&wait=25`: fidgets, reactions, sleep and wake,
   resting-face changes (`mood`), why he's quiet (`quiet`, with a `bubble` while
   you're busy), and pipe-ups (with `voice` and `aloud`) after event N; waits up
-  to `wait` seconds for one.
+  to `wait` seconds for one. `resync: true` means events after N have already
+  dropped off the ring: re-read `/api/life`.
 - `POST /api/life/snooze {"minutes": 60}`: quiet for a while (0 lifts it).
 - `look` events (`{"type": "look", "x": -0.2, "y": 0.1}`, each way -1 to 1
   from the centre) say where the person his eyes see is, every couple of
-  seconds while someone's in view, so a body can look at them.
+  seconds while someone's in view, so a body can look at them. Only the last
+  few are kept, apart from the other events.
 - `GET /api/life/notebook`: his self-sheet and its earlier versions, weekly
   reviews, quirks (and retired ones), wants, thoughts, opinions, moments,
   journal, and what you undid.
@@ -653,8 +684,10 @@ always has the last few dollars.
 ## Two passes: deciding, then talking
 
 With `ollama.speak_pass` on (the default), the local model answers in two
-steps. First a quick JSON plan: his emotion, his gesture, and whether to look
-something up, hand over to the cloud or remember something. Then his words, in
+steps. First a quick JSON plan: his emotion, his gesture, which of the things
+on his mind (numbered in his prompt) he's bringing up (`brought_up`, so a want
+he asks in other words counts as said), and whether to look something up, hand
+over to the cloud or remember something. Then his words, in
 plain text, at a livelier setting (`ollama.speak_temperature`, `min_p`,
 `top_k`, `top_p`, `repeat_penalty`, `repeat_last_n`; top_k 64 and top_p 0.95
 are what Gemma's makers suggest). Small models sound stiff when they write speech inside JSON;
@@ -698,12 +731,15 @@ On his own, with default settings, boredom needs about 25 quiet minutes with
 you at the PC (not chatting, not mid-typing) before he speaks first.
 
 A restart picks up where he left off: his drives, how he feels and why, how
-long since you talked, whether he's sulking, what he's seen today, when he
-last thought, whether he's asleep, when you were last at the PC, your last
+long since you talked, whether he's sulking (and till when), what he's seen
+today, when he last thought and what's happened since worth a thought, whether
+he's asleep, when you were last at the PC and how long you've been at the
+desk without a break (so the nudge outside still comes), his pipe-ups this
+hour (so the hourly limit holds), a pipe-up he was holding, your last
 goodbye and how close you are are saved in his memory. Twenty minutes or more
 off is remembered as time he was switched off. Drives move on by however long he was
 off, and a feeling keeps fading from when it began. After an hour or more off,
-boredom and sulking start fresh.
+boredom starts fresh; a sulk ends when it would have anyway.
 
 ## Turning him up
 

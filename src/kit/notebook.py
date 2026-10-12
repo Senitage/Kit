@@ -267,6 +267,18 @@ def thread_when(item: Item, like: datetime) -> When | None:
     return When(start, end, "", str(meta["span"]), part=str(meta.get("part", "")))
 
 
+def share_kind(item: Item | None) -> str:
+    """What kind of thing a pipe-up brought up, for counting how each kind lands
+    (kit.life ``piped_up``): a game, a nudge, a getting-to-know-you question, a
+    thread, a want or a thought; "" with nothing shared."""
+    if item is None:
+        return ""
+    for key in ("game", "nudge", "interview"):
+        if item.meta.get(key):
+            return key
+    return item.kind
+
+
 def aim_of(item: Item, owner: str, now: datetime | None = None) -> tuple[str, str]:
     """What he means to do with a want or a thread, and what about (``as_aim``). A
     thread is asking how it went, with when as of ``now`` ("this afternoon") and what
@@ -425,7 +437,8 @@ class Notebook:
     def said_in(self, text: str, owner: str) -> list[int]:
         """He just said ``text``: wants it brought up are said, so he doesn't ask
         again. A want counts when at least half the words saying what it's about
-        are there ("How did the shutdown go?" for "Ask Dan how the shutdown went")."""
+        are there ("How did the shutdown go?" for "Ask Dan how the shutdown went").
+        The fallback for a reply with no plan to say so (``brought_up``)."""
         words = _meaning(text)
         done = []
         for want in self.open_wants():
@@ -482,6 +495,13 @@ class Notebook:
     def mind(self, owner: str, limit: int = 3, shared: bool = False) -> list[str]:
         """What's on his mind lately, as lines for his prompt: thoughts with how long
         ago, wants as what he means to do (``as_aim``) and when."""
+        return [line for _, line in self.mind_with_ids(owner, limit, shared)]
+
+    def mind_with_ids(
+        self, owner: str, limit: int = 3, shared: bool = False
+    ) -> list[tuple[int, str]]:
+        """``mind``, each line with the id of the item behind it, so the plan can say
+        which it brought up by number (``brought_up``)."""
         now = self._now()
 
         def line(e: Item) -> str:
@@ -493,7 +513,22 @@ class Notebook:
                 return f"(you want to {aim}) {about}"
             return f"(you want to {aim} {_later(after, now)}, not before) {about}"
 
-        return [line(e) for e in self.on_mind(limit, shared)]
+        return [(e.id, line(e)) for e in self.on_mind(limit, shared)]
+
+    def brought_up(self, numbers: list[int], shown: list[int]) -> list[int]:
+        """The plan said which of the things on his mind (``shown``, the ids behind the
+        numbered lines) his reply brings up: the wants among them are said, so he
+        doesn't ask again. Returns their ids."""
+        done = []
+        for n in numbers:
+            if not 1 <= n <= len(shown):
+                continue
+            item = self.index.get(shown[n - 1])
+            if item is None or item.kind not in ASKING or item.meta.get("said"):
+                continue
+            self.mark_said(item.id)
+            done.append(item.id)
+        return done
 
     # Threads: what's coming up in Dan's life
 

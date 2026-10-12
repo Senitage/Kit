@@ -19,6 +19,7 @@ Up: [[Home]] · Reference
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
+| **Check-in** | The one gentle pipe-up he allows himself on a bad night, asking if you're okay | [[Inner Life In Depth#A bad night]] |
 | **Cheek** | How cheeky he is, 0 to 1 (`life.cheek`) | [[Inner Life]] |
 | **CUDA graph** | GPU work recorded once and replayed in one go; it makes Chatterbox Turbo's voice about 2.4 times faster | [[Voice#Faster on a graphics card]] |
 | **Data folder** | The one folder holding everything Kit owns | [[Settings and Data]] |

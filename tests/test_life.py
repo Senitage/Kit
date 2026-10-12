@@ -313,6 +313,11 @@ def test_life_api_waits_for_events(paths):
             ]
             is None
         )
+        # A body that was off while the ring moved on is told to re-read /api/life.
+        for _ in range(250):
+            brain.life.publish({"type": "fidget", "gesture": "sigh"})
+        assert "resync" not in got
+        assert client.get("/api/life/events?after=1&wait=0", headers=auth).json()["resync"]
     memory.close()
 
 
