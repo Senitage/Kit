@@ -125,7 +125,7 @@ fun DrawScope.paintGlow(look: GlowLook, f: FaceFrame, moodColours: Boolean) {
                 val inner = -side
                 val path = Path().apply {
                     moveTo(cx - inner * half, y + slant * 0.4f)
-                    quadraticBezierTo(cx, y - s * brows.arch.toFloat() + slant * 0.2f, cx + inner * half, y - slant)
+                    quadraticTo(cx, y - s * brows.arch.toFloat() + slant * 0.2f, cx + inner * half, y - slant)
                 }
                 drawPath(
                     path,
@@ -151,7 +151,7 @@ fun DrawScope.paintGlow(look: GlowLook, f: FaceFrame, moodColours: Boolean) {
                     w *= (0.8 + 0.4 * amount).toFloat()
                     val path = Path().apply {
                         moveTo(mx - w / 2, my - d * 0.25f)
-                        quadraticBezierTo(mx, my - d * 0.05f, mx + w / 2, my - d * 0.25f)
+                        quadraticTo(mx, my - d * 0.05f, mx + w / 2, my - d * 0.25f)
                         cubicTo(mx + w / 2, my + d * 0.9f, mx - w / 2, my + d * 0.9f, mx - w / 2, my - d * 0.25f)
                         close()
                     }
@@ -161,7 +161,7 @@ fun DrawScope.paintGlow(look: GlowLook, f: FaceFrame, moodColours: Boolean) {
                     val c = (amount * s * mouth.curve).toFloat()
                     val path = Path().apply {
                         moveTo(mx - w / 2, my - c * 0.3f)
-                        quadraticBezierTo(mx, my + c, mx + w / 2, my - c * 0.3f)
+                        quadraticTo(mx, my + c, mx + w / 2, my - c * 0.3f)
                     }
                     drawPath(path, fill, style = Stroke(s * mouth.thick.toFloat(), cap = StrokeCap.Round))
                 }
