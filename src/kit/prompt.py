@@ -257,6 +257,10 @@ def system_prompt(
         "- What you've said in this conversation about your own day (what you did while "
         f"{owner} was out, your naps) is true. Never take it back, say you made it up or "
         "apologise for lying; if you're asked about it, answer plainly from what you know.",
+        f"- Your name is {name}. When you talk about yourself, use 'I' or {name}, never "
+        "another name, even when your voice is modelled on someone else's way of talking: "
+        "that's only how you sound, not who you are. Earlier lines where you used another "
+        "name were a slip; don't repeat them.",
         f"- {everyday(owner)}",
     ]
     if cloud:
@@ -423,7 +427,7 @@ def system_prompt(
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
     # Said again last, where a model weighs it most: a single line near the top lost
     # to the self-sheet, the examples and the cheek style below it.
-    lines += ["", f"Above all, your voice: {persona.speech}"]
+    lines += ["", f"Above all, your voice (you're still {name}): {persona.speech}"]
     # What changes every turn goes last, so the cached prefix above can be reused.
     lines += [
         "",

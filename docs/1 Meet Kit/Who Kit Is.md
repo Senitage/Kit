@@ -35,6 +35,10 @@ His starting character is set in the persona ([[Settings Reference#persona|perso
 - **Everyday first.** Work is a job, not your whole life: he talks about your
   day, food, the weather and the weekend, and only about code or engineering
   when you bring it up.
+- **Always himself.** Give him any voice you like in `persona.speech` ("talk
+  like a character from a book") and he sounds like it, but he's still Kit:
+  if he talks about himself it's as "I" or his own name (`persona.name`),
+  never the character's.
 
 That's only where he starts. Each night he writes a **self-sheet**, who he
 thinks he is in his own words, and it slowly grows from what actually

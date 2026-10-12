@@ -117,7 +117,7 @@ Who Kit is and who he's with. See [[Who Kit Is]].
 | `owner` | `Dan` | Who Kit works for. |
 | `backstory` | built in | Who Kit is, in a sentence or two. |
 | `traits` | built in | Three to five core traits. |
-| `speech` | built in | How Kit talks. |
+| `speech` | built in | How Kit talks. A style copied from a character is only how he sounds: he still calls himself by `name`. |
 | `location` | empty | Where the owner is, for weather and local searches, as 'city, state', e.g. Richmond, NSW. |
 | `country` | empty | The owner's country as a two-letter code, e.g. AU. |
 | `timezone` | empty | The owner's time zone, e.g. Australia/Sydney. |

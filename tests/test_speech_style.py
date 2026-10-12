@@ -33,7 +33,7 @@ def test_his_own_style_beats_the_sheet_examples_and_cheek():
     assert first > fixed.index(SHEET)
     assert "beats anything else here about how you talk" in fixed
     # ...and again last in the part that stays the same, after every list and rule.
-    assert fixed.rstrip().endswith(f"Above all, your voice: {STYLE}")
+    assert fixed.rstrip().endswith(f"Above all, your voice (you're still Kit): {STYLE}")
     # The default examples are in the default voice, so they go.
     assert "Coffee first, or straight into it?" not in prompt
     # The cheek style bends to it rather than replacing it.
@@ -43,7 +43,7 @@ def test_his_own_style_beats_the_sheet_examples_and_cheek():
 def test_the_default_voice_keeps_its_examples():
     prompt = chat_prompt(PersonaSettings())
     assert "Coffee first, or straight into it?" in prompt
-    assert "Above all, your voice: Short sentences" in prompt
+    assert "Above all, your voice (you're still Kit): Short sentences" in prompt
 
 
 def test_his_own_examples_stay_with_his_own_style():
@@ -63,3 +63,12 @@ def test_a_new_style_makes_his_self_sheet_out_of_date():
 def test_the_local_speaking_step_says_his_style_again():
     note = speak_note(Action(kind="none"), "Dan", "sonnet", "opus", speech=STYLE)
     assert f"Your voice: {STYLE}" in note
+
+
+def test_a_borrowed_voice_keeps_his_own_name():
+    """Speaking like a character had him calling himself by the character's name."""
+    prompt = chat_prompt(PersonaSettings(speech=STYLE))
+    assert "When you talk about yourself, use 'I' or Kit, never another name" in prompt
+    assert "Above all, your voice (you're still Kit):" in prompt
+    renamed = chat_prompt(PersonaSettings(name="Pip", speech=STYLE))
+    assert "use 'I' or Pip" in renamed and "you're still Pip" in renamed
