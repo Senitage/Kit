@@ -113,6 +113,7 @@ flowchart TB
 |---|---|---|
 | `src/kit/speech/service.py` | Runs the chosen engine and asks it for speech | [[Voice]] |
 | `src/kit/speech/worker.py` | One engine behind a tiny local web server | [[Voice#Engines]] |
+| `src/kit/speech/turbo.py` | Chatterbox Turbo's token loop recorded as a CUDA graph | [[Voice#Faster on a graphics card]] |
 | `src/kit/speech/sentences.py` | Cutting words into speakable pieces | [[Voice]] |
 | `src/kit/speech/bench.py` | `kit speech bench` | [[Commands#Voice]] |
 

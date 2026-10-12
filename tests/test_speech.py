@@ -150,7 +150,7 @@ def test_turbo_makes_the_sound_and_skips_the_moods_own_opener(monkeypatch):
     class Turbo(worker.ChatterboxTurboEngine):
         def __init__(self):
             self.mood_tags, self.sample_rate = {"playful": "[chuckle]"}, 24000
-            self.tts = self
+            self.tts, self.turbo, self.graph = self, None, None
 
         def generate(self, text):
             made.append(text)
@@ -170,6 +170,43 @@ def test_turbo_makes_the_sound_and_skips_the_moods_own_opener(monkeypatch):
     turbo.speak("Fine.", "playful", first=True)
     turbo.speak("Fine.", "playful")
     assert made == ["[sigh] Fine.", "[chuckle] Fine.", "Fine."]
+
+
+def test_turbo_uses_the_cuda_graph_loop_when_it_has_one():
+    from kit.speech import worker
+
+    made = []
+
+    class Fast:
+        @staticmethod
+        def generate(tts, graph, line):
+            if len(line) > 20:
+                raise ValueError("line too long for the token store")
+            made.append(("graph", line))
+            return worker.np.zeros(10)
+
+    class Turbo(worker.ChatterboxTurboEngine):
+        def __init__(self):
+            self.mood_tags, self.sample_rate = {"playful": "[chuckle]"}, 24000
+            self.tts, self.turbo, self.graph = self, Fast, object()
+
+        def generate(self, text):  # Chatterbox's own loop
+            made.append(("own", text))
+            return self
+
+        def squeeze(self, _):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return worker.np.zeros(10)
+
+    turbo = Turbo()
+    turbo.speak("Fine.", "playful", first=True)
+    turbo.speak("That one went on for a while.", "playful")  # too long: its own loop
+    assert made == [("graph", "[chuckle] Fine."), ("own", "That one went on for a while.")]
 
 
 def test_changing_the_engines_settings_restarts_it_and_off_stops_it(tone):
