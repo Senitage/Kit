@@ -111,6 +111,8 @@ L_BRACKET_X1 = TILT_TAB_X - (tab_under + tab_t) - SLIDE   # pin bracket inside t
 L_BRACKET_X0 = L_BRACKET_X1 - 3.0
 L_ARM_X1 = L_BRACKET_X0 - 0.5                    # inside face of the left arm
 ARM_HALF_Y = 7.0
+PIN_DROP = 2.0                                   # the pin comes in along a channel this far below its seat, then
+                                                 # the head settles onto it: it can't slide back out
 BULK_X0, BULK_X1 = TILT_TAB_X, TILT_TAB_X + 3.0  # tabs pull against the -X face of this wall
 WIRE_XY = (-13.5, TILT_Y + 10.5)                 # wires from the head down through the neck
 
@@ -273,11 +275,15 @@ def head():
     bulk = bulk.cut(box(BULK_X0 - 1, TILT_Y - servo_l + shaft_from_end - 0.4, TILT_Z - servo_w / 2 - 0.4,
                         BULK_X1 + 1, TILT_Y + shaft_from_end + 0.4, 99))
     bulk = bulk.cut(to_tilt(sg90_screw_holes(-0.01, 3.0)))
-    # bracket for the left arm's pin: a slot open toward the back, so the pin slides forward into its seat
-    # as the neck comes in through the open back, and rests on the shelf under it
+    # bracket for the left arm's pin: a channel open toward the back, a step below the seat, so the pin slides
+    # forward along it as the neck comes in through the open back; at the end the head settles PIN_DROP onto
+    # the pin, which lifts into its round seat, and the pin can't slide back along the channel
     brk = box(L_BRACKET_X0, TILT_Y - ARM_HALF_Y, FLOOR - 0.5, L_BRACKET_X1, H_CUT, TILT_Z + 6.0)
-    notch = box(L_BRACKET_X0 - 1, TILT_Y, TILT_Z - 3.3, L_BRACKET_X1 + 1, H_CUT + 1, TILT_Z + 3.3)
-    brk = brk.cut(notch.union(cyl(6.6, 5, (L_BRACKET_X0 - 1, TILT_Y, TILT_Z), "X")))
+    x0, x1 = L_BRACKET_X0 - 1, L_BRACKET_X1 + 1
+    channel = (box(x0, TILT_Y, TILT_Z - PIN_DROP - 3.3, x1, H_CUT + 1, TILT_Z - PIN_DROP + 3.3)
+               .union(cyl(6.6, x1 - x0, (x0, TILT_Y, TILT_Z - PIN_DROP), "X")))
+    seat = cyl(6.6, x1 - x0, (x0, TILT_Y, TILT_Z), "X").union(box(x0, TILT_Y - 3.3, TILT_Z - PIN_DROP, x1, TILT_Y + 3.3, TILT_Z))
+    brk = brk.cut(channel.union(seat))
     shell = shell.union(bulk.union(brk).intersect(inside))
     # bosses for the back cover
     for x, z in head_cover_bosses():
@@ -585,10 +591,11 @@ def check(p):
     horn = horn_single(0.0).rotate((0, 0, 0), (0, 1, 0), 90).translate((R_ARM_X0 + POCKET - horn_t, TILT_Y, TILT_Z))
     hub = cyl(HUB_D, horn_above_shaft + 2.0, (SHAFT_TOP_X - 2.0, TILT_Y, TILT_Z), "X")
     coming = p["neck"].union(horn).union(hub)
-    for back in (3.0, 8.0, 14.0, 20.0):
-        vol = p["head"].intersect(coming.translate((0, back, 0))).val().Volume()
+    # along the channel the head rides PIN_DROP high on the neck, then settles onto the pin
+    for back, up in ((20.0, PIN_DROP), (14.0, PIN_DROP), (8.0, PIN_DROP), (3.0, PIN_DROP), (0.0, PIN_DROP), (0.0, PIN_DROP / 2)):
+        vol = p["head"].intersect(coming.translate((0, back, -up))).val().Volume()
         if vol > 0.05:
-            problems.append((back, "neck coming in", "head", round(vol, 2)))
+            problems.append((back, f"neck coming in, head {up:.0f} mm up", "head", round(vol, 2)))
     for deg in (0, TILT_DEG, -TILT_DEG):
         moved = {k: tilted(v, deg) if k in TILTING else v for k, v in solids.items()}
         names = list(moved)
@@ -649,7 +656,7 @@ def main():
 if __name__ == "__main__":
     if sys.argv[1:] == ["check"]:
         found = check(parts())
-        print("\n".join(f"{'tilt' if a != 'neck coming in' else 'back'} {d:+5.1f}: {a} hits {b} ({v} mm3)"
+        print("\n".join(f"{'back' if a.startswith('neck coming in') else 'tilt'} {d:+5.1f}: {a} hits {b} ({v} mm3)"
                         for d, a, b, v in found) or "No parts hit each other.")
     else:
         main()

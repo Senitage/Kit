@@ -106,9 +106,9 @@ the plate.
 
 > [!NOTE] Step 5
 > The head goes on from behind, level, not down from above: the arms slide in
-> through the open ends of the floor slots and the pin slides forward into its
-> bracket, where it rests on a shelf. Once the tilt servo is in, nothing can
-> slide back out.
+> through the open ends of the floor slots and the pin runs forward along the
+> channel in its bracket. At the end the head settles 2 mm so the pin sits up
+> in its round seat, and it can't slide back out.
 
 ![[pod-step-06.jpg|420]]
 

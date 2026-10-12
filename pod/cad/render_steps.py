@@ -178,7 +178,7 @@ def steps():
 
     yield ("Head on from the back", [
         "Hold the head behind the neck, level, and slide it forward (seen from behind here).",
-        "The arms go in through the open ends of the slots in its floor; the pin on the left arm slides into the bracket until it seats.",
+        "The arms go in through the open ends of the slots in its floor; the pin on the left arm runs along the bracket's channel, then the head settles 2 mm onto it.",
     ], [part("body"), part("top"), part("cap"), part("neck"), part("horn_tilt", HORN),
         part("head", move=(0, 24, 0), opacity=0.45)],
         [((0, 50, k.TILT_Z + 16), (0, 28, k.TILT_Z + 16))], (155, 16, 300), (0, 12, 30))

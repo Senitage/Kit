@@ -69,7 +69,7 @@ Pictures for every step: `assembly/kit_pod_v2_assembly_guide.pdf` (one PNG per s
 2. Sandwich the plate between body and cap with the three long screws from below.
 3. Press the cross horn into the pocket under the neck (drop of glue). Push the neck onto the turn servo and fit the horn screw through the centre hole from above.
 4. Press the single horn into the pocket on the inside of the horn arm (the arm on your right as Kit faces you), arm pointing down, drop of glue.
-5. Hold the head behind the neck, level, and slide it forward: the arms go in through the open ends of the floor slots, and the pin on the other arm slides into its bracket until it seats on the shelf.
+5. Hold the head behind the neck, level, and slide it forward: the arms go in through the open ends of the floor slots, and the pin on the other arm runs along the channel in its bracket, and at the end the head settles 2 mm so the pin sits up in its seat and can't slide back.
 6. Drop the tilt servo in through the back of the head, pushed over toward the pin side, lower it into the U-shaped wall, then slide it across so its shaft goes into the horn. There's 4.5 mm of room for this.
 7. Two tab screws into the wall, then the horn screw through the small hole below the ear on the horn side. The horn is then trapped between the shaft and the arm, so the head can't come off.
 8. Screen, two options (print both and pick):
