@@ -241,7 +241,7 @@ See [[Hearing]].
 | `min_speech_s` | `0.4` | Shorter sounds than this are ignored (a cough, a click). |
 | `max_speech_s` | `20.0` | Longest stretch of talking heard as one go. |
 | `language` | `en` | The language Kit's ears listen for: `en`, `zh`, `ja`, `ko`, `yue`, or `auto`, which works it out each time, a little less reliably. |
-| `threads` | `2` | Processor threads the speech models use on the mic's PC. |
+| `threads` | `2` | Processor threads the speech models use on the mic's PC. Up to about half its cores makes the words come sooner. |
 
 ## speech
 

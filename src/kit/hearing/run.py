@@ -9,7 +9,9 @@ Each pass reads 32 ms from the mic. While someone talks over Kit, the latest
 stretch is voice printed every ``hearing.barge_in_ms``: a voice that isn't his
 own (from the speakers) stops him. When a stretch of talking ends, it's turned
 into words and sent to the brain with how it sounded and whose voice it was;
-the brain decides whether it was meant for Kit (kit.heard).
+the brain decides whether it was meant for Kit (kit.heard). At each short pause
+the words so far are worked out on another thread, so when the pause turns out
+to be the end of the talking they're ready, and the answer comes sooner.
 
 Every few seconds the ears check in with the brain, which answers with the
 "Let Kit hear me" switch, the ``[hearing]`` settings, the voices Kit knows and
@@ -25,11 +27,21 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
 
 from kit.eyes.recognise import Gallery, normalise, similarity
-from kit.hearing.engines import CHUNK, RATE, Stretch, Transcriber, Vad, VoicePrinter, trim_quiet
+from kit.hearing.engines import (
+    CHUNK,
+    RATE,
+    Stretch,
+    Transcriber,
+    Transcript,
+    Vad,
+    VoicePrinter,
+    trim_quiet,
+)
 from kit.known_voices import VOICE_SIZE
 from kit.settings import HearingSettings
 
@@ -93,6 +105,9 @@ class Ears:
         self._hushed = False  # this stretch already stopped him
         self._last_check_in = -1e9
         self._mic_failed_at: float | None = None
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ears-ahead")
+        # The stretch under way, and its words being got ready at its last short pause.
+        self._ready: tuple[Stretch, Future] | None = None
 
     # One pass of the loop
 
@@ -113,7 +128,12 @@ class Ears:
         if chunk is None:
             return []
         self._recent.append(chunk)
-        answers = [self.hear(stretch) for stretch in self.vad.accept(chunk)]
+        answers = []
+        for stretch in self.vad.accept(chunk):
+            if stretch.early:
+                self._ahead(stretch)
+            else:
+                answers.append(self.hear(stretch))
         if self.vad.talking():
             self._talking_for += len(chunk) / RATE
             self._maybe_hush()
@@ -131,6 +151,7 @@ class Ears:
                     break
         finally:
             self._release()
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
     # Talking over him
 
@@ -169,23 +190,63 @@ class Ears:
 
     # A stretch of talking
 
+    def _ahead(self, stretch: Stretch) -> None:
+        """A short pause in the talking: the words so far, and whose voice, are
+        worked out now on the other thread. If the talking goes on, the next pause
+        starts over with more of it; if it was the end, ``hear`` finds them ready."""
+        if self._ready is not None:
+            self._ready[1].cancel()  # not started yet: no need now
+        self._ready = (stretch, self._pool.submit(self._work_out, stretch))
+
+    def _work_out(self, stretch: Stretch) -> tuple[Transcript, list[float] | None]:
+        said = self.transcriber.transcribe(stretch.samples)
+        voice_print = None
+        if self.printer is not None and len(stretch.voice) >= MIN_PRINT_S * RATE:
+            voice_print = normalise(self.printer.print(stretch.voice))
+        return said, voice_print
+
+    def _take_ready(self, stretch: Stretch) -> tuple[Transcript, list[float] | None] | None:
+        """The words got ready for this stretch, if it's the one they were made from:
+        the same start, and the same end give or take a chunk (an early stretch
+        ends at the last talking just as the finished one does)."""
+        if self._ready is None:
+            return None
+        early, job = self._ready
+        self._ready = None
+        if early.start != stretch.start or abs(early.end - stretch.end) > 2 * CHUNK:
+            job.cancel()  # the talking went on past that pause
+            return None
+        try:
+            return job.result()
+        except Exception as e:  # the model choked on it: do it again here
+            log.warning("couldn't get the words ready early: %s", e)
+            return None
+
     def hear(self, stretch: Stretch) -> dict | None:
         """One finished stretch of talking: words, tone, whose voice, to the brain.
         The words come from the stretch and the moment before it; the voice print
-        only from the talking itself."""
+        only from the talking itself. Both were got ready at the last short pause
+        when the stretch ended there."""
         s = self.settings
         seconds = len(stretch.voice) / RATE
         if seconds < s.min_speech_s:
+            self._take_ready(stretch)
             return None
         started = self.clock()
-        said = self.transcriber.transcribe(stretch.samples)
+        ready = self._take_ready(stretch)
+        if ready is not None:
+            said, voice_print = ready
+        else:
+            said, voice_print = self.transcriber.transcribe(stretch.samples), None
         if not said.text and said.sound != "laughter":
             return None
         who, likeness, own, kit = None, 0.0, False, 0.0
         if self.printer is not None and seconds >= MIN_PRINT_S:
             # Who it is goes too, even when it sounds like Kit: the brain knows
             # whether his voice was playing just then.
-            own, kit, who, likeness = self._likeness(normalise(self.printer.print(stretch.voice)))
+            if voice_print is None:
+                voice_print = normalise(self.printer.print(stretch.voice))
+            own, kit, who, likeness = self._likeness(voice_print)
         heard = {
             "text": said.text,
             "tone": said.tone,
@@ -206,12 +267,13 @@ class Ears:
         # What Kit made of it, not the words: overheard talk stays off the screen too,
         # unless whoever runs the ears asks to see it (--words, for tuning).
         log.info(
-            "heard %.1f s%s: %s (%s, %.2f s)%s",
+            "heard %.1f s%s: %s (%s, %.2f s%s)%s",
             seconds,
             f" from {who}" if who else "",
             answer.get("heard", "?"),
             answer.get("why", ""),
             took,
+            ", words ready early" if ready is not None else "",
             f' [like Kit {kit:.2f}, like {who or "anyone known"} {likeness:.2f}]: "{said.text}"'
             if self.words
             else "",

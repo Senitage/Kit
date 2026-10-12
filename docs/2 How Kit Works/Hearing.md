@@ -75,6 +75,14 @@ sometimes writes it "Ki", "Kid" or "Kitt", so those count too
 (`hearing.names`). A name at the end only counts when it's said to him, not
 about him: "I told Kit" and "the first aid kit" don't.
 
+The ears only know you've finished when you've been quiet for
+`hearing.pause_ms`. They don't sit idle through it: at a much shorter pause,
+the talking so far is turned into words (and voice printed) on a second
+thread, so when the pause turns out to be the end, the words are ready and go
+to the brain at once. If you carry on talking, the next pause starts over with
+all of it. With `--words`, the ears window says "words ready early" when that
+paid off.
+
 An answer is an ordinary chat turn on the **voice channel**, so he keeps it
 short and spoken. It starts on the brain straight away, and the desk app reads
 it as it's made (the `heard` event says which turn), so he starts talking as

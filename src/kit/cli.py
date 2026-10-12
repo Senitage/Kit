@@ -791,7 +791,7 @@ def _enrol_voice(client, args: argparse.Namespace, settings, parts=None) -> int:
 
             folder = models_dir()
             device = pick_device(settings.mic, input_devices()) if settings.mic else None
-            parts = (lambda: SoundDeviceMic(device), SileroVad(folder, settings))
+            parts = (lambda: SoundDeviceMic(device), SileroVad(folder, settings, ahead=False))
             parts += (CamPlusPlus(folder, settings),)
         open_mic, vad, printer = parts
         mic = open_mic()

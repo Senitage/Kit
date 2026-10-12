@@ -120,6 +120,11 @@ pick new voices up by themselves.
   more like him than like you, introduce yourself again (`kit hearing enrol
   me`) at your usual distance, or raise `hearing.own_voice`.
 - **He cuts you off mid-thought:** raise `hearing.pause_ms`.
+- **He's slow to answer:** lower `hearing.pause_ms` (450 still waits out most
+  mid-thought pauses), and if the PC has six or more cores, set
+  `hearing.threads` to 4. The ears window says "words ready early" when the
+  words were done during the pause; a stretch that took longer than the pause
+  wasn't. Both settings need `kit hearing` restarted.
 - **The fridge or fan sets it off:** raise `hearing.threshold`.
 - **He calls you by your partner's name:** introduce both of you again in the
   same spot, or raise `hearing.match`.

@@ -72,6 +72,17 @@ class FakeVad:
         return self.now
 
 
+class EarlyVad(FakeVad):
+    """Like FakeVad, but hands out the talking so far every ten loud chunks, as the
+    real one does at a short pause."""
+
+    def accept(self, chunk):
+        done = super().accept(chunk)
+        if self.now and len(self.stretch) % 10 == 0:
+            done.append(Stretch(np.concatenate(self.stretch), early=True))
+        return done
+
+
 class FakeTranscriber:
     def __init__(self, *said):
         self.said = list(said)
@@ -184,6 +195,10 @@ def test_a_stretch_starts_a_little_before_the_vad_noticed_it():
     short = Lookback(1.0)
     short.add(sound[:100])
     assert np.array_equal(short.before(50, 1.0), sound[:50])
+    assert np.array_equal(
+        back.between(RATE * 2 + 100, RATE * 2 + 300), sound[RATE * 2 + 100 : RATE * 2 + 300]
+    )
+    assert len(back.between(RATE * 2 + 100, RATE * 9)) == RATE - 100  # only up to what's fed
 
 
 def test_his_own_voice_from_the_speakers_is_flagged_and_does_not_stop_him():
@@ -219,6 +234,53 @@ def test_words_come_from_the_lead_in_too_but_the_voice_print_does_not():
     lead_in, voice = np.zeros(RATE // 2, dtype=np.float32), np.full(RATE, 0.8, dtype=np.float32)
     e.hear(Stretch(voice, lead_in))
     assert heard_lengths == [RATE + RATE // 2] and printed_lengths == [RATE]
+
+
+def test_words_got_ready_at_a_short_pause_are_used_when_the_talking_ended_there():
+    heard, printed = [], []
+
+    class Hears(FakeTranscriber):
+        def transcribe(self, samples):
+            heard.append(len(samples))
+            return Transcript("Kit, hi")
+
+    class Prints(FakePrinter):
+        def print(self, samples):
+            printed.append(len(samples))
+            return DAN
+
+    brain = Brain()
+    e = Ears(lambda: None, FakeVad(), Hears(), Prints(), brain.check_in, brain.hear, None)
+    loud = lambda seconds: np.full(int(seconds * RATE), 0.8, dtype=np.float32)  # noqa: E731
+    e._ahead(Stretch(loud(1.0), start=100, early=True))
+    # The finished stretch: the same start, and a chunk longer (the pause's edge).
+    e.hear(Stretch(loud(1.0 + CHUNK / RATE), start=100))
+    assert heard == [RATE] and printed == [RATE]  # worked out once, at the pause
+    assert brain.heard[-1]["seconds"] == pytest.approx(1.03, abs=0.01)
+    # The talking went on well past the pause: worked out afresh, from all of it.
+    e._ahead(Stretch(loud(1.0), start=5000, early=True))
+    e.hear(Stretch(loud(2.0), start=5000))
+    assert heard[-1] == RATE * 2 and brain.heard[-1]["seconds"] == 2.0
+    # A stretch that began elsewhere isn't the one the words were made from.
+    e._ahead(Stretch(loud(1.0), start=9000, early=True))
+    e.hear(Stretch(loud(1.0), start=9500))
+    assert heard[-1] == RATE and e._ready is None
+    e._pool.shutdown(wait=True)
+
+
+def test_the_loop_gets_the_words_ready_at_each_pause(caplog):
+    brain = Brain()
+    said = Transcript("Kit, hi")
+    e, run = ears(talk(0.8, 1.0) + quiet(), brain, FakeTranscriber(*[said] * 5))
+    e.vad = EarlyVad()  # the words are worked out at each pause, from all of it so far
+    with caplog.at_level("INFO", logger="kit.hearing.run"):
+        run()
+    assert brain.heard[-1]["text"] == "Kit, hi" and brain.heard[-1]["who"] == "Dan"
+    assert "words ready early" in caplog.text
+    # Enrolling only wants finished stretches.
+    chunks = talk(0.8, 1.0) + quiet(1.0)
+    found = enrol.listen_for(lambda: chunks.pop(0) if chunks else None, EarlyVad(), 2.0)
+    assert [len(f) for f in found] == [31 * CHUNK]
 
 
 def test_kits_voice_sample_is_printed_without_its_silent_padding():

@@ -26,6 +26,9 @@ RATE = 16000  # samples a second, everywhere in the ears
 CHUNK = 512  # the VAD's step: 32 ms
 
 LEAD_IN_S = 0.8  # sound kept from before the VAD noticed talking: "Kit, ..." starts there
+# A pause this long (less than ``hearing.pause_ms``) hands out the talking so far as
+# an early stretch, so the words can be worked out while waiting to be sure it's over.
+EARLY_PAUSE_MS = 200
 
 TONES = {"happy", "sad", "angry", "neutral", "fearful", "disgusted", "surprised"}
 
@@ -40,10 +43,19 @@ class Transcript:
 
 @dataclass
 class Stretch:
-    """One stretch of talking: what the VAD found, and the moment just before it."""
+    """One stretch of talking: what the VAD found, and the moment just before it.
+    An ``early`` one is the same stretch at a short pause, before the VAD is sure
+    it's over: the words can be got ready from it. ``start`` is the sample number
+    it began at, which tells an early stretch and the finished one apart."""
 
     voice: np.ndarray  # the talking itself: voice prints use only this
     lead_in: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
+    start: int = 0
+    early: bool = False
+
+    @property
+    def end(self) -> int:
+        return self.start + len(self.voice)
 
     @property
     def samples(self) -> np.ndarray:
@@ -53,7 +65,7 @@ class Stretch:
 
 
 class Vad(Protocol):
-    def accept(self, chunk: np.ndarray) -> list[Stretch]: ...  # finished stretches
+    def accept(self, chunk: np.ndarray) -> list[Stretch]: ...  # finished (and early) stretches
     def talking(self) -> bool: ...  # someone is talking right now
 
 
@@ -124,37 +136,71 @@ class Lookback:
         self.buffer[: len(kept) - first] = kept[first:]
         self.fed += n
 
+    def between(self, lo: int, hi: int) -> np.ndarray:
+        """The sound from sample number ``lo`` up to ``hi``, as much as it still has."""
+        lo = max(lo, self.fed - len(self.buffer), 0)
+        hi = max(lo, min(hi, self.fed))
+        return self.buffer[np.arange(lo, hi) % len(self.buffer)]
+
     def before(self, start: int, seconds: float) -> np.ndarray:
         """Up to ``seconds`` of the sound just before sample number ``start``."""
-        lo = max(start - int(seconds * RATE), self.fed - len(self.buffer), 0)
-        hi = max(lo, min(start, self.fed))
-        return self.buffer[np.arange(lo, hi) % len(self.buffer)]
+        return self.between(start - int(seconds * RATE), start)
 
 
 class SileroVad:
-    def __init__(self, folder: Path, settings: HearingSettings) -> None:
+    """Two Silero detectors hear the same sound: one ends a stretch after
+    ``hearing.pause_ms`` of quiet, the other after ``EARLY_PAUSE_MS``. The early one
+    hands out the talking so far at each short pause, so the words can be worked
+    out while the first is still waiting to be sure the talking is over. A segment
+    carries no trailing quiet, so both end a stretch at the same sample (give or
+    take a chunk) and start it at the same one."""
+
+    def __init__(self, folder: Path, settings: HearingSettings, ahead: bool = True) -> None:
+        self._model = str(models.model_file("vad", folder))
+        self._vad = self._detector(settings, settings.pause_ms)
+        self._early = None
+        if ahead and settings.pause_ms > EARLY_PAUSE_MS + 100:
+            self._early = self._detector(settings, EARLY_PAUSE_MS)
+        self._since: int | None = None  # where the stretch under way began
+        self._lookback = Lookback(settings.max_speech_s + settings.pause_ms / 1000 + 3)
+
+    def _detector(self, settings: HearingSettings, pause_ms: int):
         import sherpa_onnx
 
         config = sherpa_onnx.VadModelConfig()
-        config.silero_vad.model = str(models.model_file("vad", folder))
+        config.silero_vad.model = self._model
         config.silero_vad.threshold = settings.threshold
-        config.silero_vad.min_silence_duration = settings.pause_ms / 1000
+        config.silero_vad.min_silence_duration = pause_ms / 1000
         config.silero_vad.min_speech_duration = 0.25
         config.silero_vad.max_speech_duration = settings.max_speech_s
         config.sample_rate = RATE
         config.num_threads = 1
-        self._vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=60)
-        self._lookback = Lookback(settings.max_speech_s + settings.pause_ms / 1000 + 3)
+        return sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=60)
 
     def accept(self, chunk: np.ndarray) -> list[Stretch]:
         self._lookback.add(chunk)
-        self._vad.accept_waveform(chunk)
         done = []
+        if self._early is not None:
+            self._early.accept_waveform(chunk)
+            while not self._early.empty():
+                found = self._early.front
+                if self._since is None:
+                    self._since = found.start
+                # The talking so far, from where the stretch under way began: the
+                # early detector may have cut it at an earlier short pause.
+                end = found.start + len(found.samples)
+                voice = self._lookback.between(self._since, end)
+                lead_in = self._lookback.before(self._since, LEAD_IN_S)
+                done.append(Stretch(voice, lead_in, start=self._since, early=True))
+                self._early.pop()
+        self._vad.accept_waveform(chunk)
         while not self._vad.empty():
             found = self._vad.front
             voice = np.asarray(found.samples, dtype=np.float32)
-            done.append(Stretch(voice, self._lookback.before(found.start, LEAD_IN_S)))
+            lead_in = self._lookback.before(found.start, LEAD_IN_S)
+            done.append(Stretch(voice, lead_in, start=found.start))
             self._vad.pop()
+            self._since = None
         return done
 
     def talking(self) -> bool:

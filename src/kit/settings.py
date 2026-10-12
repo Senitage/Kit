@@ -852,7 +852,11 @@ class HearingSettings(_Section):
         "a little less reliably.",
     )
     threads: int = Field(
-        2, ge=1, le=16, description="Processor threads the speech models use on the mic's PC."
+        2,
+        ge=1,
+        le=16,
+        description="Processor threads the speech models use on the mic's PC. Up to about "
+        "half its cores makes the words come sooner.",
     )
 
     @field_validator("names")
