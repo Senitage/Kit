@@ -114,11 +114,13 @@ def test_old_database_is_migrated_forward(tmp_path, clock):
 
 def test_spend_by_month(memory, clock):
     memory.record_spend("claude-opus-5-5", 10, 20, 0.5, "q")
-    memory.record_spend("claude-opus-5-5", 10, 20, 0.25, "q")
+    memory.record_spend("claude-opus-5-5", 10, 20, 0.25, "q", cached_tokens=8, searches=1)
     assert memory.month_spend() == pytest.approx(0.75)
     clock.now += timedelta(days=31)
     assert memory.month_spend() == 0
-    assert len(memory.spend_log()) == 2
+    newest, older = memory.spend_log()
+    assert (newest.cached_tokens, newest.cache_write_tokens, newest.searches) == (8, 0, 1)
+    assert (older.cached_tokens, older.searches) == (0, 0)
 
 
 def test_replace_keeps_where_the_fact_came_from(memory):
@@ -160,12 +162,13 @@ def test_spend_summary_by_day_and_model(memory, clock):
     memory.record_spend("claude-sonnet-5-5", 1000, 200, 0.02, "q")
     memory.record_spend("claude-haiku-5-5", 500, 100, 0.001, "q")
     clock.now += timedelta(days=2)
-    memory.record_spend("claude-sonnet-5-5", 3000, 400, 0.05, "q")
+    memory.record_spend("claude-sonnet-5-5", 3000, 400, 0.05, "q", cached_tokens=2500)
     s = memory.spend_summary(7)
     assert len(s["days"]) == 7 and s["days"][-1]["date"] == clock.now.date().isoformat()
     assert s["days"][-1]["by_model"] == {"claude-sonnet-5-5": 0.05}
     assert s["days"][-3]["cost_usd"] == pytest.approx(0.021)
     assert [m["model"] for m in s["models"]] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
     assert s["models"][0]["calls"] == 2 and s["models"][0]["input_tokens"] == 4000
+    assert s["models"][0]["cached_tokens"] == 2500 and s["models"][1]["cached_tokens"] == 0
     assert s["total_usd"] == pytest.approx(0.071)
     assert memory.spend_summary(1)["total_usd"] == pytest.approx(0.05)

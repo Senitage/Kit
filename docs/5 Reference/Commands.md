@@ -83,7 +83,7 @@ See [[Inner Life]].
 | `kit memory tidy` | Plan sorting what he knows into the right kinds; `--apply` does it, after a backup |
 | `kit memory reindex` | Build any missing meaning vectors now |
 | `kit memory backup` | Back up memory now |
-| `kit memory spend` | This month's cloud spend |
+| `kit memory spend` | This month's cloud spend, and for each recent call the input tokens read from the prompt cache (`cached 1830/2400`) |
 
 See [[Memory]].
 

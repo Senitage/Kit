@@ -172,6 +172,17 @@ one in it, a reminder you asked for that way (and the line he said for it), a
 thought he had right after, and a journal or "what's going on with you" written
 at home from any of these. The local model still sees all of it.
 
+## The spend log
+
+Every cloud call goes in the `spend` table of the same database: when, which
+model, the question (cut to 500 characters), the tokens in and out, and the
+cost. Three columns say how the prompt cache did: `cached_tokens` (input
+tokens read from the cache, at a tenth of the price), `cache_write_tokens`
+(written to it, at 1.25 times) and `searches` (web searches the model ran).
+`kit memory spend` prints them as `cached 1830/2400`; `/api/spend` returns
+them with each row, and `/api/spend/summary` adds each model's cached total.
+See [[Models and Routing#Caching]] for why the figure should be high.
+
 ## You stay in charge
 
 - The memory page (`/memory`) and `kit memory ...` show everything Kit knows,
