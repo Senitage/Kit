@@ -23,7 +23,8 @@ the options for any of them.
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
 | `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
 | `kit devices` | List paired devices (`kit devices list` does the same) |
-| `kit devices forget NAME` | Unpair a device; its token stops working at once |
+| `kit devices forget NAME` | Unpair a device; its token stops working at once. `kit devices` marks the ones Kit can nudge (`notifies`) |
+| `kit nudge` | Send a test nudge to every phone with a push token, to check Firebase is set up; says what to set up if it isn't. See [[Phone Stage 2 - He's With You]] |
 
 ## Talking to him
 

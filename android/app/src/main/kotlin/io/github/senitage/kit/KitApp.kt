@@ -8,6 +8,9 @@ class KitApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Nudges.setUp(this)
+        Notifier.makeChannels(this)
         kit = Kit(this)
+        CatchUpWorker.schedule(this)
     }
 }

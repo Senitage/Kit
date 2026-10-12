@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon: a new chat, or an hour's quiet. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_chat"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/shortcut_new_chat"
+        android:shortcutLongLabel="@string/shortcut_new_chat_long">
+        <intent
+            android:action="io.github.senitage.kit.NEW_CHAT"
+            android:targetPackage="io.github.senitage.kit"
+            android:targetClass="io.github.senitage.kit.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="quiet"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
+        android:shortcutShortLabel="@string/shortcut_quiet"
+        android:shortcutLongLabel="@string/shortcut_quiet_long">
+        <intent
+            android:action="io.github.senitage.kit.QUIET"
+            android:targetPackage="io.github.senitage.kit"
+            android:targetClass="io.github.senitage.kit.MainActivity" />
+    </shortcut>
+</shortcuts>

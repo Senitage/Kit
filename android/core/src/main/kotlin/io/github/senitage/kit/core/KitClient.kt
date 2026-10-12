@@ -10,6 +10,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Call
@@ -155,6 +157,88 @@ class KitClient(
         }
     }.flowOn(Dispatchers.IO)
 
+    // ---- his inner life ----
+
+    suspend fun notebook(): Notebook = decode(call(get("/api/life/notebook")))
+
+    /** Keep him from piping up for [minutes] (0 lets him again). */
+    suspend fun snooze(minutes: Int): LifeState =
+        decode(call(post("/api/life/snooze", """{"minutes": $minutes}""")))
+
+    // ---- memory and the register ----
+
+    suspend fun facts(): List<Item> = decode(call(get("/api/memory/facts")))
+
+    suspend fun teach(text: String, kind: String = "other", pinned: Boolean = false): Learned {
+        val body = buildJsonObject {
+            put("text", text)
+            put("kind", kind)
+            put("pinned", pinned)
+        }
+        return decode(call(post("/api/memory/facts", body.toString())))
+    }
+
+    suspend fun pinFact(id: Long, pinned: Boolean): Item =
+        decode(call(patch("/api/memory/facts/$id", """{"pinned": $pinned}""")))
+
+    suspend fun forgetFact(id: Long) {
+        call(request(url("/api/memory/facts/$id")).delete().build())
+    }
+
+    /** Search the way Kit does: facts, days, conversations, things, his notebook, notes. */
+    suspend fun search(words: String, most: Int = 20): SearchAnswer {
+        val url = url("/api/memory/search").newBuilder()
+            .addQueryParameter("q", words)
+            .addQueryParameter("k", most.toString())
+            .build()
+        return decode(call(request(url).get().build()))
+    }
+
+    suspend fun days(): List<Item> = decode(call(get("/api/memory/days")))
+
+    suspend fun things(): List<Thing> = decode(call(get("/api/things")))
+
+    // ---- Kit's settings ----
+
+    suspend fun settings(): SettingsAnswer = decode(call(get("/api/settings")))
+
+    suspend fun settingsSchema(): JsonObject = decode(call(get("/api/settings/schema")))
+
+    /** Change settings: `{"section": {"field": value}}`, merged one level deep. */
+    suspend fun changeSettings(patch: JsonObject): SettingsAnswer =
+        decode(call(request(url("/api/settings")).header("X-Changed-By", "phone").patch(patch.toString().toRequestBody(JSON_TYPE)).build()))
+
+    suspend fun undoSettings(): SettingsAnswer = decode(call(post("/api/settings/undo", "{}")))
+
+    suspend fun spend(days: Int = 30): Spend {
+        val url = url("/api/spend/summary").newBuilder().addQueryParameter("days", days.toString()).build()
+        return decode(call(request(url).get().build()))
+    }
+
+    suspend fun status(): JsonObject = decode(call(get("/api/status")))
+
+    // ---- nudges and the phone's report ----
+
+    /** Tell Kit how to nudge this phone when he pipes up and the app's closed. True if he can. */
+    suspend fun registerPush(name: String, kind: String, token: String): Boolean {
+        val body = buildJsonObject {
+            put("kind", kind)
+            put("token", token)
+        }
+        val answer: JsonObject = decode(call(post("/api/devices/$name/push", body.toString())))
+        return (answer["nudges"] as? JsonPrimitive)?.booleanOrNull ?: false
+    }
+
+    suspend fun unregisterPush(name: String) {
+        call(request(url("/api/devices/$name/push")).delete().build())
+    }
+
+    /** Where the phone says Dan is; answers with the line Kit will see. */
+    suspend fun report(report: PhoneReport): String {
+        val answer: JsonObject = decode(call(post("/api/phone/context", KitJson.encodeToString(report))))
+        return answer.str("line") ?: ""
+    }
+
     // ---- plumbing ----
 
     private fun url(path: String): HttpUrl =
@@ -170,6 +254,9 @@ class KitClient(
 
     private fun post(path: String, json: String): Request =
         request(url(path)).post(json.toRequestBody(JSON_TYPE)).build()
+
+    private fun patch(path: String, json: String): Request =
+        request(url(path)).patch(json.toRequestBody(JSON_TYPE)).build()
 
     private suspend fun call(request: Request, client: OkHttpClient = http): String {
         val call = client.newCall(request)

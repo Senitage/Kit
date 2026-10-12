@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from pathlib import Path
 
 from kit.paths import KitPaths
 
@@ -57,3 +58,20 @@ def api_token(paths: KitPaths, create: bool = True) -> str | None:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token + "\n")
     return token
+
+
+FIREBASE_FILE = "firebase_service_account.json"
+
+
+def firebase_service_account(paths: KitPaths) -> str | None:
+    """The Firebase service account Kit nudges phones with (kit.push), as the JSON
+    text from the Firebase console: the file named by KIT_FIREBASE_SERVICE_ACCOUNT,
+    else ``firebase_service_account.json`` in the secrets folder. None when there
+    isn't one, and then phones aren't nudged."""
+    named = os.environ.get("KIT_FIREBASE_SERVICE_ACCOUNT", "").strip()
+    for file in ([Path(named)] if named else []) + [paths.secrets_dir / FIREBASE_FILE]:
+        if file.is_file():
+            text = file.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+    return None

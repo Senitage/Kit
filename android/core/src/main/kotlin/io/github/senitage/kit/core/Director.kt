@@ -208,6 +208,13 @@ class Director(
         onBuzz("boop")
     }
 
+    /** The phone was shaken: he's startled. */
+    fun shaken() {
+        if (!online) return
+        face.play("startle", now())
+        onBuzz("boop")
+    }
+
     /** A long press on his face: a pat on the head. */
     fun pat() {
         if (!online) return

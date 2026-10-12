@@ -28,7 +28,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Companion stage 4: his voice and eyes carry it | Open, pull request #40 | [[Companion Stage 4]] |
 | Faster voice: Chatterbox Turbo's token loop as a CUDA graph, and no 2 s wait connecting from Windows | Done, pull request #43 | [[Voice#Faster on a graphics card]], [[Desk App#Connections]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done, pull request #44 | [[Phone Stage 0 - Pairing]] |
-| Phone app, phase 1: Kit for Android you can install, with chat, his face, waiting messages and updates | Open, pull request #46 | [[Phone Stage 1 - Pocket Kit]] |
+| Phone app, phases 1 and 2: Kit for Android you can install, with chat, his face, waiting messages and updates; then his pipe-ups as notifications you answer in place, home or out and the battery, his Kit, Memory and Settings pages, a widget and a tile | Open, pull request #46 | [[Phone Stage 1 - Pocket Kit]], [[Phone Stage 2 - He's With You]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

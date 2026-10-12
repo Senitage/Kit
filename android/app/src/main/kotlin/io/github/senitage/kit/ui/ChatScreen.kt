@@ -111,6 +111,7 @@ fun ChatScreen(kit: Kit) {
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .navigationBarsPadding()
             .imePadding(),
     ) {
         Header(kit, collapsed = !atBottom)
@@ -146,11 +147,12 @@ fun ChatScreen(kit: Kit) {
 private fun Header(kit: Kit, collapsed: Boolean) {
     val hello by kit.hello.collectAsStateWithLifecycle()
     val mode by kit.faceMode.collectAsStateWithLifecycle()
+    val lowPower by kit.lowPower.collectAsStateWithLifecycle()
     val life by kit.life.collectAsStateWithLifecycle()
     val reach by kit.reach.collectAsStateWithLifecycle()
     val bubble by kit.director.bubble.collectAsStateWithLifecycle()
     val t by animateFloatAsState(if (collapsed) 1f else 0f, label = "header")
-    val page = remember(hello, mode) { kit.facePage() }
+    val page = remember(hello, mode, lowPower) { kit.facePage() }
     val name = hello?.name ?: "Kit"
     val feeling = life?.feeling?.takeIf { it.name.isNotEmpty() }
     val status = when (reach) {
@@ -387,7 +389,7 @@ private fun place(channel: String?): String? = when (channel) {
     "desk" -> "at the desk"
     "voice" -> "out loud"
     "web" -> "on the web page"
-    "home_app" -> "in home app"
+    "home" -> "in home app"
     null, "" -> null
     else -> channel.replace('_', ' ')
 }
@@ -520,11 +522,18 @@ private fun copy(context: Context, text: String) {
 private fun InputBar(kit: Kit, reach: Reach, sent: () -> Unit) {
     var text by remember { mutableStateOf("") }
     val online = reach == Reach.Online
+    // Text shared to Kit from another app lands in the box.
+    val draft by kit.draft.collectAsStateWithLifecycle()
+    LaunchedEffect(draft) {
+        draft?.let {
+            text = if (text.isBlank()) it else "$text\n$it"
+            kit.draft.value = null
+        }
+    }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -144,6 +144,7 @@ from kit.notes import (
 )
 from kit.pastimes import Pastime, Pastimes, Readers, weather_doing
 from kit.pc_context import PcContext, away_on
+from kit.phone_context import PhoneContext
 from kit.prompt import (
     IN_WORDS,
     about_yourself,
@@ -542,6 +543,7 @@ class Brain:
         self.recall = recall
         self.pc = PcContext(memory.clock)
         self.bodies = BodyRegistry(memory.clock)  # the desk apps, the phone, the Pod...
+        self.phones = PhoneContext(memory.clock)  # where his phone says Dan is
         self.scene = SceneContext(memory.clock)
         self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
         self.notebook = Notebook(memory)
@@ -587,11 +589,14 @@ class Brain:
         """The quirks Kit picked for himself; the nightly reflection may change one."""
         return self.notebook.quirks()
 
+    def pc_in_use(self) -> bool:
+        """Dan's at a PC right now (the desk app reports him using it)."""
+        snap = self.pc.latest if self.pc.online() else None
+        return snap is not None and not away_on(snap)
+
     def voice_body(self) -> str | None:
         """Which body should say a pipe-up out loud (kit.body_registry.speaker)."""
-        snap = self.pc.latest if self.pc.online() else None
-        in_use = snap is not None and not away_on(snap)
-        return self.bodies.speaker(self.pc.host(), in_use)
+        return self.bodies.speaker(self.pc.host(), self.pc_in_use())
 
     def talking(self) -> bool:
         """A chat turn is under way."""
@@ -1252,7 +1257,10 @@ class Brain:
         self._cancel_warm()  # only once he's going to say something: it reads ahead after
         try:
             doing = (
-                self.pc.now_line(owner) or self.scene.now_line(owner) or f"what {owner} is up to"
+                self.pc.now_line(owner)
+                or self.phones.now_line(owner)
+                or self.scene.now_line(owner)
+                or f"what {owner} is up to"
             )
             recalled = await self.recall.for_turn(doing, {str(m.id) for m in history})
             quiet_h = (self.memory.clock() - self.life.last_chat).total_seconds() / 3600
@@ -1329,7 +1337,13 @@ class Brain:
         against what Dan's doing, the time and what's been said lately."""
         owner = self.settings().persona.owner
         context = " ".join(
-            [self.pc.now_line(owner), *(m.text for m in history[-4:]), day_part(now), f"{now:%A}"]
+            [
+                self.pc.now_line(owner),
+                self.phones.now_line(owner),
+                *(m.text for m in history[-4:]),
+                day_part(now),
+                f"{now:%A}",
+            ]
         )
         said = [without_plans(m.text) for m in history if m.role != "user"][-SAID_SHOWN:]
         d = self.life.drives
@@ -2011,6 +2025,7 @@ class Brain:
             quirks=self.quirks,
             voice=voice,
             pc=self.pc.now_line(settings.persona.owner),
+            phone=self.phones.now_line(settings.persona.owner),
             channel=channel_line(
                 CHANNEL.get(), settings.persona.owner, ARRIVAL.get(), self.memory.clock()
             ),

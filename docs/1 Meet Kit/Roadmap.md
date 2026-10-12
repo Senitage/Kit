@@ -36,7 +36,7 @@ flowchart LR
 | 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools | Next big stage |
 | 5 NAS files and photos | NAS documents and photos as new memory sources | Planned |
 | 6 Notes, email, calendar | Gmail, Google Calendar, a daily brief (notes are already in) | Planned |
-| 7 Remote access | The phone as a first-class way in, notifications: the [[Phone App]] | Phase 0 done; phase 1, the app, open |
+| 7 Remote access | The phone as a first-class way in, notifications: the [[Phone App]] | Phase 0 done; phases 1 and 2 (the app, then notifications, home or out, his pages) open |
 | 8 Deeper smarts | Computer use and bigger jobs | Planned |
 | 9 The arm | Kit in a desk robot arm | Planned |
 

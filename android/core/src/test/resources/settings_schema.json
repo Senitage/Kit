@@ -1,0 +1,1232 @@
+{
+ "$defs": {
+  "BrainSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "history_messages": {
+     "default": 20,
+     "description": "Recent messages Kit sees each turn.",
+     "maximum": 200,
+     "minimum": 2,
+     "title": "History Messages",
+     "type": "integer"
+    },
+    "host": {
+     "default": "127.0.0.1",
+     "description": "Address the brain listens on. 127.0.0.1 is this PC only; 0.0.0.0 lets the home network and Tailscale in.",
+     "title": "Host",
+     "type": "string"
+    },
+    "new_chat_after_minutes": {
+     "default": 120,
+     "description": "Start a fresh conversation when you come back after this long quiet (the old one stays in memory). 0 never does.",
+     "maximum": 10080,
+     "minimum": 0,
+     "title": "New Chat After Minutes",
+     "type": "integer"
+    },
+    "new_topic_below": {
+     "default": 0.45,
+     "description": "Start fresh when a message's meaning is this far from your last few (similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never count as a new topic.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "New Topic Below",
+     "type": "number"
+    },
+    "port": {
+     "default": 8600,
+     "description": "Port for the chat page and API.",
+     "maximum": 65535,
+     "minimum": 1,
+     "title": "Port",
+     "type": "integer"
+    }
+   },
+   "title": "BrainSettings",
+   "type": "object"
+  },
+  "CloudSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "monthly_cap_usd": {
+     "default": 40.0,
+     "description": "Kit stops using cloud models once this month's spend reaches this.",
+     "minimum": 0,
+     "title": "Monthly Cap Usd",
+     "type": "number"
+    },
+    "reserve_usd": {
+     "default": 3.0,
+     "description": "As the budget runs low, cloud calls give way in order, each this much sooner than the last: evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same.",
+     "maximum": 100,
+     "minimum": 0,
+     "title": "Reserve Usd",
+     "type": "number"
+    },
+    "stream": {
+     "default": true,
+     "description": "A Claude answer comes in as it's written, so Kit starts saying the first words (in the answer's mood) while the rest is still on its way, instead of after the whole answer. Goodbyes are still checked whole first. Off: each answer arrives in one piece.",
+     "title": "Stream",
+     "type": "boolean"
+    }
+   },
+   "title": "CloudSettings",
+   "type": "object"
+  },
+  "Example": {
+   "additionalProperties": false,
+   "properties": {
+    "kit": {
+     "description": "How Kit answers.",
+     "title": "Kit",
+     "type": "string"
+    },
+    "user": {
+     "description": "Something Dan says.",
+     "title": "User",
+     "type": "string"
+    }
+   },
+   "required": [
+    "user",
+    "kit"
+   ],
+   "title": "Example",
+   "type": "object"
+  },
+  "EyesSettings": {
+   "additionalProperties": false,
+   "description": "Kit's eyes: the camera process (`kit eyes`) on the PC with the webcam. It\nfetches these from the brain, so there's one place to change them.",
+   "properties": {
+    "camera": {
+     "default": 0,
+     "description": "Which camera the eyes use (`kit eyes cameras` lists them).",
+     "maximum": 15,
+     "minimum": 0,
+     "title": "Camera",
+     "type": "integer"
+    },
+    "confidence": {
+     "default": 0.4,
+     "description": "How sure the detector must be before something counts.",
+     "maximum": 0.95,
+     "minimum": 0.05,
+     "title": "Confidence",
+     "type": "number"
+    },
+    "detector": {
+     "default": "yolo11s",
+     "description": "The model that finds people and objects: yolo11s suits a PC with a graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper still. Downloaded the first time the eyes run.",
+     "minLength": 1,
+     "title": "Detector",
+     "type": "string"
+    },
+    "enabled": {
+     "default": true,
+     "description": "Kit uses a camera to see who's at the desk, when `kit eyes` is running on the PC with the webcam.",
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "faces": {
+     "default": true,
+     "description": "Read faces: where each person is looking and their expression.",
+     "title": "Faces",
+     "type": "boolean"
+    },
+    "forget_after_s": {
+     "default": 3.0,
+     "description": "Seconds out of view before someone or something has left.",
+     "maximum": 60,
+     "minimum": 0.5,
+     "title": "Forget After S",
+     "type": "number"
+    },
+    "hands": {
+     "default": true,
+     "description": "Read hand gestures: thumbs up, open palm, a wave.",
+     "title": "Hands",
+     "type": "boolean"
+    },
+    "height": {
+     "default": 720,
+     "description": "Frame height to ask the camera for.",
+     "maximum": 2160,
+     "minimum": 120,
+     "title": "Height",
+     "type": "integer"
+    },
+    "match": {
+     "default": 0.4,
+     "description": "How alike a face must be to someone Kit knows to count as them. Higher is stricter: fewer mix-ups, but more 'someone I don't know'.",
+     "maximum": 0.8,
+     "minimum": 0.25,
+     "title": "Match",
+     "type": "number"
+    },
+    "mirror": {
+     "default": true,
+     "description": "Flip the picture like a mirror. On for a webcam facing you at the desk, so left is your left; off for a camera on the arm.",
+     "title": "Mirror",
+     "type": "boolean"
+    },
+    "poses": {
+     "default": 1,
+     "description": "How many people to read body pose for (each adds about 13 ms a frame). 0 turns it off.",
+     "maximum": 4,
+     "minimum": 0,
+     "title": "Poses",
+     "type": "integer"
+    },
+    "recognise": {
+     "default": true,
+     "description": "Tell people apart by their faces, once they've been introduced with `kit eyes enrol NAME`. Kit keeps numbers worked out from a face, never pictures.",
+     "title": "Recognise",
+     "type": "boolean"
+    },
+    "report_every_s": {
+     "default": 1.0,
+     "description": "How often the eyes tell the brain what they see.",
+     "maximum": 10,
+     "minimum": 0.2,
+     "title": "Report Every S",
+     "type": "number"
+    },
+    "width": {
+     "default": 1280,
+     "description": "Frame width to ask the camera for.",
+     "maximum": 4096,
+     "minimum": 160,
+     "title": "Width",
+     "type": "integer"
+    }
+   },
+   "title": "EyesSettings",
+   "type": "object"
+  },
+  "FaceSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "character": {
+     "default": "retro",
+     "description": "Which character Kit is: how he looks and moves in the desk app, home_app and on his robots. Retro is the original glowing pill eyes; switch back any time.",
+     "enum": [
+      "retro",
+      "kit2d",
+      "kit3d"
+     ],
+     "title": "Character",
+     "type": "string"
+    },
+    "hot_c": {
+     "default": 35.0,
+     "description": "When you ask about the weather, a dry day this hot or hotter (\u00b0C) shows as a hot day on his face: the sun beating down and him sweating.",
+     "maximum": 55,
+     "minimum": 20,
+     "title": "Hot C",
+     "type": "number"
+    },
+    "pack_folder": {
+     "default": "",
+     "description": "A folder holding a 3D face pack (face.json and the .glb) to use for a 3D character instead of the one built into Kit, e.g. the pack folder your Blender project writes. Each rebuild shows on the desk within seconds. Empty: built in.",
+     "title": "Pack Folder",
+     "type": "string"
+    }
+   },
+   "title": "FaceSettings",
+   "type": "object"
+  },
+  "LifeSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "alone_thoughts_per_hour": {
+     "default": 0,
+     "description": "While you're away and he's awake, Kit entertains himself (watching the weather, rereading yesterday's journal, thinking about someone in the register, listening to what's playing if the desk app shares it) and has this many private thoughts an hour about it, always with the local model, never in quiet hours. The desk face shows what he's doing. 0: he just waits, then dozes.",
+     "maximum": 6,
+     "minimum": 0,
+     "title": "Alone Thoughts Per Hour",
+     "type": "integer"
+    },
+    "bad_night": {
+     "default": true,
+     "description": "When you sound like you're having a really bad time, Kit drops the cheek for the rest of the chat, listens and stays, and once mentions someone you can talk to or Lifeline (13 11 14).",
+     "title": "Bad Night",
+     "type": "boolean"
+    },
+    "bedtime": {
+     "default": "22:30",
+     "description": "When Kit starts nudging you toward bed (with nudges on).",
+     "title": "Bedtime",
+     "type": "string"
+    },
+    "chat_opener": {
+     "default": true,
+     "description": "When you come back to a new chat, Kit picks up one thing from the last one (how something went), the way a friend would.",
+     "title": "Chat Opener",
+     "type": "boolean"
+    },
+    "chattiness": {
+     "default": 0.5,
+     "description": "How readily Kit speaks first. 0 never (he still fidgets), 1 whenever he feels like it, within the hourly limit. From 0.8 he follows along with what you're doing, nags when ignored and now and then butts in while you type.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Chattiness",
+     "type": "number"
+    },
+    "cheek": {
+     "default": 0.6,
+     "description": "How cheeky Kit is, in chat and when he pipes up: 0 polite, 1 very cheeky.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Cheek",
+     "type": "number"
+    },
+    "desk_hours": {
+     "default": 3.0,
+     "description": "Hours at the desk without a break before Kit nudges you outside (with nudges on, in the daytime).",
+     "maximum": 12,
+     "minimum": 0.5,
+     "title": "Desk Hours",
+     "type": "number"
+    },
+    "dials": {
+     "default": false,
+     "description": "Kit's mood also runs as two slow dials (how lively, how happy) that bodies show: slower breathing and blinks when he's flat or tired, bigger gestures when he's up.",
+     "title": "Dials",
+     "type": "boolean"
+    },
+    "enabled": {
+     "default": true,
+     "description": "Kit fidgets, gets bored and sometimes pipes up on his own.",
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "energy_need": {
+     "default": false,
+     "description": "Energy is a real need: long chats, cloud jobs and staying up past 22:30 tire Kit out, and sleep restores him. His body clock winds him down from 21:00, so he's sleepy by 23:00 however rested. Below 0.4 he yawns and keeps replies short. Off: his energy just follows the clock.",
+     "title": "Energy Need",
+     "type": "boolean"
+    },
+    "eyes_manners": {
+     "default": true,
+     "description": "With his eyes on, Kit doesn't pipe up while you're on your phone or talking to someone, and his bubble says why.",
+     "title": "Eyes Manners",
+     "type": "boolean"
+    },
+    "games": {
+     "default": true,
+     "description": "At most once a day, when he's bored and you're around, Kit suggests a small game (a weather bet, a would-you-rather). Ones that keep falling flat retire.",
+     "title": "Games",
+     "type": "boolean"
+    },
+    "hold_pipe_ups": {
+     "default": false,
+     "description": "Something Kit wanted to say while you were on your phone or talking to someone waits until you're done (up to half an hour), and he says why he waited.",
+     "title": "Hold Pipe Ups",
+     "type": "boolean"
+    },
+    "homecoming": {
+     "default": true,
+     "description": "Kit knows how long you've been away. Back after 20 minutes or more, he's glad and says hello once, asking how it went if you said where you were off to. Off: he just carries on.",
+     "title": "Homecoming",
+     "type": "boolean"
+    },
+    "interview": {
+     "default": true,
+     "description": "Kit gets to know you by chat: at most one everyday question a day (your partner's name, the cat's, your mates, what you like doing), until he knows. He skips what he already knows.",
+     "title": "Interview",
+     "type": "boolean"
+    },
+    "max_per_hour": {
+     "default": 3,
+     "description": "Most times an hour Kit pipes up unprompted.",
+     "maximum": 30,
+     "minimum": 0,
+     "title": "Max Per Hour",
+     "type": "integer"
+    },
+    "miffed": {
+     "default": true,
+     "description": "After his first week, if you vanish for hours in the daytime without a goodbye, Kit is a bit miffed when you're back: one theatrical huff, then it's over.",
+     "title": "Miffed",
+     "type": "boolean"
+    },
+    "miffed_after_days": {
+     "default": 7,
+     "description": "Days from Kit's first start before he can be miffed, so his personality settles first.",
+     "maximum": 365,
+     "minimum": 0,
+     "title": "Miffed After Days",
+     "type": "integer"
+    },
+    "mixed_feelings": {
+     "default": false,
+     "description": "Kit can feel two things at once (chuffed at your praise and still a bit worried about your day). Off: the stronger feeling wins.",
+     "title": "Mixed Feelings",
+     "type": "boolean"
+    },
+    "nudges": {
+     "default": true,
+     "description": "Once a day each: a nudge toward bed when you're still up past bedtime, and toward getting outside or seeing someone after a long stretch at the desk.",
+     "title": "Nudges",
+     "type": "boolean"
+    },
+    "opinions": {
+     "default": 0,
+     "description": "How many of his standing opinions (from his notebook) Kit keeps in mind when he talks, so he sticks to them.",
+     "maximum": 2,
+     "minimum": 0,
+     "title": "Opinions",
+     "type": "integer"
+    },
+    "pipe_up_bar": {
+     "default": 0.0,
+     "description": "Before Kit brings something up unprompted, he scores it for relevance, originality and urgency (helped by how often you take his pipe-ups up) and keeps quiet below this. 0 turns the scoring off; 0.5 is a sensible bar.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Pipe Up Bar",
+     "type": "number"
+    },
+    "quiet_from": {
+     "default": "22:00",
+     "description": "Kit doesn't pipe up from this time...",
+     "title": "Quiet From",
+     "type": "string"
+    },
+    "quiet_until": {
+     "default": "07:00",
+     "description": "...until this time.",
+     "title": "Quiet Until",
+     "type": "string"
+    },
+    "read_mood": {
+     "default": "words",
+     "description": "How Kit reads how you are. words: from what you say (\"stressed\", \"legend\"), ignoring \"not stressed\". meaning: the model answering also reads your mood, what it's about and whether things went as hoped, with the words as a floor. meaning needs a passed `kit eval mood` first; until then he uses words.",
+     "enum": [
+      "words",
+      "meaning"
+     ],
+     "title": "Read Mood",
+     "type": "string"
+    },
+    "reflect_role": {
+     "default": "expert",
+     "description": "Which cloud model writes Kit's journal, self-sheet and what's going on with you each night (with reflect_with cloud). expert: Opus by default, about 2 to 4 cents a night. work: Sonnet, about half that.",
+     "enum": [
+      "expert",
+      "work"
+     ],
+     "title": "Reflect Role",
+     "type": "string"
+    },
+    "reflect_with": {
+     "default": "cloud",
+     "description": "Who writes Kit's journal and self-sheet each night. cloud: the work model, a few cents a day, logged as spend (the local model steps in if the cloud can't). local: the local model only. off: Kit doesn't reflect or change.",
+     "enum": [
+      "cloud",
+      "local",
+      "off"
+     ],
+     "title": "Reflect With",
+     "type": "string"
+    },
+    "seen_feelings": {
+     "default": false,
+     "description": "Kit feels what his eyes catch: a wave (he waves back), a thumbs up, a smile at him for a couple of seconds (he brightens), a frown that stays (he's sympathetic), and your eyes closing late at night (he yawns and thinks of bed).",
+     "title": "Seen Feelings",
+     "type": "boolean"
+    },
+    "sleep_after_minutes": {
+     "default": 10,
+     "description": "Kit dozes off after you've been away this long.",
+     "maximum": 240,
+     "minimum": 1,
+     "title": "Sleep After Minutes",
+     "type": "integer"
+    },
+    "think_every_minutes": {
+     "default": 8,
+     "description": "Roughly how often Kit has a private thought in a quiet moment while you're around. Things happening (you coming back, something new on screen, a build failing, a chat ending) prompt one sooner.",
+     "maximum": 120,
+     "minimum": 2,
+     "title": "Think Every Minutes",
+     "type": "integer"
+    },
+    "thoughts_per_hour": {
+     "default": 6,
+     "description": "Most thoughts Kit has in an hour (each is a quick local model call). 0 stops him thinking between conversations.",
+     "maximum": 30,
+     "minimum": 0,
+     "title": "Thoughts Per Hour",
+     "type": "integer"
+    },
+    "threads": {
+     "default": true,
+     "description": "Kit follows what's coming up in your life when you mention it with a day or time ('dentist Thursday arvo') and asks how it went once it's over, once. Never for work. 'Ask me tomorrow...' and 'check in after my 2 pm' work either way.",
+     "title": "Threads",
+     "type": "boolean"
+    },
+    "week_thoughts": {
+     "default": false,
+     "description": "Kit notices the shape of the week: a thought on Monday, Friday and Saturday mornings, and on WA public holidays.",
+     "title": "Week Thoughts",
+     "type": "boolean"
+    },
+    "weekly_review": {
+     "default": true,
+     "description": "Once a week the expert model reads how Kit has changed and writes a short review on the memory page, where you can undo any change (a few cents).",
+     "title": "Weekly Review",
+     "type": "boolean"
+    },
+    "work_triggers": {
+     "default": false,
+     "description": "Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) and reacts to builds and tests on screen. Off: only everyday things catch his eye.",
+     "title": "Work Triggers",
+     "type": "boolean"
+    }
+   },
+   "title": "LifeSettings",
+   "type": "object"
+  },
+  "MemorySettings": {
+   "additionalProperties": false,
+   "properties": {
+    "backups_keep": {
+     "default": 14,
+     "description": "Daily memory backups to keep.",
+     "maximum": 365,
+     "minimum": 1,
+     "title": "Backups Keep",
+     "type": "integer"
+    },
+    "conversation_snippets": {
+     "default": 4,
+     "description": "Older conversation snippets recalled into each turn.",
+     "maximum": 20,
+     "minimum": 0,
+     "title": "Conversation Snippets",
+     "type": "integer"
+    },
+    "day_pass": {
+     "default": "work",
+     "description": "Who reads each finished day after midnight, writes its summary and sorts what's worth remembering about you into the right kinds. work: the work model (Sonnet), a few cents a night, with the local model stepping in if the cloud can't; a day with something you kept local always stays home. local: the local model only.",
+     "enum": [
+      "work",
+      "local"
+     ],
+     "title": "Day Pass",
+     "type": "string"
+    },
+    "document_prefix": {
+     "default": "search_document: ",
+     "description": "Text the embedding model wants before stored text.",
+     "title": "Document Prefix",
+     "type": "string"
+    },
+    "embed_model": {
+     "default": "nomic-embed-text",
+     "description": "Ollama model that turns text into meaning vectors, so Kit can find memories by meaning as well as by words. Changing it re-indexes everything.",
+     "title": "Embed Model",
+     "type": "string"
+    },
+    "min_similarity": {
+     "default": 0.59,
+     "description": "How close in meaning a memory must be to count as relevant (0 to 1). It depends on the embedding model: `kit eval memory` suggests a value.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Min Similarity",
+     "type": "number"
+    },
+    "now_days": {
+     "default": 14,
+     "description": "Days a 'now' memory lasts: how you've been or what's going on lately (flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep the gist.",
+     "maximum": 90,
+     "minimum": 1,
+     "title": "Now Days",
+     "type": "integer"
+    },
+    "own_memories": {
+     "default": 3,
+     "description": "Entries from Kit's own notebook (his thoughts, opinions, moments and journal) recalled into each turn, most relevant first.",
+     "maximum": 20,
+     "minimum": 0,
+     "title": "Own Memories",
+     "type": "integer"
+    },
+    "query_prefix": {
+     "default": "search_query: ",
+     "description": "Text the embedding model wants before a search.",
+     "title": "Query Prefix",
+     "type": "string"
+    },
+    "relevant_memories": {
+     "default": 8,
+     "description": "Memories recalled into each turn, most relevant first.",
+     "maximum": 50,
+     "minimum": 0,
+     "title": "Relevant Memories",
+     "type": "integer"
+    },
+    "relevant_things": {
+     "default": 5,
+     "description": "Entries from the register of things recalled into each turn, with where each lives. Things named in the message always come first.",
+     "maximum": 20,
+     "minimum": 0,
+     "title": "Relevant Things",
+     "type": "integer"
+    },
+    "weight_floor": {
+     "default": 0.3,
+     "description": "Among relevant memories, the ones that matter more to your life and the ones recalled lately come first; this is the least an old, small one counts (0 to 1). 1 weighs them all the same.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Weight Floor",
+     "type": "number"
+    }
+   },
+   "title": "MemorySettings",
+   "type": "object"
+  },
+  "ModelProfile": {
+   "additionalProperties": false,
+   "description": "One model Kit can use, with what it costs. Swap models by pointing a role\n(``routing.chat``, ``routing.work``, ``routing.expert``) at a different profile.",
+   "properties": {
+    "cached_input_usd_per_mtok": {
+     "default": 0,
+     "description": "Price per million input tokens read from the prompt cache.",
+     "minimum": 0,
+     "title": "Cached Input Usd Per Mtok",
+     "type": "number"
+    },
+    "effort": {
+     "default": "medium",
+     "description": "How hard the model thinks before answering. Higher costs more.",
+     "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ],
+     "title": "Effort",
+     "type": "string"
+    },
+    "input_usd_per_mtok": {
+     "default": 0,
+     "description": "Price per million input tokens.",
+     "minimum": 0,
+     "title": "Input Usd Per Mtok",
+     "type": "number"
+    },
+    "label": {
+     "default": "",
+     "description": "Name Kit uses when it mentions this model.",
+     "title": "Label",
+     "type": "string"
+    },
+    "max_tokens": {
+     "default": 16000,
+     "description": "Longest answer, thinking included, in tokens.",
+     "maximum": 128000,
+     "minimum": 1000,
+     "title": "Max Tokens",
+     "type": "integer"
+    },
+    "model": {
+     "description": "The provider's model id.",
+     "minLength": 1,
+     "title": "Model",
+     "type": "string"
+    },
+    "output_usd_per_mtok": {
+     "default": 0,
+     "description": "Price per million output tokens, thinking included.",
+     "minimum": 0,
+     "title": "Output Usd Per Mtok",
+     "type": "number"
+    },
+    "provider": {
+     "description": "Who runs it. anthropic, openai and google need an API key in Kit's secrets folder; ollama runs on this machine.",
+     "enum": [
+      "anthropic",
+      "openai",
+      "google",
+      "ollama"
+     ],
+     "title": "Provider",
+     "type": "string"
+    },
+    "search_usd_per_k": {
+     "default": 0,
+     "description": "Price per 1,000 web searches.",
+     "minimum": 0,
+     "title": "Search Usd Per K",
+     "type": "number"
+    },
+    "web_search": {
+     "default": true,
+     "description": "Let the model search the web (the provider's own search).",
+     "title": "Web Search",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "provider",
+    "model"
+   ],
+   "title": "ModelProfile",
+   "type": "object"
+  },
+  "NasSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "notes_folder": {
+     "default": "",
+     "description": "Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. Empty for the vault's top level.",
+     "title": "Notes Folder",
+     "type": "string"
+    },
+    "read_only_shares": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "description": "Shares Kit may read but never change, by name. A UNC path on Windows (\\\\NAS\\photo) or a mount point on Linux (/mnt/nas/photo).",
+     "title": "Read Only Shares",
+     "type": "object"
+    },
+    "vault": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "The Obsidian vault folder, the only place on the NAS Kit may write.",
+     "title": "Vault"
+    }
+   },
+   "title": "NasSettings",
+   "type": "object"
+  },
+  "OllamaSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "keep_alive": {
+     "default": "30m",
+     "description": "How long the local chat model stays loaded on the GPU after it was last used (Ollama's keep_alive, e.g. 30m, 5m, 0). With routing.background on chat in cloud-only mode it is 2m whatever this says, so the voice has the card.",
+     "title": "Keep Alive",
+     "type": "string"
+    },
+    "min_p": {
+     "default": 0.05,
+     "description": "For his spoken words and thoughts: words less likely than this share of the likeliest one are never picked, which keeps a high temperature sensible. 0 is off.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Min P",
+     "type": "number"
+    },
+    "model": {
+     "default": "qwen3:8b",
+     "description": "Local model for everyday chat.",
+     "title": "Model",
+     "type": "string"
+    },
+    "num_ctx": {
+     "default": 8192,
+     "description": "Context window in tokens. Must hold the persona, memories and history; bigger uses more GPU memory.",
+     "maximum": 131072,
+     "minimum": 2048,
+     "title": "Num Ctx",
+     "type": "integer"
+    },
+    "repeat_last_n": {
+     "default": 64,
+     "description": "For his spoken words: how many recent tokens repeat_penalty looks back over. 0 is off, -1 the whole context.",
+     "maximum": 4096,
+     "minimum": -1,
+     "title": "Repeat Last N",
+     "type": "integer"
+    },
+    "repeat_penalty": {
+     "default": 1.08,
+     "description": "For his spoken words: discourages reusing the same words. 1 is off.",
+     "maximum": 2,
+     "minimum": 1,
+     "title": "Repeat Penalty",
+     "type": "number"
+    },
+    "speak_pass": {
+     "default": true,
+     "description": "Kit decides what to do in a quick JSON pass, then says his words in a second, plain-text pass at a livelier temperature. He sounds more like himself and repeats himself less; his first words come about half a second later. Off: one JSON pass, as in stage 1.",
+     "title": "Speak Pass",
+     "type": "boolean"
+    },
+    "speak_temperature": {
+     "default": 0.95,
+     "description": "Temperature for Kit's spoken words (with speak_pass) and his private thoughts. Higher is livelier and less predictable.",
+     "maximum": 2,
+     "minimum": 0,
+     "title": "Speak Temperature",
+     "type": "number"
+    },
+    "temperature": {
+     "default": 0.7,
+     "description": "Higher is livelier, lower is steadier.",
+     "maximum": 2,
+     "minimum": 0,
+     "title": "Temperature",
+     "type": "number"
+    },
+    "think": {
+     "default": false,
+     "description": "Let the local model think before answering. Slower; off for chat.",
+     "title": "Think",
+     "type": "boolean"
+    },
+    "top_k": {
+     "default": 64,
+     "description": "For his spoken words and thoughts: only the likeliest this many words are ever picked. 64 is what Gemma's makers suggest. 0 is off.",
+     "maximum": 1000,
+     "minimum": 0,
+     "title": "Top K",
+     "type": "integer"
+    },
+    "top_p": {
+     "default": 0.95,
+     "description": "For his spoken words and thoughts: words are picked from the likeliest ones that make up this share of the chance. 1 is off.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Top P",
+     "type": "number"
+    },
+    "url": {
+     "default": "http://127.0.0.1:11434",
+     "description": "Address of the Ollama server on this machine.",
+     "title": "Url",
+     "type": "string"
+    },
+    "warm_up": {
+     "default": false,
+     "description": "Read the conversation into the local model ahead of your next message, once Kit (and his voice) has finished, so he starts answering sooner. Some models (Gemma) re-read the whole prompt whenever anything in it changes, which took about two seconds a message. With this on, what changes every message (the time, what he recalled, your PC) goes beside your message instead of in his instructions. Not in cloud-only routing, where the local model only stands in.",
+     "title": "Warm Up",
+     "type": "boolean"
+    }
+   },
+   "title": "OllamaSettings",
+   "type": "object"
+  },
+  "PersonaSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "backstory": {
+     "default": "A small desk companion who woke up on a desk one day and decided to stay. Likes a good chat, a bad pun and knowing what the weather's doing.",
+     "description": "Who Kit is, in a sentence or two.",
+     "title": "Backstory",
+     "type": "string"
+    },
+    "country": {
+     "default": "",
+     "description": "The owner's country as a two-letter code, e.g. AU.",
+     "pattern": "^([A-Z]{2})?$",
+     "title": "Country",
+     "type": "string"
+    },
+    "examples": {
+     "description": "Sample exchanges. Small models keep character best with a few of these.",
+     "items": {
+      "$ref": "#/$defs/Example"
+     },
+     "title": "Examples",
+     "type": "array"
+    },
+    "knows": {
+     "default": "Dan is a normal bloke who shares the house with his partner and a cat. For work he's a process engineer at a mining plant who has moved into data work, building site apps in Python and keeping notes in Obsidian; that's his job, not his whole life.",
+     "description": "What Kit knows about the owner.",
+     "title": "Knows",
+     "type": "string"
+    },
+    "location": {
+     "default": "",
+     "description": "Where the owner is, for weather and local searches, as 'city, state', e.g. Richmond, NSW.",
+     "title": "Location",
+     "type": "string"
+    },
+    "name": {
+     "default": "Kit",
+     "description": "The assistant's name.",
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    },
+    "owner": {
+     "default": "Dan",
+     "description": "Who Kit works for.",
+     "minLength": 1,
+     "title": "Owner",
+     "type": "string"
+    },
+    "rules": {
+     "description": "Rules Kit always follows. {owner} stands for the owner's name.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Rules",
+     "type": "array"
+    },
+    "speech": {
+     "default": "Short sentences, plain words, casual. One or two sentences unless asked for detail. No slang. Never gushes, never says 'as an AI'.",
+     "description": "How Kit talks.",
+     "title": "Speech",
+     "type": "string"
+    },
+    "timezone": {
+     "default": "",
+     "description": "The owner's time zone, e.g. Australia/Sydney.",
+     "title": "Timezone",
+     "type": "string"
+    },
+    "traits": {
+     "description": "Three to five core traits.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Traits",
+     "type": "array"
+    }
+   },
+   "title": "PersonaSettings",
+   "type": "object"
+  },
+  "PhoneSettings": {
+   "additionalProperties": false,
+   "description": "Kit on Dan's phone (the Android app): when his pipe-ups reach it as\nnotifications while the app is closed (kit.push).",
+   "properties": {
+    "notify": {
+     "default": "away",
+     "description": "When a pipe-up is sent to your phone as a notification, for when the app is closed. away: only while no PC is in use (the desk app shows it otherwise). always: every pipe-up. never: none. Needs the Firebase service account in the secrets folder; without it the phone looks for pipe-ups now and then instead.",
+     "enum": [
+      "away",
+      "always",
+      "never"
+     ],
+     "title": "Notify",
+     "type": "string"
+    },
+    "notify_per_hour": {
+     "default": 2,
+     "description": "Most notifications an hour to your phone; the rest wait in the chat. A phone that buzzes too often gets muted.",
+     "maximum": 20,
+     "minimum": 0,
+     "title": "Notify Per Hour",
+     "type": "integer"
+    }
+   },
+   "title": "PhoneSettings",
+   "type": "object"
+  },
+  "RoutingSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "background": {
+     "default": "local",
+     "description": "Who does Kit's own background work: his private thoughts (with you and on his own), his pipe-ups, and comparing something new you tell him with what he already knows. local: the local model. chat: the cloud (thoughts and pipe-ups by the chat model, about A$2 a month; fact comparisons by the work model, a cent or so), with the local model stepping in if the cloud can't. Anything from what you kept local stays on the local model either way. In cloud-only mode, chat also unloads the local model two minutes after it was last used, so the voice has the GPU.",
+     "enum": [
+      "local",
+      "chat"
+     ],
+     "title": "Background",
+     "type": "string"
+    },
+    "chat": {
+     "default": "haiku",
+     "description": "Model profile that answers everyday messages in cloud-only mode, handing real work to the work model.",
+     "title": "Chat",
+     "type": "string"
+    },
+    "check_facts": {
+     "default": true,
+     "description": "When you put something to Kit to agree with (\"Sydney's the capital, isn't it?\"), the work model checks it in a second or so, while Kit gets ready to answer, and he says the answer himself. Off: the local model goes by what it knows.",
+     "title": "Check Facts",
+     "type": "boolean"
+    },
+    "confirm_expert": {
+     "default": true,
+     "description": "When the work model decides a question needs the expert model, Kit asks you first and only hands it over if you say yes. Saying 'think hard' or 'ask the expert' still goes straight there.",
+     "title": "Confirm Expert",
+     "type": "boolean"
+    },
+    "expert": {
+     "default": "opus",
+     "description": "Model profile for the hardest questions.",
+     "title": "Expert",
+     "type": "string"
+    },
+    "fallback_to_local": {
+     "default": true,
+     "description": "If the cloud can't be reached (offline, no key, budget used up), the local model answers instead.",
+     "title": "Fallback To Local",
+     "type": "boolean"
+    },
+    "key_moment_hellos": {
+     "description": "Which hellos count as key moments: after a while, hours, overnight, days or a week and more away.",
+     "items": {
+      "enum": [
+       "while",
+       "hours",
+       "overnight",
+       "days",
+       "long"
+      ],
+      "type": "string"
+     },
+     "title": "Key Moment Hellos",
+     "type": "array"
+    },
+    "key_moment_strength": {
+     "default": 0.7,
+     "description": "How strongly sad or stressful something you say has to land (0 to 1) to count as a key moment. 'Rough day' is about 0.8, 'bad news' 0.7.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Key Moment Strength",
+     "type": "number"
+    },
+    "key_moments": {
+     "default": true,
+     "description": "For the moments that matter, the work model writes Kit's words, in his voice and mood: his hello after a night or more away, and his answer when you share something sad or stressful. A second or two slower; the local model steps in if the cloud can't. Never for 'keep it local'.",
+     "title": "Key Moments",
+     "type": "boolean"
+    },
+    "mode": {
+     "default": "balanced",
+     "description": "How much Kit leans on the local model. local-heavy: the local model answers and only hands over what it can't do. balanced: the local model takes small talk and quick commands, the cloud takes real questions and work. cloud-first: the cloud answers everything. cloud-only: the chat model answers everything, even goodbyes and messages while another model is busy, and hands real work to the work model; the local model only steps in if the cloud fails (fallback_to_local) or you say 'keep it local'.",
+     "enum": [
+      "local-heavy",
+      "balanced",
+      "cloud-first",
+      "cloud-only"
+     ],
+     "title": "Mode",
+     "type": "string"
+    },
+    "work": {
+     "default": "sonnet",
+     "description": "Model profile for real questions, work and web searches.",
+     "title": "Work",
+     "type": "string"
+    }
+   },
+   "title": "RoutingSettings",
+   "type": "object"
+  },
+  "SpeechEngine": {
+   "additionalProperties": false,
+   "description": "One voice engine Kit can speak with. Swap engines by pointing\n``speech.engine`` at a different profile; each runs in its own background\nprogram, so engines with clashing libraries can live in separate Pythons.",
+   "properties": {
+    "cfg_weight": {
+     "default": 0.5,
+     "description": "chatterbox: lower is slower and more deliberate.",
+     "maximum": 1,
+     "minimum": 0,
+     "title": "Cfg Weight",
+     "type": "number"
+    },
+    "cuda_graph": {
+     "default": true,
+     "description": "chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop.",
+     "title": "Cuda Graph",
+     "type": "boolean"
+    },
+    "device": {
+     "default": "auto",
+     "description": "Chatterbox only: auto uses the graphics card if there is one.",
+     "enum": [
+      "auto",
+      "cpu",
+      "cuda"
+     ],
+     "title": "Device",
+     "type": "string"
+    },
+    "exaggeration": {
+     "additionalProperties": {
+      "type": "number"
+     },
+     "description": "chatterbox: how strongly each emotion is acted out, 0 to 2 ('default' for the rest).",
+     "title": "Exaggeration",
+     "type": "object"
+    },
+    "kind": {
+     "description": "Which engine: kokoro and piper are fast on a CPU; chatterbox is the most expressive (GPU); chatterbox-turbo is faster but has no emotion dial; tone beeps, for testing.",
+     "enum": [
+      "kokoro",
+      "piper",
+      "chatterbox",
+      "chatterbox-turbo",
+      "tone"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "mood_speed": {
+     "additionalProperties": {
+      "type": "number"
+     },
+     "description": "kokoro and piper: speed change per emotion ('default' for the rest).",
+     "title": "Mood Speed",
+     "type": "object"
+    },
+    "mood_tags": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "description": "chatterbox-turbo: a sound that opens a reply in that emotion, such as [sigh] or [chuckle].",
+     "title": "Mood Tags",
+     "type": "object"
+    },
+    "python": {
+     "default": "",
+     "description": "The Python that has this engine installed, e.g. ~/kit-voice/.venv/bin/python. Empty: the Python running Kit.",
+     "title": "Python",
+     "type": "string"
+    },
+    "reference": {
+     "default": "",
+     "description": "chatterbox: a clip of at least 6 seconds whose voice Kit copies. A bare name is looked for in Kit's speech folder. Empty: Chatterbox's own voice.",
+     "title": "Reference",
+     "type": "string"
+    },
+    "speed": {
+     "default": 1.0,
+     "description": "kokoro and piper: talking speed.",
+     "maximum": 2,
+     "minimum": 0.5,
+     "title": "Speed",
+     "type": "number"
+    },
+    "voice": {
+     "default": "",
+     "description": "kokoro: a voice name such as af_heart. piper: the voice's .onnx file (a bare name is looked for in Kit's speech models folder).",
+     "title": "Voice",
+     "type": "string"
+    }
+   },
+   "required": [
+    "kind"
+   ],
+   "title": "SpeechEngine",
+   "type": "object"
+  },
+  "SpeechSettings": {
+   "additionalProperties": false,
+   "properties": {
+    "enabled": {
+     "default": false,
+     "description": "Kit speaks his replies aloud in the desk app.",
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "engine": {
+     "default": "kokoro",
+     "description": "Which voice engine profile Kit speaks with (see engines).",
+     "title": "Engine",
+     "type": "string"
+    },
+    "engines": {
+     "additionalProperties": {
+      "$ref": "#/$defs/SpeechEngine"
+     },
+     "description": "Voice engines Kit can use, by name. Built-in profiles are always there; change their fields or add your own (e.g. a second kokoro voice).",
+     "title": "Engines",
+     "type": "object"
+    },
+    "fallback": {
+     "default": "",
+     "description": "A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops.",
+     "title": "Fallback",
+     "type": "string"
+    },
+    "load_timeout_s": {
+     "default": 240,
+     "description": "How long a voice engine may take to load (the first Chatterbox start downloads its model).",
+     "maximum": 1800,
+     "minimum": 10,
+     "title": "Load Timeout S",
+     "type": "integer"
+    },
+    "port": {
+     "default": 8611,
+     "description": "Local port for the voice engine's program.",
+     "maximum": 65535,
+     "minimum": 1024,
+     "title": "Port",
+     "type": "integer"
+    },
+    "sounds": {
+     "default": false,
+     "description": "Sounds in his voice where a gesture calls for one: a chuckle on the punchline, a sigh, a gasp. At most one every other sentence. Only Chatterbox Turbo makes them; other engines leave them out.",
+     "title": "Sounds",
+     "type": "boolean"
+    }
+   },
+   "title": "SpeechSettings",
+   "type": "object"
+  }
+ },
+ "additionalProperties": false,
+ "properties": {
+  "brain": {
+   "$ref": "#/$defs/BrainSettings"
+  },
+  "cloud": {
+   "$ref": "#/$defs/CloudSettings"
+  },
+  "eyes": {
+   "$ref": "#/$defs/EyesSettings"
+  },
+  "face": {
+   "$ref": "#/$defs/FaceSettings"
+  },
+  "life": {
+   "$ref": "#/$defs/LifeSettings"
+  },
+  "memory": {
+   "$ref": "#/$defs/MemorySettings"
+  },
+  "models": {
+   "additionalProperties": {
+    "$ref": "#/$defs/ModelProfile"
+   },
+   "description": "Models Kit can use, by name. Built-in profiles are always there; change their fields or add your own.",
+   "title": "Models",
+   "type": "object"
+  },
+  "nas": {
+   "$ref": "#/$defs/NasSettings"
+  },
+  "ollama": {
+   "$ref": "#/$defs/OllamaSettings"
+  },
+  "persona": {
+   "$ref": "#/$defs/PersonaSettings"
+  },
+  "phone": {
+   "$ref": "#/$defs/PhoneSettings"
+  },
+  "routing": {
+   "$ref": "#/$defs/RoutingSettings"
+  },
+  "schema_version": {
+   "const": 1,
+   "default": 1,
+   "title": "Schema Version",
+   "type": "integer"
+  },
+  "speech": {
+   "$ref": "#/$defs/SpeechSettings"
+  }
+ },
+ "title": "Settings",
+ "type": "object"
+}

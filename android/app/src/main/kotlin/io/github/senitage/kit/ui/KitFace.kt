@@ -92,7 +92,7 @@ fun KitFace(director: Director, page: String?, modifier: Modifier = Modifier) {
                     pageState = now
                 }
             }
-            delay(if (pageState == "ready") 2000 else 400)
+            delay(if (pageState == "ready") 5000 else 400)
         }
     }
 
@@ -115,11 +115,18 @@ fun KitFace(director: Director, page: String?, modifier: Modifier = Modifier) {
                                 pageState = "none"
                             }
                         }
+                        tag = page
                         loadUrl(page)
                         web = this
                     }
                 },
-                update = { if (it.url != page) it.loadUrl(page) },
+                // Only a new address reloads (the page's own address can change as it runs).
+                update = {
+                    if (it.tag != page) {
+                        it.tag = page
+                        it.loadUrl(page)
+                    }
+                },
                 onRelease = {
                     web = null
                     pageState = "none"

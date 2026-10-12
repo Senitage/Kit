@@ -1039,6 +1039,26 @@ class SpeechSettings(_Section):
         return self.engines[self.engine]
 
 
+class PhoneSettings(_Section):
+    """Kit on Dan's phone (the Android app): when his pipe-ups reach it as
+    notifications while the app is closed (kit.push)."""
+
+    notify: Literal["away", "always", "never"] = Field(
+        "away",
+        description="When a pipe-up is sent to your phone as a notification, for when the "
+        "app is closed. away: only while no PC is in use (the desk app shows it otherwise). "
+        "always: every pipe-up. never: none. Needs the Firebase service account in the secrets "
+        "folder; without it the phone looks for pipe-ups now and then instead.",
+    )
+    notify_per_hour: int = Field(
+        2,
+        ge=0,
+        le=20,
+        description="Most notifications an hour to your phone; the rest wait in the chat. "
+        "A phone that buzzes too often gets muted.",
+    )
+
+
 class Settings(_Section):
     schema_version: Literal[1] = SCHEMA_VERSION
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
@@ -1057,6 +1077,7 @@ class Settings(_Section):
     eyes: EyesSettings = Field(default_factory=EyesSettings)
     speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
+    phone: PhoneSettings = Field(default_factory=PhoneSettings)
 
     @field_validator("models", mode="before")
     @classmethod

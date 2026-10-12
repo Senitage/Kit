@@ -630,7 +630,7 @@ def test_a_waiting_hello_gets_a_heartbeat_straight_away(monkeypatch):
     ticks = []
     brain = SimpleNamespace(life=SimpleNamespace(homecoming=None))
 
-    async def tick(b):
+    async def tick(b, nudger=None):
         ticks.append(b.life.homecoming)
 
     monkeypatch.setattr(server, "life_tick", tick)

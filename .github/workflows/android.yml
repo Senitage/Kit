@@ -5,7 +5,8 @@ name: Android app
 # secrets (KIT_ANDROID_KEYSTORE, KIT_ANDROID_KEYSTORE_PASSWORD), builds of main are
 # published as a GitHub Release tagged android-v<version>, which is where the app's
 # update check looks, and a pull request's build as a pre-release test build.
-# See docs/3 Deep Dives/Phone App In Depth.md.
+# The KIT_FIREBASE_* repository variables give the app its Firebase project, for
+# Kit's nudges. See docs/3 Deep Dives/Phone App In Depth.md.
 
 on:
   push:
@@ -33,6 +34,11 @@ jobs:
     env:
       KIT_BUILD_NUMBER: ${{ github.run_number }}
       KIT_BUILD_PULL: ${{ github.event.pull_request.number }}
+      # Kit's Firebase project, for nudges (repository variables; none means no push).
+      KIT_FIREBASE_PROJECT_ID: ${{ vars.KIT_FIREBASE_PROJECT_ID }}
+      KIT_FIREBASE_APP_ID: ${{ vars.KIT_FIREBASE_APP_ID }}
+      KIT_FIREBASE_API_KEY: ${{ vars.KIT_FIREBASE_API_KEY }}
+      KIT_FIREBASE_SENDER_ID: ${{ vars.KIT_FIREBASE_SENDER_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

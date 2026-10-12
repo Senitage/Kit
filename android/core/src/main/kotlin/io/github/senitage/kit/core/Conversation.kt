@@ -481,6 +481,9 @@ class Conversation(
 
     private fun lastId(): Long = if (history.isEmpty()) 0 else history.lastKey()
 
+    /** The newest message Kit has kept, as far as the phone has seen. */
+    val newestId: Long get() = lastId()
+
     private fun noteKey(): String = "n${noteCount++}-${newId()}"
 
     private fun now(): String = clock().toString()

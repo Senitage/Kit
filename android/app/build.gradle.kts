@@ -11,6 +11,12 @@ val buildNumber = (System.getenv("KIT_BUILD_NUMBER") ?: "1").toInt()
 // The signing key comes from GitHub's secrets, never the repo. Without it the build
 // is signed with a throwaway key, which can't update an installed Kit.
 val keystore: String? = System.getenv("KIT_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+// Firebase, for Kit's nudges (content-free pushes that wake the app to look for a
+// pipe-up). The project's ids come from GitHub's variables, never the repo; without
+// them the app has no push and looks for pipe-ups now and then instead. See
+// docs/4 Guides/Phone Stage 2 - He's With You.md.
+val firebase = listOf("PROJECT_ID", "APP_ID", "API_KEY", "SENDER_ID")
+    .associateWith { System.getenv("KIT_FIREBASE_$it")?.trim().orEmpty() }
 
 android {
     namespace = "io.github.senitage.kit"
@@ -25,6 +31,8 @@ android {
         buildConfigField("String", "REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: "Senitage/Kit"}\"")
         buildConfigField("boolean", "TEST_BUILD", (!System.getenv("KIT_BUILD_PULL").isNullOrBlank()).toString())
         buildConfigField("boolean", "SIGNED", (keystore != null).toString())
+        firebase.forEach { (name, value) -> buildConfigField("String", "FIREBASE_$name", "\"$value\"") }
+        buildConfigField("boolean", "FIREBASE", firebase.values.all { it.isNotBlank() }.toString())
     }
 
     signingConfigs {
@@ -90,4 +98,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Nudges (Firebase Cloud Messaging), the home screen widget and its drawing.
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
 }

@@ -25,8 +25,11 @@ object PhoneBody {
     const val KIND = "phone"
     const val CHANNEL = "phone"
 
-    /** Phase 1: a screen he's drawn on, a buzz, and a face you can tap. No voice yet. */
-    val ABILITIES = listOf("screen", "haptics", "touch")
+    /**
+     * A screen he's drawn on, a buzz, a face you can tap, notifications when the app
+     * is closed, and whether Dan's home or out. No voice yet.
+     */
+    val ABILITIES = listOf("screen", "haptics", "touch", "notify", "place")
 
     /** The looks this app can draw: the 3D face page, and the 2D glow look. */
     val FACES = listOf("model", "glow")
@@ -107,14 +110,30 @@ data class Feeling(val name: String = "", val why: String = "")
 @Serializable
 data class Dials(val arousal: Double = 0.5, val valence: Double = 0.0)
 
-/** The parts of `/api/life` the phone shows. */
+/** Something Kit means to bring up later, or a thread he's following. */
+@Serializable
+data class Later(val text: String = "", val after: String? = null, val due: Boolean = false)
+
+/** `/api/life`: how he is, what's on his mind, and what he means to bring up. */
 @Serializable
 data class LifeState(
     val mood: String = "",
     val face: String = "",
+    val presence: String = "",
     val feeling: Feeling? = null,
+    @SerialName("also_feeling") val alsoFeeling: Feeling? = null,
     val doing: String? = null,
+    @SerialName("did_today") val didToday: List<String> = emptyList(),
     val dials: Dials? = null,
+    val energy: Double? = null,
+    val drives: Map<String, Double> = emptyMap(),
+    val thinking: String? = null,
+    val wants: List<String> = emptyList(),
+    val later: List<Later> = emptyList(),
+    val threads: List<Later> = emptyList(),
+    val quirks: List<String> = emptyList(),
+    @SerialName("curious_about") val curiousAbout: String? = null,
+    @SerialName("snoozed_until") val snoozedUntil: String? = null,
     @SerialName("last_event") val lastEvent: Long = 0,
 )
 
