@@ -171,10 +171,14 @@ the like get one short, warm line, made locally even in cloud-first. It has no
 question in it and nothing that makes leaving feel bad ("already?", "so soon",
 "alone", "before you go..."). Research on companion apps found those hooks keep
 people chatting out of guilt; Kit is glad of your plans instead. A line that
-fails gets three goes, then a stock "Righto, see you soon." (with or without
+fails gets three goes, then a stock "Okay, see you soon." (with or without
 `ollama.speak_pass`). He remembers what you said, for the hello when you're
-back. Only you leaving now counts: "I see you've fixed it", "I need to run the
-tests" or "I'm off on Friday" aren't goodbyes.
+back. Only you leaving now counts, and only when the goodbye is the whole
+message or its whole last sentence: "I see you've fixed it", "I need to run
+the tests" or "I'm off on Friday" aren't goodbyes, and "heading to lunch,
+check the pump logs while I'm gone" is a request (an order, a please or a
+can-you in any clause), answered properly rather than seen off with a line.
+"Fixed it. Off to lunch." and "Gotta go, the dentist's at 3" are goodbyes.
 
 **Missing you.** A day without seeing or hearing from you and he misses you a
 bit. It shows if you message from your phone while you're away.
@@ -418,8 +422,9 @@ you give it back.
 When a want gets strong enough, Kit says something of his own accord. The words
 are written by the local model on the spot, from what you're doing (the PC and
 Chrome feed) and what he remembers, so you've never seen them before. How cheeky
-he is depends on `life.cheek`: polite, friendly with a bit of cheek, or a
-proper larrikin. He also picks three **quirks** for himself the first time he
+he is depends on `life.cheek`: polite, friendly with a bit of cheek, or
+properly cheeky like a kid brother (in the same plain English either way: how
+cheeky and how he talks are separate dials). He also picks three **quirks** for himself the first time he
 starts (rating things out of ten, coffee counting, sports commentary when
 bored...). They colour what he says, and they're his: his nightly reflection
 may drop one that wore thin or pick up a new habit, one change a night at most.
@@ -480,7 +485,8 @@ With `life.hold_pipe_ups` on, what he'd have said while you were busy is
 **held**: his bubble says he's saving something ("saving something till
 you're off your phone"), and once you're free he says it, opening with why he
 waited ("8 minutes, while Dan was on the phone" goes into his prompt, and he
-puts it his way: "didn't want to interrupt, but..."). A held pipe-up keeps
+puts it his way: "didn't want to interrupt, but..."; having waited, he isn't
+told he's butting in as well). A held pipe-up keeps
 his manners when it comes out: not while you're typing, not over the hourly
 limit, not while he's waiting on an answer, so it may wait a little longer. It
 goes stale after half an hour, and talking to him meanwhile clears it: the
@@ -629,13 +635,25 @@ The same state colours ordinary replies from the local model. Each turn
 (`Life.voice`) the prompt says how Kit feels and why (bored, curious, missed
 you, sleepy, sulky, chuffed because you called him a legend...), how cheeky to
 be (`life.cheek`), sometimes which of his quirks to let show, what's been on
-his mind lately (to bring up only if it fits), four example lines picked fresh
-each time from your `persona.examples` and a built-in pool, and his own last
-few lines so he doesn't repeat himself, how close you two are, and how long
-since you talked. His self-sheet stands in for the
-persona's list of traits, and up to `memory.own_memories` (3) entries from his
-notebook are recalled if they're relevant. The mood is read before your message
-resets it, so "I've been bored" is still true when he answers.
+his mind lately (to bring up only if it fits: only wants that are due, so
+nothing marked "not before"), four example lines picked fresh each time from
+your `persona.examples` and a built-in pool (`VOICE_LINES`, by cheek band:
+everyday lines with no guilt or huff in them, since the goodbye and hello
+checks would reject a line copied from one), and his own last few lines so he
+doesn't repeat himself, how close you two are, and how long since you talked.
+His self-sheet stands in for the persona's list of traits, and up to
+`memory.own_memories` (3) entries from his notebook are recalled if they're
+relevant. The mood is read before your message resets it, so "I've been bored"
+is still true when he answers.
+
+Each mood has two phrasings (`FEELINGS`): one for answering you ("pleased to
+hear from Dan: you two haven't talked for 3 hours") and one for when he's on
+his own ("a bit lonely: you two haven't talked for 3 hours, and you'd like
+to"), used in pipe-ups and his thoughts, where nobody has spoken to him. A
+feeling that already explains the mood (put out because you didn't answer,
+which is why he's sulky) isn't said twice, and when a hello is in play its
+own facts say how long you were gone, so the time line stays out. His voice
+itself is said once, in the system prompt: see [[Brain#One voice, two asides at most]].
 
 Your work is a job, not your whole life. Every prompt (chat, pipe-ups, his
 thoughts and his nightly reflection) says so: everyday things (your day, food,

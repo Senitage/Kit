@@ -14,6 +14,7 @@ Up: [[Home]] · Reference
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
+| **Aside** | A stage direction in square brackets beside your message (a hello, a bedtime nudge, a bad night); at most two ride with one message | [[Brain#One voice, two asides at most]] |
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |

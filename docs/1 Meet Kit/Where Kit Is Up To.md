@@ -32,6 +32,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Inner life fixes: sulks pass, quiet on a bad night, the keyboard beats the camera, a restart mid-day, look events apart, the plan says what he brought up | Open, pull request (number to come) | [[Inner Life]], [[Inner Life In Depth]] |
 | Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request #48 | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request (number to come) | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
+| One voice: his register decided once in the persona (plain neutral English), the prompt says how he sounds once, at most two asides a message, moods phrased for replying and for being alone, guilt-free example lines, a goodbye only when it's the whole message | Open, pull request (number to come) | [[Who Kit Is]], [[Brain#One voice, two asides at most]], [[Inner Life In Depth#In conversation]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

@@ -77,7 +77,7 @@ by side to a Markdown file (the path is printed at the end):
 - **wrong facts**: he says Canberra, and that tomatoes are a fruit.
 - **news**: one question at most.
 
-"Stock line" means every go failed the check and he fell back on "Righto, see
+"Stock line" means every go failed the check and he fell back on "Okay, see
 you soon." If a model needs that often, it's the weak spot. Read the hellos
 too: the checks catch guilt, not dullness.
 
