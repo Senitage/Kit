@@ -4,6 +4,7 @@ import pytest
 
 from fakes import FakeEmbedder, FakeModel
 from kit.cli import main
+from kit.memory import Memory
 
 OFFLINE = ["--skip", "gpu", "--skip", "ollama", "--skip", "tailscale", "--skip", "cloud"]
 
@@ -58,7 +59,9 @@ def test_config_reset_goes_back_to_defaults_and_undo_restores(paths, capsys):
     assert main(["config", "set", "persona.name", "Kip"]) == 0
     assert main(["config", "reset"]) == 0
     assert "defaults" in capsys.readouterr().out
-    assert 'name = "Kit"' in paths.settings_file.read_text(encoding="utf-8")
+    assert 'name = "Kip"' not in paths.settings_file.read_text(encoding="utf-8")
+    main(["config", "show"])
+    assert 'name = "Kit"' in capsys.readouterr().out  # show prints everything in force
     assert main(["config", "undo"]) == 0
     assert 'name = "Kip"' in paths.settings_file.read_text(encoding="utf-8")
 
@@ -127,8 +130,12 @@ def test_memory_commands(paths, capsys, offline_models):
     assert "backed up to" in capsys.readouterr().out
     assert main(["memory", "forget", "2"]) == 0
     assert main(["memory", "forget", "2"]) == 1
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.record_spend("claude-haiku-5-5", 2400, 100, 0.001, "q", cached_tokens=1830)
+    memory.close()
     main(["memory", "spend"])
-    assert "$0.00 of $40.00" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "$0.00 of $40.00" in out and "in 2400  cached 1830/2400  out 100" in out
 
 
 def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):
@@ -444,3 +451,23 @@ def test_check_includes_the_eyes(paths, capsys):
     assert "] eyes" in out and "[FAIL] eyes" not in out  # no camera here is a warning at most
     main(["check", *OFFLINE, "--skip", "eyes"])
     assert "] eyes" not in capsys.readouterr().out
+
+
+def test_memory_scrub_shows_first_then_takes_out_after_a_backup(paths, capsys):
+    main(["init"])
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.add_message("user", "I can't cope tonight")
+    memory.add_message("kit", "I'm here.")
+    memory.add_message("user", "Is the pump fixed?")
+    memory.close()
+    assert main(["memory", "scrub", "can't cope"]) == 0
+    out = capsys.readouterr().out
+    assert "you: I can't cope tonight" in out and "Kit: I'm here." in out
+    assert "2 messages and 0 things kept from them would go" in out
+    assert main(["memory", "scrub", "can't cope", "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "backed up to" in out and "are gone" in out
+    memory = Memory(paths.state_dir / "memory.db")
+    assert [m.text for m in memory.recent(5)] == ["Is the pump fixed?"]
+    memory.close()
+    assert main(["memory", "scrub", "can't cope", "--since", "soon"]) == 2

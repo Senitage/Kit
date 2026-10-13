@@ -54,7 +54,9 @@ clipboard. The app swaps that token for one of its own
 If the phone is lost, `kit devices forget phone` (or
 `DELETE /api/devices/phone` with Kit's token) stops that one token working,
 and the desk, home_app and the eyes carry on with the shared token. The brain
-keeps only a hash of each device's token.
+keeps only a hash of each device's token, and a device's token can't change
+Kit's settings, read the faces his eyes know or list his devices; see
+[[Privacy#Tokens and secrets]].
 
 ### Saying hello
 
@@ -95,4 +97,5 @@ kit devices forget phone
 > - `src/kit/devices.py`: paired devices and their tokens.
 > - `src/kit/body_registry.py`: the hello, features and the list of bodies.
 > - `src/kit/channels.py`: the channel line, with spoken and written-earlier.
-> - `src/kit/server.py`: the routes and the token check.
+> - `src/kit/routes/state.py`: the token check, and the stricter one for Kit's own token.
+> - `src/kit/routes/bodies.py`: hello, pairing and unpairing.

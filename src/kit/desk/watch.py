@@ -320,6 +320,40 @@ def system_status(ps=None) -> dict:
     }
 
 
+class ExeNames:
+    """The program (``KeePass.exe``) behind a window's process id, so hidden apps
+    can be told from their titles alone.
+
+    Windows hands a finished program's id to the next one it starts, so an id is
+    only trusted together with the process's start time: a new program on an old
+    id is looked up afresh. Otherwise a password manager starting on a browser's
+    old id would have its titles reported to the brain (and kept in memory) as the
+    browser's, and a browser on a password manager's old id would be hidden."""
+
+    MAX = 2000  # ids remembered before the oldest are let go
+
+    def __init__(self, psutil_module) -> None:
+        self._psutil = psutil_module
+        self._known: dict[int, tuple[float, str]] = {}  # pid -> (started at, exe)
+
+    def __call__(self, pid: int) -> str:
+        try:
+            process = self._psutil.Process(pid)
+            started = process.create_time()
+            known = self._known.get(pid)
+            if known is not None and known[0] == started:
+                return known[1]
+            name = process.name()
+        except (self._psutil.Error, OSError):
+            self._known.pop(pid, None)
+            return ""
+        if len(self._known) >= self.MAX:
+            for old in list(self._known)[: self.MAX // 2]:
+                del self._known[old]
+        self._known[pid] = (started, name)
+        return name
+
+
 class WindowsDesktop:
     """Reads open windows, focus, idle time and the lock screen through the Win32 API."""
 
@@ -368,7 +402,7 @@ class WindowsDesktop:
 
         self._LastInput = LastInput
         u.GetLastInputInfo.argtypes = [ctypes.POINTER(LastInput)]
-        self._exe_by_pid: dict[int, str] = {}
+        self._exes = ExeNames(psutil)
 
     def _title(self, hwnd) -> str:
         n = self.user32.GetWindowTextLengthW(hwnd)
@@ -383,16 +417,6 @@ class WindowsDesktop:
         self.user32.GetWindowThreadProcessId(hwnd, self._ct.byref(pid))
         return pid.value
 
-    def _exe(self, pid: int) -> str:
-        if pid not in self._exe_by_pid:
-            try:
-                self._exe_by_pid[pid] = self._psutil.Process(pid).name()
-            except (self._psutil.Error, OSError):
-                return ""
-            if len(self._exe_by_pid) > 2000:
-                self._exe_by_pid.clear()
-        return self._exe_by_pid[pid]
-
     def _cloaked(self, hwnd) -> bool:
         value = self._wt.DWORD()
         hr = self.dwmapi.DwmGetWindowAttribute(
@@ -405,7 +429,7 @@ class WindowsDesktop:
         if not title or title in IGNORED_TITLES:
             return None
         pid = self._pid(hwnd)
-        exe = self._exe(pid)
+        exe = self._exes(pid)
         if exe.lower() in IGNORED_EXES:
             return None
         return OpenWindow(exe, title, bool(self.user32.IsIconic(hwnd)), pid)

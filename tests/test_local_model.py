@@ -48,6 +48,13 @@ def test_error_line():
         run(model_with(lambda r: httpx.Response(200, text='{"error": "out of memory"}')))
 
 
+def test_a_line_that_is_not_json_is_a_model_error():
+    """A proxy's error page or a half-written line: the brain can fall back, rather than
+    treat it as a bug in its stream reader."""
+    with pytest.raises(LocalModelError, match="isn't JSON"):
+        run(model_with(lambda r: httpx.Response(200, text="<html>502 Bad Gateway</html>\n")))
+
+
 def test_unreachable():
     def handler(request):
         raise httpx.ConnectError("refused")

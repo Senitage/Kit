@@ -50,11 +50,17 @@ def similarity(a: Sequence[float], b: Sequence[float]) -> float:
 
 
 class Gallery:
-    """The people Kit has been introduced to: a few embeddings each."""
+    """The people Kit has been introduced to: a few embeddings each (faces here, and
+    voices for kit.hearing)."""
 
-    def __init__(self, people: dict[str, list[Vector]] | None = None, threshold: float = 0.4):
+    def __init__(
+        self,
+        people: dict[str, list[Vector]] | None = None,
+        threshold: float = 0.4,
+        size: int = EMBEDDING_SIZE,  # numbers in each embedding (512 for voices)
+    ):
         self.people = {
-            name: [normalise(v) for v in vectors if len(v) == EMBEDDING_SIZE]
+            name: [normalise(v) for v in vectors if len(v) == size]
             for name, vectors in (people or {}).items()
         }
         self.people = {name: vs for name, vs in self.people.items() if vs}

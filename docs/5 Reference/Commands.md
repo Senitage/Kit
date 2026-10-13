@@ -80,10 +80,11 @@ See [[Inner Life]].
 | `kit memory history ID` | A fact's earlier versions |
 | `kit memory days` | The day summaries |
 | `kit memory summarise` | Summarise finished days now |
+| `kit memory scrub WORDS... [--since DATE]` | Show every message since the date (today by default) that says any of the words, Kit's answers to them and what was kept of them; `--apply` takes them out after a backup. For lines that should never have been said, such as a test |
 | `kit memory tidy` | Plan sorting what he knows into the right kinds; `--apply` does it, after a backup |
 | `kit memory reindex` | Build any missing meaning vectors now |
 | `kit memory backup` | Back up memory now |
-| `kit memory spend` | This month's cloud spend |
+| `kit memory spend` | This month's cloud spend, and for each recent call the input tokens read from the prompt cache (`cached 1830/2400`) |
 
 See [[Memory]].
 
@@ -137,12 +138,30 @@ These run on the PC with the camera.
 
 See [[Eyes]].
 
+## Hearing
+
+These run on the PC with the microphone.
+
+| Command | What it does |
+|---|---|
+| `kit hearing` | Run the ears (`--name` for the mic, `--brain`, `--token`; `--words` shows the words they hear, in that window only) |
+| `kit hearing mics` | The microphones on this machine |
+| `kit hearing connect URL TOKEN` | Save where the brain is |
+| `kit hearing show` | Whether the ears are listening, and what Kit last made of something (never the words) |
+| `kit hearing enrol WHO` | Introduce someone's voice (`me` for you): they read a few lines aloud |
+| `kit hearing voices` | Whose voices his ears know |
+| `kit hearing forget WHO` | Forget someone's voice completely |
+| `kit hearing pause` / `resume` | Switch the ears off (the mic is let go) or on |
+
+See [[Hearing]].
+
 ## Evals
 
 | Command | What it does |
 |---|---|
 | `kit eval replies` | Whether local replies come back in shape, and how fast the first words arrive |
 | `kit eval memory` | Memory recall, and a suggested `memory.min_similarity` |
+| `kit eval memory --replay SNAPSHOT [--questions FILE]` | Your own questions against a copy of a memory snapshot (a backup): does the right fact still come first? |
 | `kit eval routing` | Whether Kit knows where things live, from the register |
 | `kit eval compare --models A B` | Compare cloud models on the same questions |
 | `kit eval voice --models A B` | Which local model sounds most alive |
@@ -150,6 +169,12 @@ See [[Eyes]].
 | `kit eval mood` | How well he reads your mood |
 
 See [[Evals]].
+
+## The docs
+
+| Command | What it does |
+|---|---|
+| `kit docs check` | Report rows of [[Where Kit Is Up To]] that look stale, with no network: a part marked "Open, pull request #N" whose #N is in the "How we got here" table is **stale** (exit code 1); one with a number lower than the newest landed pull request is **worth a look**; one marked "(number to come)" **needs its number**. `--vault PATH` for a docs folder other than this checkout's |
 
 ## The desk app
 

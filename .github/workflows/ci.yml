@@ -5,20 +5,27 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to the same pull request stops the run for the old one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    # Kit's server runs on Windows now and Linux later, so every change is tested on both.
+    # Kit's server runs on Windows now and Linux later, so every change is tested on
+    # both, on every Python pyproject.toml allows (its classifiers list the same ones).
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12"]
+        python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .

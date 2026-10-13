@@ -2,6 +2,11 @@
 
 The schema (``Settings.model_json_schema()``) is what configurators such as
 home_app will draw their forms from, so every field carries a description.
+
+The file holds only what differs from the defaults (``settings_file_toml``), so
+a default that changes in the code, a model's price or a persona line, reaches
+an install that never chose its own. Version 1 files held every value; the
+first read of one drops what was never chosen (``_from_version_1``).
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from pydantic import (
 
 from kit.face import character as characters
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class _Section(BaseModel):
@@ -140,6 +145,11 @@ class ModelProfile(_Section):
     max_tokens: int = Field(
         16000, ge=1000, le=128000, description="Longest answer, thinking included, in tokens."
     )
+    thinking: bool = Field(
+        True,
+        description="Let the model think before it answers. Off, the first words come "
+        "sooner; only Claude Haiku takes it (Sonnet and Opus always think).",
+    )
     web_search: bool = Field(
         True, description="Let the model search the web (the provider's own search)."
     )
@@ -174,6 +184,8 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-opus-5-5",
         "effort": "medium",
+        # An expert answer thinks at length first; room for both (answers stream).
+        "max_tokens": 32000,
         "input_usd_per_mtok": 4.0,
         "cached_input_usd_per_mtok": 0.2,
         "output_usd_per_mtok": 20.0,
@@ -185,6 +197,7 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-haiku-5-5",
         "effort": "low",
+        "thinking": False,  # everyday chat: the first words sooner
         "input_usd_per_mtok": 0.1,
         "cached_input_usd_per_mtok": 0.01,
         "output_usd_per_mtok": 0.5,
@@ -210,6 +223,62 @@ DEFAULT_MODELS: dict[str, dict] = {
         "cached_input_usd_per_mtok": 0.075,
         "output_usd_per_mtok": 3.75,
         # 5,000 grounded requests a month are free; this prices the ones after that.
+        "search_usd_per_k": 14.0,
+    },
+}
+
+
+# The built-in model profiles as a version-1 settings file holds them (every save
+# wrote them all). Frozen: never edit, it describes old files. See _from_version_1.
+_V1_MODELS: dict[str, dict] = {
+    "sonnet": {
+        "label": "Sonnet",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "opus": {
+        "label": "Opus",
+        "provider": "anthropic",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "input_usd_per_mtok": 4.0,
+        "cached_input_usd_per_mtok": 0.2,
+        "output_usd_per_mtok": 20.0,
+        "search_usd_per_k": 10.0,
+    },
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "input_usd_per_mtok": 0.1,
+        "cached_input_usd_per_mtok": 0.01,
+        "output_usd_per_mtok": 0.5,
+        "search_usd_per_k": 10.0,
+    },
+    "gpt-sol": {
+        "label": "GPT",
+        "provider": "openai",
+        "model": "gpt-6.1-sol",
+        "effort": "low",
+        "input_usd_per_mtok": 2.0,
+        "cached_input_usd_per_mtok": 0.1,
+        "output_usd_per_mtok": 10.0,
+        "search_usd_per_k": 10.0,
+    },
+    "gemini-flash": {
+        "label": "Gemini",
+        "provider": "google",
+        "model": "gemini-3.8-flash",
+        "effort": "low",
+        "input_usd_per_mtok": 0.75,
+        "cached_input_usd_per_mtok": 0.075,
+        "output_usd_per_mtok": 3.75,
         "search_usd_per_k": 14.0,
     },
 }
@@ -333,14 +402,16 @@ class Example(_Section):
     kit: str = Field(description="How Kit answers.")
 
 
-# Persona text that used to be the default, when it leaned on work (pumps, code,
-# process plants). Every save writes the whole settings file, so a file can hold an
-# old default nobody chose; it's read as today's default instead. Anything the
-# owner wrote themselves is kept.
-OLD_PERSONA: dict[str, list] = {
+# What a version-1 settings file holds for a persona field nobody chose: every save
+# wrote the whole file, so the default of the day was in it. The first read of such a
+# file drops these and reads today's default instead. Frozen: never edit, it describes
+# old files. Anything the owner wrote themselves is kept.
+_V1_PERSONA: dict[str, list] = {
     "backstory": [
         "A small desk assistant who woke up on an engineer's desk and decided it likes "
-        "process plants, Python and a tidy data pipeline."
+        "process plants, Python and a tidy data pipeline.",
+        "A small desk companion who woke up on a desk one day and decided to stay. Likes a "
+        "good chat, a bad pun and knowing what the weather's doing.",
     ],
     "traits": [
         [
@@ -348,7 +419,13 @@ OLD_PERSONA: dict[str, list] = {
             "dry sense of humour",
             "loyal and practical",
             "a bit impatient with slow builds",
-        ]
+        ],
+        [
+            "curious",
+            "dry sense of humour",
+            "loyal and practical",
+            "a bit impatient when things drag on",
+        ],
     ],
     "knows": [
         "Dan is a mining plant process engineer who moved into data work. He builds site apps "
@@ -356,18 +433,39 @@ OLD_PERSONA: dict[str, list] = {
         "Dan works as a process engineer at a mining plant and has moved into data work, "
         "building site apps in Python in VS Code and keeping notes in Obsidian. Outside "
         "work, Dan is just a normal guy.",
+        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
+        "he's a process engineer at a mining plant who has moved into data work, building "
+        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
+        "life.",
     ],
     "rules": [
         [
             "Keep replies short; offer detail rather than dumping it.",
             "If you are not sure, say so instead of guessing.",
             "Hand real questions, maths, code and anything current to the cloud.",
-        ]
+        ],
+        [
+            "Keep replies short; offer detail rather than dumping it.",
+            "If you are not sure, say so instead of guessing.",
+            "Hand real questions, maths, code and anything current to the cloud.",
+            "Be an honest friend, not a yes-man: if {owner} has a fact wrong, say so kindly, "
+            "and only agree when you do.",
+            "When {owner} tells you something, show you got it before you ask anything, and "
+            "ask one question at most, never one you already know the answer to.",
+            "When {owner} has a moan, be on their side first; after that, one honest line is "
+            "fine if it helps.",
+            "Never make {owner} feel bad for leaving or being busy: be glad of their plans, "
+            "especially ones with other people.",
+        ],
     ],
-    # Australian slang crept into every line from this one (Dan didn't want it).
+    # Slang crept into every line from the first; the second said "casual" and "no
+    # slang" in one breath while other prompts pushed the other way. The register is
+    # now decided once, here.
     "speech": [
         "Short sentences, plain words, Australian-casual. One or two sentences unless asked "
-        "for detail. Never gushes, never says 'as an AI'."
+        "for detail. Never gushes, never says 'as an AI'.",
+        "Short sentences, plain words, casual. One or two sentences unless asked for "
+        "detail. No slang. Never gushes, never says 'as an AI'.",
     ],
     "examples": [
         [
@@ -380,7 +478,18 @@ OLD_PERSONA: dict[str, list] = {
                 "user": "What's a good flotation recovery?",
                 "kit": "Depends on the ore, but high eighties is decent for copper sulphides.",
             },
-        ]
+        ],
+        [
+            {"user": "Morning.", "kit": "Morning. Coffee first, or straight into it?"},
+            {
+                "user": "What should I have for dinner?",
+                "kit": "Something with cheese. Hard to go wrong with cheese.",
+            },
+            {
+                "user": "Rain's set in for the weekend.",
+                "kit": "Good. More time for you to keep me company.",
+            },
+        ],
     ],
 }
 
@@ -403,9 +512,10 @@ class PersonaSettings(_Section):
         description="Three to five core traits.",
     )
     speech: str = Field(
-        "Short sentences, plain words, casual. One or two sentences unless asked for "
-        "detail. No slang. Never gushes, never says 'as an AI'.",
-        description="How Kit talks.",
+        "Plain, neutral English, warm and friendly: short sentences and everyday words, "
+        "with no slang or regional expressions. One or two sentences unless asked for "
+        "detail. Matter-of-fact rather than gushing, and never 'as an AI'.",
+        description="How Kit talks: his register, decided here and nowhere else.",
     )
     location: str = Field(
         "",
@@ -419,11 +529,10 @@ class PersonaSettings(_Section):
     )
     timezone: str = Field("", description="The owner's time zone, e.g. Australia/Sydney.")
     knows: str = Field(
-        "Dan is a normal bloke who shares the house with his partner and a cat. For work "
-        "he's a process engineer at a mining plant who has moved into data work, building "
-        "site apps in Python and keeping notes in Obsidian; that's his job, not his whole "
-        "life.",
-        description="What Kit knows about the owner.",
+        "Only what they've told you so far; you're still getting to know them.",
+        description="What Kit knows about the owner: who's at home, what they do for work, "
+        "what they're into. A few lines in your own words; the built-in line says he's "
+        "still getting to know you.",
     )
     rules: list[str] = Field(
         default_factory=lambda: [
@@ -456,14 +565,6 @@ class PersonaSettings(_Section):
         description="Sample exchanges. Small models keep character best with a few of these.",
     )
 
-    @model_validator(mode="before")
-    @classmethod
-    def _old_defaults(cls, data):
-        """An old default in the file is read as today's (``OLD_PERSONA``)."""
-        if not isinstance(data, dict):
-            return data
-        return {k: v for k, v in data.items() if v not in OLD_PERSONA.get(k, [])}
-
 
 class BrainSettings(_Section):
     host: str = Field(
@@ -476,16 +577,17 @@ class BrainSettings(_Section):
         120,
         ge=0,
         le=10080,
-        description="Start a fresh conversation when you come back after this long quiet "
-        "(the old one stays in memory). 0 never does.",
+        description="Coming back after this long quiet, Kit picks up one thing from last "
+        "time, as a new chat does; the conversation itself carries on, marked '(3 hours "
+        "later)'. 0 never does.",
     )
     new_topic_below: float = Field(
         0.45,
         ge=0,
         le=1,
-        description="Start fresh when a message's meaning is this far from your last few "
-        "(similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never "
-        "count as a new topic.",
+        description="A message this far in meaning from your last few (similarity below "
+        "this, 0 to 1) is noted as a change of subject beside it; the conversation is kept. "
+        "0 never does. Short or 'that/it' messages never count as a new topic.",
     )
     history_messages: int = Field(
         20, ge=2, le=200, description="Recent messages Kit sees each turn."
@@ -516,7 +618,25 @@ class LifeSettings(_Section):
     quiet_from: str = Field("22:00", description="Kit doesn't pipe up from this time...")
     quiet_until: str = Field("07:00", description="...until this time.")
     sleep_after_minutes: int = Field(
-        10, ge=1, le=240, description="Kit dozes off after you've been away this long."
+        10,
+        ge=1,
+        le=240,
+        description="Kit dozes off after you've been away this long. Dozing while you're out "
+        "lasts about two naps, then he gets up for this long before dozing again.",
+    )
+    naps: bool = Field(
+        True,
+        description="Kit sometimes nods off for a nap when he's bored, nobody's talked to him "
+        "for half an hour and nothing's going on, even with you at the PC. Never mid-"
+        "conversation or in quiet hours, at most twice a day. Talking to him wakes him.",
+    )
+    nap_minutes: int = Field(
+        20, ge=5, le=120, description="Roughly how long a nap lasts (give or take a third)."
+    )
+    turns_in: bool = Field(
+        True,
+        description="Past bedtime, once nobody's talked to him for a quarter of an hour, Kit "
+        "goes to bed himself, even if you're still up. He gets up around the end of quiet hours.",
     )
     think_every_minutes: int = Field(
         8,
@@ -596,7 +716,9 @@ class LifeSettings(_Section):
         "and toward getting outside or seeing someone after a long stretch at the desk.",
     )
     bedtime: str = Field(
-        "22:30", description="When Kit starts nudging you toward bed (with nudges on)."
+        "22:30",
+        description="When Kit starts nudging you toward bed (with nudges on), and from when "
+        "he may turn in himself (with turns_in on).",
     )
     desk_hours: float = Field(
         3.0,
@@ -794,6 +916,114 @@ class EyesSettings(_Section):
     )
 
 
+class HearingSettings(_Section):
+    """Kit's ears: the microphone process (`kit hearing`) on the PC with the mic. It
+    fetches these from the brain, so there's one place to change them. Sound never
+    leaves that PC: only the words, and how they sounded, reach the brain."""
+
+    enabled: bool = Field(
+        True,
+        description="Kit listens through a microphone when `kit hearing` is running on the PC "
+        'with the mic. The tray\'s "Let Kit hear me" switch turns it off and on.',
+    )
+    mic: str = Field(
+        "",
+        description="Which microphone to use: part of its name, or its number from "
+        "`kit hearing mics`. Empty uses the PC's default.",
+    )
+    names: list[str] = Field(
+        default_factory=lambda: ["Kit", "Kitt", "Ki", "Kid"],
+        description='What Kit answers to. Said at the start or end of a sentence ("Kit, '
+        "what's the weather?\"), it means you're talking to him. After his name come the "
+        "ways the ears sometimes write it; add a word they often hear instead.",
+    )
+    follow_up_s: float = Field(
+        8.0,
+        ge=0,
+        le=60,
+        description="After Kit stops talking, this many seconds when you can answer him "
+        "without saying his name. 0 means always say his name.",
+    )
+    barge_in: bool = Field(
+        True,
+        description="Talking over Kit stops him, as typing does. His own voice from the "
+        "speakers doesn't count.",
+    )
+    barge_in_ms: int = Field(
+        500,
+        ge=150,
+        le=3000,
+        description="How long you must talk over Kit before he stops (milliseconds).",
+    )
+    laugh_s: float = Field(
+        10.0,
+        ge=0,
+        le=60,
+        description="A laugh within this many seconds of Kit saying something makes him "
+        "chuffed. 0 turns it off.",
+    )
+    tone: bool = Field(
+        True,
+        description="Kit notices how you sound (down, cross, cheerful). He may ask about "
+        "it, never tells you how you feel.",
+    )
+    match: float = Field(
+        0.45,
+        ge=0.2,
+        le=0.9,
+        description="How alike a voice must be to someone Kit knows to count as them "
+        "(`kit hearing enrol NAME`). Higher is stricter.",
+    )
+    own_voice: float = Field(
+        0.5,
+        ge=0.3,
+        le=0.95,
+        description="How alike a voice must be to Kit's own for him to know it's himself "
+        "coming back from the speakers, while he's talking. It must also be more like him "
+        "than like anyone he knows. Lower ignores more.",
+    )
+    threshold: float = Field(
+        0.5,
+        ge=0.1,
+        le=0.95,
+        description="How sure the voice detector must be that a sound is speech. Higher "
+        "ignores more background noise, but may miss quiet speech.",
+    )
+    pause_ms: int = Field(
+        600,
+        ge=200,
+        le=3000,
+        description="How long a pause ends what you're saying (milliseconds). Shorter "
+        "answers sooner; too short cuts you off mid-thought.",
+    )
+    min_speech_s: float = Field(
+        0.4, ge=0.1, le=5, description="Shorter sounds than this are ignored (a cough, a click)."
+    )
+    max_speech_s: float = Field(
+        20.0, ge=3, le=60, description="Longest stretch of talking heard as one go."
+    )
+    language: Literal["auto", "en", "zh", "ja", "ko", "yue"] = Field(
+        "en",
+        description="The language Kit's ears listen for. auto works it out each time, "
+        "a little less reliably.",
+    )
+    threads: int = Field(
+        2,
+        ge=1,
+        le=16,
+        description="Processor threads the speech models use on the mic's PC. Up to about "
+        "half its cores makes the words come sooner.",
+    )
+
+    @field_validator("names")
+    @classmethod
+    def _some_name(cls, value: list[str]) -> list[str]:
+        names = [" ".join(n.split()) for n in value if n.strip()]
+        if not names:
+            raise ValueError("Kit needs at least one name to answer to")
+        return names
+
+
 CharacterName = Literal[tuple(characters.presets())]  # type: ignore[valid-type]
 
 
@@ -827,6 +1057,13 @@ class MemorySettings(_Section):
         "nomic-embed-text",
         description="Ollama model that turns text into meaning vectors, so Kit can find "
         "memories by meaning as well as by words. Changing it re-indexes everything.",
+    )
+    embed_keep_alive: str = Field(
+        "24h",
+        description="How long the embedding model stays loaded after it was last used "
+        "(Ollama's keep_alive, e.g. 24h, 30m, -1 for always). It is small, and recall "
+        "needs it before every reply, so loading it again after a quiet spell would hold "
+        "up the first answer.",
     )
     query_prefix: str = Field(
         "search_query: ", description="Text the embedding model wants before a search."
@@ -930,16 +1167,17 @@ DEFAULT_MOOD_SPEED: dict[str, float] = {
 }
 
 
-# Sounds Chatterbox Turbo makes to open a reply in these emotions. Its tags (from its
-# tokenizer, 2026-10-07): [advertisement] [angry] [chuckle] [clear throat] [cough]
-# [crying] [dramatic] [fear] [gasp] [groan] [happy] [laugh] [narration] [sarcastic]
-# [shush] [sigh] [sniff] [surprised] [whispering]. Each adds about half a second.
-DEFAULT_MOOD_TAGS: dict[str, str] = {
-    "tired": "[sigh]",
-    "sad": "[sigh]",
-    "grumpy": "[groan]",
-    "playful": "[chuckle]",
-    "surprised": "[gasp]",
+# Sounds Chatterbox Turbo may open a reply with in these emotions, one picked at
+# random each time. Its tags (from its tokenizer, 2026-10-07): [advertisement]
+# [angry] [chuckle] [clear throat] [cough] [crying] [dramatic] [fear] [gasp] [groan]
+# [happy] [laugh] [narration] [sarcastic] [shush] [sigh] [sniff] [surprised]
+# [whispering]. Each adds about half a second.
+DEFAULT_MOOD_TAGS: dict[str, list[str]] = {
+    "tired": ["[sigh]", "[groan]"],
+    "sad": ["[sigh]", "[sniff]"],
+    "grumpy": ["[groan]", "[sigh]", "[clear throat]"],
+    "playful": ["[chuckle]", "[laugh]"],
+    "surprised": ["[gasp]", "[surprised]"],
 }
 
 
@@ -984,14 +1222,36 @@ class SpeechEngine(_Section):
     cfg_weight: float = Field(
         0.5, ge=0, le=1, description="chatterbox: lower is slower and more deliberate."
     )
-    mood_tags: dict[str, str] = Field(
-        default_factory=lambda: dict(DEFAULT_MOOD_TAGS),
-        description="chatterbox-turbo: a sound that opens a reply in that emotion, such as "
-        "[sigh] or [chuckle].",
+    mood_tags: dict[str, str | list[str]] = Field(
+        default_factory=lambda: {m: list(t) for m, t in DEFAULT_MOOD_TAGS.items()},
+        description="chatterbox-turbo: sounds that may open a reply in that emotion, such as "
+        "[sigh] or [chuckle]; one is picked at random. A single sound works too.",
+    )
+    mood_tag_chance: float = Field(
+        0.6,
+        ge=0,
+        le=1,
+        description="chatterbox-turbo: how often a reply in one of those emotions opens with "
+        "a sound (0.6: six in ten); the rest just start.",
+    )
+    cuda_graph: bool = Field(
+        True,
+        description="chatterbox-turbo on a graphics card: record its token loop as a CUDA "
+        "graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop.",
     )
 
 
 DEFAULT_SPEECH_ENGINES: dict[str, dict] = {
+    "kokoro": {"kind": "kokoro", "voice": "af_heart"},
+    "piper": {"kind": "piper", "voice": "en_US-lessac-medium.onnx"},
+    "chatterbox": {"kind": "chatterbox", "reference": "kit_voice.wav"},
+    "chatterbox-turbo": {"kind": "chatterbox-turbo", "reference": "kit_voice.wav"},
+    "tone": {"kind": "tone"},
+}
+
+
+# The built-in voice engines as a version-1 file holds them. Frozen, like _V1_MODELS.
+_V1_SPEECH_ENGINES: dict[str, dict] = {
     "kokoro": {"kind": "kokoro", "voice": "af_heart"},
     "piper": {"kind": "piper", "voice": "en_US-lessac-medium.onnx"},
     "chatterbox": {"kind": "chatterbox", "reference": "kit_voice.wav"},
@@ -1069,7 +1329,10 @@ class SpeechSettings(_Section):
 
 
 class Settings(_Section):
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Literal[2] = Field(
+        SCHEMA_VERSION,
+        description="The settings file's layout. 2: the file holds only what you changed.",
+    )
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     routing: RoutingSettings = Field(default_factory=RoutingSettings)
     models: dict[str, ModelProfile] = Field(
@@ -1084,8 +1347,17 @@ class Settings(_Section):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     life: LifeSettings = Field(default_factory=LifeSettings)
     eyes: EyesSettings = Field(default_factory=EyesSettings)
+    hearing: HearingSettings = Field(default_factory=HearingSettings)
     speech: SpeechSettings = Field(default_factory=SpeechSettings)
     face: FaceSettings = Field(default_factory=FaceSettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_version_1(cls, data):
+        """A version-1 file holds every setting, chosen or not; read only what was."""
+        if isinstance(data, dict) and data.get("schema_version") == 1:
+            return _without_v1_defaults(data)
+        return data
 
     @field_validator("models", mode="before")
     @classmethod
@@ -1173,5 +1445,90 @@ def load_settings(path: Path) -> Settings:
 
 
 def settings_to_toml(settings: Settings) -> str:
-    """The settings as TOML. Unset optional values are left out (TOML has no null)."""
+    """Every setting as TOML, for reading (``kit config show``). Unset optional values
+    are left out (TOML has no null)."""
     return tomli_w.dumps(settings.model_dump(mode="json", exclude_none=True))
+
+
+def settings_file_toml(settings: Settings) -> str:
+    """The settings as the file holds them: only what differs from the defaults, so a
+    default that changes in the code reaches the install. A built-in model or voice
+    engine profile is written field by field the same way; your own profiles whole."""
+    return tomli_w.dumps({"schema_version": SCHEMA_VERSION, **changes(settings, Settings())})
+
+
+def _dump(value: BaseModel) -> dict:
+    return value.model_dump(mode="json", exclude_none=True)
+
+
+def _profiles(value) -> bool:
+    return isinstance(value, dict) and all(isinstance(v, BaseModel) for v in value.values())
+
+
+def changes(settings: BaseModel, defaults: BaseModel) -> dict:
+    """What differs between two settings, field by field, as nested dicts. Plain
+    dicts (``nas.read_only_shares``, an engine's ``mood_speed``) count as one value."""
+    out: dict = {}
+    dump = _dump(settings)
+    for name in type(settings).model_fields:
+        value, default = getattr(settings, name), getattr(defaults, name)
+        if isinstance(value, BaseModel) and isinstance(default, BaseModel):
+            sub = changes(value, default)
+        elif _profiles(value) and _profiles(default):
+            sub = {}
+            for key, profile in value.items():
+                if key not in default:
+                    sub[key] = _dump(profile)
+                elif diff := changes(profile, default[key]):
+                    sub[key] = diff
+        elif value != default and name in dump:
+            out[name] = dump[name]
+            continue
+        else:
+            continue
+        if sub:
+            out[name] = sub
+    return out
+
+
+def _without_v1_defaults(raw: dict) -> dict:
+    """A version-1 file as version 2: every value that was a default in version 1
+    (``_V1_MODELS``, ``_V1_SPEECH_ENGINES``, ``_V1_PERSONA``; today's for the rest)
+    is dropped, so today's default is read instead. What the owner changed stays."""
+    v1 = _dump(Settings())
+    v1["models"] = {n: _dump(ModelProfile.model_validate(p)) for n, p in _V1_MODELS.items()}
+    v1["speech"]["engines"] = {
+        n: _dump(SpeechEngine.model_validate(p)) for n, p in _V1_SPEECH_ENGINES.items()
+    }
+    out: dict = {"schema_version": SCHEMA_VERSION}
+    for section, value in raw.items():
+        if section == "schema_version":
+            continue
+        if section == "models":
+            value = _profiles_without(value, v1["models"])
+        elif isinstance(value, dict) and isinstance(v1.get(section), dict):
+            if section == "speech" and isinstance(value.get("engines"), dict):
+                value = {
+                    **value,
+                    "engines": _profiles_without(value["engines"], v1["speech"]["engines"]),
+                }
+            value = {
+                k: v
+                for k, v in value.items()
+                if v != v1[section].get(k)
+                and not (section == "persona" and v in _V1_PERSONA.get(k, []))
+            }
+        out[section] = value
+    return out
+
+
+def _profiles_without(profiles, v1: dict[str, dict]):
+    """Built-in profiles with their version-1 fields dropped; others whole."""
+    if not isinstance(profiles, dict):
+        return profiles
+    out = {}
+    for name, profile in profiles.items():
+        if name in v1 and isinstance(profile, dict):
+            profile = {k: v for k, v in profile.items() if v != v1[name].get(k)}
+        out[name] = profile
+    return out

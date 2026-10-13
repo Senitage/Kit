@@ -71,6 +71,9 @@ _READ = re.compile(
     re.IGNORECASE,
 )
 _WORD = re.compile(r"[\w']+")
+NEAR_START = 2  # a word starting with the same two letters and ending with the same one
+NEAR_LENGTH = 2  # ... and about as long, may be a typo of it ("holday", "shoping")
+NEAR_MIN = 4  # shorter words have to match exactly
 _NOTEISH = {"note", "notes", "list", "file", "page", "planner", "plan", "log", "journal"}
 # Characters Windows, Obsidian links or the NAS won't take in a file name.
 _UNSAFE = re.compile(r'[\\/:*?"<>|#^\[\]\x00-\x1f]')
@@ -128,13 +131,40 @@ class Request:
     text: str = ""  # what to write
 
 
+def candidates(message: str, names: Iterable[str]) -> list[str]:
+    """The notes ``message`` might name: those with a word of their name in it,
+    exactly or near enough to be a typo (the same first two letters and last one,
+    about the same length). A cheap sieve before the careful ``mentioned``
+    comparison, which a vault of thousands of notes would make a second's work."""
+    words = {w.lower() for w in _WORD.findall(message)}
+    near: dict[str, set[int]] = {}
+    for word in words:
+        if len(word) >= NEAR_MIN:
+            near.setdefault(word[:NEAR_START] + word[-1], set()).add(len(word))
+
+    def close(word: str) -> bool:
+        if word in words:
+            return True
+        if len(word) < NEAR_MIN:
+            return False
+        lengths = near.get(word[:NEAR_START] + word[-1], ())
+        return any(abs(n - len(word)) <= NEAR_LENGTH for n in lengths)
+
+    out = []
+    for name in names:
+        stem = name.rsplit("/", 1)[-1].lower()
+        if any(close(w) for w in _WORD.findall(stem)):
+            out.append(name)
+    return out
+
+
 def mentioned(message: str, names: Iterable[str]) -> str | None:
     """The note ``message`` talks about, by name, forgiving a typo ("holday
     planner"). A one-word name only counts as "my <name>" or "<name> note", so
     "what's up, Kit?" doesn't open the note called Kit."""
     words = [w.lower() for w in _WORD.findall(message)]
     best, best_score = None, 0.0
-    for name in names:
+    for name in candidates(message, names):
         stem = name.rsplit("/", 1)[-1].lower()
         size = len(_WORD.findall(stem))
         if not size:
@@ -220,6 +250,7 @@ class Notes:
     def __init__(self, index: Index, clock: Callable[[], datetime]) -> None:
         self.index = index
         self.clock = clock
+        self._names: tuple[int, list[str]] | None = None  # (index changes seen, every name)
 
     # Reading
 
@@ -265,13 +296,17 @@ class Notes:
             self.index.add(NOTES, NOTE, body, title=title, ref=ref, meta={"mtime": mtime})
 
     def names(self, limit: int = 40) -> list[str]:
-        """The vault's notes (path without .md), most recently changed first."""
-        newest: dict[str, float] = {}
-        for item in self.index.items(NOTES, limit=ALL):
-            if item.ref:
-                newest[item.ref] = item.meta.get("mtime") or 0
-        refs = sorted(newest, key=lambda r: newest[r], reverse=True)[:limit]
-        return [r.removesuffix(".md") for r in refs]
+        """The vault's notes (path without .md), most recently changed first. Read
+        from the index once and kept until a note changes: every message asks."""
+        changes = self.index.changes(NOTES)
+        if self._names is None or self._names[0] != changes:
+            newest: dict[str, float] = {}
+            for item in self.index.items(NOTES, limit=ALL):
+                if item.ref:
+                    newest[item.ref] = item.meta.get("mtime") or 0
+            refs = sorted(newest, key=lambda r: newest[r], reverse=True)
+            self._names = (changes, [r.removesuffix(".md") for r in refs])
+        return self._names[1][:limit]
 
     def find(self, nas: NasSettings, name: str) -> Path | None:
         """The note called ``name``: a path in the vault ("Projects/Kit"), or a
@@ -282,11 +317,9 @@ class Notes:
         wanted = name.strip().strip("[]").removesuffix(".md").strip().strip("/")
         if not wanted:
             return None
-        refs = {
-            item.ref
-            for item in self.index.items(NOTES, limit=ALL)
-            if item.ref and (vault / item.ref).exists()
-        }
+        # The index says which notes there are; a note gone since the last sync is
+        # an OSError when it's read, not a stat of every note on the NAS here.
+        refs = {f"{name}.md" for name in self.names(limit=ALL)}
         lower = wanted.lower()
         for ref in sorted(refs):
             if ref.removesuffix(".md").lower() == lower:

@@ -25,7 +25,8 @@ related: ["[[Vision Stage 1]]", "[[Vision Stage 2]]", "[[Inner Life]]"]
   hand. They go into his thoughts, and arrivals and animals into his memory
   (`seen`), so "when did I get in this morning?" has an answer.
 - **Have a proper look** when you ask ("what am I holding?") with the
-  `look_around` action.
+  `look_around` action. In `cloud-only` routing that look goes to the cloud
+  chat model, as words ([[Privacy#What a cloud model sees of your PC and the room]]).
 - **Mind his manners**: no pipe-ups while you're on your phone or talking to
   someone, and nothing said out loud to an empty room.
 
@@ -78,6 +79,11 @@ flowchart LR
   deletes them.
 - **Settings come from the brain** (`[eyes]`), so there's one place to change
   them, and running eyes pick changes up.
+- **Reports go from their own thread**, so a slow or absent brain never holds
+  up the camera loop (a stall used to drop tracks, and with them who was who).
+  A newer report takes the place of one still waiting, and the events of a
+  report that didn't get through ("Dan sat down", "waved") go with the next
+  one that does, up to the hundred the brain takes in one report.
 
 ## Without a graphics card
 
@@ -89,7 +95,7 @@ who's who, following your face and spotting the cat. Small things across the
 room get missed more often.
 
 ```
-pip install openvino                      # in the eyes' venv; on a Pi: pip install ncnn pnnx
+pip install -e ".[eyes,eyes-cpu]"         # in the eyes' venv: adds OpenVINO
 kit config set eyes.device cpu
 kit config set eyes.detector yolo11n
 kit config set eyes.detector_format openvino   # ncnn on a Raspberry Pi
@@ -112,9 +118,19 @@ about half as fast again on an old i5, so roughly half a core for lite eyes):
 | Lite eyes, as above | 5 | 35% of a core |
 | Lite eyes with `eyes.hands` off too | 5 | 19% of a core |
 
-On a Raspberry Pi 5, use `ncnn` (it's built for ARM chips); the detector
-should take tens of milliseconds there. `onnx` works anywhere but kept the CPU
-busier than OpenVINO in the same test.
+If the runtime for a format isn't installed, `kit eyes` stops and says what to
+install rather than fetching it behind your back.
+
+> [!NOTE] A Raspberry Pi
+> Lite eyes get part of the way to a Pi. On a Pi 5 use `ncnn` (`pip install
+> ncnn pnnx`; it's built for ARM chips) and the detector should take tens of
+> milliseconds a look. `onnx` works anywhere but kept the CPU busier than
+> OpenVINO in the same test. What's still in the way: the eyes run through
+> Ultralytics, which brings PyTorch with it (about a gigabyte; fine on a Pi 5,
+> not a Pi 4 or a Zero), and making the NCNN copy on the Pi itself is slow.
+> The Pi path when a Pi is real: export the detector on the PC and copy the
+> `_ncnn_model` folder into the eyes' models folder (an export already there is
+> used as is), and an Ultralytics-free NCNN runner so PyTorch stays off the Pi.
 
 ## The switch
 

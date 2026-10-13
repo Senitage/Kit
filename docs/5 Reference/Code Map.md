@@ -17,7 +17,7 @@ from a note into the code. A test checks every module is listed here.
 flowchart TB
     subgraph Server["The server (Linux or Windows)"]
         direction TB
-        Srv["server.py"] --> Brn["brain.py"]
+        Srv["server.py, routes/"] --> Brn["brain.py"]
         Brn --> Mods["local_model.py, cloud.py"]
         Brn --> Mem["memory.py, knowledge.py, recall.py, learning.py, things.py"]
         Brn --> Lf["life.py, thinking.py, notebook.py, reflection.py"]
@@ -27,22 +27,38 @@ flowchart TB
     subgraph PC["The Windows PC"]
         Dsk["desk/"]
         Eye["eyes/"]
+        Ear["hearing/"]
     end
     Dsk -- "HTTP" --> Srv
     Eye -- "HTTP" --> Srv
+    Ear -- "HTTP" --> Srv
 ```
 
 ## The brain
 
 | Module | What it does | Explained in |
 |---|---|---|
-| `src/kit/server.py` | The web server: pages, the API, and the background loops | [[API]], [[The Big Picture]] |
+| `src/kit/server.py` | The web server: builds the app around the routes, and runs the background loops | [[API]], [[The Big Picture]] |
+| `src/kit/routes/state.py` | What every route shares: the one `AppState`, the token checks, answer helpers | [[API]], [[Phone App]] |
+| `src/kit/routes/pages.py` | The chat, settings and memory pages | [[API]] |
+| `src/kit/routes/status.py` | `/api/health`, `/api/status` and cloud spend | [[API]] |
+| `src/kit/routes/chat.py` | `/api/chat` (streamed) and the conversation so far | [[API]], [[Life of a Message]] |
+| `src/kit/routes/settings.py` | Reading, changing and undoing settings | [[API]], [[Settings and Data]] |
+| `src/kit/routes/memory.py` | Facts, memory search and day summaries | [[API]], [[Memory]] |
+| `src/kit/routes/things.py` | The register of things over the API | [[API]], [[Register of Things]] |
+| `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
+| `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
+| `src/kit/routes/eyes.py` | The eyes' reports, known faces and the "Let Kit see me" switch | [[API]], [[Eyes]] |
+| `src/kit/routes/face.py` | The character sheet and the 3D face page's files | [[API]], [[Face]] |
+| `src/kit/routes/bodies.py` | A body's hello, pairing devices, and the list of both | [[API]], [[Phone App]] |
+| `src/kit/routes/hearing.py` | The ears' reports, what was heard, hush and pause, and known voices | [[API]], [[Hearing]] |
+| `src/kit/routes/speech.py` | Voice status and one sentence of speech, streamed or as a WAV | [[API]], [[Voice]] |
 | `src/kit/brain.py` | The conversation loop: one message in, a streamed reply out | [[Brain]], [[Life of a Message]] |
 | `src/kit/reply.py` | The shape of every reply, emotions, gestures and actions | [[Brain#One shape for every reply]] |
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
-| `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with spend | [[Models and Routing]] |
+| `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |
 | `src/kit/cli.py` | The `kit` command | [[Commands]] |
 | `src/kit/__main__.py` | `python -m kit` runs the `kit` command | [[Commands]] |
 
@@ -69,7 +85,7 @@ flowchart TB
 | `src/kit/daily.py` | Once-a-day questions and nudges | [[Companion]] |
 | `src/kit/pastimes.py` | What he does while you're out | [[Companion#While you're out]] |
 | `src/kit/noticing.py` | The small moments his eyes catch that he feels: waves, thumbs, smiles, frowns, sleepy eyes | [[Eyes#Moments he feels]] |
-| `src/kit/when.py` | "Thursday arvo" and friends | [[Time and Weather]] |
+| `src/kit/when.py` | "Thursday arvo" and friends, and how long something took ("25 min") | [[Time and Weather]] |
 | `src/kit/holidays.py` | The shape of the week and public holidays | [[Time and Weather]] |
 | `src/kit/weather.py` | The forecast from Open-Meteo | [[Time and Weather]] |
 | `src/kit/shows.py` | The time, date and weather on his face | [[Face]] |
@@ -81,8 +97,17 @@ flowchart TB
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
+| `src/kit/heard.py` | The brain's side of what the ears hear: spoken to, a laugh, an echo, tone, who | [[Hearing]] |
+| `src/kit/known_voices.py` | The people his ears know, by voice print | [[Hearing]] |
 | `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
 | `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
+
+## Bodies
+
+| Module | What it does | Explained in |
+|---|---|---|
+| `src/kit/body.py` | The plain-text body feed, chat moments and pats | [[Pod In Depth#The body feed]] |
+| `src/kit/audience.py` | Who can hear him, and who his words are for | [[Bodies#Who can hear him]] |
 
 ## Setup and settings
 
@@ -94,7 +119,9 @@ flowchart TB
 | `src/kit/credentials.py` | API keys and the token | [[Settings and Data#Secrets]] |
 | `src/kit/checks.py` | `kit check` | [[Stage 0 - Server Setup]] |
 | `src/kit/evals.py` | The eval suites | [[Evals]] |
+| `src/kit/evals_cli.py` | `kit eval`: runs each eval against the real models and prints how it went | [[Evals]], [[Commands]] |
 | `src/kit/settings.example.toml` | An example settings file | [[Settings Reference]] |
+| `src/kit/docs_check.py` | `kit docs check`: the stale rows of Where Kit Is Up To | [[Commands#The docs]] |
 
 ## Face
 
@@ -113,6 +140,7 @@ flowchart TB
 |---|---|---|
 | `src/kit/speech/service.py` | Runs the chosen engine and asks it for speech | [[Voice]] |
 | `src/kit/speech/worker.py` | One engine behind a tiny local web server | [[Voice#Engines]] |
+| `src/kit/speech/turbo.py` | Chatterbox Turbo's token loop recorded as a CUDA graph | [[Voice#Faster on a graphics card]] |
 | `src/kit/speech/sentences.py` | Cutting words into speakable pieces | [[Voice]] |
 | `src/kit/speech/bench.py` | `kit speech bench` | [[Commands#Voice]] |
 
@@ -156,6 +184,17 @@ flowchart TB
 | `src/kit/eyes/scene.py` | The scene as plain data | [[Eyes]] |
 | `src/kit/eyes/link.py` | The eyes' files, and finding the brain | [[Vision Stage 1]] |
 | `src/kit/eyes/preview.py` | `kit eyes --show` | [[Vision Stage 1]] |
+
+## The ears (on the PC with the mic)
+
+| Module | What it does | Explained in |
+|---|---|---|
+| `src/kit/hearing/run.py` | The loop: sound in, words out; talking over him stops him | [[Hearing]] |
+| `src/kit/hearing/mic.py` | The microphone through sounddevice | [[Hearing]] |
+| `src/kit/hearing/engines.py` | Voice detection, speech to text with tone, voice prints (sherpa-onnx) | [[Hearing#How it works]] |
+| `src/kit/hearing/models.py` | The three model files, downloaded the first time | [[Companion Stage 5]] |
+| `src/kit/hearing/enrol.py` | `kit hearing enrol` | [[Companion Stage 5]] |
+| `src/kit/hearing/link.py` | The ears' files, and finding the brain | [[Companion Stage 5]] |
 
 ## Outside src
 

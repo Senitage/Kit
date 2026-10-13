@@ -405,3 +405,18 @@ def test_a_pipe_up_comes_with_its_voiced_line_and_whether_to_say_it_out_loud(mem
     asyncio.run(pipe_up_now(brain, "bored"))
     event = [e for e in brain.life.events_after(0) if e["type"] == "pipe_up"][-1]
     assert event["aloud"] is False
+
+
+def test_no_nap_while_dan_is_on_his_phone_and_no_pipe_up_while_asleep():
+    life, pc, clock, scene = setup(chattiness=0.6, hold_pipe_ups=True)
+    pc.update(snap())
+    keen(life)
+    phone = report(seen(holding=["cell phone"]))
+    for _ in range(80):  # forty minutes on the phone, ignoring him
+        look(life, scene, clock, phone, seconds=30)
+        assert life.tick() is None
+    assert not life.asleep and life.holding is not None
+    life._fall_asleep(clock.now, beside=True, kind="nap")
+    assert life.holding is None  # what he was saving fades as he drifts off
+    look(life, scene, clock, report(seen()), seconds=25)
+    assert life.tick() is None and life.quiet_because == "asleep"

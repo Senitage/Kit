@@ -1,6 +1,8 @@
 """Kit's eyes (kit.eyes): the scene, actions, faces, hands, the loop and how it
 finds the brain. All with fakes: no camera, no model libraries."""
 
+import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -22,8 +24,8 @@ from kit.eyes.body import (
     read_hands,
 )
 from kit.eyes.faces import Face, head_direction, read_expressions, read_faces
-from kit.eyes.run import Eyes
-from kit.eyes.scene import Scene, Stable, TrackMemory, describe, position_label
+from kit.eyes.run import Eyes, Post
+from kit.eyes.scene import UNSENT_MAX, Scene, Stable, TrackMemory, describe, position_label
 from kit.settings import EyesSettings
 
 PERSON = (1, "person", (400, 100, 800, 700))
@@ -372,9 +374,10 @@ class FakeDetector:
 class FakeBrain:
     """What the brain answers each report with."""
 
-    def __init__(self, paused=False, settings=None, fail=False):
+    def __init__(self, paused=False, settings=None, fail=False, asleep=False):
         self.reports = []
         self.paused = paused
+        self.asleep = asleep
         self.settings = settings
         self.fail = fail
 
@@ -382,13 +385,13 @@ class FakeBrain:
         self.reports.append(report)
         if self.fail:
             raise RuntimeError("Can't reach Kit")
-        answer = {"ok": True, "paused": self.paused}
+        answer = {"ok": True, "paused": self.paused, "asleep": self.asleep}
         if self.settings is not None:
             answer["settings"] = self.settings
         return answer
 
 
-def make_eyes(brain, cameras=None, detector=None, **settings):
+def make_eyes(brain, cameras=None, detector=None, load_parts=None, **settings):
     clock = Clock()
     ticks = {"t": 0.0}
 
@@ -414,6 +417,8 @@ def make_eyes(brain, cameras=None, detector=None, **settings):
         clock=tick,
         wall=clock,
         sleep=lambda s: None,
+        threaded=False,  # reports go on the spot, so each step's effect can be checked
+        load_parts=load_parts,
     )
     return eyes, opened, detector
 
@@ -451,7 +456,7 @@ def test_paused_eyes_let_the_camera_go_and_check_back():
         eyes.step()
     assert len(opened) == 1
     off = [r for r in brain.reports if r.get("off")]
-    assert off and off[0] == {"camera": "desk", "off": True}
+    assert off and off[0] == {"camera": "desk", "off": True, "asleep": False}
     brain.paused = False
     brain.reports.clear()
     for _ in range(40):
@@ -462,10 +467,66 @@ def test_paused_eyes_let_the_camera_go_and_check_back():
 def test_the_detector_can_rest_between_looks_while_faces_keep_up():
     brain = FakeBrain()
     eyes, _, detector = make_eyes(brain, detect_every=3)
-    for _ in range(9):
+    for _ in range(24):
         eyes.step()
-    assert len(detector.frames) == 3  # looks 1, 4 and 7
-    assert eyes.scene.memory.tracks[1].frames_seen == 9  # the last boxes stand in between
+    assert len(detector.frames) == 8  # looks 1, 4, 7 ... 22
+    # A frame the detector rested on teaches the scene nothing: eight looks, not
+    # twenty-four frames, went into being sure of the person...
+    assert eyes.scene.memory.tracks[1].frames_seen == 8
+    # ...and on the rest frames the person it saw last look is still there for the
+    # face reader to match, and in the report.
+    assert 1 in eyes.scene.people and brain.reports[-1]["people"][0]["id"] == 1
+
+
+def test_a_one_look_false_positive_is_not_confirmed_by_the_rests_after_it():
+    # Something seen once stays unconfirmed while the detector rests, however many
+    # frames go by; it used to stand in on every rest frame and count each time.
+    brain = FakeBrain()
+    flicker = FakeDetector((7, "dog", (0, 0, 20, 20)))
+    eyes, _, _ = make_eyes(brain, detector=flicker, detect_every=3)
+    eyes.step()
+    flicker.detections = []
+    for _ in range(8):
+        eyes.step()
+    track = eyes.scene.memory.tracks[7]
+    assert track.frames_seen == 1 and not track.confirmed
+    assert not any("dog" in e for _, e in eyes.scene.events)
+
+
+def test_the_camera_coming_back_gets_a_proper_look_first():
+    brain = FakeBrain()
+    eyes, opened, detector = make_eyes(
+        brain, cameras=[FakeCamera(frames=[1, 2]), FakeCamera()], detect_every=3
+    )
+    for _ in range(3):  # two frames, then the camera stops
+        eyes.step()
+    assert eyes.camera is None and len(detector.frames) == 1
+    for _ in range(100):  # the camera comes back after the retry wait
+        eyes.step()
+        if eyes.camera is not None:
+            break
+    # Its first frame is looked at, not rested on.
+    assert len(opened) == 2 and len(detector.frames) == 2
+
+
+def test_a_missing_export_runtime_is_said_plainly(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from kit.eyes import detect
+
+    class YOLO:
+        def __init__(self, path, **kw):
+            pass
+
+        def export(self, **kw):
+            raise ModuleNotFoundError("No module named 'openvino'")
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=YOLO))
+    with pytest.raises(RuntimeError, match="pip install openvino"):
+        detect.exported(tmp_path / "yolo11n.pt", "openvino", 320)
+    with pytest.raises(RuntimeError, match="pip install ncnn pnnx"):
+        detect.YoloDetector("yolo11n", tmp_path, fmt="ncnn", size=320)
 
 
 def test_looks_per_second_rests_the_cpu_between_frames():
@@ -501,6 +562,46 @@ def test_exports_are_named_by_format_and_size(tmp_path, monkeypatch):
     assert detect.exported(tmp_path / "yolo11n.pt", "ncnn", 320) == ready
 
 
+def test_while_kit_sleeps_his_eyes_shut_and_their_models_unload(monkeypatch):
+    freed = []
+    monkeypatch.setattr("kit.eyes.detect.free_gpu", lambda: freed.append(True))
+    loaded = []
+
+    def load():
+        loaded.append(FakeDetector((1, "person", (40, 10, 90, 70))))
+        return {"detector": loaded[-1]}
+
+    brain = FakeBrain(asleep=True)
+    first = FakeDetector((1, "person", (40, 10, 90, 70)))
+    eyes, opened, _ = make_eyes(
+        brain, cameras=[FakeCamera(), FakeCamera()], detector=first, load_parts=load
+    )
+    eyes.step()  # first report: the brain says Kit's asleep
+    assert eyes.asleep and opened[0].released and eyes.camera is None
+    assert first.closed and eyes.detector is None and freed
+    for _ in range(40):  # 4 s asleep: "off" check-ins, no camera, no models
+        eyes.step()
+    assert len(opened) == 1 and not loaded
+    assert brain.reports[-1] == {"camera": "desk", "off": True, "asleep": True}
+    brain.asleep = False  # he woke up
+    brain.reports.clear()
+    for _ in range(40):
+        eyes.step()
+    assert len(loaded) == 1 and eyes.detector is loaded[0] and len(opened) == 2
+    assert brain.reports[-1]["people"] and loaded[0].frames
+
+
+def test_eyes_without_a_loader_keep_their_models_while_kit_sleeps():
+    brain = FakeBrain(asleep=True)
+    eyes, opened, detector = make_eyes(brain, cameras=[FakeCamera(), FakeCamera()])
+    eyes.step()
+    assert eyes.camera is None and eyes.detector is detector and not detector.closed
+    brain.asleep = False
+    for _ in range(40):
+        eyes.step()
+    assert len(opened) == 2 and detector.frames
+
+
 def test_settings_from_the_brain_apply_to_a_running_pair_of_eyes(caplog):
     brain = FakeBrain(settings={"mirror": False, "forget_after_s": 7.5, "camera": 2})
     eyes, _, detector = make_eyes(brain)
@@ -529,6 +630,75 @@ def test_a_lost_brain_or_camera_is_retried_not_fatal(caplog):
     for _ in range(60):
         eyes.step()
     assert eyes.error == "" and eyes.reports >= 1
+
+
+def test_events_wait_for_the_brain_instead_of_being_lost():
+    brain = FakeBrain(fail=True)
+    eyes, _, _ = make_eyes(brain, report_every_s=1.0)
+    for _ in range(60):  # the brain is down while "person #1 entered" happens
+        eyes.step()
+    assert eyes.reports == 0 and any(r["events"] for r in brain.reports)
+    brain.fail = False
+    brain.reports.clear()
+    for _ in range(60):
+        eyes.step()
+    assert eyes.reports >= 1
+    entered = [e for r in brain.reports for e in r["events"] if e["event"] == "person #1 entered"]
+    assert len(entered) == 1  # it got there, once, with the first report that did
+
+
+def test_kept_events_are_capped_at_what_one_report_carries():
+    scene = Scene(clock=Clock())
+    scene.requeue([{"at": "t", "event": f"e{n}"} for n in range(UNSENT_MAX + 20)])
+    events = scene.report()["events"]
+    assert len(events) == UNSENT_MAX and events[-1]["event"] == f"e{UNSENT_MAX + 19}"
+    assert scene.report()["events"] == []  # reported: gone until requeued
+
+
+def test_the_report_goes_from_its_own_thread_so_frames_keep_coming():
+    gate, sent = threading.Event(), []
+
+    def slow_brain(report):
+        sent.append(report)
+        gate.wait(5)  # the brain is slow: a report takes seconds to answer
+        return {"ok": True, "paused": False}
+
+    brain = FakeBrain()
+    eyes, _, detector = make_eyes(brain, report_every_s=1.0)
+    eyes.post = Post(slow_brain, dropped=eyes._dropped)  # the real thing, threaded
+    before = time.perf_counter()
+    for _ in range(25):  # 2.5 s of frames: two reports due, the brain answering neither
+        eyes.step()
+    assert time.perf_counter() - before < 2.0  # the frame loop never waited on it
+    assert len(detector.frames) == 25 and len(sent) == 1 and eyes.reports == 0
+    gate.set()  # the brain answers: the one in the slot goes, its answer is collected
+    for _ in range(50):
+        if eyes.reports == 2:
+            break
+        eyes.step()
+        time.sleep(0.01)
+    assert eyes.reports == 2 and len(sent) == 2
+    eyes.close()
+
+
+def test_a_report_pushed_out_of_the_slot_keeps_its_events_for_the_next():
+    taken = threading.Event()
+    gate = threading.Event()
+
+    def slow_brain(report):
+        taken.set()
+        gate.wait(5)
+        return {}
+
+    scene = Scene(clock=Clock())
+    post = Post(slow_brain, dropped=lambda r: scene.requeue(r["events"]))
+    post.send({"events": [{"at": "t", "event": "first: taken by the thread"}]})
+    assert taken.wait(2)
+    post.send({"events": [{"at": "t", "event": "second: waits in the slot"}]})
+    post.send({"events": [{"at": "t", "event": "third: pushes the second out"}]})
+    assert [e["event"] for e in scene.report()["events"]] == ["second: waits in the slot"]
+    gate.set()
+    post.close()
 
 
 def test_no_camera_is_said_once_and_retried():

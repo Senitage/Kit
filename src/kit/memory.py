@@ -41,9 +41,27 @@ CHAT_FROM = "chat_from"  # kit_self key: the last message before the current cha
 # "Keep it local": that message, and Kit's answer to it, never go to a cloud model. Nor
 # does what Kit kept from it: facts, notes and summaries are marked private in their
 # meta, and his own lines from it (a reminder Dan asked for that way) are listed here.
+# The words are read once, as the message arrives (kit.brain), and the message is
+# stored with ``Message.private``; everything after reads the flag, not the words.
 KEEP_LOCAL = re.compile(
     r"\b(keep (it|this) local|answer (it )?locally|don'?t ask (claude|the cloud|anyone))\b",
     re.IGNORECASE,
+)
+# The same phrases as SQL, to mark the messages from before the flag existed.
+_KEEP_LOCAL_LIKE = " OR ".join(
+    "lower(text) LIKE '%" + phrase.replace("'", "''") + "%'"
+    for phrase in (
+        "keep it local",
+        "keep this local",
+        "answer locally",
+        "answer it locally",
+        "don't ask claude",
+        "dont ask claude",
+        "don't ask the cloud",
+        "dont ask the cloud",
+        "don't ask anyone",
+        "dont ask anyone",
+    )
 )
 PRIVATE_SAID = "private_said"  # kit_self key: ids of Kit's lines from what Dan kept local
 PRIVATE_KEPT = 200  # the newest this many are listed; older ones are long out of the history
@@ -119,7 +137,22 @@ MIGRATIONS = [
     # 5: who answered each of Kit's replies and what it cost (role, model, cost_usd...),
     # so the desk chat can colour old replies and show their details.
     "ALTER TABLE messages ADD COLUMN meta_json TEXT;",
+    # 6: how much of each cloud call was read from the prompt cache, written to it,
+    # and how many web searches it ran, so cache use can be seen (kit memory spend).
+    """
+    ALTER TABLE spend ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spend ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spend ADD COLUMN searches INTEGER NOT NULL DEFAULT 0;
+    """,
+    # 7: whether Dan said to keep a message local (``Message.private``), read once as it
+    # arrives rather than from its words in six places. Earlier messages are marked
+    # from their words here, so what was kept local stays kept.
+    f"""
+    ALTER TABLE messages ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+    UPDATE messages SET private = 1 WHERE role = 'user' AND ({_KEEP_LOCAL_LIKE});
+    """,
 ]
+MESSAGE_COLS = "id, at, role, text, reply_json, source, channel, meta_json, private"
 
 
 @dataclass(frozen=True)
@@ -132,6 +165,11 @@ class Message:
     source: str | None = None
     channel: str | None = None
     meta_json: str | None = None
+    private: bool = False  # Dan said to keep it local: never shown to a cloud model
+
+    @classmethod
+    def from_row(cls, row: tuple) -> Message:
+        return cls(*row[:-1], private=bool(row[-1]))
 
 
 @dataclass(frozen=True)
@@ -142,10 +180,27 @@ class Spend:
     output_tokens: int
     cost_usd: float
     question: str
+    cached_tokens: int = 0  # input tokens read from the prompt cache
+    cache_write_tokens: int = 0  # input tokens written to it
+    searches: int = 0
 
 
 def local_now() -> datetime:
     return datetime.now().astimezone()
+
+
+@dataclass
+class Scrubbed:
+    """What ``Memory.scrub`` found, or took out."""
+
+    messages: list[tuple[int, str, str, str]]  # (id, at, role, text)
+    items: list[Item]  # recalled exchanges, facts, notebook lines, day summaries
+    days: list[str]  # days summarised again without them
+
+
+def _plain(text: str) -> str:
+    """Lower case, with curly apostrophes made straight, for matching words."""
+    return text.replace("\u2019", "'").replace("\u2018", "'").lower()
 
 
 def _locked(method):
@@ -211,12 +266,17 @@ class Memory:
         source: str | None = None,
         channel: str | None = None,
         meta_json: str | None = None,
+        private: bool | None = None,
     ) -> int:
+        """``private``: Dan said to keep it local. The brain reads that once as the
+        message arrives and passes it in; any other caller leaves it to the words here."""
+        if private is None:
+            private = role == "user" and bool(KEEP_LOCAL.search(text))
         now = self.clock()
         with self.db:
             cur = self.db.execute(
                 "INSERT INTO messages (at, day, role, text, reply_json, source, channel,"
-                " meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " meta_json, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.date().isoformat(),
@@ -226,6 +286,7 @@ class Memory:
                     source,
                     channel,
                     meta_json,
+                    int(private),
                 ),
             )
         return int(cur.lastrowid)
@@ -236,11 +297,11 @@ class Memory:
         think...") is a working note, not a turn, so it's left out, and nothing
         from before the last new chat is."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             " WHERE id > ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
-        return [Message(*row) for row in reversed(rows)]
+        return [Message.from_row(row) for row in reversed(rows)]
 
     @_locked
     def page(
@@ -257,11 +318,11 @@ class Memory:
         else:
             where, args, order = "id < ?", [before], "DESC"
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             f" WHERE {where} AND (source IS NULL OR source != ?) ORDER BY id {order} LIMIT ?",
             (*args, RECALL_STEP, limit),
         ).fetchall()
-        found = [Message(*row) for row in rows]
+        found = [Message.from_row(row) for row in rows]
         return found if order == "ASC" else list(reversed(found))
 
     @_locked
@@ -276,11 +337,11 @@ class Memory:
         """The end of the conversation before the current one (``new_chat``), oldest
         first, recall steps left out: what a new chat picks one thing up from."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             " WHERE id <= ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
-        return [Message(*row) for row in reversed(rows)]
+        return [Message.from_row(row) for row in reversed(rows)]
 
     def said_privately(self, message_id: int) -> None:
         """Kit's line ``message_id`` came from something Dan kept local."""
@@ -296,12 +357,12 @@ class Memory:
         return {i for i in said if isinstance(i, int)} if isinstance(said, list) else set()
 
     def shared(self, messages: list[Message]) -> list[Message]:
-        """The messages fit for a cloud model: whatever Dan said to keep local and
-        Kit's answer to it left out, and Kit's lines from it."""
+        """The messages fit for a cloud model: whatever Dan said to keep local
+        (``Message.private``) and Kit's answer to it left out, and Kit's lines from it."""
         out, held, private = [], False, self.private_said()
         for m in messages:
             if m.role == "user":
-                held = bool(KEEP_LOCAL.search(m.text))
+                held = m.private
             if not held and m.id not in private:
                 out.append(m)
         return out
@@ -314,21 +375,28 @@ class Memory:
     @_locked
     def messages_on(self, day: str) -> list[Message]:
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
-            " WHERE day = ? ORDER BY id",
+            f"SELECT {MESSAGE_COLS} FROM messages WHERE day = ? ORDER BY id",
             (day,),
         ).fetchall()
-        return [Message(*row) for row in rows]
+        return [Message.from_row(row) for row in rows]
 
     def index_exchange(
-        self, user_msg_id: int, owner: str, user_text: str, name: str, reply_text: str
+        self,
+        user_msg_id: int,
+        owner: str,
+        user_text: str,
+        name: str,
+        reply_text: str,
+        private: bool = False,
     ) -> int:
-        """Make one exchange findable later."""
+        """Make one exchange findable later. A ``private`` one (Dan kept it local) is
+        marked so, and recall keeps it from cloud models (kit.recall.private)."""
         return self.index.add(
             CONVERSATION,
             "exchange",
             f"{owner}: {user_text}\n{name}: {reply_text}",
             ref=str(user_msg_id),
+            meta={"private": True} if private else None,
         )
 
     # Facts
@@ -402,6 +470,50 @@ class Memory:
             return False
         return self.index.delete(fact_id)
 
+    def scrub(self, words: list[str], since: datetime, apply: bool = False) -> Scrubbed:
+        """Everything since ``since`` that says any of ``words`` (case aside): chat
+        messages with Kit's answers to them, and anything kept from them, such as a
+        recalled exchange, a fact, a notebook line or a day summary. For lines that
+        should never have been said, like a test of the bad night. With ``apply`` they
+        go, and a day already summarised is summarised again without them."""
+        said = [_plain(w) for w in words if w.strip()]
+        start = since.isoformat(timespec="seconds")
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT id, at, day, role, text FROM messages WHERE at >= ? ORDER BY id", (start,)
+            ).fetchall()
+        found: list[tuple] = []
+        answering = False  # Kit's lines after a message that's going go too
+        for row in rows:
+            hit = any(w in _plain(row[4]) for w in said)
+            if row[3] == "user":
+                answering = hit
+            if hit or (row[3] == "kit" and answering):
+                found.append(row)
+        gone_ids = {str(r[0]) for r in found}
+        items = [
+            i
+            for i in self.index.since(start)
+            if any(w in _plain(f"{i.title} {i.text}") for w in said)
+            or (i.source == CONVERSATION and i.ref in gone_ids)
+        ]
+        with self._lock:
+            summarised = {r[0] for r in self.db.execute("SELECT day FROM summarised_days")}
+        days = sorted({r[2] for r in found} & summarised)
+        days_items = [i for i in self.index.items(DAYS) if i.ref in days]
+        items += [i for i in days_items if i.id not in {x.id for x in items}]
+        if apply:
+            for item in items:
+                self.index.delete(item.id)
+            ids = [r[0] for r in found]
+            with self._lock, self.db:
+                if ids:
+                    marks = ",".join("?" * len(ids))
+                    self.db.execute(f"DELETE FROM messages WHERE id IN ({marks})", ids)
+                for day in days:
+                    self.db.execute("DELETE FROM summarised_days WHERE day = ?", (day,))
+        return Scrubbed([(r[0], r[1], r[3], r[4]) for r in found], items, days)
+
     # Days
 
     @_locked
@@ -416,15 +528,18 @@ class Memory:
 
     def save_day(self, day: str, summary: str, private: bool = False) -> None:
         """The summary of ``day``; ``private`` if Dan kept something local that day,
-        since the summary may tell it."""
+        since the summary may tell it. It's dated the end of that day, in the clock's
+        zone like every other item (older ones were saved without a zone; readers
+        take either, see kit.pastimes.parse_time)."""
         if summary.strip():
+            end = datetime.fromisoformat(f"{day}T23:59:59").replace(tzinfo=self.clock().tzinfo)
             self.index.add(
                 DAYS,
                 "day",
                 summary.strip(),
                 title=f"Summary of {day}",
                 ref=day,
-                created=f"{day}T23:59:59",
+                created=end.isoformat(timespec="seconds"),
                 meta={"private": True} if private else None,
             )
         with self._lock, self.db:
@@ -434,13 +549,24 @@ class Memory:
 
     @_locked
     def record_spend(
-        self, model: str, input_tokens: int, output_tokens: int, cost_usd: float, question: str
+        self,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+        question: str,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        searches: int = 0,
     ) -> None:
+        """One cloud call. ``input_tokens`` counts every input token; ``cached_tokens``
+        of them were read from the prompt cache and ``cache_write_tokens`` written to it."""
         now = self.clock()
         with self.db:
             self.db.execute(
                 "INSERT INTO spend (at, month, model, input_tokens, output_tokens, cost_usd,"
-                " question) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " question, cached_tokens, cache_write_tokens, searches)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.strftime("%Y-%m"),
@@ -449,6 +575,9 @@ class Memory:
                     output_tokens,
                     cost_usd,
                     question[:500],
+                    cached_tokens,
+                    cache_write_tokens,
+                    searches,
                 ),
             )
 
@@ -463,8 +592,8 @@ class Memory:
     @_locked
     def spend_log(self, limit: int = 50) -> list[Spend]:
         rows = self.db.execute(
-            "SELECT at, model, input_tokens, output_tokens, cost_usd, question FROM spend"
-            " ORDER BY id DESC LIMIT ?",
+            "SELECT at, model, input_tokens, output_tokens, cost_usd, question, cached_tokens,"
+            " cache_write_tokens, searches FROM spend ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [Spend(*row) for row in rows]
@@ -472,17 +601,19 @@ class Memory:
     @_locked
     def spend_summary(self, days: int = 30) -> dict:
         """Cloud spend over the last ``days`` days (today included): a row per day
-        with each model's cost, and each model's totals, for charts and tables."""
+        with each model's cost, and each model's totals (cached input tokens among
+        them, to see the prompt cache working), for charts and tables."""
         today = self.clock().date()
         first = today - timedelta(days=days - 1)
         rows = self.db.execute(
             "SELECT substr(at, 1, 10), model, COUNT(*), SUM(input_tokens), SUM(output_tokens),"
-            " SUM(cost_usd) FROM spend WHERE at >= ? GROUP BY 1, 2 ORDER BY 1",
+            " SUM(cost_usd), SUM(cached_tokens) FROM spend WHERE at >= ? GROUP BY 1, 2"
+            " ORDER BY 1",
             (first.isoformat(),),
         ).fetchall()
         by_day = {(first + timedelta(days=i)).isoformat(): {} for i in range(days)}
         models: dict[str, dict] = {}
-        for day, model, calls, tokens_in, tokens_out, cost in rows:
+        for day, model, calls, tokens_in, tokens_out, cost, cached in rows:
             if day not in by_day:
                 continue
             by_day[day][model] = round(cost, 6)
@@ -492,12 +623,14 @@ class Memory:
                     "model": model,
                     "calls": 0,
                     "input_tokens": 0,
+                    "cached_tokens": 0,
                     "output_tokens": 0,
                     "cost_usd": 0.0,
                 },
             )
             m["calls"] += calls
             m["input_tokens"] += tokens_in
+            m["cached_tokens"] += cached
             m["output_tokens"] += tokens_out
             m["cost_usd"] += cost
         for m in models.values():

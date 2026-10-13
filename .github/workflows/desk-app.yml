@@ -12,6 +12,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: desk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write  # to publish releases from main
 
@@ -23,11 +27,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - run: python -m pip install -e ".[dev,desk]"
-      - name: Desk app tests (real Windows API, Qt without a screen)
+      # The whole suite, not a list of files: with the desk extra installed, the
+      # PySide6 tests that ci.yml skips (the face, Glow, scenes, the 3D face) run here.
+      # The rest takes under a minute.
+      - name: All tests, desk app included (real Windows API, Qt without a screen)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q tests/test_desk_app.py tests/test_desk_voice.py tests/test_desk_watch.py tests/test_desk_browser.py tests/test_desk_update.py tests/test_pc_context.py
+        run: pytest -q tests/
       - name: Install Inno Setup
         shell: pwsh
         run: |

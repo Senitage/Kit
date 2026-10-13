@@ -40,6 +40,8 @@ def clean_name(name: str) -> str:
 
 
 class KnownFaces:
+    size = EMBEDDING_SIZE  # numbers in each embedding; others are dropped
+
     def __init__(self, path: Path | None) -> None:
         self.path = path
         self._lock = threading.Lock()
@@ -56,7 +58,7 @@ class KnownFaces:
             return
         self.version = int(data.get("version", 0))
         self.people = {
-            str(name): [list(map(float, v)) for v in vectors if len(v) == EMBEDDING_SIZE]
+            str(name): [list(map(float, v)) for v in vectors if len(v) == self.size]
             for name, vectors in data.get("people", {}).items()
         }
 
@@ -77,9 +79,9 @@ class KnownFaces:
         """Keep more looks at someone (new or known). Returns their name as kept and
         how many looks Kit has of them now."""
         name = clean_name(name)
-        good = [[round(float(x), 5) for x in v] for v in embeddings if len(v) == EMBEDDING_SIZE]
+        good = [[round(float(x), 5) for x in v] for v in embeddings if len(v) == self.size]
         if not good:
-            raise ValueError(f"no usable face numbers (each must be {EMBEDDING_SIZE} long)")
+            raise ValueError(f"no usable numbers (each must be {self.size} long)")
         with self._lock:
             name = self._find(name) or name
             kept = (self.people.get(name, []) + good)[-KEEP_PER_PERSON:]

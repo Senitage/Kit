@@ -1,7 +1,12 @@
 # Kit's settings. Lives in Kit's data folder (run `kit paths` to see where).
 # Secrets such as API keys never go in this file; see docs/4 Guides/Stage 0 - Server Setup.md.
+#
+# Every value here is the default, shown so you can see what there is. When Kit
+# saves the file he keeps only what you changed, so a default that moves in a
+# Kit update (a model's price, a line of his character) reaches you by itself.
+# `kit config show` prints everything in force.
 
-schema_version = 1
+schema_version = 2
 
 [ollama]
 # Ollama on this machine, and the local model for everyday chat.
@@ -85,6 +90,11 @@ reserve_usd = 3.0
 # [models.sonnet]
 # effort = "medium"
 #
+# Haiku answers without thinking first (his first words come sooner); this turns
+# thinking back on. Sonnet and Opus always think, whatever this says.
+# [models.haiku]
+# thinking = true
+#
 # [models.big-local]
 # provider = "ollama"
 # model = "qwen3.8:27b"
@@ -101,6 +111,7 @@ history_messages = 20
 # embedding model in Ollama (`ollama pull nomic-embed-text`). Without it Kit
 # still remembers, but only finds things by matching words.
 embed_model = "nomic-embed-text"
+embed_keep_alive = "24h"      # keep it loaded: recall needs it before every reply
 relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
@@ -132,6 +143,11 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # country = "AU"
 # timezone = "Australia/Sydney"
 # traits = ["curious", "dry sense of humour", "loyal and practical"]
+# What Kit knows about you, in your own words: who's at home, your work, what
+# you're into. Built in, he only knows what you tell him.
+# knows = "Lives in Richmond with a partner and a dog called Biscuit. Teaches maths; into trail running and old motorbikes."
+# speech = "Plain, neutral English, warm and friendly: short sentences and everyday words, with no slang or regional expressions. One or two sentences unless asked for detail. Matter-of-fact rather than gushing, and never 'as an AI'."
+#                           # his register, decided here and nowhere else
 #
 # [[persona.examples]]
 # user = "Morning."
@@ -203,3 +219,23 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # poses = 1                # people to read body pose for; 0 turns it off
 # recognise = true         # tell people apart once introduced (`kit eyes enrol NAME`)
 # match = 0.4              # how alike a face must be to count; higher is stricter
+
+# Kit's ears: the microphone process (`kit hearing`, on the PC with the mic) reads
+# these from the brain. Sound never leaves that PC (docs/4 Guides/Companion Stage 5.md).
+# [hearing]
+# enabled = true
+# mic = ""                 # part of the mic's name, or its number; `kit hearing mics` lists them
+# names = ["Kit", "Kitt", "Ki", "Kid"]  # his name, and how the ears sometimes write it
+# follow_up_s = 8.0        # after he stops talking, answer him without his name for this long
+# barge_in = true          # talking over him stops him
+# barge_in_ms = 500
+# laugh_s = 10.0           # a laugh this soon after he says something makes him chuffed
+# tone = true              # he notices how you sound, and may ask; never tells you
+# match = 0.45             # how alike a voice must be to someone he knows
+# own_voice = 0.5          # how alike a voice must be to his own to be ignored as an echo
+# threshold = 0.5          # how sure the voice detector must be that a sound is speech
+# pause_ms = 600           # a pause this long ends what you're saying
+# min_speech_s = 0.4
+# max_speech_s = 20.0
+# language = "en"          # or auto
+# threads = 2

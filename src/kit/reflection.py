@@ -275,8 +275,8 @@ class Reflector:
         style = cheek_style(self.settings().life.cheek)
         return (
             f"How {p.owner} described you: {p.backstory} Traits: {', '.join(p.traits)}. How you "
-            f"talk: {p.speech} {p.owner} wants you {style}. What you know about {p.owner}: "
-            f"{p.knows}"
+            f"talk: {p.speech} How cheeky {p.owner} set you: {style}. What you know about "
+            f"{p.owner}: {p.knows}"
         )
 
     # The first self-sheet

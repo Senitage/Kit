@@ -126,8 +126,11 @@ it. After a Kit update, press the reload arrow on Kit's card in
   to disk or to Kit's long-term memory yet, and it's gone when the brain
   restarts.
 - When a cloud model answers, the one-line summary goes with the question, the
-  same as the rest of the prompt. Add words to the hide list for anything you
-  never want sent.
+  same as the rest of the prompt. A question about the PC gets the full
+  picture (every window title and tab), which in `cloud-only` routing goes to
+  the cloud chat model too; "keep it local" keeps it home. See
+  [[Privacy#What a cloud model sees of your PC and the room]]. Add words to
+  the hide list for anything you never want sent.
 
 ## Install
 
@@ -164,6 +167,9 @@ reconnects without asking.
       appears in the bottom right of the screen.
 - [ ] Test connection succeeds. With the brain stopped, the face and tray icon
       go grey within about 15 seconds, then come back when it restarts.
+- [ ] With Kit's address as a name (`http://kit-server:8600`, or
+      `http://localhost:8600` when Kit runs on the same PC), Test connection
+      answers straight away, not after about 2 seconds.
 - [ ] Clicking the tray icon or the face opens the chat beside the face. Recent
       conversation from the web chat is shown.
 - [ ] Ask "hi". The words stream in, the face plays the emotion and gesture, and

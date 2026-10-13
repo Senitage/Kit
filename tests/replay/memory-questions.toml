@@ -1,0 +1,18 @@
+# Questions for `kit eval memory --replay`, each with words the right fact contains.
+# A copy for your own goes in config/memory-questions.toml in the data folder.
+
+[[question]]
+ask = "Which car do I drive these days?"
+expect = "Ranger"
+
+[[question]]
+ask = "Where do I keep the tax paperwork?"
+expect = "Documents/Finance/Tax"
+
+[[question]]
+ask = "When is Emma's birthday?"
+expect = "14 March"
+
+[[question]]
+ask = "Who is Sarah?"
+expect = "partner"
