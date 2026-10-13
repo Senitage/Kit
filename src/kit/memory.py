@@ -9,7 +9,8 @@
   after two weeks, and a plan knows its date, so a past one isn't upcoming.
 - **Days:** a summary of each finished day, so "what were we doing last
   Tuesday?" has an answer.
-- **Spend:** what each Claude call cost.
+- **Spend:** what each cloud call cost, in US dollars as billed and in Australian
+  dollars at the day's rate (``kit.prices``).
 - **Kit himself:** his own notebook (thoughts, opinions, wants, moments and a
   journal, ``kit.notebook``), his self-sheet, and small things such as the
   quirks he picked (``kit_self``).
@@ -32,6 +33,7 @@ from pathlib import Path
 
 from kit import knowledge
 from kit.knowledge import Index, Item
+from kit.prices import BUILT_IN_RATE
 from kit.when import date_in
 
 Clock = Callable[[], datetime]
@@ -151,6 +153,14 @@ MIGRATIONS = [
     ALTER TABLE messages ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
     UPDATE messages SET private = 1 WHERE role = 'user' AND ({_KEEP_LOCAL_LIKE});
     """,
+    # 8: every call's cost in Australian dollars too, with the rate of the day, so the
+    # budget and the spend pages are in the money Dan pays in. Earlier calls are
+    # converted at the built-in rate (kit.prices), once.
+    f"""
+    ALTER TABLE spend ADD COLUMN cost_aud REAL NOT NULL DEFAULT 0;
+    ALTER TABLE spend ADD COLUMN aud_per_usd REAL NOT NULL DEFAULT 0;
+    UPDATE spend SET cost_aud = cost_usd * {BUILT_IN_RATE}, aud_per_usd = {BUILT_IN_RATE};
+    """,
 ]
 MESSAGE_COLS = "id, at, role, text, reply_json, source, channel, meta_json, private"
 
@@ -178,11 +188,13 @@ class Spend:
     model: str
     input_tokens: int
     output_tokens: int
-    cost_usd: float
+    cost_usd: float  # as the provider bills it
     question: str
     cached_tokens: int = 0  # input tokens read from the prompt cache
     cache_write_tokens: int = 0  # input tokens written to it
     searches: int = 0
+    cost_aud: float = 0.0  # at the rate of the day, which is kept beside it
+    aud_per_usd: float = 0.0
 
 
 def local_now() -> datetime:
@@ -558,15 +570,21 @@ class Memory:
         cached_tokens: int = 0,
         cache_write_tokens: int = 0,
         searches: int = 0,
+        cost_aud: float | None = None,
+        aud_per_usd: float = BUILT_IN_RATE,
     ) -> None:
         """One cloud call. ``input_tokens`` counts every input token; ``cached_tokens``
-        of them were read from the prompt cache and ``cache_write_tokens`` written to it."""
+        of them were read from the prompt cache and ``cache_write_tokens`` written to it.
+        ``cost_usd`` is what the provider bills; ``cost_aud`` what that is in Australian
+        dollars at ``aud_per_usd``, the rate of the day."""
         now = self.clock()
+        if cost_aud is None:
+            cost_aud = cost_usd * aud_per_usd
         with self.db:
             self.db.execute(
                 "INSERT INTO spend (at, month, model, input_tokens, output_tokens, cost_usd,"
-                " question, cached_tokens, cache_write_tokens, searches)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " question, cached_tokens, cache_write_tokens, searches, cost_aud, aud_per_usd)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.strftime("%Y-%m"),
@@ -578,14 +596,17 @@ class Memory:
                     cached_tokens,
                     cache_write_tokens,
                     searches,
+                    cost_aud,
+                    aud_per_usd,
                 ),
             )
 
     @_locked
     def month_spend(self, month: str | None = None) -> float:
+        """This month's cloud spend in Australian dollars."""
         month = month or self.clock().strftime("%Y-%m")
         row = self.db.execute(
-            "SELECT COALESCE(SUM(cost_usd), 0) FROM spend WHERE month = ?", (month,)
+            "SELECT COALESCE(SUM(cost_aud), 0) FROM spend WHERE month = ?", (month,)
         ).fetchone()
         return float(row[0])
 
@@ -593,21 +614,23 @@ class Memory:
     def spend_log(self, limit: int = 50) -> list[Spend]:
         rows = self.db.execute(
             "SELECT at, model, input_tokens, output_tokens, cost_usd, question, cached_tokens,"
-            " cache_write_tokens, searches FROM spend ORDER BY id DESC LIMIT ?",
+            " cache_write_tokens, searches, cost_aud, aud_per_usd FROM spend"
+            " ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [Spend(*row) for row in rows]
 
     @_locked
     def spend_summary(self, days: int = 30) -> dict:
-        """Cloud spend over the last ``days`` days (today included): a row per day
-        with each model's cost, and each model's totals (cached input tokens among
-        them, to see the prompt cache working), for charts and tables."""
+        """Cloud spend over the last ``days`` days (today included), in Australian
+        dollars: a row per day with each model's cost, and each model's totals (cached
+        input tokens among them, to see the prompt cache working), for charts and
+        tables."""
         today = self.clock().date()
         first = today - timedelta(days=days - 1)
         rows = self.db.execute(
             "SELECT substr(at, 1, 10), model, COUNT(*), SUM(input_tokens), SUM(output_tokens),"
-            " SUM(cost_usd), SUM(cached_tokens) FROM spend WHERE at >= ? GROUP BY 1, 2"
+            " SUM(cost_aud), SUM(cached_tokens) FROM spend WHERE at >= ? GROUP BY 1, 2"
             " ORDER BY 1",
             (first.isoformat(),),
         ).fetchall()
@@ -625,23 +648,23 @@ class Memory:
                     "input_tokens": 0,
                     "cached_tokens": 0,
                     "output_tokens": 0,
-                    "cost_usd": 0.0,
+                    "cost_aud": 0.0,
                 },
             )
             m["calls"] += calls
             m["input_tokens"] += tokens_in
             m["cached_tokens"] += cached
             m["output_tokens"] += tokens_out
-            m["cost_usd"] += cost
+            m["cost_aud"] += cost
         for m in models.values():
-            m["cost_usd"] = round(m["cost_usd"], 6)
+            m["cost_aud"] = round(m["cost_aud"], 6)
         return {
             "days": [
-                {"date": day, "cost_usd": round(sum(costs.values()), 6), "by_model": costs}
+                {"date": day, "cost_aud": round(sum(costs.values()), 6), "by_model": costs}
                 for day, costs in by_day.items()
             ],
-            "models": sorted(models.values(), key=lambda m: -m["cost_usd"]),
-            "total_usd": round(sum(m["cost_usd"] for m in models.values()), 6),
+            "models": sorted(models.values(), key=lambda m: -m["cost_aud"]),
+            "total_aud": round(sum(m["cost_aud"] for m in models.values()), 6),
         }
 
     # Backups

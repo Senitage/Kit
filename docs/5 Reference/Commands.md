@@ -51,8 +51,11 @@ Every setting is in [[Settings Reference]].
 
 | Command | What it does |
 |---|---|
-| `kit models` | The models Kit uses for each role |
-| `kit models ROLE NAME` | Switch a role (`chat`, `work` or `expert`) to another model profile, e.g. `kit models work opus` |
+| `kit models` | The models Kit uses for each role, with today's prices in Australian dollars |
+| `kit models ROLE NAME` | Switch a role (`chat`, `work` or `expert`) to another model, e.g. `kit models work opus` |
+| `kit models add NAME --provider P --model ID` | Add any model (`--label`, `--effort`, `--max-tokens`, `--no-thinking`, `--no-search` are optional) |
+| `kit models remove NAME` | Take a model out of the list (not one a role uses) |
+| `kit models prices` | Fetch today's price list and exchange rate now (Kit does this daily while he runs) |
 
 See [[Models and Routing]].
 

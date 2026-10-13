@@ -59,6 +59,7 @@ flowchart TB
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
 | `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |
+| `src/kit/prices.py` | What models cost: the price list and exchange rate, fetched daily, in Australian dollars | [[Models and Routing#Prices, fetched for you]] |
 | `src/kit/cli.py` | The `kit` command | [[Commands]] |
 | `src/kit/__main__.py` | `python -m kit` runs the `kit` command | [[Commands]] |
 

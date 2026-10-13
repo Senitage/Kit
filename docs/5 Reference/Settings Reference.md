@@ -21,24 +21,28 @@ next message and can be undone. How that works is in [[Settings and Data]].
 
 ## What the file holds
 
-`settings.toml` starts with `schema_version = 2` and then holds **only what
+`settings.toml` starts with `schema_version = 3` and then holds **only what
 you changed**. A setting that isn't in the file is at its default, so when a
-default moves in a Kit update (a model's price or id in `models`, a voice
-engine's field in `speech.engines`, a line of his character in `persona`), it
-reaches you by itself. A built-in model or voice engine profile is written the
-same way, field by field; a profile you added yourself is written whole.
+default moves in a Kit update (a voice engine's field in `speech.engines`, a
+line of his character in `persona`), it reaches you by itself. A built-in
+voice engine is written the same way, field by field; an engine you added
+yourself is written whole. The one exception is `models`: it's your own list,
+so once it differs from the three starters it's written whole, and it never
+holds a price.
 
 - `kit config show` prints everything in force, defaults included; the file
   is the short version. Set a value equal to its default and it leaves the
   file.
 - A value you type into the file by hand is yours, even if it equals today's
   default, until the next save from a page or `kit config set` tidies it out.
-- **Version 1 files** (before October 2026) held every value, chosen or not.
-  The first time Kit reads one he drops everything that was a default in
-  version 1 (the built-in profiles and persona lines of the day are kept in
-  the code for this; for every other setting, version 1's default is today's)
-  and rewrites the file as version 2, with no history entry. What you had
-  changed stays. See [[Updating Kit#Settings from an older Kit]].
+- **Version 2 files** (October 2026) took five built-in model profiles for
+  granted, held prices as settings and the budget in US dollars. The first
+  read keeps the models a role uses and any the file names (whole, without
+  the prices), turns the budget into Australian dollars and rewrites the file
+  as version 3. **Version 1 files** (before that) held every value, chosen or
+  not; the defaults of the day are dropped first. Neither makes a history
+  entry, and what you had changed stays. See
+  [[Updating Kit#Settings from an older Kit]].
 
 ## ollama
 
@@ -81,17 +85,17 @@ Which model answers what, and when Kit asks before spending. See [[Models and Ro
 
 ## models
 
-The models Kit can use, by name. The built-in profiles are always there; change
-their fields or add your own, then give a role one with
-`kit models ROLE NAME`. See [[Models and Routing]].
+The models Kit can use, by name: your own list. A new Kit starts with these
+three; `kit models add NAME --provider P --model ID` adds any model,
+`kit models remove NAME` takes one out (over the API, send it as `null`), and
+`kit models ROLE NAME` gives a role one. What each costs isn't a setting:
+`kit models` shows today's prices. See [[Models and Routing#Your own list of models]].
 
 | Profile | Provider | Model |
 |---|---|---|
-| `haiku` | anthropic | Claude Haiku |
+| `haiku` | anthropic | Claude Haiku, no thinking first |
 | `sonnet` | anthropic | Claude Sonnet |
-| `opus` | anthropic | Claude Opus |
-| `gpt-sol` | openai | GPT |
-| `gemini-flash` | google | Gemini Flash |
+| `opus` | anthropic | Claude Opus, room for a long think |
 
 Each profile has these fields:
 
@@ -104,19 +108,15 @@ Each profile has these fields:
 | `max_tokens` | Longest answer, thinking included, in tokens. 16000 unless set; the built-in `opus` profile has 32000, since an expert answer thinks at length first. |
 | `thinking` | Let the model think before it answers. Off, the first words come sooner; only Claude Haiku takes it (Sonnet and Opus always think). The built-in `haiku` profile has it off. |
 | `web_search` | Let the model search the web (the provider's own search). |
-| `input_usd_per_mtok` | Price per million input tokens. |
-| `cached_input_usd_per_mtok` | Price per million input tokens read from the prompt cache. |
-| `output_usd_per_mtok` | Price per million output tokens, thinking included. |
-| `search_usd_per_k` | Price per 1,000 web searches. |
 
 ## cloud
 
-The monthly budget for cloud models. See [[Models and Routing#The budget]].
+The monthly budget for cloud models, in Australian dollars. See [[Models and Routing#The budget]].
 
 | Setting | Default | What it does |
 |---|---|---|
-| `monthly_cap_usd` | `40.0` | Kit stops using cloud models once this month's spend reaches this. |
-| `reserve_usd` | `3.0` | As the budget runs low, cloud calls give way in order, each this much sooner than the last: evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same. |
+| `monthly_cap_aud` | `60.0` | Kit stops using cloud models once this month's spend reaches this, in Australian dollars. Every call is costed at the day's prices and exchange rate. |
+| `reserve_aud` | `5.0` | As the budget runs low, cloud calls give way in order, each this much sooner than the last (in Australian dollars): evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same. |
 | `stream` | on | A Claude answer comes in as it's written, so Kit starts saying the first words (in the answer's mood) while the rest is still on its way. Goodbyes are still checked whole first. Off: each answer arrives in one piece. |
 
 ## nas

@@ -13,6 +13,7 @@ from fakes import (
     chat_and_learn,
     collect,
     make_cloud,
+    models_with,
     reply,
 )
 from kit.brain import Brain, route
@@ -43,6 +44,8 @@ def make(memory, *outputs, settings=None, claude=None, error=None, embedder=None
 
 
 def settings_with(**sections):
+    if "models" in sections:  # the list is whole: the starters stay beside yours
+        sections["models"] = models_with(**sections["models"])
     return Settings.model_validate({"memory": {"min_similarity": 0.3}, **sections})
 
 
@@ -206,9 +209,9 @@ def test_local_model_hands_off_with_memories(memory):
     handing = next(e for e in events if e["type"] == "handing_off")
     assert handing["to"] == "Sonnet" and handing["question"] == "Kalman maths?"
     last = events[-1]
-    assert last["source"] == "cloud" and last["cost_usd"] > 0 and last["label"] == "Sonnet"
+    assert last["source"] == "cloud" and last["cost_aud"] > 0 and last["label"] == "Sonnet"
     kept = json.loads(memory.recent(1)[0].meta_json)  # for the desk chat's colours and details
-    assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_usd"] > 0
+    assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_aud"] > 0
     call = claude.calls[0]
     assert call["model"] == "claude-sonnet-5-5"
     # The fixed instructions are the (cached) system prompt; this turn's part, the

@@ -528,7 +528,7 @@ class CompareResult:
     model: str
     ok: bool
     seconds: float
-    cost_usd: float = 0.0
+    cost_aud: float = 0.0
     searches: int = 0
     said: str = ""
     detail: str = ""
@@ -572,7 +572,7 @@ async def run_compare(
                     name,
                     True,
                     clock() - start,
-                    answer.cost_usd,
+                    answer.cost_aud,
                     answer.searches,
                     reply.text,
                     reply.detail,
@@ -594,7 +594,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         median = statistics.median(r.seconds for r in ok) if ok else 0.0
         lines.append(
             f"- **{name}**: {len(ok)}/{len(mine)} answered, median {median:.1f}s, "
-            f"${sum(r.cost_usd for r in mine):.3f} in total, "
+            f"A${sum(r.cost_aud for r in mine):.3f} in total, "
             f"{sum(r.searches for r in mine)} searches"
         )
     for prompt in dict.fromkeys(r.prompt for r in results):
@@ -602,7 +602,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         for r in results:
             if r.prompt != prompt:
                 continue
-            lines += ["", f"### {r.model} ({r.seconds:.1f}s, ${r.cost_usd:.4f})", ""]
+            lines += ["", f"### {r.model} ({r.seconds:.1f}s, A${r.cost_aud:.4f})", ""]
             lines.append(r.said if r.ok else f"Failed: {r.error}")
             if r.detail:
                 lines += ["", r.detail]

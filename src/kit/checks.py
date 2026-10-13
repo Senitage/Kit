@@ -18,6 +18,7 @@ import anthropic
 import httpx
 
 from kit.paths import KitPaths
+from kit.prices import BUILT_IN_SOURCE, STALE_DAYS, Prices
 from kit.settings import Settings
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
@@ -227,6 +228,29 @@ ClientFactory = Callable[[str], anthropic.Anthropic]
 
 def make_anthropic_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
+
+
+def check_prices(settings: Settings, prices: Prices) -> CheckResult:
+    """Today's prices and exchange rate are in hand, and every model a role uses has a
+    price. Nothing is fetched here; Kit fetches daily while he runs."""
+    routing = settings.routing
+    chat = [routing.chat] if routing.mode == "cloud-only" else []
+    unpriced = []
+    for name in dict.fromkeys([*chat, routing.work, routing.expert]):
+        profile = settings.models[name]
+        if (
+            profile.provider != "ollama"
+            and prices.price_of(profile.model, profile.provider) is None
+        ):
+            unpriced.append(profile.model)
+    line = prices.table.line()
+    if unpriced:
+        detail = f"no price for {', '.join(unpriced)}: its calls count as free; {line}"
+        return CheckResult("prices", Status.WARN, detail)
+    if prices.table.source == BUILT_IN_SOURCE or prices.age_days() > STALE_DAYS:
+        detail = f"{line}; Kit fetches today's while he runs, or run `kit models prices`"
+        return CheckResult("prices", Status.WARN, detail)
+    return CheckResult("prices", Status.PASS, line)
 
 
 def check_cloud(

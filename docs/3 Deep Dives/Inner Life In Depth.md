@@ -763,7 +763,7 @@ checked for guilt like any hello. Never when you said to keep it local or chose
 a model yourself; if the cloud can't answer, his local model does.
 
 As the month's cloud budget runs low, the least needed calls stop first, each
-step keeping `cloud.reserve_usd` ($3) more in hand: evals first, then key
+step keeping `cloud.reserve_aud` (A$5) more in hand: evals first, then key
 moments and the fact check, then ordinary chat, so the nightly reflection
 always has the last few dollars.
 

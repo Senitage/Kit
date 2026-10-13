@@ -183,7 +183,7 @@ async def _upkeep_loop(
     brain: Brain, paths: KitPaths | None, store: SettingsStore, every_s: float
 ) -> None:
     """Summarise finished days, let Kit reflect on them, embed anything not yet
-    indexed, and back up memory daily."""
+    indexed, back up memory daily, and fetch the day's model prices."""
     while True:
         try:
             await brain.summarise_past_days()
@@ -208,4 +208,9 @@ async def _upkeep_loop(
                     await asyncio.to_thread(brain.memory.backup, paths.backups_dir, keep)
             except Exception:
                 log.exception("backing up memory failed")
+        try:
+            if not brain.cloud.prices.fetched_today():
+                await brain.cloud.prices.refresh()  # today's model prices and exchange rate
+        except Exception:
+            log.exception("fetching prices failed")
         await asyncio.sleep(every_s)

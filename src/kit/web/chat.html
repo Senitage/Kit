@@ -148,7 +148,7 @@ async function send(text) {
       } else if (ev.type === "reply") {
         if (!current) current = bubble("kit", "");
         current.textContent = ev.reply.segments.map(s => s.say).join(" ");
-        const extra = isCloud(ev.source) ? [ev.label + " (" + ev.model + ")", "$" + ev.cost_usd.toFixed(3), "month $" + ev.month_usd.toFixed(2)] : [];
+        const extra = isCloud(ev.source) ? [ev.label + " (" + ev.model + ")", "A$" + ev.cost_aud.toFixed(3), "month A$" + ev.month_aud.toFixed(2)] : [];
         if (ev.searches) extra.push(ev.searches + " search" + (ev.searches > 1 ? "es" : ""));
         // A slow answer that arrives after other messages says what it answers.
         if (ev.question && asked !== lastUserBubble()) extra.unshift("re: " + ev.question);

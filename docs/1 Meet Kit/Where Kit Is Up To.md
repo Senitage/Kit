@@ -6,7 +6,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 
 # Where Kit is up to
 
-*As of 12 October 2026.* The plan behind this is in [[Roadmap]].
+*As of 13 October 2026.* The plan behind this is in [[Roadmap]].
 
 ## At a glance
 
@@ -40,7 +40,8 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Done, pull request #53 | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Done, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
 | Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Done, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
-| `kit memory scrub`: take out lines that should never have been said, and everything kept of them | Open, pull request #59 | [[Memory In Depth#You stay in charge]] |
+| `kit memory scrub`: take out lines that should never have been said, and everything kept of them | Done, pull request #59 | [[Memory In Depth#You stay in charge]] |
+| Models as your own list (`kit models add` and `remove`, no presets) and prices fetched daily in Australian dollars, the budget and every spend figure in A$ | Open, pull request #60 | [[Models and Routing#Your own list of models]], [[Models and Routing#Prices, fetched for you]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
@@ -86,6 +87,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 11 Oct | These docs as an Obsidian vault; the Pod's program, printed parts and build guide in the repo | #38 |
 | 13 Oct | Body feed and knowing who can hear him; naps and sleep; hearing (companion stage 5) | #36, #37, #42 |
 | 13 Oct | The whole-codebase review: faster first words, Claude's cache, one voice, memory that scales, inner life and desk fixes, streaming voice, judgement over keywords, settings as changes only, routes tidied | #47 to #58 |
+| 13 Oct | `kit memory scrub` | #59 |
 
 ## Keeping this note true
 

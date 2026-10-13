@@ -142,7 +142,7 @@ See [[Hearing]].
   in settings or the repo. See [[Settings and Data#Secrets]].
 - The brain answers on this PC only (`brain.host = 127.0.0.1`) until you open
   it to the home network or Tailscale.
-- Cloud spend has a **monthly cap** (`cloud.monthly_cap_usd`). See
+- Cloud spend has a **monthly cap** (`cloud.monthly_cap_aud`). See
   [[Models and Routing#The budget]].
 
 ## This repo is public

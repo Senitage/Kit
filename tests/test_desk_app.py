@@ -76,7 +76,7 @@ def test_chat_shows_streamed_words_then_the_reply(qapp):
     chat.on_event(
         2,
         reply_event(
-            "Sonnet says hi.", source="cloud", label="Claude", model="sonnet", cost_usd=0.01
+            "Sonnet says hi.", source="cloud", label="Claude", model="sonnet", cost_aud=0.01
         ),
     )
     text = chat.text()
@@ -85,7 +85,7 @@ def test_chat_shows_streamed_words_then_the_reply(qapp):
     # Who answered and the price wait for a click on the bubble.
     assert "sonnet" not in text and "$0.010" not in text
     assert ("Answered by", "Claude") in chat.lines[-1].meta
-    assert ("Cost", "$0.010") in chat.lines[-1].meta
+    assert ("Cost", "A$0.010") in chat.lines[-1].meta
 
 
 def test_bubbles_are_coloured_by_who_answered(qapp):
@@ -112,7 +112,7 @@ def test_a_click_on_a_reply_pops_out_its_details(qapp):
             role="work",
             label="Sonnet",
             model="claude-sonnet",
-            cost_usd=0.0123,
+            cost_aud=0.0123,
             searches=2,
         ),
     )
@@ -120,7 +120,7 @@ def test_a_click_on_a_reply_pops_out_its_details(qapp):
     row.bubble.clicked.emit()
     shown = [w.text() for w in chat._details.findChildren(QLabel)]
     assert chat._details.isVisible()
-    assert {"Sonnet", "claude-sonnet", "Work", "$0.012", "2"} <= set(shown)
+    assert {"Sonnet", "claude-sonnet", "Work", "A$0.012", "2"} <= set(shown)
     chat._details.hide()
     chat.close()
 

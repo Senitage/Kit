@@ -228,13 +228,41 @@ class FakeAnthropic:
         pass
 
 
+TEST_RATE = 1.5  # Australian dollars to one US dollar in tests: easy sums
+GPT = {"label": "GPT", "provider": "openai", "model": "gpt-6.1-sol", "effort": "low"}
+GEMINI = {"label": "Gemini", "provider": "google", "model": "gemini-3.8-flash", "effort": "low"}
+
+
+def models_with(changes: dict | None = None, **added) -> dict:
+    """The three starter models with GPT and Gemini beside them (a real Kit adds those
+    with `kit models add`), ``changes`` to any of them by name, and ``added`` ones."""
+    from kit.settings import STARTER_MODELS
+
+    models = {**STARTER_MODELS, "gpt-sol": GPT, "gemini-flash": GEMINI, **added}
+    for name, fields in (changes or {}).items():
+        models[name] = {**models[name], **fields}
+    return models
+
+
+def test_prices():
+    """The built-in price list at a round exchange rate, nothing fetched."""
+    from dataclasses import replace
+
+    from kit.prices import Prices
+
+    prices = Prices(None)
+    prices.table = replace(prices.table, aud_per_usd=TEST_RATE)
+    return prices
+
+
 def make_cloud(memory, claude=None, key="sk-test", **providers):
-    """A Cloud with a fake Claude (and any other providers given)."""
+    """A Cloud with a fake Claude (and any other providers given), costing calls at
+    the built-in prices and ``TEST_RATE``."""
     from kit.cloud import AnthropicProvider, Cloud
 
     claude = claude or FakeAnthropic()
     all_providers = {"anthropic": AnthropicProvider(claude.factory), **providers}
-    return Cloud(memory, lambda provider: key, all_providers)
+    return Cloud(memory, lambda provider: key, all_providers, test_prices())
 
 
 class Clock:

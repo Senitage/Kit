@@ -122,12 +122,14 @@ def details(meta: dict | None, source: str | None, at: str | None = None) -> lis
     rows.append(("As", ROLE_NAMES[tier_of(m)]))
     if source == "pipe_up":
         rows.append(("Said", "on his own"))
-    if "cost_usd" in m:
-        rows.append(("Cost", f"${m['cost_usd']:.3f}"))
+    if "cost_aud" in m:
+        rows.append(("Cost", f"A${m['cost_aud']:.3f}"))
+    elif "cost_usd" in m:  # a reply from before costs were kept in Australian dollars
+        rows.append(("Cost", f"US${m['cost_usd']:.3f}"))
     if m.get("searches"):
         rows.append(("Web searches", str(m["searches"])))
-    if "month_usd" in m:
-        rows.append(("This month", f"${m['month_usd']:.2f}"))
+    if "month_aud" in m:
+        rows.append(("This month", f"A${m['month_aud']:.2f}"))
     if stamp := when(at):
         rows.append(("Time", stamp))
     return rows

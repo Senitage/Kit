@@ -166,10 +166,14 @@ def test_facts_and_spend(setup):
     client, _, _ = setup
     client.post("/api/chat", json={"text": "ask claude why"}, headers=AUTH)
     spend = client.get("/api/spend", headers=AUTH).json()
-    assert spend["month_usd"] > 0 and spend["log"][0]["question"] == "ask claude why"
+    assert spend["month_aud"] > 0 and spend["log"][0]["question"] == "ask claude why"
+    assert spend["aud_per_usd"] == 1.5 and "prices from" in spend["prices"]
+    assert spend["log"][0]["cost_aud"] == pytest.approx(spend["log"][0]["cost_usd"] * 1.5)
     summary = client.get("/api/spend/summary?days=7", headers=AUTH).json()
-    assert len(summary["days"]) == 7 and summary["total_usd"] == spend["month_usd"]
-    assert summary["models"][0]["calls"] >= 1 and "cap_usd" in summary
+    assert len(summary["days"]) == 7 and summary["total_aud"] == spend["month_aud"]
+    assert summary["models"][0]["calls"] >= 1 and "cap_aud" in summary
+    status = client.get("/api/status", headers=AUTH).json()
+    assert status["cloud_month_aud"] == spend["month_aud"] and status["cloud_cap_aud"] == 60.0
     assert client.get("/api/spend?limit=1", headers=AUTH).json()["log"][0]["question"]
     assert client.get("/api/memory/facts", headers=AUTH).json() == []
     assert client.delete("/api/memory/facts/1", headers=AUTH).status_code == 404

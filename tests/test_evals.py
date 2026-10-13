@@ -23,7 +23,7 @@ def test_report_counts_valid_replies_and_first_word_time():
 
 
 def test_compare_asks_every_model_every_prompt(paths):
-    from fakes import Clock, FakeAnthropic, make_cloud
+    from fakes import Clock, FakeAnthropic, make_cloud, models_with
     from kit.evals import compare_report, run_compare
     from kit.memory import Memory
 
@@ -34,7 +34,7 @@ def test_compare_asks_every_model_every_prompt(paths):
     results = asyncio.run(
         run_compare(
             cloud,
-            Settings(),
+            Settings.model_validate({"models": models_with()}),
             ["sonnet", "opus", "gpt-sol"],
             ["weather?", "price?"],
             datetime(2026, 10, 6),
@@ -48,7 +48,7 @@ def test_compare_asks_every_model_every_prompt(paths):
         ("weather?", "gpt-sol"),
     ]
     assert [c["model"] for c in claude.calls] == ["claude-sonnet-5-5", "claude-opus-5-5"] * 2
-    assert results[0].ok and results[0].said == "Sunny." and results[0].cost_usd > 0
+    assert results[0].ok and results[0].said == "Sunny." and results[0].cost_aud > 0
     assert not results[2].ok and "openai" in results[2].error  # no GPT adapter in this test
     report = compare_report(results, ["sonnet", "opus", "gpt-sol"])
     assert "**sonnet**: 2/2 answered" in report and "**gpt-sol**: 0/2" in report

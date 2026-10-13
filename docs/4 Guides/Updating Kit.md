@@ -43,8 +43,19 @@ first start after this update reads the old file, keeps what you had changed,
 drops the rest and rewrites it as `schema_version = 2`. Two things to check
 afterwards:
 
-- `kit models` now shows the current built-in prices and model ids. A profile
+- `kit models` now shows the current model ids and today's prices. A profile
   of your own (one you added under `[models]`) is kept exactly as it was.
+
+From mid October 2026 (version 3) the models are **your own list** and
+**prices aren't settings**: the first start keeps the models a role uses and
+any you had changed or added, drops the rest (`gpt-sol` and `gemini-flash`
+went unless you used them; `kit models add` brings one back), takes the
+prices out, and turns `cloud.monthly_cap_usd` and `reserve_usd` into
+`monthly_cap_aud` and `reserve_aud` at about A$1.50 to the dollar. Earlier
+calls in the spend log are converted at the same rate once. Run `kit models`
+to see the list and where today's prices came from, and `kit models prices`
+to fetch them straight away. home_app's Kit page shows Australian dollars from
+its matching update.
 - `persona.knows` used to start with a line of the author's own life; the
   built-in line now says Kit is still getting to know you. If yours was the
   built-in one, Kit no longer knows those things from his settings (his memory

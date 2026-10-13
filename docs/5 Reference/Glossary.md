@@ -59,7 +59,8 @@ Up: [[Home]] · Reference
 | **Role** | A job a model does: chat, work, expert | [[Models and Routing]] |
 | **Routing** | Deciding which model answers a message | [[Models and Routing]] |
 | **Scene** | What the eyes see right now, in words and numbers | [[Eyes]] |
-| **Schema version** | The settings file's layout; from version 2 the file holds only what you changed | [[Settings Reference#What the file holds]] |
+| **Price list** | What every model costs, fetched daily from LiteLLM's list with the day's exchange rate, shown in Australian dollars | [[Models and Routing#Prices, fetched for you]] |
+| **Schema version** | The settings file's layout; from version 2 the file holds only what you changed, from version 3 the models are your own list and prices aren't in it | [[Settings Reference#What the file holds]] |
 | **Seen moment** | A small thing his eyes catch that he feels: a wave, a smile, a frown | [[Eyes#Moments he feels]] |
 | **Self-sheet** | Who Kit thinks he is, in his own words, rewritten nightly | [[Inner Life#Each night he looks back]] |
 | **Show** | Something his face shows instead of his eyes: the time, the date, the weather | [[Face#Shows for the time, date and weather]] |

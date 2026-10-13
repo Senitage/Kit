@@ -1937,7 +1937,7 @@ class Brain:
 
     def _said_by_cloud(self, reply: Reply, answer: CloudAnswer) -> list[Event]:
         """A line of his own from a cloud model, kept and told as a pipe-up."""
-        meta = {"model": answer.model, "cost_usd": round(answer.cost_usd, 4)}
+        meta = {"model": answer.model, "cost_aud": round(answer.cost_aud, 4)}
         message_id = self._remember_reply(reply, PIPE_UP, meta)
         return [
             {"type": "say", "text": reply.text, "source": "cloud"},
@@ -1947,7 +1947,7 @@ class Brain:
                 "reply": reply.model_dump(),
                 "message_id": message_id,
                 "model": answer.model,
-                "cost_usd": round(answer.cost_usd, 4),
+                "cost_aud": round(answer.cost_aud, 4),
             },
         ]
 
@@ -2902,7 +2902,7 @@ class Brain:
             "role": role,
             "model": answer.model,
             "label": profile.name,
-            "cost_usd": round(answer.cost_usd, 4),
+            "cost_aud": round(answer.cost_aud, 4),
             "searches": answer.searches,
         }
         message_id = self._remember_reply(reply, "cloud", meta)
@@ -2915,7 +2915,7 @@ class Brain:
             **meta,
             "reply": reply.model_dump(),
             "message_id": message_id,
-            "month_usd": round(self.memory.month_spend(), 4),
+            "month_aud": round(self.memory.month_spend(), 4),
         }
 
     async def _cloud_stream(
