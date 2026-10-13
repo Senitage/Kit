@@ -785,6 +785,7 @@ class FakeFace:
     def __init__(self):
         self.calls: list[tuple] = []
         self.state = "idle"
+        self.level: float | None = None
 
     def set_emotion(self, emotion, now, hold_s=0.0):
         self.calls.append(("emotion", emotion))
@@ -794,6 +795,9 @@ class FakeFace:
 
     def set_state(self, state):
         self.state = state
+
+    def talk(self, level):
+        self.level = level
 
 
 class Caption:
@@ -844,16 +848,21 @@ def test_his_face_talks_exactly_as_long_as_his_voice(performer):
     act.perform(REPLY, voiced=True)
     assert face.calls == [("emotion", "playful"), ("gesture", "tilt_head")]
     assert face.state == "idle"  # his mouth waits for his voice
-    act.spoken(1, "You burnt the toast?", 0.3)
+    act.heard(1, "You burnt the toast?")  # his voice starts the first sentence
     assert face.state == "speaking" and act.caption.text() == "You burnt the toast?"
+    act.talk(0.6)
+    assert face.level == 0.6  # his mouth follows how loud his voice is
     run_qt(0.2)
-    act.spoken(1, "Classic.", 0.3)  # the next sentence: his gesture for it, as it starts
+    act.spoken(1, "You burnt the toast?", 0.3)
+    act.heard(1, "Classic.")  # the next sentence: his gesture for it, as it starts
     assert face.calls[-1] == ("gesture", "laugh")
     assert act.caption.text() == "You burnt the toast? Classic."
     run_qt(0.35)
     assert face.state == "speaking"  # the second sentence is still playing
+    act.spoken(1, "Classic.", 0.3)
     run_qt(0.3)
     assert face.state == "idle"  # his voice stopped, and so did his mouth
+    assert face.level is None
 
 
 def test_a_streamed_answer_his_voice_started_gets_its_gestures_when_the_reply_lands(performer):
