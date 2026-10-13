@@ -31,6 +31,7 @@ Up: [[Home]] · Reference
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |
+| **Generation (voice)** | The number a reply's sentences carry to the voice engine; a sentence from a lower number than one already seen is dropped, so interrupting him doesn't leave the engine finishing the old reply | [[Voice#How a sentence becomes sound]] |
 | **Held pipe-up** | Something he wanted to say while you were busy, saved till you're free | [[Inner Life In Depth#Busy and held pipe-ups]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |

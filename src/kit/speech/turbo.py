@@ -60,7 +60,13 @@ class GraphTokens:
     One step works on fixed buffers: a key/value store sized for the longest line,
     the current token and its place. Python only looks at the result every
     ``check_every`` tokens, to hand them on and spot the end. Without a graphics
-    card the same step just runs normally, which is how the tests check it."""
+    card the same step just runs normally, which is how the tests check it.
+
+    Every line starts with the same speaker conditioning (the voice clip as 375
+    tokens and a speaker embedding), so its keys and values are worked out once
+    and kept (``_cond``); each line then only runs its own text through the model
+    before the loop starts. If the conditioning ever differs, the whole prompt is
+    run again and the cache replaced."""
 
     def __init__(self, tts, max_len=1600, max_new=1000, check_every=4) -> None:
         import torch
@@ -81,6 +87,7 @@ class GraphTokens:
             self.out = torch.zeros(1, max_new + check_every, dtype=torch.long, device=dev)
             self.places = torch.arange(max_len, device=dev)
         self.graph = None
+        self._cond = None  # (conditioning embeds, their keys, their values)
         if str(dev).startswith("cuda"):
             self._record()
 
@@ -101,6 +108,49 @@ class GraphTokens:
             x = x + block.attn.c_proj(a.transpose(1, 2).reshape(1, 1, self.width))
             x = x + block.mlp(block.ln_2(x))
         return t3.speech_head(tf.ln_f(x))[:, -1, :].float()
+
+    def prefill(self, embeds, start: int):
+        """A run of prompt embeddings at places ``start`` on, through the model at
+        once, filling the key/value store: the logits for the last of them. The same
+        sums as ``logits`` for a run of tokens, so Chatterbox's own forward pass
+        isn't needed and the store can be filled part by part."""
+        import torch.nn.functional as F
+
+        t3, tf = self.tts.t3, self.tts.t3.tfmr
+        heads, size = self.heads, self.width // self.heads
+        n = embeds.shape[1]
+        places = self.places[start : start + n]
+        x = embeds + tf.wpe(places).unsqueeze(0)
+        mask = (self.places.view(1, -1) <= places.view(-1, 1)).view(1, 1, n, -1)
+        for i, block in enumerate(tf.h):
+            q, k, v = block.attn.c_attn(block.ln_1(x)).split(self.width, dim=2)
+            q, k, v = (t.view(1, n, heads, size).transpose(1, 2) for t in (q, k, v))
+            self.keys[i][:, :, start : start + n].copy_(k)
+            self.values[i][:, :, start : start + n].copy_(v)
+            a = F.scaled_dot_product_attention(q, self.keys[i], self.values[i], attn_mask=mask)
+            x = x + block.attn.c_proj(a.transpose(1, 2).reshape(1, n, self.width))
+            x = x + block.mlp(block.ln_2(x))
+        return t3.speech_head(tf.ln_f(x[:, -1:]))[:, -1, :].float()
+
+    def _prompt(self, embeds, n_cond: int):
+        """Fill the store for the prompt: the kept conditioning when it's the same
+        as last time, and only the text after it through the model."""
+        import torch
+
+        cond = embeds[:, :n_cond]
+        kept = self._cond
+        if kept is not None and kept[0].shape == cond.shape and torch.equal(kept[0], cond):
+            for i in range(len(self.tts.t3.tfmr.h)):
+                self.keys[i][:, :, :n_cond].copy_(kept[1][i])
+                self.values[i][:, :, :n_cond].copy_(kept[2][i])
+            return self.prefill(embeds[:, n_cond:], n_cond)
+        logits = self.prefill(embeds, 0)
+        self._cond = (
+            cond.clone(),
+            self.keys[:, :, :, :n_cond].clone(),
+            self.values[:, :, :, :n_cond].clone(),
+        )
+        return logits
 
     def _step(self) -> None:
         token = pick(self.logits(), self.seen)
@@ -134,22 +184,18 @@ class GraphTokens:
         ids = tts.tokenizer(punc_norm(text), return_tensors="pt").input_ids.to(tts.device)
         start = t3.hp.start_speech_token * torch.ones_like(ids[:, :1])
         with torch.inference_mode():
-            embeds, _ = t3.prepare_input_embeds(
+            embeds, n_cond = t3.prepare_input_embeds(
                 t3_cond=tts.conds.t3, text_tokens=ids, speech_tokens=start, cfg_weight=0.0
             )
             n = embeds.shape[1]
             if n + self.max_new + self.check_every > self.max_len:
                 raise ValueError(f"line too long for the token store ({n} prompt tokens)")
-            out = t3.tfmr(inputs_embeds=embeds, use_cache=True)
-            for i in range(len(t3.tfmr.h)):
-                k, v = _kv(out.past_key_values, i)
-                self.keys[i, :, :, :n].copy_(k)
-                self.values[i, :, :, :n].copy_(v)
+            logits = self._prompt(embeds, int(n_cond))
             # The first token is chosen with only the start token counted as seen,
             # as Chatterbox's own loop does; after that, only spoken tokens count.
             self.seen.zero_()
             self.seen[0, t3.hp.start_speech_token] = True
-            first = pick(t3.speech_head(out[0][:, -1:])[:, -1, :].float(), self.seen)
+            first = pick(logits, self.seen)
             if int(first) == stop:
                 return
             self.seen.zero_()
@@ -175,8 +221,10 @@ class GraphTokens:
 
 
 def generate(tts, graph: GraphTokens, text: str):
-    """``ChatterboxTurboTTS.generate`` with the faster token loop: the same decoder,
-    watermark and settings, as a float numpy array."""
+    """``ChatterboxTurboTTS.generate`` with the faster token loop: the same decoder
+    and settings, as a float numpy array. Without Chatterbox's watermark, which
+    cost 30 to 80 ms of processor time a clip and marked sound that never leaves
+    the house."""
     import torch
 
     tokens = [t for t in graph(text) if t < OOV] + [SILENCE] * 3
@@ -185,5 +233,4 @@ def generate(tts, graph: GraphTokens, text: str):
         wav, _ = tts.s3gen.inference(
             speech_tokens=speech, ref_dict=tts.conds.gen, n_cfm_timesteps=2
         )
-    wav = wav.squeeze(0).detach().float().cpu().numpy()
-    return tts.watermarker.apply_watermark(wav, sample_rate=tts.sr)
+    return wav.squeeze(0).detach().float().cpu().numpy()

@@ -850,6 +850,10 @@ def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):
         desk._on_life({"type": "pipe_up", "reply": reply_event("Psst.")["reply"]})
         _wait(qapp, 1.0)
         assert played[-1] == "bip_boop-1.wav"
+        desk.chat.voicing = True  # his voice is saying it: no boop over his first word
+        desk._act_out(reply_event("Said aloud")["reply"])
+        desk.chat.voicing = False
+        assert len(played) == 2
         desk.boop_action.setChecked(False)  # the tray switch
         assert DeskConfig.load(desk_dir).boop is False
         desk._act_out(reply_event("Quiet now")["reply"])

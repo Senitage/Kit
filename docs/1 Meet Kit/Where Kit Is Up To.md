@@ -31,6 +31,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
 | Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request (number to come) | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request (number to come) | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
+| First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Open, pull request (number to come) | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

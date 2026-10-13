@@ -22,7 +22,7 @@ from kit.settings import Settings, SettingsError, validate_settings
 from kit.settings_store import SettingsStore
 from kit.speech.bench import gaps, run_bench
 from kit.speech.sentences import SentenceSplitter
-from kit.speech.service import SpeechError, SpeechService, Spoken
+from kit.speech.service import Loading, SpeechError, SpeechService, Spoken, Stale
 
 TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -61,12 +61,31 @@ def test_a_long_first_sentence_is_cut_at_a_comma_so_he_starts_sooner():
     text = "Well, I had a look at the pump curves you sent over, and the duty point sits high."
     said = stream(SentenceSplitter(), text)
     assert said == [
-        "Well,",
-        "I had a look at the pump curves you sent over, and the duty point sits high.",
+        "Well, I had a look at the pump curves you sent over,",
+        "and the duty point sits high.",
     ]
     # Only the first: later long sentences stay whole.
     later = stream(SentenceSplitter(), "Hi. " + text)
     assert later == ["Hi.", text]
+
+
+def test_the_first_piece_is_never_a_one_word_clause():
+    # "Yeah," on its own gets its own falling tune and then a gap: a stammer.
+    text = "Yeah, I had a look at that yesterday, and it seemed fine to me."
+    assert stream(SentenceSplitter(), text) == [
+        "Yeah, I had a look at that yesterday,",
+        "and it seemed fine to me.",
+    ]
+    # The first clause of at least four words is where it's cut, as soon as it's in.
+    splitter = SentenceSplitter()
+    assert splitter.feed("Well, yes, I had a ") == []
+    assert splitter.feed("look, and the") == ["Well, yes, I had a look,"]
+    # A sound tag isn't a word, and a short sentence stays whole.
+    assert stream(SentenceSplitter(), "[chuckle] Told you, mate, it would pass.") == [
+        "[chuckle] Told you, mate, it would pass."
+    ]
+    assert stream(SentenceSplitter(), "Oh, nice one.") == ["Oh, nice one."]
+    assert SentenceSplitter(min_clause_words=0).min_clause_words == 1
 
 
 def test_a_first_sentence_with_no_comma_is_cut_before_an_and():
@@ -207,6 +226,140 @@ def test_turbo_uses_the_cuda_graph_loop_when_it_has_one():
     turbo.speak("Fine.", "playful", first=True)
     turbo.speak("That one went on for a while.", "playful")  # too long: its own loop
     assert made == [("graph", "[chuckle] Fine."), ("own", "That one went on for a while.")]
+
+
+def test_the_worker_drops_a_line_from_a_reply_thats_been_overtaken(tmp_path):
+    from kit.speech import worker
+
+    w = worker.Worker("tone", "tone", {}, tmp_path)
+    w.speak("One.", "neutral", generation=5)
+    w.speak("Older but never numbered.", "neutral")  # an older desk: always made
+    w.speak("Seven.", "neutral", generation=7)
+    with pytest.raises(worker.Stale):  # from the reply Dan interrupted
+        w.speak("Six.", "neutral", generation=6)
+    w.speak("Seven again.", "neutral", generation=7)
+    # The check is made with the engine's lock held, so a line waiting its turn
+    # behind one being made is dropped the moment that one is done.
+    dropped = []
+
+    def still_six():
+        try:
+            w.speak("Still six.", "neutral", generation=6)
+        except worker.Stale as e:
+            dropped.append(str(e))
+
+    with w.lock:
+        waiting = threading.Thread(target=still_six)
+        waiting.start()
+        w._newest(8)
+    waiting.join(5)
+    assert dropped == ["reply 6 was interrupted"] and w.generation == 8
+
+
+def test_the_worker_answers_410_for_a_stale_line_and_the_service_says_so(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "kokoro"}})
+
+    def say(engine):
+        return httpx.Response(410, json={"error": "reply 3 was interrupted", "stale": True})
+
+    started, launcher, http = engines_that(say)
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    with pytest.raises(Stale):
+        service.speak("Late.", generation=3)
+    assert service.in_use() == "kokoro"  # nothing wrong with the engine
+
+
+def test_the_service_drops_a_line_from_an_overtaken_reply_before_asking_the_engine(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "kokoro", "fallback": "tone"}})
+    asked = []
+
+    def say(engine):
+        asked.append(engine)
+        return spoke(engine)
+
+    started, launcher, http = engines_that(say)
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    service.speak("Seven.", generation=7)
+    with pytest.raises(Stale):
+        service.speak("Six.", generation=6)
+    service.speak("No number.")
+    assert asked == ["kokoro", "kokoro"] and service.in_use() == "kokoro"
+
+
+def test_without_waiting_an_engine_not_yet_up_loads_in_the_background(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "kokoro", "fallback": "tone"}})
+    started, launcher, http = engines_that(spoke)
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    with pytest.raises(Loading, match="still loading"):
+        service.speak("Hi.", wait=False)
+    service._loader.join(5)
+    assert [p.name for p in started] == ["kokoro"]  # loaded, and no switch to the fallback
+    assert service.speak("Hi.", wait=False).engine == "kokoro"
+    # An engine that failed lately isn't "loading": its failure is the answer, which
+    # here hands over to the fallback, loading in the background in its turn.
+    service._failed = (service._key_for("kokoro"), service.clock(), "kokoro broke")
+    service.stop()
+    with pytest.raises(Loading, match=r"\(tone\) is still loading"):
+        service.speak("Hi.", wait=False)
+    assert service.in_use() == "tone"
+    service._loader.join(5)
+    assert [p.name for p in started] == ["kokoro", "tone"]
+    plain = Settings.model_validate({"speech": {"engine": "kokoro"}})
+    started, launcher, http = engines_that(spoke)
+    service = SpeechService(lambda: plain.speech, paths, launcher, http)
+    service._failed = (service._key_for("kokoro"), service.clock(), "kokoro broke")
+    with pytest.raises(SpeechError, match="kokoro broke"):
+        service.speak("Hi.", wait=False)
+    assert started == []
+
+
+def test_chatterbox_runs_without_the_perth_watermark(monkeypatch, tmp_path):
+    import types
+
+    from kit.speech import worker
+
+    class FakeTTS:
+        sr = 24000
+
+        def __init__(self):
+            self.watermarker = "perth"
+            self.made = []
+
+        @classmethod
+        def from_pretrained(cls, device):
+            return cls()
+
+        def prepare_conditionals(self, reference, **kw):
+            pass
+
+        def generate(self, text, **kw):
+            self.made.append(text)
+            return self
+
+        def squeeze(self, _):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return worker.np.ones(3)
+
+    turbo = types.ModuleType("chatterbox.tts_turbo")
+    turbo.ChatterboxTurboTTS = FakeTTS
+    plain = types.ModuleType("chatterbox.tts")
+    plain.ChatterboxTTS = FakeTTS
+    monkeypatch.setitem(sys.modules, "chatterbox", types.ModuleType("chatterbox"))
+    monkeypatch.setitem(sys.modules, "chatterbox.tts_turbo", turbo)
+    monkeypatch.setitem(sys.modules, "chatterbox.tts", plain)
+    for kind in ("chatterbox-turbo", "chatterbox"):
+        engine = worker.ENGINES[kind]({"device": "cpu", "cuda_graph": False}, tmp_path)
+        assert isinstance(engine.tts.watermarker, worker.NoWatermark)
+        assert list(engine.speak("Hi.", "neutral")) == [1, 1, 1]
+    assert worker.NoWatermark().apply_watermark("as is", sample_rate=24000) == "as is"
 
 
 def test_changing_the_engines_settings_restarts_it_and_off_stops_it(tone):
@@ -475,8 +628,13 @@ class FakeSpeech:
         self.said = []
         self.on = False
 
-    def speak(self, text, mood="neutral", engine=None, first=False):
-        self.said.append((text, mood, first))
+    def speak(self, text, mood="neutral", engine=None, first=False, generation=None, wait=True):
+        if not wait and not self.on:
+            self.on = True  # loading in the background: ready next time
+            raise Loading("Kit's voice (tone) is still loading; ask again in a moment")
+        if generation == 1:
+            raise Stale("reply 1 was interrupted, so that line wasn't made")
+        self.said.append((text, mood, first, generation))
         return Spoken(wav=b"RIFFwav", synth_ms=420, audio_ms=900, engine="tone")
 
     def status(self):
@@ -518,13 +676,29 @@ def test_the_server_says_a_sentence_only_when_speech_is_on(server):
     body = {"text": "Oh, nice!", "emotion": "excited", "first": True}
     assert client.post("/api/speech/say", json=body, headers=AUTH).status_code == 409
     store.update({"speech": {"enabled": True}}, "test")
+    speech.on = True
     r = client.post("/api/speech/say", json=body, headers=AUTH)
     assert r.status_code == 200
     assert r.headers["content-type"] == "audio/wav"
     assert r.headers["x-synth-ms"] == "420"
     assert r.content == b"RIFFwav"
-    assert speech.said == [("Oh, nice!", "excited", True)]
+    assert speech.said == [("Oh, nice!", "excited", True, None)]
     assert client.get("/api/speech", headers=AUTH).json()["available"] is True
+
+
+def test_the_server_says_not_yet_while_the_engine_loads_and_drops_an_overtaken_line(server):
+    client, store, speech = server
+    store.update({"speech": {"enabled": True}}, "test")
+    body = {"text": "Oh, nice!", "emotion": "excited", "first": True, "generation": 2}
+    r = client.post("/api/speech/say", json=body, headers=AUTH)  # not loaded yet: at once
+    assert r.status_code == 503 and r.headers["retry-after"] == "1"
+    assert "still loading" in r.json()["detail"]
+    assert client.post("/api/speech/say", json=body, headers=AUTH).status_code == 200
+    assert speech.said == [("Oh, nice!", "excited", True, 2)]
+    stale = {"text": "Old news.", "emotion": "neutral", "generation": 1}
+    r = client.post("/api/speech/say", json=stale, headers=AUTH)
+    assert r.status_code == 410 and "interrupted" in r.json()["detail"]
+    assert len(speech.said) == 1
 
 
 def test_his_voice_says_how_long_its_been_quiet_for_the_brain_to_wait_on(paths):
@@ -533,7 +707,7 @@ def test_his_voice_says_how_long_its_been_quiet_for_the_brain_to_wait_on(paths):
     assert service.quiet_s() == float("inf")  # never spoken
     inside, gate = threading.Event(), threading.Event()
 
-    def slow(text, mood, engine, first):
+    def slow(text, mood, engine, first, generation, wait):
         inside.set()
         gate.wait(5)
         return Spoken(wav=b"RIFF", synth_ms=1, audio_ms=1, engine="tone")

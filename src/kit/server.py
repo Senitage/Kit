@@ -39,7 +39,7 @@ from kit.reply import Reply, voiced
 from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
-from kit.speech.service import SpeechError, SpeechService
+from kit.speech.service import Loading, SpeechError, SpeechService, Stale
 from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
@@ -84,6 +84,10 @@ class SpeakIn(BaseModel):
     emotion: str = Field("neutral", max_length=20)
     # The opening of a reply, where an engine may add a sound (a sigh, a chuckle).
     first: bool = False
+    # Numbers the reply this line is from, going up with each one the desk begins. Once
+    # a higher number has been seen, lines from a lower one (a reply Dan interrupted)
+    # are dropped with 410 instead of being made. Left out, every line is made.
+    generation: int | None = Field(None, ge=0)
 
 
 class FactIn(BaseModel):
@@ -826,13 +830,25 @@ def create_app(
 
     @app.post("/api/speech/say", dependencies=auth)
     async def speech_say(body: SpeakIn) -> Response:
-        """One sentence of Kit's speech as a WAV file, in the voice engine in use."""
+        """One sentence of Kit's speech as a WAV file, in the voice engine in use.
+        503 while the engine is still loading (it loads in the background; ask again
+        in a moment), 410 for a line from a reply that's been overtaken."""
         if speech is None or not store.current().speech.enabled:
             raise HTTPException(409, "speech is off; turn it on with `kit speech on`")
         try:
             spoken = await asyncio.to_thread(
-                speech.speak, body.text, body.emotion, None, body.first
+                speech.speak,
+                body.text,
+                body.emotion,
+                None,
+                body.first,
+                generation=body.generation,
+                wait=False,
             )
+        except Loading as e:
+            raise HTTPException(503, str(e), headers={"Retry-After": "1"}) from e
+        except Stale as e:
+            raise HTTPException(410, str(e)) from e
         except SpeechError as e:
             raise HTTPException(503, str(e)) from e
         if body.first:

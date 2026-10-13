@@ -36,9 +36,17 @@ word, speech to text) is the next part of stage 3.
 - **Sentence by sentence.** The brain now sends Kit's mood before his words. The
   desk app cuts the words into sentences as they stream in, asks the server for
   each one, and plays it while the next is being made. The first sentence is cut
-  short where it can be, at its first comma ("Yeah, ...") or before an "and" or
-  "but", because Chatterbox makes a whole piece before any of it plays. So Kit
-  starts talking a few words after the brain does, not after the whole reply.
+  short where it can be, at its first comma after at least four words ("Yeah, I
+  had a look at that,") or before an "and" or "but", because Chatterbox makes a
+  whole piece before any of it plays. So Kit starts talking a few words after the
+  brain does, not after the whole reply. A one-word "Yeah," is never cut off on
+  its own: it sounded like a stammer.
+- **Interrupting him starts the new reply at once.** Each sentence carries its
+  reply's generation number, so the server drops leftovers of the reply you cut
+  off instead of making them, and the desk doesn't wait for a sentence still
+  being fetched. While the engine is loading, the server says "not yet" (503)
+  straight away instead of holding the request for minutes. See
+  [[Voice#How a sentence becomes sound]].
 - **Timing in the log.** Each reply leaves three lines in the server log
   (`journalctl -u kit`): when his first words came, when the reply was done, and
   how long his first sound took to make, all counted from Dan's message.
@@ -93,7 +101,9 @@ word, speech to text) is the next part of stage 3.
 
    A fresh one: `uv venv -p 3.11 ~/kit-voice/.venv`, then
    `uv pip install -p ~/kit-voice/.venv/bin/python chatterbox-tts "setuptools<81"`
-   (setuptools still carries `pkg_resources`, which Chatterbox's watermarker needs).
+   (setuptools still carries `pkg_resources`, which the Perth watermarker
+   Chatterbox imports on start-up needs; Kit doesn't run the watermark, see
+   [[Voice#Faster on a graphics card]]).
 4. **Kit's voice clip.** Copy Heart's reference clip into the data folder (`kit paths`
    shows where it is), as `<data>/state/speech/kit_voice.wav`, or set
    `speech.engines.chatterbox-turbo.reference` to the clip's full path.
@@ -185,7 +195,20 @@ The engine's own messages go to `<data>/logs/speech.log`.
 - [ ] A one-sentence reply starts speaking about a second after its words would
       have shown, and the words appear as he says them.
 - [ ] Ask something, then send a new message while he's talking: he stops at
-      once, and the rest of what he was saying shows above your message.
+      once, and the rest of what he was saying shows above your message. His
+      new reply's first sound comes within about half a second of its first
+      words, not after the old sentence the engine was on.
+- [ ] A reply opening "Yeah, I had a look at that yesterday" is spoken as one
+      piece up to the next comma, not "Yeah," on its own.
+- [ ] `kit speech use chatterbox-turbo` while speech is on and Chatterbox is
+      not loaded: ask something at once. The words show unvoiced within a few
+      seconds (the server log shows `503`), a later reply is voiced, and nothing
+      waits for minutes.
+- [ ] With "Boop when Kit talks" on and his voice on, replies have no boop over
+      his first word; with his voice off, the boop is back.
+- [ ] In `<data>/logs/kit.log`, "first sound made in" for a short first sentence
+      is under what it was before (about 0.8 s on an RTX 2070 Super): no
+      watermark, and the speaker conditioning worked out once.
 - [ ] When Kit pipes up by himself, he says it out loud.
 - [ ] Untick "Show Kit's words as he says them" on the Look page: words appear as
       they stream in again, and he still speaks.

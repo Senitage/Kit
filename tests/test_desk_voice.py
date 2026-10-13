@@ -1,13 +1,24 @@
 """Kit's voice on the desk PC: one steady sound output, each sentence made while the
 last one plays, his words shown as he says them, and his pipe-ups said too."""
 
+import json
 import threading
 import time
 
+import httpx
 import pytest
 
-from kit.desk.client import BrainError, SpeechOff
+from kit.desk.client import (
+    SPEAK_TIMEOUT,
+    BrainClient,
+    BrainError,
+    SpeechLoading,
+    SpeechOff,
+    SpeechStale,
+)
 from kit.desk.voice import (
+    LOADING_TRIES,
+    LOADING_WAIT_S,
     PRE_ROLL_S,
     WAIT_S,
     Clip,
@@ -192,7 +203,7 @@ def test_a_mistake_telling_the_chat_never_stops_the_sound():
 def test_each_sentence_is_said_in_the_mood_with_a_sound_only_first():
     asked = []
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         asked.append((text, emotion, first))
         return wav(text)
 
@@ -214,7 +225,7 @@ def test_each_sentence_is_said_in_the_mood_with_a_sound_only_first():
 def test_dan_talking_stops_kit_at_once_and_speech_off_is_silent():
     gate = threading.Event()
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         if text == "Off.":
             raise SpeechOff("speech is off")
         if text == "Broken.":
@@ -241,7 +252,7 @@ def test_dan_talking_stops_kit_at_once_and_speech_off_is_silent():
 def test_an_older_reply_still_streaming_isnt_spoken_over_the_newer_one():
     asked = []
     out = FakeOutput(expect=1)
-    speaker = Speaker(lambda text, emotion, first: asked.append(text) or wav(text), out)
+    speaker = Speaker(lambda text, emotion, first, generation: asked.append(text) or wav(text), out)
     speaker.say(2, "Newer.")
     speaker.say(1, "Older. ")  # Dan asked twice; the first answer arrives late
     speaker.end(1)
@@ -254,7 +265,7 @@ def test_an_older_reply_still_streaming_isnt_spoken_over_the_newer_one():
 def test_each_sentence_is_heard_in_turn_even_one_that_couldnt_be_voiced():
     heard = []
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         if text == "Broken.":
             raise BrainError("no voice")
         return wav(text)
@@ -271,7 +282,9 @@ def test_each_sentence_is_heard_in_turn_even_one_that_couldnt_be_voiced():
 def test_a_sound_output_that_wont_open_falls_back_to_one_sentence_at_a_time():
     plain = FakeOutput(expect=1)
     broken = FakeOutput(fail=OutputError("no sound device"))
-    speaker = Speaker(lambda text, emotion, first: wav(text), broken, fallback=lambda: plain)
+    speaker = Speaker(
+        lambda text, emotion, first, generation: wav(text), broken, fallback=lambda: plain
+    )
     speaker.say(1, "Still heard. ")
     speaker.end(1)
     assert plain.done.wait(5)
@@ -282,7 +295,7 @@ def test_the_way_to_the_server_is_opened_before_the_first_sentence():
     order = []
     out = FakeOutput(expect=1)
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         order.append("speak")
         return wav(text)
 
@@ -306,7 +319,7 @@ def test_a_failed_warm_up_call_is_only_logged():
     def connect():
         raise BrainError("Can't reach Kit")
 
-    speaker = Speaker(lambda text, emotion, first: wav(text), out, connect=connect)
+    speaker = Speaker(lambda text, emotion, first, generation: wav(text), out, connect=connect)
     speaker.live = True
     speaker.stop(1)
     speaker.say(1, "Hi there. ")
@@ -318,7 +331,7 @@ def test_a_failed_warm_up_call_is_only_logged():
 def test_the_speakers_wake_while_kit_thinks_and_sleep_after_he_stops():
     clock = Clock()
     out = FakeOutput(expect=1)
-    speaker = Speaker(lambda text, emotion, first: wav(text), out, clock=clock)
+    speaker = Speaker(lambda text, emotion, first, generation: wav(text), out, clock=clock)
     speaker.stop(1)  # his voice isn't known to be on: nothing to wake
     time.sleep(0.2)
     assert out.warmed == 0
@@ -340,7 +353,7 @@ def test_a_pipe_up_is_said_unless_hes_talking_already():
     asked = []
     out = FakeOutput(expect=1)
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         asked.append((text, emotion))
         return wav(text)
 
@@ -353,6 +366,109 @@ def test_a_pipe_up_is_said_unless_hes_talking_already():
     speaker.enabled = False
     speaker.end(6)
     assert not speaker.pipe_up(8, "Hello?", "happy")
+
+
+def test_a_sentence_stuck_being_made_doesnt_hold_up_the_next_reply():
+    gate = threading.Event()
+    asked = []
+
+    def fetch(text, emotion, first, generation):
+        asked.append(text)
+        if text == "Slow one.":
+            gate.wait(5)  # the server is stuck on it (an engine restarting, say)
+        return wav(text)
+
+    out = FakeOutput(expect=1)
+    speaker = Speaker(fetch, out)
+    speaker.say(1, "Slow one. ")
+    wait_for(lambda: asked == ["Slow one."])
+    speaker.stop(2)  # Dan asks something else while that fetch is still out
+    speaker.say(2, "Quick answer. ")
+    speaker.end(2)
+    assert out.done.wait(2)  # said while the old fetch is still stuck
+    assert out.said() == ["Quick answer."]
+    gate.set()
+    time.sleep(0.1)
+    assert out.said() == ["Quick answer."]  # the old one's sound is thrown away
+    assert asked == ["Slow one.", "Quick answer."]
+
+
+def test_each_sentence_carries_its_replys_generation_which_goes_up_when_hes_cut_off():
+    asked = []
+    out = FakeOutput(expect=3)
+
+    def fetch(text, emotion, first, generation):
+        asked.append((text, generation))
+        return wav(text)
+
+    speaker = Speaker(fetch, out)
+    speaker.say(1, "One. Two. ")
+    speaker.end(1)
+    wait_for(lambda: len(out.clips) == 2)
+    speaker.stop(2)
+    speaker.say(2, "Three. ")
+    speaker.end(2)
+    assert out.done.wait(5)
+    (_, g1), (_, g2), (_, g3) = asked
+    assert g1 == g2 < g3
+    assert g1 > 1_000_000_000_000  # from the clock, so bigger than before a restart
+
+
+def test_an_engine_still_loading_is_asked_again_briefly_then_his_words_just_show():
+    asked, slept, heard = [], [], []
+
+    def fetch(text, emotion, first, generation):
+        asked.append(text)
+        if text == "Stale.":
+            raise SpeechStale("that reply was interrupted")
+        raise SpeechLoading("Kit's voice is still loading")
+
+    speaker = Speaker(
+        fetch,
+        FakeOutput(),
+        heard=lambda turn, text: heard.append(text),
+        sleep=lambda s: slept.append(s),
+    )
+    speaker.say(1, "First. Second. Stale. ")
+    speaker.end(1)
+    wait_for(lambda: len(heard) == 3)
+    assert heard == ["First.", "Second.", "Stale."]
+    # The first sentence is asked for a few times; the rest of the reply once each.
+    assert asked == ["First."] * LOADING_TRIES + ["Second.", "Stale."]
+    assert slept == [LOADING_WAIT_S] * (LOADING_TRIES - 1)
+    # A new reply gets its tries again, but stops asking when Dan moves on.
+    asked.clear()
+    waiting = threading.Event()
+    speaker.sleep = lambda s: waiting.wait(5)
+    speaker.say(2, "Again. ")
+    wait_for(lambda: asked == ["Again."])
+    speaker.stop(3)
+    waiting.set()
+    time.sleep(0.1)
+    assert asked == ["Again."]
+
+
+def test_the_desk_gives_a_sentence_30_s_and_knows_not_yet_from_dropped():
+    assert SPEAK_TIMEOUT.read == 30.0
+    answers = {"Hi.": httpx.Response(200, content=wav("Hi"))}
+
+    def brain(request):
+        body = json.loads(request.content)
+        if body["text"] == "Hi.":
+            assert body["generation"] == 7
+            return answers["Hi."]
+        if body["text"] == "Later.":
+            assert "generation" not in body
+            return httpx.Response(503, text="still loading", headers={"Retry-After": "1"})
+        return httpx.Response(410, text="interrupted")
+
+    client = BrainClient("http://kit-server:8600", "t", transport=httpx.MockTransport(brain))
+    assert client.speak("Hi.", "happy", True, 7) == wav("Hi")
+    with pytest.raises(SpeechLoading):
+        client.speak("Later.")
+    with pytest.raises(SpeechStale):
+        client.speak("Old.", generation=3)
+    client.close()
 
 
 # His words in the chat, in step with his voice
@@ -518,7 +634,7 @@ def test_a_pipe_up_is_said_and_shown_as_he_says_it(chat):
 def test_a_sound_is_said_before_its_words_and_never_shown():
     asked, heard, spoke = [], [], []
 
-    def fetch(text, emotion, first):
+    def fetch(text, emotion, first, generation):
         asked.append(text)
         return wav(text)
 

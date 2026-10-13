@@ -8,8 +8,13 @@ library, numpy and the engine itself.
     python worker.py --engine kokoro --port 8611 --options '{"voice": "af_heart"}'
 
 GET  /health  -> {"engine", "kind", "sample_rate", "device", "cuda_graph", "ready"}
-POST /speak   {"text": "...", "mood": "happy", "first": true} -> audio/wav (16-bit mono), with
-              X-Synth-Ms (time to make it) and X-Audio-Ms (how long it plays)
+POST /speak   {"text": "...", "mood": "happy", "first": true, "generation": 7}
+              -> audio/wav (16-bit mono), with X-Synth-Ms (time to make it) and
+              X-Audio-Ms (how long it plays). ``generation`` numbers the reply the
+              line belongs to: once a higher number has been seen, lines from a
+              lower one are stale (Dan interrupted, or a new reply began) and get
+              410 instead of being made. Lines are made one at a time, so the check
+              happens between clips: a stale line waiting its turn is dropped
 
 A sound in square brackets in the text ("[chuckle] Told you.") is made by Chatterbox
 Turbo and left out by the other engines.
@@ -149,11 +154,20 @@ class PiperEngine:
 
 
 def _torch_device(wanted: str) -> str:
-    import torch
-
     if wanted in ("", "auto"):
+        import torch
+
         return "cuda" if torch.cuda.is_available() else "cpu"
     return wanted
+
+
+class NoWatermark:
+    """Stands in for Chatterbox's Perth watermarker, which marks every clip (30 to
+    80 ms of processor time each) for a public web that Kit's voice never reaches.
+    The sound is handed back as it is."""
+
+    def apply_watermark(self, wav, sample_rate=None):
+        return wav
 
 
 class ChatterboxEngine:
@@ -170,6 +184,7 @@ class ChatterboxEngine:
         self.cfg_weight = float(options.get("cfg_weight", 0.5))
         if reference:
             self.tts.prepare_conditionals(reference, exaggeration=0.5)
+        self.tts.watermarker = NoWatermark()
         self.sample_rate = self.tts.sr
 
     def speak(self, text: str, mood: str, first: bool = False) -> np.ndarray:
@@ -202,6 +217,7 @@ class ChatterboxTurboEngine:
         reference = options.get("reference") or ""
         if reference:
             self.tts.prepare_conditionals(reference)
+        self.tts.watermarker = NoWatermark()
         self.mood_tags = options.get("mood_tags", {})
         self.sample_rate = self.tts.sr
         self.turbo, self.graph = None, None
@@ -239,11 +255,17 @@ def log(message: str) -> None:
     print(f"[speech] {message}", file=sys.stderr, flush=True)
 
 
+class Stale(Exception):
+    """The line belongs to a reply that's been overtaken: not worth making."""
+
+
 class Worker:
     def __init__(self, name: str, kind: str, options: dict, models_dir: Path) -> None:
         self.name, self.kind = name, kind
         self.engine = ENGINES[kind](options, models_dir)
         self.lock = threading.Lock()  # one line at a time: the GPU can't share anyway
+        self.generation: int | None = None  # the newest reply a line has come from
+        self._newest_lock = threading.Lock()
 
     def health(self) -> dict:
         return {
@@ -255,10 +277,15 @@ class Worker:
             "ready": True,
         }
 
-    def speak(self, text: str, mood: str, first: bool = False) -> tuple[bytes, float, float]:
+    def speak(
+        self, text: str, mood: str, first: bool = False, generation: int | None = None
+    ) -> tuple[bytes, float, float]:
         if self.kind != "chatterbox-turbo":
             text = without_sounds(text)
+        self._newest(generation)
         with self.lock:
+            if self._stale(generation):  # overtaken while it waited its turn
+                raise Stale(f"reply {generation} was interrupted")
             start = time.perf_counter()
             if text:
                 audio = self.engine.speak(text, mood, first)
@@ -267,6 +294,18 @@ class Worker:
             synth_ms = (time.perf_counter() - start) * 1000
         audio_ms = 1000 * len(np.asarray(audio).reshape(-1)) / self.engine.sample_rate
         return wav_bytes(audio, self.engine.sample_rate), synth_ms, audio_ms
+
+    def _newest(self, generation: int | None) -> None:
+        if generation is None:
+            return
+        with self._newest_lock:
+            if self.generation is None or generation > self.generation:
+                self.generation = generation
+
+    def _stale(self, generation: int | None) -> bool:
+        with self._newest_lock:
+            newest = self.generation
+        return generation is not None and newest is not None and generation < newest
 
 
 def make_handler(worker: Worker):
@@ -299,7 +338,14 @@ def make_handler(worker: Worker):
                     self._json(400, {"error": "no text"})
                     return
                 mood = str(data.get("mood", "neutral"))
-                audio, synth_ms, audio_ms = worker.speak(text, mood, bool(data.get("first")))
+                generation = data.get("generation")
+                generation = int(generation) if generation is not None else None
+                audio, synth_ms, audio_ms = worker.speak(
+                    text, mood, bool(data.get("first")), generation
+                )
+            except Stale as e:
+                self._json(410, {"error": str(e), "stale": True})
+                return
             except Exception as e:  # the engine failed on this line: say why, keep running
                 log(f"failed on {data.get('text', '')!r}: {e}")
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})

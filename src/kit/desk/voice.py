@@ -13,6 +13,12 @@ A sound in his voice (``speech.sounds``: a chuckle on the punchline) comes as it
 own event before the words it goes with, and is said, never shown. As each
 sentence starts playing, the face hears how long it lasts (``spoke``), so his
 mouth moves for exactly as long as his voice does.
+
+Each reply has a generation number that goes with every sentence to the server,
+so when Dan interrupts, a sentence of the old reply still waiting there is
+dropped rather than made, and the new reply's first sentence isn't held behind
+one still being fetched: a new fetching thread takes over at once and the old
+one's answer is thrown away when it comes.
 """
 
 from __future__ import annotations
@@ -28,12 +34,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from kit.desk.client import BrainError, SpeechOff
+from kit.desk.client import BrainError, SpeechLoading, SpeechOff, SpeechStale
 from kit.speech.sentences import SentenceSplitter, without_sounds
 
 log = logging.getLogger(__name__)
 
-Fetch = Callable[[str, str, bool], bytes]  # (sentence, emotion, first) -> WAV
+Fetch = Callable[[str, str, bool, int], bytes]  # (sentence, emotion, first, generation) -> WAV
 Connect = Callable[[], None]  # open the way to the server, so the first sentence needn't
 Heard = Callable[[int, str], None]  # (turn, sentence): its turn to be heard has come
 Spoke = Callable[[int, str, float], None]  # (turn, sentence, seconds it plays for)
@@ -43,6 +49,8 @@ WAIT_S = 20.0  # the output stays open this long for Kit's next sentence to be m
 LINGER_S = 3.0  # and this long after he stops, in case he goes on
 PRE_ROLL_S = 0.3  # silence ahead of his words while the speakers wake up
 STALL_S = 2.0  # the sound card hasn't asked for sound in this long: the output died
+LOADING_WAIT_S = 0.5  # the voice engine is still loading: ask again after this
+LOADING_TRIES = 6  # and give up on the sentence after this many asks (his words show anyway)
 USUAL_FORMAT = (24000, 1, 2)  # rate, channels, bytes a sample: what the engines make
 
 
@@ -303,7 +311,11 @@ class Speaker:
     as his voice does. Both get the sentence without its sounds. ``live`` says
     whether his voice is on, as far as the server last said. ``connect``, if
     given, is called when a reply is coming, so the way to the server is open
-    before the first sentence is asked for."""
+    before the first sentence is asked for.
+
+    ``fetch`` gets each sentence's generation too: a number that goes up with
+    every reply begun and every interruption, and is bigger after a restart, so
+    the server can tell a sentence from an overtaken reply and drop it."""
 
     def __init__(
         self,
@@ -314,6 +326,7 @@ class Speaker:
         clock: Callable[[], float] = time.monotonic,
         spoke: Spoke | None = None,
         connect: Connect | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.fetch = fetch
         self.connect = connect
@@ -322,23 +335,43 @@ class Speaker:
         self.spoke = spoke
         self.fallback = fallback
         self.clock = clock
+        self.sleep = sleep
         self.enabled = True
         self.live = False
         self._turn = 0
         self._latest = 0  # the newest reply begun: an older one still streaming is ignored
         self._open = False  # a reply has begun and not ended
-        self._generation = 0
+        self._generation = int(time.time() * 1000)  # bigger than any from before a restart
+        self._gave_up = None  # a generation whose voice didn't come while the engine loaded
         self._splitter = SentenceSplitter()
         self._emotion = "neutral"
         self._sent = 0
-        self._making = False
+        self._making = 0  # sentences being fetched right now
+        self._makers = 0  # fetching threads alive
+        self._maker = 0  # the newest of them; an older one stops once its fetch is back
         self._warm = False
         self._awake_until = 0.0
         self._lock = threading.Lock()
         self._lines: queue.Queue = queue.Queue()
         self._audio: queue.Queue = queue.Queue()
-        threading.Thread(target=self._make, name="kit-voice-make", daemon=True).start()
+        self._start_maker()
         threading.Thread(target=self._play, name="kit-voice-play", daemon=True).start()
+
+    def _start_maker(self) -> None:
+        """A fetching thread. Called again (under the lock) when a reply is overtaken
+        while a sentence is being fetched, so the new reply's first sentence doesn't
+        wait behind it: the old thread stops once its fetch comes back."""
+        self._maker += 1
+        self._makers += 1
+        threading.Thread(
+            target=self._make, args=(self._maker,), name="kit-voice-make", daemon=True
+        ).start()
+
+    def _overtaken(self) -> None:
+        """A new generation, under the lock: free the way for its first sentence."""
+        self._generation += 1
+        if self._making and self._making >= self._makers:  # every fetching thread is out
+            self._start_maker()
 
     def begin(self, turn: int) -> bool:
         """A new reply is coming; anything still queued from the last one is dropped.
@@ -348,7 +381,7 @@ class Speaker:
                 return True
             if turn < self._latest:
                 return False
-            self._generation += 1
+            self._overtaken()
             self._turn = self._latest = turn
             self._open = True
             self._splitter = SentenceSplitter()
@@ -404,7 +437,7 @@ class Speaker:
         stay quiet. ``turn`` is the reply Dan's message will get: that one is heard,
         and the speakers wake for it while Kit thinks."""
         with self._lock:
-            self._generation += 1
+            self._overtaken()
             self._latest = max(self._latest, self._turn + 1)
             self._turn = 0
             self._open = False
@@ -417,7 +450,7 @@ class Speaker:
         """A reply is under way: still coming in, being made, or playing."""
         return (
             self._open
-            or self._making
+            or self._making > 0
             or not self._lines.empty()
             or not self._audio.empty()
             or self.output.busy()
@@ -435,21 +468,30 @@ class Speaker:
     def _current(self, generation: int) -> bool:
         return generation == self._generation
 
-    def _make(self) -> None:
-        while True:
-            generation, turn, text, emotion, first = self._lines.get()
-            if not self._current(generation):
-                continue
-            if text is None:  # he's about to talk: have the connection open for his words
-                self._connect()
-                continue
-            self._making = True
-            try:
-                clip = self._made(text, emotion, first)
+    def _make(self, me: int) -> None:
+        try:
+            while True:
+                generation, turn, text, emotion, first = self._lines.get()
+                if not self._current(generation):
+                    continue
+                if text is None:  # he's about to talk: have the connection open for his words
+                    self._connect()
+                    continue
+                with self._lock:
+                    self._making += 1
+                try:
+                    clip = self._made(text, emotion, first, generation)
+                finally:
+                    with self._lock:
+                        self._making -= 1
+                        superseded = self._maker != me
                 if self._current(generation):  # None: not heard, but his words show in turn
                     self._audio.put((generation, turn, text, clip))
-            finally:
-                self._making = False
+                if superseded:
+                    return  # a newer thread took over while this fetch was out
+        finally:
+            with self._lock:
+                self._makers -= 1
 
     def _connect(self) -> None:
         try:
@@ -459,20 +501,38 @@ class Speaker:
         except Exception:
             log.exception("couldn't reach Kit ahead of his words")
 
-    def _made(self, text: str, emotion: str, first: bool) -> Clip | None:
-        try:
-            clip = read_wav(self.fetch(text, emotion, first))
-        except SpeechOff:
-            self.live = False  # speech is off on the server: say nothing
-            return None
-        except BrainError as e:
-            log.warning("couldn't make speech: %s", e)
-            return None
-        except (wave.Error, EOFError) as e:
-            log.warning("the voice engine sent something that isn't sound: %s", e)
-            return None
-        self.live = True
-        return clip
+    def _made(self, text: str, emotion: str, first: bool, generation: int) -> Clip | None:
+        """The sentence as sound, or None when it couldn't be made. An engine still
+        loading is asked again a few times; once a sentence has gone unvoiced for
+        that, the rest of its reply is only asked once each."""
+        tries = 1 if self._gave_up == generation else LOADING_TRIES
+        for attempt in range(1, tries + 1):
+            if attempt > 1:
+                self.sleep(LOADING_WAIT_S)
+                if not self._current(generation):
+                    return None  # Dan moved on while it waited
+            try:
+                clip = read_wav(self.fetch(text, emotion, first, generation))
+            except SpeechLoading as e:
+                if attempt < tries and self._current(generation):
+                    continue
+                self._gave_up = generation
+                log.info("his voice isn't ready yet, so his words only show: %s", e)
+                return None
+            except SpeechStale:
+                return None  # Dan interrupted: the server dropped it, as this will
+            except SpeechOff:
+                self.live = False  # speech is off on the server: say nothing
+                return None
+            except BrainError as e:
+                log.warning("couldn't make speech: %s", e)
+                return None
+            except (wave.Error, EOFError) as e:
+                log.warning("the voice engine sent something that isn't sound: %s", e)
+                return None
+            self.live = True
+            return clip
+        return None
 
     def _heard(self, generation: int, turn: int, text: str, seconds: float = 0.0) -> None:
         if not self._current(generation):

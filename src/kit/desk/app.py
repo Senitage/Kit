@@ -589,11 +589,11 @@ class DeskApp(QObject):
         if self.client is not None:
             self.client.health()
 
-    def _speak(self, text: str, emotion: str, first: bool) -> bytes:
+    def _speak(self, text: str, emotion: str, first: bool, generation: int) -> bytes:
         """One sentence of Kit's speech from the server (SpeechOff if it's turned off)."""
         if self.client is None:
             raise SpeechOff("not connected")
-        return self.client.speak(text, emotion, first)
+        return self.client.speak(text, emotion, first, generation)
 
     def _chat_resized(self, size) -> None:
         if (size.width(), size.height()) != (self.config.chat_width, self.config.chat_height):
@@ -1065,12 +1065,13 @@ class DeskApp(QObject):
             self.face.face.set_state("idle")
 
     def _act_out(self, reply: dict) -> None:
-        """Kit said something: he acts it out, says it under his face, and boops."""
+        """Kit said something: he acts it out, says it under his face, and boops,
+        unless his voice is saying it (the boop landed on his first word)."""
         self.bubble.enabled = self.config.speech_bubble
         sound, self._next_sound = self._next_sound, "boop"
         if not reply.get("segments"):
             return
-        if self.config.boop:
+        if self.config.boop and not self.chat.voicing:
             self.sounds.play(sound)
         self.performer.perform(reply, voiced=self.chat.voicing)
         self._answered = True

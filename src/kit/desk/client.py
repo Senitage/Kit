@@ -16,8 +16,10 @@ import httpx
 # A cloud answer with web searches can take a minute or two to arrive.
 CHAT_TIMEOUT = httpx.Timeout(10.0, read=300.0)
 TIMEOUT = httpx.Timeout(5.0)
-# A voice engine that's still loading (Chatterbox, the first time) can take minutes.
-SPEAK_TIMEOUT = httpx.Timeout(5.0, read=300.0)
+# A sentence takes the voice engine about a second; one that takes longer than this
+# is given up on, so a slow server can't hold a reply for minutes (an engine still
+# loading answers 503 at once instead, and the desk asks again in a moment).
+SPEAK_TIMEOUT = httpx.Timeout(5.0, read=30.0)
 # A connection idles between Kit's sentences and between messages; keeping it a
 # minute (httpx's default is 5 s) saves opening a new one before the first word.
 KEEP_ALIVE = httpx.Limits(keepalive_expiry=60.0)
@@ -41,6 +43,14 @@ class BrainError(Exception):
 
 class SpeechOff(BrainError):
     """Kit's speech is turned off on the server."""
+
+
+class SpeechLoading(BrainError):
+    """The voice engine is still loading: not yet, ask again in a moment."""
+
+
+class SpeechStale(BrainError):
+    """The sentence is from a reply that's been overtaken, so it wasn't made."""
 
 
 class BrainClient:
@@ -103,18 +113,29 @@ class BrainClient:
     def speech_status(self) -> dict:
         return self._call("GET", "/api/speech").json()
 
-    def speak(self, text: str, emotion: str = "neutral", first: bool = False) -> bytes:
-        """One sentence as a WAV file. Raises SpeechOff if speech is turned off."""
+    def speak(
+        self,
+        text: str,
+        emotion: str = "neutral",
+        first: bool = False,
+        generation: int | None = None,
+    ) -> bytes:
+        """One sentence as a WAV file. ``generation`` numbers the reply, so the server
+        drops a sentence from one that's been overtaken. Raises SpeechOff if speech is
+        turned off, SpeechLoading while the engine loads, SpeechStale if overtaken."""
+        body: dict = {"text": text, "emotion": emotion, "first": first}
+        if generation is not None:
+            body["generation"] = generation
         try:
-            r = self._http.post(
-                "/api/speech/say",
-                json={"text": text, "emotion": emotion, "first": first},
-                timeout=SPEAK_TIMEOUT,
-            )
+            r = self._http.post("/api/speech/say", json=body, timeout=SPEAK_TIMEOUT)
         except httpx.HTTPError as e:
             raise BrainError(f"Kit's voice didn't answer ({type(e).__name__}).") from e
         if r.status_code == 409:
             raise SpeechOff(r.text)
+        if r.status_code == 503:
+            raise SpeechLoading(r.text)
+        if r.status_code == 410:
+            raise SpeechStale(r.text)
         _check(r)
         return r.content
 

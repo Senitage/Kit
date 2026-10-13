@@ -34,9 +34,12 @@ sequenceDiagram
     Brain-->>Desk: spoken (his words are complete)
 ```
 
-- **The first sentence is cut short** where it can be, at its first comma
-  ("Yeah, ...") or before an "and" or "but", because an engine like
-  Chatterbox makes a whole piece before any of it plays.
+- **The first sentence is cut short** where it can be, because an engine like
+  Chatterbox makes a whole piece before any of it plays: at the first comma
+  after at least four words ("Yeah, I had a look at that,"), or before an
+  "and" or "but" once a dozen words are in. Never at a one-word clause: a
+  "Yeah," on its own got its own falling tune and then a gap, which sounded
+  like a stammer.
 - **One steady sound output** stays open while he talks, so there are no
   gaps and his first word isn't clipped.
 - **The way to the server is open before he speaks**: when you send a message
@@ -48,7 +51,23 @@ sequenceDiagram
   voice starts (a Look page option). Each sentence tells the face how long it
   plays, so his mouth stops when the sound does, and each gesture lands as its
   words start.
-- **You talking stops him**, straight away, mid-word.
+- **You talking stops him**, straight away, mid-word, and the new reply
+  isn't held behind the old one. Every sentence goes to the server with its
+  reply's **generation** number (it goes up with each reply begun and each
+  interruption). Once the server has seen a higher number, a sentence from a
+  lower one is dropped (`410`) instead of made, in Kit's speech service and
+  again in the voice worker between clips, so the interrupted reply's leftover
+  sentences never take the engine's turn. On the desk, if a sentence of the
+  old reply is still being fetched when you interrupt, a fresh fetching
+  thread takes the new reply at once and the old answer is thrown away when
+  it comes. The aim is the new reply's first sound within half a second.
+- **While the engine loads he isn't silent for minutes.** `POST /api/speech/say`
+  answers `503` straight away while the engine is still loading (it loads in
+  the background), with `Retry-After: 1`. The desk asks again every half
+  second, six times, then lets the words show unvoiced and only asks once for
+  each of the reply's remaining sentences; the next reply gets its tries again.
+  A sentence the server takes more than 30 s over is given up on, so a slow
+  server can't hold a reply for minutes either.
 - **Pipe-ups are said out loud too**, unless he's already talking or his
   eyes see nobody there to hear.
 - **Cloud answers stream** (`cloud.stream`): Claude's answer is read as it's
@@ -89,6 +108,20 @@ before it finishes playing. It holds about 0.3 GB more graphics card memory.
 
 If the graph can't be recorded, Turbo uses Chatterbox's own loop and says why
 in `logs/speech.log`. `GET /api/speech` shows `cuda_graph: true` when it's on.
+
+Two more things the graph path does for the first sound:
+
+- **The speaker conditioning is worked out once.** Every line starts with the
+  same 375 tokens of his voice clip and a speaker embedding. Their keys and
+  values are kept after the first line and copied into the graph's store, so
+  each line only runs its own text through the model before the loop starts
+  (about 50 to 100 ms less a clip). If the conditioning ever differs, the
+  whole prompt is run again and the kept copy replaced.
+- **No watermark.** Chatterbox marks every clip with a Perth watermark, 30 to
+  80 ms of processor time each, for a public web Kit's voice never reaches.
+  Kit's engines hand the sound back as it is (Chatterbox's own loop too, by
+  swapping its watermarker for one that does nothing). The `resemble-perth`
+  package stays installed, since Chatterbox imports it on start-up.
 
 ## Engines
 
