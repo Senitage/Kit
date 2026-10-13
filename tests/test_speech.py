@@ -627,10 +627,12 @@ class FakeSpeech:
     def __init__(self):
         self.said = []
         self.on = False
+        self.loading = False  # set by a test: the next no-wait ask finds the engine loading
 
     def speak(self, text, mood="neutral", engine=None, first=False, generation=None, wait=True):
-        if not wait and not self.on:
-            self.on = True  # loading in the background: ready next time
+        if not wait and self.loading:
+            self.loading = False  # loading in the background: ready next time
+            self.on = True
             raise Loading("Kit's voice (tone) is still loading; ask again in a moment")
         if generation == 1:
             raise Stale("reply 1 was interrupted, so that line wasn't made")
@@ -689,8 +691,9 @@ def test_the_server_says_a_sentence_only_when_speech_is_on(server):
 def test_the_server_says_not_yet_while_the_engine_loads_and_drops_an_overtaken_line(server):
     client, store, speech = server
     store.update({"speech": {"enabled": True}}, "test")
+    speech.loading = True  # the server's own warm-up may have run already; the engine
     body = {"text": "Oh, nice!", "emotion": "excited", "first": True, "generation": 2}
-    r = client.post("/api/speech/say", json=body, headers=AUTH)  # not loaded yet: at once
+    r = client.post("/api/speech/say", json=body, headers=AUTH)  # is still loading: at once
     assert r.status_code == 503 and r.headers["retry-after"] == "1"
     assert "still loading" in r.json()["detail"]
     assert client.post("/api/speech/say", json=body, headers=AUTH).status_code == 200
