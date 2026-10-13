@@ -12,13 +12,38 @@ from __future__ import annotations
 import re
 
 ABBREVIATIONS = {"e.g.", "i.e.", "etc.", "vs.", "dr.", "mr.", "mrs.", "ms.", "st.", "approx."}
-# A sound for his voice to make ("[chuckle]", speech.sounds): said, never shown.
-SOUND = re.compile(r"\[[a-z]+(?: [a-z]+)?\]\s*")
+# The sounds his voice can make ("[chuckle]", speech.sounds): said, never shown. The
+# same list as the voice worker's (kit.speech.worker.SOUNDS, which imports nothing
+# from Kit). Anything else in square brackets ("[sic]", "[x]") is words, and stays.
+SOUNDS = frozenset(
+    {
+        "advertisement",
+        "angry",
+        "chuckle",
+        "clear throat",
+        "cough",
+        "crying",
+        "dramatic",
+        "fear",
+        "gasp",
+        "groan",
+        "happy",
+        "laugh",
+        "narration",
+        "sarcastic",
+        "shush",
+        "sigh",
+        "sniff",
+        "surprised",
+        "whispering",
+    }
+)
+SOUND = re.compile(r"\[([a-z]+(?: [a-z]+)?)\]\s*")
 
 
 def without_sounds(text: str) -> str:
     """His words as shown, with any sounds his voice makes taken out."""
-    return SOUND.sub("", text).strip()
+    return SOUND.sub(lambda m: "" if m.group(1) in SOUNDS else m.group(0), text).strip()
 
 
 _END = re.compile(r"[.!?…]+[\"'”’)\]]*(?=\s)|\n+")

@@ -59,7 +59,10 @@ loud; the others show the words.
 
 Password managers, banking and private-browsing titles are blanked **on the
 PC** before anything is sent, addresses lose everything after `?` or `#`, and
-**Share what I'm working on** pauses it all. See [[Privacy]].
+**Share what I'm working on** pauses it all. Which program owns a window is
+read from its process, remembered together with the process's start time:
+Windows hands a finished program's id to the next one, so a password manager
+starting on a browser's old id is still recognised as one. See [[Privacy]].
 
 ## His voice and face on the desk
 
@@ -73,6 +76,16 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 - **Reflexes**: the only things the desk decides itself. Every so often he
   glances at the window you're working in. When the brain says he's asleep,
   he yawns and slides down the screen; awake, he climbs back.
+- **A newer brain** can send an emotion or gesture this desk doesn't know yet.
+  The face shows neutral (or no gesture) and the rest of the reply carries on,
+  with one line in the log, instead of the words sticking half shown.
+- **The life feed** (his fidgets, moods and pipe-ups from the brain) outlives
+  whatever goes wrong with it: a brain away, a malformed answer, a settings
+  change mid-call. It's logged once and tried again after 10 s, then 20, up to
+  two minutes between tries, until the brain is back.
+- **Quit** stops his voice, lets the speakers go and closes the connection to
+  the brain, so nothing hangs on the way out and the next start finds the
+  sound device free.
 
 ## Connections
 

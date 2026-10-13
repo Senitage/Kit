@@ -219,6 +219,16 @@ def create_app(
 
     auth = [Depends(require_token)]
 
+    def require_shared_token(
+        device: str | None = Depends(require_token),  # noqa: B008 (a local can't be annotated)
+    ) -> None:
+        """Kit's own token only. A paired device's (a phone that leaves the house)
+        can talk to Kit but not change his settings, read the faces he knows or
+        list his bodies and devices; see Privacy."""
+        _shared_only(device, "change settings, read known faces or list devices")
+
+    shared_only = [Depends(require_shared_token)]
+
     @app.get("/", response_class=HTMLResponse)
     def chat_page() -> str:
         return _page("chat.html")
@@ -338,7 +348,7 @@ def create_app(
     def get_schema() -> dict:
         return Settings.model_json_schema()
 
-    @app.patch("/api/settings", dependencies=auth)
+    @app.patch("/api/settings", dependencies=shared_only)
     def patch_settings(
         patch: Annotated[dict, Body()], x_changed_by: Annotated[str, Header()] = "api"
     ) -> dict:
@@ -355,7 +365,7 @@ def create_app(
             for v in store.history()
         ]
 
-    @app.post("/api/settings/undo", dependencies=auth)
+    @app.post("/api/settings/undo", dependencies=shared_only)
     def undo() -> dict:
         try:
             settings = store.undo()
@@ -574,12 +584,12 @@ def create_app(
             "faces_version": faces.version,
         }
 
-    @app.get("/api/eyes/faces", dependencies=auth)
+    @app.get("/api/eyes/faces", dependencies=shared_only)
     def known_faces() -> dict:
         """The people Kit's eyes know (kit.known_faces): names and face numbers."""
         return faces.as_dict()
 
-    @app.post("/api/eyes/faces", dependencies=auth)
+    @app.post("/api/eyes/faces", dependencies=shared_only)
     def enrol_face(body: Enrolment) -> dict:
         """More looks at someone, from `kit eyes enrol NAME`."""
         try:
@@ -588,7 +598,7 @@ def create_app(
             raise HTTPException(422, str(e)) from e
         return {"name": name, "count": count, "version": faces.version}
 
-    @app.delete("/api/eyes/faces/{name}", dependencies=auth)
+    @app.delete("/api/eyes/faces/{name}", dependencies=shared_only)
     def forget_face(name: str) -> dict:
         """Forget someone's face completely (`kit eyes forget NAME`)."""
         gone = faces.forget(name)
@@ -765,9 +775,9 @@ def create_app(
             "unknown_abilities": list(body.unknown),
         }
 
-    def _shared_only(device: str | None) -> None:
+    def _shared_only(device: str | None, what: str = "pair or unpair devices") -> None:
         if device is not None:
-            raise HTTPException(403, "only Kit's own token can pair or unpair devices")
+            raise HTTPException(403, f"only Kit's own token can {what}, not a paired device's")
 
     @app.post("/api/devices/pair")
     def pair_device(
@@ -797,7 +807,7 @@ def create_app(
         registry.forget(name)
         return {"ok": True}
 
-    @app.get("/api/bodies", dependencies=auth)
+    @app.get("/api/bodies", dependencies=shared_only)
     def bodies_list() -> dict:
         """Every body that's said hello since the brain started, and the paired devices."""
         return {

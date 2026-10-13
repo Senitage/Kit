@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
 from kit.brain import Brain
 from kit.memory import Memory
-from kit.pc_context import PcContext, Snapshot
+from kit.pc_context import FORGET_AFTER, PcContext, Snapshot
 from kit.recall import Recall
 from kit.server import create_app
 from kit.settings_store import SettingsStore
@@ -90,6 +90,17 @@ def test_a_gap_in_reports_is_not_counted_as_focus():
     assert "last seen at 09:00 AM" in pc.now_line("Dan")
     pc.update(snap())
     assert sum(s.minutes for s in pc.spans) < 1
+
+
+def test_a_pc_not_heard_from_for_a_day_is_dropped():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap())
+    pc.update(snap(host="LAPTOP"))
+    assert set(pc.desks) == {"DESK", "LAPTOP"}
+    clock.now += FORGET_AFTER + timedelta(seconds=1)
+    pc.update(snap())
+    assert set(pc.desks) == {"DESK"}  # the laptop hasn't reported for a day
 
 
 def test_paused_and_locked_hide_the_screen():

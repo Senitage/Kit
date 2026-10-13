@@ -20,6 +20,7 @@ import os
 import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 
@@ -35,6 +36,73 @@ CAMERA_RETRY_S = 5.0  # the camera went away: try it again after this long
 REPORT_RETRY_S = 5.0  # the brain can't be reached: say so once, try again later
 
 Reporter = Callable[[dict], dict]
+Posted = tuple[dict, dict | None, Exception | None]  # the report, the answer or the trouble
+
+
+class Post:
+    """Sends reports to the brain from its own thread, so the frame loop never
+    waits on the network: a slow or absent brain used to stall the camera for the
+    client's whole timeout, dropping tracks (and with them who was who).
+
+    One slot: a report posted while an older one is still waiting takes its place
+    (the latest scene is the one that matters), and the older one is handed to
+    ``dropped`` so its events aren't lost. Answers and failures queue up for the
+    camera thread to collect with ``results``. With ``threaded`` False the report
+    is sent on the spot, which the tests use."""
+
+    def __init__(
+        self,
+        reporter: Reporter,
+        dropped: Callable[[dict], None] | None = None,
+        threaded: bool = True,
+    ) -> None:
+        self.reporter = reporter
+        self.dropped = dropped
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._pending: dict | None = None
+        self._results: deque[Posted] = deque()
+        self._closed = False
+        self._thread: threading.Thread | None = None
+        if threaded:
+            self._thread = threading.Thread(target=self._run, name="kit-eyes-post", daemon=True)
+            self._thread.start()
+
+    def send(self, report: dict) -> None:
+        if self._thread is None:
+            self._results.append(self._try(report))
+            return
+        with self._lock:
+            older, self._pending = self._pending, report
+        if older is not None and self.dropped is not None:
+            self.dropped(older)
+        self._wake.set()
+
+    def results(self) -> list[Posted]:
+        """What's come back since last asked, oldest first."""
+        out: list[Posted] = []
+        while self._results:
+            out.append(self._results.popleft())
+        return out
+
+    def close(self) -> None:
+        self._closed = True
+        self._wake.set()
+
+    def _try(self, report: dict) -> Posted:
+        try:
+            return report, self.reporter(report) or {}, None
+        except Exception as e:  # noqa: BLE001 (whatever it was, the loop decides)
+            return report, None, e
+
+    def _run(self) -> None:
+        while not self._closed:
+            self._wake.wait()
+            with self._lock:
+                report, self._pending = self._pending, None
+                self._wake.clear()
+            if report is not None:
+                self._results.append(self._try(report))
 
 
 class Eyes:
@@ -53,11 +121,13 @@ class Eyes:
         wall: Callable[[], datetime] = datetime.now,
         sleep: Callable[[float], None] = time.sleep,
         on_frame: Callable[[object, Scene, dict | None], bool] | None = None,
+        threaded: bool = True,
     ) -> None:
         self.settings = settings or EyesSettings()
         self.open_camera = open_camera
         self.detector = detector
         self.reporter = reporter
+        self.post = Post(reporter, dropped=self._dropped, threaded=threaded)
         self.faces = faces
         self.body = body
         self.recogniser = recogniser  # kit.eyes.recognise: names for the faces
@@ -85,6 +155,7 @@ class Eyes:
         """Look at one frame (or, paused, check in with the brain). Returns the
         scene's new event lines."""
         now = self.clock()
+        self._collect(now)
         if self.paused:
             self._release()
             if now - self._last_report >= PAUSED_POLL_S:
@@ -146,6 +217,7 @@ class Eyes:
 
     def close(self) -> None:
         self._release()
+        self.post.close()
         for part in (self.detector, self.faces, self.body):
             if part is not None and hasattr(part, "close"):
                 part.close()
@@ -177,20 +249,31 @@ class Eyes:
             self.camera = None
 
     def _send(self, report: dict, now: float) -> None:
+        """Hand a report to the posting thread; what came back is collected on the
+        next pass (at once, when the post isn't threaded)."""
         self._last_report = now
-        try:
-            answer = self.reporter(report)
-        except Exception as e:  # the brain is down or said no: keep looking, say so once
-            if self.error != str(e):
-                log.warning("can't report to the brain: %s", e)
-            self.error = str(e)
-            self._last_report = now - self.settings.report_every_s + REPORT_RETRY_S
-            return
-        if self.error:
-            log.info("back in touch with the brain")
-            self.error = ""
-        self.reports += 1
-        self.apply(answer or {})
+        self.post.send(report)
+        self._collect(now)
+
+    def _dropped(self, report: dict) -> None:
+        """A newer report took this one's place before it was sent: its events go
+        with the next."""
+        self.scene.requeue(report.get("events", []))
+
+    def _collect(self, now: float) -> None:
+        for report, answer, trouble in self.post.results():
+            if trouble is not None:  # the brain is down or said no: keep looking, say so once
+                if self.error != str(trouble):
+                    log.warning("can't report to the brain: %s", trouble)
+                self.error = str(trouble)
+                self.scene.requeue(report.get("events", []))
+                self._last_report = now - self.settings.report_every_s + REPORT_RETRY_S
+                continue
+            if self.error:
+                log.info("back in touch with the brain")
+                self.error = ""
+            self.reports += 1
+            self.apply(answer or {})
 
     def apply(self, answer: dict) -> None:
         """What the brain said back: paused or not, and the settings in force."""

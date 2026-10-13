@@ -413,6 +413,15 @@ class Speaker:
         if turn is not None:
             self.begin(turn)
 
+    def close(self) -> None:
+        """The app is quitting: stop talking and let the speakers go, so the sound
+        device is free for the next start and nothing hangs on the way out."""
+        self.stop()
+        try:
+            self.output.close()
+        except Exception:  # noqa: BLE001 (a sound device half gone mustn't stop the quit)
+            log.exception("closing the sound output failed")
+
     def talking(self) -> bool:
         """A reply is under way: still coming in, being made, or playing."""
         return (

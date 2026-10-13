@@ -78,6 +78,11 @@ flowchart LR
   deletes them.
 - **Settings come from the brain** (`[eyes]`), so there's one place to change
   them, and running eyes pick changes up.
+- **Reports go from their own thread**, so a slow or absent brain never holds
+  up the camera loop (a stall used to drop tracks, and with them who was who).
+  A newer report takes the place of one still waiting, and the events of a
+  report that didn't get through ("Dan sat down", "waved") go with the next
+  one that does, up to the hundred the brain takes in one report.
 
 ## The switch
 

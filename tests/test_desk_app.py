@@ -246,10 +246,14 @@ def test_app_starts_into_the_tray_and_quits(qapp, desk_dir, monkeypatch):
         desk.set_watching(False)
         assert DeskConfig.load(desk_dir).watch is False
         desk._act_out(reply_event("Hi")["reply"])
+        closed = []
+        desk.chat.speaker.output.close = lambda: closed.append("output")
+        client = desk.client
     finally:
         desk.quit()
         desk.chat.close()
         desk.face.close()
+    assert "output" in closed and client._http.is_closed  # nothing left open at exit
 
 
 def test_glow_sleeps_and_wakes_when_the_brain_says_and_glances_by_himself(qapp):

@@ -21,8 +21,11 @@ Authorization: Bearer TOKEN
 ```
 
 `kit token` shows it. A paired device, like a phone, uses a token of its own
-instead (`kit pair`): it opens the same API, and `kit devices forget` stops
-it. See [[Phone App#Pairing]].
+instead (`kit pair`): it opens the same API except the routes marked **Kit's
+own token only** below (changing settings, the faces his eyes know, listing
+bodies and devices, pairing), which answer `403` to a device's token. `kit
+devices forget` stops a device's token. See [[Phone App#Pairing]] and
+[[Privacy#Tokens and secrets]].
 
 The pages (`/`, `/settings`, `/memory`) and the 3D face (`/face/...`) load
 without one: the pages ask for it, and the face is only a
@@ -65,9 +68,9 @@ The reply's shape is in [[Brain#One shape for every reply]].
 |---|---|
 | `GET /api/settings` | The settings in force |
 | `GET /api/settings/schema` | The settings schema (JSON Schema), which the settings pages are drawn from |
-| `PATCH /api/settings` | Change settings. Merges one level deep, so send a model profile whole |
+| `PATCH /api/settings` | Change settings. Merges one level deep, so send a model profile whole. Kit's own token only |
 | `GET /api/settings/history` | Earlier versions |
-| `POST /api/settings/undo` | Go back one change |
+| `POST /api/settings/undo` | Go back one change. Kit's own token only |
 
 ## Memory and the register
 
@@ -117,7 +120,7 @@ else the device he last talked through). Other bodies only show the words.
 | Method and path | What it does |
 |---|---|
 | `POST /api/bodies/hello` | A body says what it is and can do: `{"id", "kind", "name", "app", "abilities": ["screen", "speaker", ...], "faces"}`. A paired device is known by its device name |
-| `GET /api/bodies` | The bodies heard from since the brain started (online, last seen, last used) and the paired devices. Each PC running the desk app is one, `desk:` and its name |
+| `GET /api/bodies` | The bodies heard from (online, last seen, last used) and the paired devices. Each PC running the desk app is one, `desk:` and its name. A body quiet for a day drops off the list. Kit's own token only |
 | `POST /api/devices/pair` | Pair a device from the device: send `{"name": "phone", "kind": "phone"}` with Kit's own token, get back the device's token. Pairing a name again replaces its token |
 | `DELETE /api/devices/{name}` | Unpair a device (Kit's token, or the device's own) |
 
@@ -145,7 +148,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC. With several PCs, Kit keeps one report each; `GET` names the PC Dan's on (`host`) and lists them all (`pcs`) |
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
-| `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know |
+| `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know. Kit's own token only |
 
 ## Voice, face and status
 

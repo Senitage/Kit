@@ -156,6 +156,13 @@ def test_the_speakers_are_awake_before_his_first_word_and_each_sentence_says_whe
     assert sd.streams[-1].closed
 
 
+def test_closing_the_speaker_stops_him_and_lets_the_speakers_go():
+    out = FakeOutput()
+    speaker = Speaker(lambda text, emotion, first: b"", output=out)
+    speaker.close()
+    assert out.stopped == 1 and out.closed == 1
+
+
 def test_a_sound_output_that_stops_asking_for_sound_is_opened_again():
     sd, clock = FakeSoundDevice(), Clock()
     out = StreamOutput(sd, clock=clock)
@@ -572,6 +579,12 @@ class FakeFace:
     def __init__(self):
         self.calls: list[tuple] = []
         self.state = "idle"
+
+    def known_emotion(self, name):
+        return name  # the real face's check is tested in test_face
+
+    def known_gesture(self, name):
+        return name
 
     def set_emotion(self, emotion, now, hold_s=0.0):
         self.calls.append(("emotion", emotion))
