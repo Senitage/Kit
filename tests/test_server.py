@@ -1,6 +1,8 @@
 import json
+import re
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
@@ -42,6 +44,52 @@ def test_api_needs_the_token(setup, headers):
     client, _, _ = setup
     assert client.get("/api/settings", headers=headers).status_code == 401
     assert client.post("/api/chat", json={"text": "hi"}, headers=headers).status_code == 401
+
+
+# The /api routes anyone may call without Kit's token, each with why.
+OPEN_API = {
+    ("GET", "/api/health"): "is he up: apps check it before they've been given a token",
+}
+# Routes outside /api: pages that ask for the token themselves, and his cartoon face,
+# which the desk app, home_app and robots open as a plain page. None holds anything
+# private, so a new route belongs under /api (with the token) or on this list.
+PAGES = {
+    "/",
+    "/settings",
+    "/memory",
+    "/face/",
+    "/face/{name}",
+    "/face/vendor/{name}",
+    "/face/api/info",
+    "/face/api/version",
+    "/face/model/{character}/{file}",
+}
+
+
+def _routes(routes):
+    """Every route on the app, however this FastAPI holds the routers it includes."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+        elif hasattr(route, "original_router"):  # newer FastAPI keeps them whole
+            yield from _routes(route.original_router.routes)
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_every_api_route_needs_the_token(setup, headers):
+    """A sweep of every route, so a new one can't ship without the token check."""
+    client, _, _ = setup
+    routes = [(m, r.path) for r in _routes(client.app.routes) for m in r.methods]
+    assert {path for _, path in routes} >= set(client.app.openapi()["paths"])  # none missed
+    assert {path for _, path in routes if not path.startswith("/api/")} == PAGES
+    assert set(OPEN_API) <= set(routes)
+    for method, path in OPEN_API:
+        assert client.request(method, path, headers=headers).status_code == 200
+    swept = [(m, p) for m, p in routes if p.startswith("/api/") and (m, p) not in OPEN_API]
+    for method, path in swept:
+        r = client.request(method, re.sub(r"\{[^}]+\}", "1", path), headers=headers)
+        assert r.status_code == 401, f"{method} {path} answered {r.status_code} without the token"
+    assert len(swept) > 50
 
 
 def test_chat_streams_ndjson(setup):

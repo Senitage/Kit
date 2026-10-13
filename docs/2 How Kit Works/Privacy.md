@@ -72,8 +72,11 @@ to a cloud model, in recall, reflection or review. The words are read once, as
 the message arrives, and stored with it as a **private flag**; everything
 after (the history a cloud model sees, recall, the threads he follows, what
 he learns) reads the flag, not the words. Messages from before the flag
-existed were marked from their words when the memory file was updated. See
-[[Memory In Depth#What you keep local]].
+existed were marked from their words when the memory file was updated. A
+test walks one kept-local message past every way into the cloud (the answer,
+the fact check, learning, the next answers, a key moment, pipe-ups, his
+thoughts, the day's summary and his reflection) and checks none of it is in
+anything a cloud model is sent. See [[Memory In Depth#What you keep local]].
 
 ## The switches
 
@@ -120,6 +123,9 @@ which a face can't be rebuilt; `kit eyes forget NAME` deletes them. See
   change), read the **face numbers** his eyes know, **list** his bodies and
   devices, or pair or unpair devices: those answer 403 to anything but Kit's
   own token. Only a hash of it is kept. See [[Phone App#Pairing]].
+- A test sweeps **every route** the brain serves: each `/api` one must turn
+  away a call without the token, except `/api/health`, and anything outside
+  `/api` must be one of the listed pages, so a new route can't ship open.
 - **API keys** live in the data folder's `secrets/` or the environment, never
   in settings or the repo. See [[Settings and Data#Secrets]].
 - The brain answers on this PC only (`brain.host = 127.0.0.1`) until you open
@@ -144,4 +150,4 @@ network details and the names of people and pets stay in your own
 > - `src/kit/brain.py` (`looking_role`, `own_role`): who answers a question about the PC or the room; `src/kit/prompt.py`: the one-line summaries and the look actions; `src/kit/pc_context.py` and `src/kit/scene_context.py` (`detail`): the full picture.
 > - `src/kit/memory.py`: private messages and what comes from them.
 > - `src/kit/eyes/recognise.py`: face numbers.
-> - `src/kit/credentials.py`: keys and the token.
+> - `src/kit/credentials.py`: keys and the token; `src/kit/routes/state.py`: the token checks on every route.

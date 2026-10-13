@@ -2,7 +2,9 @@
 words fill in where the plan left a field out (kit.brain.Reading). Also the plain-words
 history, the one-line speaking note, the private flag read once, and the shape of a turn."""
 
+import asyncio
 import inspect
+import json
 from datetime import timedelta
 
 import pytest
@@ -24,6 +26,7 @@ from kit.prompt import JSON_REMINDER, history_messages, speak_note
 from kit.recall import Recall, private
 from kit.reply import Action, early_plan, parse_plan, plan_schema, reading_read
 from kit.scene_context import SceneReport
+from kit.server import pipe_up_now
 from kit.settings import Settings
 
 
@@ -311,15 +314,51 @@ def test_a_long_quiet_still_picks_up_one_thing_from_last_time(memory, clock):
     assert len(model.calls[1]) > 2  # and the conversation itself is still there
 
 
-def test_keep_it_local_in_cloud_only_routing_never_reaches_the_cloud(memory):
-    """Every cloud entry point a turn has (the answer, the fact check, learning) stays
-    home for a message Dan kept local, even when the cloud answers everything else."""
-    s = Settings.model_validate({"routing": {"mode": "cloud-only", "check_facts": True}})
+THOUGHT = json.dumps({"thought": "Quiet today.", "kind": "thought", "want": "", "feeling": "same"})
+
+
+def test_keep_it_local_in_cloud_only_routing_never_reaches_the_cloud(memory, clock):
+    """Every cloud entry point stays home for a message Dan kept local, even when the
+    cloud does everything else: the answer, the fact check and learning on the turn
+    itself, then the next answers (an everyday one and a key moment), his thoughts,
+    pipe-ups, the day's summary and his nightly reflection. Nothing he was told, nor
+    what he said back or learned from it, is in anything a cloud model is sent."""
+    s = Settings.model_validate(
+        {
+            "routing": {"mode": "cloud-only", "background": "chat", "check_facts": True},
+            "memory": {"min_similarity": 0.3, "day_pass": "work"},
+            "life": {"reflect_with": "cloud"},
+        }
+    )
+    day = json.dumps({"summary": "Dan heard from the doctor.", "facts": []})
+    night = json.dumps({"journal": "A quiet one.", "self_sheet": "I'm Kit.", "dan": "Waiting."})
     brain, model, claude = make(
         memory,
-        reply("Sure.", action="remember", text="Dan's results are due Friday.", said_it=True),
+        reply("Fingers crossed.", action="remember", text="Dan's biopsy is Friday.", said_it=True),
+        THOUGHT,
+        day,
+        night,
         settings=s,
+        claude=FakeAnthropic(answer=reply("Sure thing.")),
     )
-    _, learned = chat_and_learn(brain, "keep it local: my results are due Friday, aren't they?")
+    _, learned = chat_and_learn(brain, "keep it local: the biopsy results come Friday, eh?")
     assert not claude.calls and model.calls  # the local model answered, and checked nothing
     assert learned and memory.facts()[0].meta["private"]
+    assert "biopsy" in json.dumps(model.calls)  # at home, he knows
+
+    chat_and_learn(brain, "What should I have for lunch?")
+    chat_and_learn(brain, "My dog died this morning.")  # a key moment: the work model
+    before = len(claude.calls)
+    asyncio.run(pipe_up_now(brain, "bored"))
+    assert len(claude.calls) > before  # pipe-ups go to the cloud
+    assert asyncio.run(brain.think(("quiet", "A quiet moment."))) is not None  # at home
+    clock.now += timedelta(days=1)
+    assert asyncio.run(brain.summarise_past_days()) == ["2026-10-05"]
+    before = len(claude.calls)
+    assert asyncio.run(brain.reflector.reflect_day("2026-10-05")) is not None
+    assert len(claude.calls) > before  # his reflection goes to the cloud first
+    chat_and_learn(brain, "Any news on the results?")  # recall finds the kept fact
+
+    assert len(claude.calls) >= 5  # the cloud did answer everything else
+    sent = json.dumps(claude.calls, default=str).lower()
+    assert "biopsy" not in sent and "fingers crossed" not in sent
