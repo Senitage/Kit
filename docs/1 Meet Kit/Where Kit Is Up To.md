@@ -39,6 +39,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Desk and eyes reliability, privacy: hidden apps safe from reused process ids, a life feed that outlives bad answers, eyes that report from a thread and keep events, device tokens kept off settings and faces, quiet bodies dropped | Open, pull request #52 | [[Desk App]], [[Eyes]], [[Privacy#Tokens and secrets]] |
 | First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Open, pull request #53 | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Open, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
+| Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Open, pull request (number to come) | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
