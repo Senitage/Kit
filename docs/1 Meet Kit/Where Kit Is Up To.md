@@ -32,6 +32,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request (number to come) | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request (number to come) | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
 | Memory that scales: vectors kept in step not rebuilt, one search a turn off the event loop, recency from telling not recalling, learning after the reply, the replay eval | Open, pull request (number to come) | [[Memory In Depth#Keeping it fast as memory grows]], [[Evals]] |
+| Less keyword, more judgement: the plan reads the message and decides over the word tables, a bad night only when the model agrees, a long quiet or new subject as a hint not a cut, one private flag, history as words, a one-line speaking note | Open, pull request (number to come) | [[Brain#The reading: judgement over keywords]], [[Inner Life In Depth#A bad night]], [[Privacy#Keep it local]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
