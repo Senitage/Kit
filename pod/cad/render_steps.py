@@ -200,8 +200,8 @@ def steps():
         [((50, 0, k.TILT_Z), (k.HW / 2 + 2, 0, k.TILT_Z))], (60, 15, 260), (5, 0, k.TILT_Z))
 
     yield ("Face and screen", [
-        "Push 4 countersunk M2 x 8 screws in from the front of the face plate, then glue it into the window from inside.",
-        "Screen onto the screw ends, header pins toward the horn-screw side, an M2 nut on each. (Pins option: a dab of hot glue on each pin.)",
+        "Glue the face plate into the window from inside. Nothing shows from the front: no screw heads.",
+        "Screen onto the four posts, header pins toward the horn-screw side, 4 x M2 x 4 screws from the back into the posts. (Pins option: a dab of hot glue on each pin.)",
     ], [part("head", opacity=0.35), part("face"), part("screen", (0.2, 0.4, 0.75), (0, 18, 0))],
         [((0, 32, k.FACE_ZC), (0, 6, k.FACE_ZC))], (150, 18, 260), (0, -15, k.FACE_ZC))
 

@@ -24,7 +24,7 @@ Kit. How it all works is in [[Pod In Depth]].
 | 1.5" SSD1351 colour OLED, 128 x 128 | the 7-pin SPI board |
 | 2 x SG90 servos | with their horns and screws |
 | Jumper wires and a short wire for the pat pad | |
-| Screws | 4 x M2 x 8 countersunk + 4 M2 nuts (studs face only), 4 x M3 x 10, 3 x M3 x 16, 3 x M3 x 8 countersunk |
+| Screws | 4 x M2 x 4 (screws face only), 4 x M3 x 10, 3 x M3 x 16, 3 x M3 x 8 countersunk |
 | Filament | PLA: white, black, grey, dark grey and a little orange (one colour and paint works too) |
 
 | Software | |
@@ -55,8 +55,9 @@ python3 kit_pod_v2.py check    # reports any parts that hit, head level and nodd
    single horn into the pocket on the right arm. The pockets are drawn for a
    36 mm cross horn and a 22 mm single horn with 0.5 mm to spare; if yours
    differ, change `horn_double_len` and `horn_single_len` in `kit_pod_v2.py`.
-   The two arms flare out at 45° where they meet the round base, so they
-   print as one piece with it.
+   The two arms stand on a bar-shaped collar across the top of the round
+   base, with a 45° underside, so they print as one piece with it and don't
+   snap off at the root.
 
 Then print the rest:
 
@@ -64,7 +65,7 @@ Then print the rest:
 |---|---|---|---|
 | head | white | back opening down | yes, tree supports |
 | cover | white | flat side down | none |
-| face (studs) or face_pins | black | front down | none |
+| face (screws) or face_pins | black | front down | none |
 | ear x 2 | orange | flat side down | none |
 | neck | dark grey | disc down | touching the bed only |
 | cap | white | as laid | none |
