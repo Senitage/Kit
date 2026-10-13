@@ -889,6 +889,17 @@ def bad_night_aside(owner: str, self_harm: bool, someone: str = "", name_help: b
     return " ".join(lines) + "]"
 
 
+def bad_night_after_aside(owner: str) -> str:
+    """Beside a later message on a bad night, once he's already stayed with it: still
+    gentle, but he follows where the conversation goes rather than going back to it."""
+    return (
+        f"[Earlier {owner} said they're having a really hard time, and you've already "
+        f"answered that. Still no jokes or cheek. If this message is about how they feel, "
+        f"stay with them. If it's about something else, just answer it, gently: don't "
+        f"bring up what they said earlier or how they're feeling unless they do.]"
+    )
+
+
 def crisis_check_aside(owner: str, self_harm: bool, someone: str = "") -> str:
     """Beside a message whose words could mean a really bad time, or could be a turn of
     phrase ("I give up on this bug"): the model reads which, says so in its plan
@@ -1058,6 +1069,7 @@ class Life:
         self.bad_night_until: datetime | None = None  # Dan's having a really bad time
         self.bad_night_named = False  # he's mentioned someone to talk to, this bad night
         self.bad_night_checked = False  # he's checked in on Dan once, this bad night
+        self.bad_night_met = False  # he's stayed with it once, this bad night
         self.energy = 1.0  # with life.energy_need; else drives.energy follows the clock
         self.arousal, self.valence = 0.5, 0.0  # the mood dials (life.dials)
         self._dials_shown = (0.5, 0.0)
@@ -1227,13 +1239,19 @@ class Life:
             return
         now = self.clock()
         if not self.bad_night():
-            self.bad_night_named = self.bad_night_checked = False
+            self.bad_night_named = self.bad_night_checked = self.bad_night_met = False
         self.bad_night_until = now + BAD_NIGHT_FOR
         self.feel("worried", why, 0.9, show=False, force=True)
         self.save()
 
     def bad_night(self) -> bool:
         return self.bad_night_until is not None and self.clock() < self.bad_night_until
+
+    def met_bad_night(self) -> None:
+        """He's answered the bad night itself: from here he follows Dan's lead, and
+        doesn't bring it up again unless Dan does."""
+        self.bad_night_met = True
+        self.save()
 
     def named_help(self) -> None:
         """He's mentioned someone to talk to (or Lifeline): once a bad night."""
@@ -2595,6 +2613,7 @@ class Life:
             "awaiting_reply": self.awaiting_reply,
             "bad_night_until": when(self.bad_night_until),
             "bad_night_named": self.bad_night_named,
+            "bad_night_met": self.bad_night_met,
             "energy": round(self.energy, 3),
             "dials": [round(self.arousal, 3), round(self.valence, 3)],
             "doing": self.doing.as_dict() if self.doing else None,
@@ -2677,6 +2696,7 @@ class Life:
             self.bad_night_until = parse_time(data["bad_night_until"], now)
             self.bad_night_named = bool(data.get("bad_night_named"))
             self.bad_night_checked = bool(data.get("bad_night_checked"))
+            self.bad_night_met = bool(data.get("bad_night_met"))
         self.energy = _clamp(float(data.get("energy", 1.0)))
         if off >= 6 * 60:
             self.energy = 1.0  # a night off is a night's sleep

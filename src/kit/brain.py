@@ -101,6 +101,7 @@ from kit.life import (
     Homecoming,
     Life,
     Voice,
+    bad_night_after_aside,
     bad_night_aside,
     bad_night_in,
     cheek_style,
@@ -1046,13 +1047,18 @@ class Brain:
         if turn.expert_ask:
             asides.append(expert_yes_aside(owner, turn.expert_ask))
             kinds.append(None)
-        if self.life.bad_night():  # no cheek, he stays; once, someone to talk to
+        if self.life.bad_night() and (reading.candidate or not self.life.bad_night_met):
+            # No cheek, he stays with it; once, someone to talk to.
             name_help = not self.life.bad_night_named
             self_harm = reading.candidate == "self_harm"
             asides.append(bad_night_aside(owner, self_harm, self._someone(), name_help))
             kinds.append("bad_night")
             if name_help or self_harm:
                 self.life.named_help()
+            self.life.met_bad_night()
+        elif self.life.bad_night():  # he's met it already: he follows Dan's lead now
+            asides.append(bad_night_after_aside(owner))
+            kinds.append("bad_night")
         elif reading.candidate:  # words that could mean one: the model reads which
             self_harm = reading.candidate == "self_harm"
             asides.append(crisis_check_aside(owner, self_harm, self._someone()))
@@ -1200,6 +1206,7 @@ class Brain:
         if reading.crisis(text):  # the words raised it, and the model agreed
             self.life.start_bad_night(why)
             self.life.named_help()  # the aside beside the words named someone to talk to
+            self.life.met_bad_night()  # and his answer met it
         elif read and read.get("dan_mood") == "awful" and settings.life.bad_night:
             self.life.start_bad_night(why)
         if turn.emotion in REPLY_FEELINGS and felt is None and from_read is None:

@@ -453,6 +453,26 @@ def test_a_bad_night_starts_once_the_model_agrees_and_mentions_lifeline_once(kit
     assert "Drop the jokes and cheek" in again and "13 11 14" not in again  # once
 
 
+def test_after_one_check_in_a_bad_night_follows_his_lead(kit):
+    """Dan's test: after "I can't cope tonight" every later answer, even about the
+    weather, went back to it. He checks in once, then answers what's asked."""
+    brain, model, _ = kit(
+        reply("That sounds really hard.", crisis_candidate=True),
+        reply("About 17 and cloudy."),
+        reply("I'm here."),
+        routing=HOME,
+    )
+    collect(brain.chat("I can't cope tonight"))
+    assert brain.life.bad_night()
+    collect(brain.chat("What's the weather doing tomorrow?"))
+    later = model.calls[1][-1]["content"]
+    assert "Drop the jokes and cheek" not in later and "13 11 14" not in later
+    assert "don't bring up what they said earlier" in later and "no jokes" in later
+    collect(brain.chat("Honestly I still can't cope"))  # said again: he stays with it
+    assert "Drop the jokes and cheek" in model.calls[2][-1]["content"]
+    assert brain.life.bad_night_met
+
+
 @pytest.mark.parametrize(
     "text",
     [
