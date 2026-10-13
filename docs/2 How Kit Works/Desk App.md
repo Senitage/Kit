@@ -62,9 +62,12 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 
 ## His voice and face on the desk
 
-- **Voice**: the app plays each sentence as soon as the server has made it,
-  through one steady sound output, with any sound (a chuckle) in its place.
-  His face talks for exactly as long as each sentence plays. A reply the
+- **Voice**: the app plays each sentence as it comes from the server, in
+  pieces while the rest is still being made, through one steady sound output,
+  with any sound (a chuckle) in its place. His mouth follows the sound itself:
+  the output measures how loud his voice is as it plays and his face opens its
+  mouth to match, so he talks for exactly as long as each sentence plays and
+  closes his mouth on the pauses. A reply the
   server is slow over can't hold up the next one: each sentence gets 30 s,
   an engine still loading answers "not yet" and is asked again briefly, and
   when you interrupt, the new reply's sentences are fetched at once rather

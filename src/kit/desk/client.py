@@ -7,8 +7,11 @@ the app makes them from worker threads, never the screen thread.
 
 from __future__ import annotations
 
+import io
 import json
+import wave
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import httpx
@@ -51,6 +54,25 @@ class SpeechLoading(BrainError):
 
 class SpeechStale(BrainError):
     """The sentence is from a reply that's been overtaken, so it wasn't made."""
+
+
+@dataclass
+class Sound:
+    """A sentence of Kit's voice as it arrives: ``pieces`` yields 16-bit samples
+    (``width`` bytes each, ``channels`` a frame) at ``rate`` while the server is
+    still making the rest, so playing can start on the first."""
+
+    rate: int
+    channels: int = 1
+    width: int = 2
+    pieces: Iterator[bytes] = field(default_factory=lambda: iter(()), repr=False)
+
+    @classmethod
+    def from_wav(cls, data: bytes) -> Sound:
+        """A whole WAV file (an older server's answer) as one piece."""
+        with wave.open(io.BytesIO(data)) as w:
+            frames = w.readframes(w.getnframes())
+            return cls(w.getframerate(), w.getnchannels(), w.getsampwidth(), iter([frames]))
 
 
 class BrainClient:
@@ -119,25 +141,47 @@ class BrainClient:
         emotion: str = "neutral",
         first: bool = False,
         generation: int | None = None,
-    ) -> bytes:
-        """One sentence as a WAV file. ``generation`` numbers the reply, so the server
-        drops a sentence from one that's been overtaken. Raises SpeechOff if speech is
-        turned off, SpeechLoading while the engine loads, SpeechStale if overtaken."""
+    ) -> Sound:
+        """One sentence as sound, in pieces as the server makes it. ``generation``
+        numbers the reply, so the server drops a sentence from one that's been
+        overtaken. Raises SpeechOff if speech is turned off, SpeechLoading while the
+        engine loads, SpeechStale if overtaken; a piece that doesn't come (the server
+        broke off) ends the sound with a BrainError."""
         body: dict = {"text": text, "emotion": emotion, "first": first}
         if generation is not None:
             body["generation"] = generation
+        request = self._http.build_request(
+            "POST", "/api/speech/say", json=body, timeout=SPEAK_TIMEOUT
+        )
         try:
-            r = self._http.post("/api/speech/say", json=body, timeout=SPEAK_TIMEOUT)
+            r = self._http.send(request, stream=True)
         except httpx.HTTPError as e:
             raise BrainError(f"Kit's voice didn't answer ({type(e).__name__}).") from e
-        if r.status_code == 409:
-            raise SpeechOff(r.text)
-        if r.status_code == 503:
-            raise SpeechLoading(r.text)
-        if r.status_code == 410:
-            raise SpeechStale(r.text)
-        _check(r)
-        return r.content
+        kind = r.headers.get("content-type", "")
+        if r.status_code != 200 or not kind.startswith("audio/L16"):
+            try:
+                r.read()
+            except httpx.HTTPError as e:
+                raise BrainError(f"Kit's voice broke off ({type(e).__name__}).") from e
+            finally:
+                r.close()
+            if r.status_code == 409:
+                raise SpeechOff(r.text)
+            if r.status_code == 503:
+                raise SpeechLoading(r.text)
+            if r.status_code == 410:
+                raise SpeechStale(r.text)
+            _check(r)
+            try:
+                return Sound.from_wav(r.content)  # an older server: the whole sentence
+            except (wave.Error, EOFError) as e:
+                raise BrainError(f"Kit's voice sent something that isn't sound ({e}).") from e
+        try:
+            rate = int(r.headers["X-Sample-Rate"])
+        except (KeyError, ValueError) as e:
+            r.close()
+            raise BrainError("Kit's voice didn't say its sample rate.") from e
+        return Sound(rate, pieces=_pieces(r))
 
     # Kit's settings, as on the settings page.
 
@@ -213,6 +257,17 @@ class BrainClient:
                         yield json.loads(line)
         except httpx.HTTPError as e:
             raise BrainError(f"Lost touch with Kit ({type(e).__name__}).") from e
+
+
+def _pieces(r: httpx.Response) -> Iterator[bytes]:
+    try:
+        for piece in r.iter_bytes():
+            if piece:
+                yield piece
+    except httpx.HTTPError as e:
+        raise BrainError(f"Kit's voice broke off ({type(e).__name__}).") from e
+    finally:
+        r.close()
 
 
 def _check(r: httpx.Response) -> None:

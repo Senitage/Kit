@@ -41,6 +41,12 @@ word, speech to text) is the next part of stage 3.
   whole piece before any of it plays. So Kit starts talking a few words after the
   brain does, not after the whole reply. A one-word "Yeah," is never cut off on
   its own: it sounded like a stammer.
+- **Each sentence comes in pieces.** On the graph path Turbo's sounds are turned
+  into audio a second at a time and each piece streams through the server to
+  the desk (`audio/L16`), which plays it while the rest is still being made. A
+  long sentence starts a second into its making, and a short sentence followed
+  by a long one leaves no hole. His mouth follows the sound itself, measured on
+  the desk as it plays. See [[Voice#How a sentence becomes sound]].
 - **Interrupting him starts the new reply at once.** Each sentence carries its
   reply's generation number, so the server drops leftovers of the reply you cut
   off instead of making them, and the desk doesn't wait for a sentence still
@@ -216,7 +222,22 @@ The engine's own messages go to `<data>/logs/speech.log`.
       then chat for a few turns. In `<data>/logs/kit.log`, each message's first
       `local model: read N tokens` line drops from thousands of tokens to a few
       hundred from the second message on, and replies start sooner.
-- [ ] Ask something that makes him grumpy or tired: Turbo opens with a groan or sigh.
+- [ ] Ask something that makes him grumpy or tired: some replies open with a
+      groan or a sigh, not all, and not always the same one.
+- [ ] Ask for something long (a paragraph): his first sound comes well before
+      the first sentence would have finished being made, and in
+      `<data>/logs/speech.log` nothing waits. In the server log, "first sound
+      made in" for a long first sentence is well under a second.
+- [ ] A short reply then a long one ("Yeah. The duty point sits high because...")
+      plays with no hole between the sentences.
+- [ ] Watch his mouth as he talks: it opens on his words and closes on the
+      pauses inside a sentence, and shuts as the sound ends, in Kit 3D and Kit
+      2D. With his voice off it pulses as before.
+- [ ] `curl -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"text":"Hi there."}' "http://<server>:8600/api/speech/say?wav=1" -o hi.wav`
+      saves a playable WAV (the whole-clip option for older desks and tools).
+- [ ] Send a new message while a long sentence is still being made: the server
+      log shows the old line cut short and the new reply's sound comes within
+      about half a second.
 - [ ] `kit speech off`: within a few seconds `nvidia-smi` shows the memory freed,
       and replies are silent.
 - [ ] `kit speech use kokoro` while speech is on: the next reply is in Kokoro's
