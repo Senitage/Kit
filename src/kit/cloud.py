@@ -168,7 +168,8 @@ def make_anthropic_client(api_key: str) -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(
         api_key=api_key,
         max_retries=2,
-        timeout=httpx.Timeout(READ_TIMEOUT_S, connect=CONNECT_TIMEOUT_S),
+        # The SDK's own Timeout: newer SDKs run on httpx2 and refuse an httpx one.
+        timeout=anthropic.Timeout(READ_TIMEOUT_S, connect=CONNECT_TIMEOUT_S),
     )
 
 
@@ -202,7 +203,10 @@ class AnthropicProvider:
         on_text: Text | None = None,
     ) -> Completion:
         """``on_text`` hears the answer's text as it's written (it's streamed)."""
-        client = self._client(key)
+        try:
+            client = self._client(key)
+        except (TypeError, ValueError) as e:  # an SDK that won't take these settings
+            raise CloudError(f"I couldn't set up {profile.name}: {e}") from e
         haiku = profile.model.startswith("claude-haiku")
         tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
         fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}

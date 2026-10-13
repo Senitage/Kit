@@ -71,6 +71,27 @@ def test_one_client_is_kept_per_key(memory):
     assert fake.keys == ["sk-test", "sk-test"]
 
 
+def test_the_real_client_can_be_made_with_the_installed_sdk():
+    """No call goes out: this only builds the client, which a newer SDK can refuse."""
+    from kit.cloud import CONNECT_TIMEOUT_S, make_anthropic_client
+
+    client = make_anthropic_client("sk-test")
+    assert client.timeout.connect == CONNECT_TIMEOUT_S
+    asyncio.run(client.close())
+
+
+def test_a_client_that_cant_be_made_is_a_cloud_error(memory):
+    """So the local model can step in (routing.fallback_to_local)."""
+    from kit.cloud import AnthropicProvider, Cloud
+
+    def refuse(key):
+        raise TypeError("Invalid `timeout` argument")
+
+    cloud = Cloud(memory, lambda provider: "sk-test", {"anthropic": AnthropicProvider(refuse)})
+    with pytest.raises(CloudError, match="couldn't set up"):
+        ask(cloud)
+
+
 def test_web_search_can_be_turned_off(memory):
     fake = FakeAnthropic()
     s = Settings.model_validate({"models": {"opus": {"web_search": False}}})
