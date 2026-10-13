@@ -167,6 +167,7 @@ from kit.prompt import (
     with_now,
     with_pc_look,
     with_scene_look,
+    within_budget,
     wrong_fact_aside,
 )
 from kit.recall import Recall, Recalled
@@ -688,15 +689,20 @@ class Brain:
         answer_aside, named = self._answering_ask(text, before, owner)
         learn += [named] if named else []
         self._follow_life(text, now, settings, farewell)
+        # Each aside with its kind, for the budget (kit.prompt.within_budget): at most
+        # two ride with a message, the best-ranked ones; None is always sent.
         asides = [self._answering(history, owner), answer_aside]
-        check_fact = False
+        kinds: list[str | None] = ["pipe_up", "interview"]
+        check_fact, fact_at = False, -1
         pick_up, picked = "", None
         if new_chat and settings.life.chat_opener and not farewell and not self.jobs:
             pick_up, picked = self._pick_up(self.memory.previous_chat(), now, owner)
         if home is not None:
             asides.append(homecoming_aside(home, owner, now, pick_up))
+            kinds.append("homecoming")
         elif pick_up:
             asides.append(opener_aside(owner, pick_up))
+            kinds.append("opener")
         if picked is not None:
             log.info("a new chat picks up %r", picked.text)
         bedtime = next(
@@ -706,30 +712,44 @@ class Brain:
             self.notebook.mark_said(bedtime.id)  # once, said or not
             if not farewell:
                 asides.append(bedtime_aside(owner, now))
+                kinds.append("bedtime")
         if farewell:
             asides.append(farewell_aside(text, owner))
+            kinds.append(None)
             LINT.set(Lint(farewell_fault, farewell_line(text, self.life.rng)))
         elif SELF_Q.search(text) and not self.jobs:
             asides.append(self._about_me(owner))
+            kinds.append(None)
         elif TAG_Q.search(text):
             # Not when Dan said to keep it local: that never leaves the house.
             check_fact = settings.routing.check_facts and route(text, settings) == (LOCAL, False)
             asides.append(wrong_fact_aside(owner))
+            kinds.append(None)
+            fact_at = len(asides) - 1
         elif is_news(text) and not answer_aside:
             asides.append(news_aside(owner))
+            kinds.append("news")
         expert_ask, declined = self._answer_expert_offer(text)
         if expert_ask:
             asides.append(expert_yes_aside(owner, expert_ask))
+            kinds.append(None)
         if self.life.bad_night():  # no cheek, he stays; once, someone to talk to
             name_help = not self.life.bad_night_named
             asides.append(bad_night_aside(owner, night == "self_harm", self._someone(), name_help))
+            kinds.append("bad_night")
             if name_help or night == "self_harm":
                 self.life.named_help()
-        answering = "\n\n".join(a for a in asides if a)
-        MIND.set("\n".join(a for a in asides[1:] if a))  # not the pipe-up he's answered
+
+        def set_asides() -> str:
+            sent = within_budget(asides, kinds)
+            MIND.set("\n".join(a for a in sent[1:] if a))  # not the pipe-up he's answered
+            return "\n\n".join(a for a in sent if a)
+
+        answering = set_asides()
         if THINKING_Q.search(text) and (shared := self.notebook.latest_thought()):
             self.notebook.mark_said(shared.id)
-        voice = self._voice(settings, history, text)  # before note_chat: how Kit felt till now
+        # Before note_chat: how Kit felt till now. The hello says how long Dan was gone.
+        voice = self._voice(settings, history, text, home=home is not None)
         bit = self._bit_for(text, now, felt, farewell)
         VOICE.set(replace(voice, bit=bit.text) if bit is not None else voice)
         self.life.note_chat(text)
@@ -766,9 +786,8 @@ class Brain:
         )
         recalled = await self.recall.for_turn(text, recent_refs)
         if checking is not None and (checked := await checking):
-            asides[-1] = wrong_fact_aside(owner, checked)
-            answering = "\n\n".join(a for a in asides if a)
-            MIND.set("\n".join(a for a in asides[1:] if a))
+            asides[fact_at] = wrong_fact_aside(owner, checked)
+            answering = set_asides()
         # "hey" finds every earlier "hey", and the model copies what it said then.
         fresh = [h for h in recalled.conversation if not same_words(_asked(h.item.text), text)]
         # His notes already on his mind (kit.notebook) are in the prompt once, not twice.
@@ -828,7 +847,7 @@ class Brain:
                     emit(event)
         if role != LOCAL and asides[0] and history[-1].id in self.memory.private_said():
             asides[0] = ""  # he piped up about something Dan kept local
-            answering = "\n\n".join(a for a in asides if a)
+            answering = set_asides()
         await asyncio.sleep(0)  # the time and date are ready at once; the weather may be
         shown = showing.done()
         if shown:
@@ -1275,7 +1294,7 @@ class Brain:
         if home is not None and settings.life.chat_opener:
             also, picked = self._pick_up(history, now, owner)
         token = CHANNEL.set("desk")
-        voice = self._voice(settings, history)
+        voice = self._voice(settings, history, replying=False, home=home is not None)
         voice_token = VOICE.set(voice)
         lint_token = LINT.set(self._hello_lint(home) if home is not None else None)
         mind = homecoming_facts(home, owner, now, also) if home is not None else ""
@@ -1784,7 +1803,7 @@ class Brain:
                 self.memory.clock(),
                 happened,
                 pc,
-                self.life.feeling_line(owner),
+                self.life.feeling_line(owner, replying=False),
                 self.notebook.mind(owner, 5),
                 remembered,
                 said_today,
@@ -1852,7 +1871,17 @@ class Brain:
         await self.recall.index_pending()
         return done
 
-    def _voice(self, settings: Settings, history: list[Message], text: str = "") -> Voice:
+    def _voice(
+        self,
+        settings: Settings,
+        history: list[Message],
+        text: str = "",
+        replying: bool = True,
+        home: bool = False,
+    ) -> Voice:
+        """How Kit feels and sounds this turn (``Life.voice``). ``replying`` is False
+        for a pipe-up, where nobody has spoken; ``home``: a hello is in play, whose
+        facts say how long Dan was gone, so the time line stays out."""
         persona = settings.persona
         said = [without_plans(m.text)[:SAID_CHARS] for m in history if m.role != "user"]
         said = [line for line in said if line][-SAID_SHOWN:]
@@ -1860,7 +1889,9 @@ class Brain:
         mind = self.notebook.mind_with_ids(persona.owner)
         opinions = self._opinions(settings)
         lines = [line for _, line in mind]
-        voice = self.life.voice(persona.owner, own, said, self.quirks, text, lines, opinions)
+        voice = self.life.voice(
+            persona.owner, own, said, self.quirks, text, lines, opinions, replying, home
+        )
         voice.mind_ids = [item_id for item_id, _ in mind]
         return voice
 

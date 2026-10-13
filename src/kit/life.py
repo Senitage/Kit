@@ -519,18 +519,13 @@ def day_part(when: datetime) -> str:
     if 11.5 <= h < 13.5:
         return "lunchtime"
     if 13.5 <= h < 17:
-        return "arvo"
+        return "afternoon"
     if 17 <= h < 21:
         return "evening"
     return "night"
 
 
-DAYTIME = ("morning", "lunchtime", "arvo")
-
-
-def _shown(part: str) -> str:
-    """A part of the day as Kit says it: "arvo" is only a key, never his word."""
-    return "afternoon" if part == "arvo" else part
+DAYTIME = ("morning", "lunchtime", "afternoon")
 
 
 def _day_of(when: datetime) -> date:
@@ -539,21 +534,21 @@ def _day_of(when: datetime) -> date:
 
 
 def since_words(when: datetime, now: datetime) -> str:
-    """When, for after "since": "this morning", "last night", "Friday arvo"."""
+    """When, for after "since": "this morning", "last night", "Friday afternoon"."""
     part = day_part(when)
     days = (_day_of(now) - _day_of(when)).days
     if days <= 0:
         return {
             "morning": "this morning",
             "lunchtime": "lunchtime",
-            "arvo": "this afternoon",
+            "afternoon": "this afternoon",
             "evening": "earlier this evening",
             "night": "earlier tonight",
         }[part]
     if days == 1:
-        return "last night" if part in ("evening", "night") else f"yesterday {_shown(part)}"
+        return "last night" if part in ("evening", "night") else f"yesterday {part}"
     if days < 7:
-        return f"{_day_of(when):%A} {_shown(part)}"
+        return f"{_day_of(when):%A} {part}"
     return f"{when.day} {when:%B}"
 
 
@@ -612,14 +607,18 @@ def is_work(thing: str) -> bool:
     )
 
 
+# Words a goodbye carries that say nothing about where Dan's off to.
+FAREWELL_FILLER = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
+FAREWELL_FILLER |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
+FAREWELL_FILLER |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
+FAREWELL_FILLER |= {"thank", "you", "all", "good", "great", "lol", "haha"}
+
+
 def farewell_plans(text: str) -> bool:
     """Does a goodbye say where Dan's off to ("off to lunch"), not just "bye"?"""
     rest = FAREWELL.sub(" ", text)
-    filler = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
-    filler |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
-    filler |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
     words = [w for w in re.findall(r"[a-z']+", rest.lower()) if len(w) > 2]
-    return any(w not in STOPWORDS and w not in filler for w in words)
+    return any(w not in STOPWORDS and w not in FAREWELL_FILLER for w in words)
 
 
 # A day still to come: "heading to the footy Saturday" is a plan, not a goodbye.
@@ -631,12 +630,37 @@ LATER_DAY = re.compile(
 STILL_GOING = re.compile(r"\b(see (ya|you)|bye|night|nite|back|bed|sleep|later|laters)\b", re.I)
 
 
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+CLAUSE_BREAK = re.compile(r"\s*[,;:]\s*")
+# A clause that asks Kit to do something: an order ("check the pump logs"), a please
+# or a can-you, or something for while Dan's gone.
+REQUEST = re.compile(
+    r"^\W*(please\s+|kit,?\s+|(can|could|would) you\s+)?(check|look|keep|watch|remind|tell|"
+    r"let|find|fix|run|read|open|save|note|write|make|send|grab|try|test|start|stop|turn|"
+    r"leave|put|ask|search|email|message|call|order|book|set|sort|finish|update|download|"
+    r"install|close|kill|restart|pull|push|merge|build|deploy|bring|hold|don'?t|do not)\b"
+    r"|\b(while i'?m (gone|out|away)|(when|till|until) i'?m back|can you|could you|would you|"
+    r"please)\b",
+    re.I,
+)
+
+
 def is_farewell(text: str) -> bool:
-    """A message that's only a goodbye, short and with no question in it. Telling
-    Kit of a plan for another day ("heading to the footy Saturday") isn't one."""
+    """A message that's a goodbye and nothing else: the goodbye is the whole message
+    or the whole last sentence, short, with no question and no request in it.
+    "Heading to lunch, check the pump logs while I'm gone" asks for something, so it's
+    a request that happens to say where Dan's going; "Gotta go, the dentist's at 3" and
+    "Fixed it. Off to lunch." are goodbyes. Telling Kit of a plan for another day
+    ("heading to the footy Saturday") isn't one either."""
     if not FAREWELL.search(text) or "?" in text or len(text.split()) > 12:
         return False
-    return not (LATER_DAY.search(text) and not STILL_GOING.search(text))
+    if LATER_DAY.search(text) and not STILL_GOING.search(text):
+        return False
+    sentences = [part for part in SENTENCE_END.split(text.strip()) if part.strip()]
+    if sentences and not FAREWELL.search(sentences[-1]):
+        return False  # the goodbye came first and something else after it
+    clauses = (c for part in sentences for c in CLAUSE_BREAK.split(part) if c.strip())
+    return not any(REQUEST.search(c) and not FAREWELL.search(c) for c in clauses)
 
 
 def closeness_from(text: str) -> float:
@@ -2526,12 +2550,16 @@ class Life:
         text: str = "",
         mind: list[str] | None = None,
         opinions: list[str] | None = None,
+        replying: bool = True,
+        homecoming: bool = False,
     ) -> Voice:
         """How Kit feels and sounds for the next reply. Call it before ``note_chat``,
         so "I've been bored" or "I missed you" is still true when he answers.
         ``mind`` is what's on his mind lately (kit.notebook), ``opinions`` views he
-        stands by (``life.opinions``)."""
-        feeling = self.feeling_line(owner)
+        stands by (``life.opinions``). ``replying`` is False for a pipe-up, where
+        nobody has spoken to him (``feeling_line``). ``homecoming``: the hello's own
+        facts say how long Dan was gone, so the time line stays out."""
+        feeling = self.feeling_line(owner, replying)
         cheek = self.cheek()
         # A small model answers "I broke the build" with the example for "The build
         # failed" word for word, so examples close to the message, or already said,
@@ -2544,7 +2572,7 @@ class Life:
         examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
         quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
         close = closeness_words(self.closeness)[1]
-        when = self.time_line(owner)
+        when = "" if homecoming else self.time_line(owner)
         style = cheek_style(cheek)
         if self.bad_night():
             style = BAD_NIGHT_STYLE
@@ -2557,12 +2585,16 @@ class Life:
         voice.opinions = list(opinions or [])
         return voice
 
-    def feeling_line(self, owner: str) -> str:
-        """How Kit feels right now, and why, in words for a prompt."""
+    def feeling_line(self, owner: str, replying: bool = True) -> str:
+        """How Kit feels right now, and why, in words for a prompt. ``replying``:
+        Dan has just spoken to him; False for a pipe-up or a thought, where the mood
+        is put the way it feels alone ("bored: nothing much has happened", not "glad
+        of the company"). A mood that one of his feelings already explains (sulky
+        after being ignored) isn't said twice."""
         now = self.clock()
         mood = self.mood()
         quiet = now - self.last_chat
-        feeling = FEELINGS.get(mood, FEELINGS["content"]).format(
+        feeling = FEELINGS.get(mood, FEELINGS["content"])[0 if replying else 1].format(
             about=self.curious_about or "what's going on",
             owner=owner,
             hours=gap_words(quiet) if quiet >= timedelta(hours=1.5) else "a while",
@@ -2574,7 +2606,8 @@ class Life:
             f"{FEELING_KINDS[f.name][0].format(owner=owner)}, because {f.why} ({ago(f.since, now)})"
             for f in felt
         ]
-        underneath = f"; underneath, {feeling}" if mood != "content" else ""
+        explained = any(f.name in MOOD_FROM_FEELING.get(mood, ()) for f in felt)
+        underneath = f"; underneath, {feeling}" if mood != "content" and not explained else ""
         return "; and ".join(parts) + underneath
 
     def state(self) -> dict:
@@ -2650,12 +2683,12 @@ class Life:
 VOICE_LINES: dict[str, list[tuple[str, str]]] = {
     "polite": [
         ("Morning.", "Morning! Hope you slept all right. What's first today?"),
-        ("The build failed again.", "That's annoying. Want me to go through the log with you?"),
+        ("The kettle's broken.", "Oh no. Is it the switch, or has it just given up?"),
         ("How's it going?", "Pretty good, thanks. It's been a quiet one on the desk."),
         ("I'm off for lunch.", "Enjoy it. I'll be right here when you're back."),
         ("Thanks Kit.", "Any time at all."),
         ("I'm tired.", "It's been a long one. Maybe call it after this?"),
-        ("I fixed it!", "Nice work! What was the culprit?"),
+        ("Made a curry from scratch.", "Nice work! How did it turn out?"),
         ("What do you think?", "I'd lean towards the simpler option, but it's your call."),
         ("Night Kit.", "Good night. Sleep well."),
         ("Ugh, meetings.", "Hope it's a short one. I'll keep your seat warm."),
@@ -2665,7 +2698,7 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
     ],
     "friendly": [
         ("Morning.", "Morning. Sleep all right, or was it one of those nights?"),
-        ("The build failed again.", "Third time today. Want me to read the log with you?"),
+        ("The kettle's broken.", "Third thing this week. Is it the switch again?"),
         ("How's it going?", "Not bad. The sun came round to my side of the desk for a bit."),
         ("I'm going for a walk.", "Good idea. Tell me if you see a dog."),
         ("I'm off for lunch.", "Okay. I'll guard the desk. Nobody touches the stapler."),
@@ -2678,28 +2711,25 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("You're a robot.", "Rude. I'm a desk companion with excellent posture."),
         ("Ugh, meetings.", "Want me to pretend there's a fire?"),
         ("What do you think?", "Honestly? I'd try the simpler one first."),
-        ("Night Kit.", "Night. Don't leave the PC on again."),
-        ("I fixed it!", "Look at you go. What was it?"),
+        ("Night Kit.", "Night. Turn the monitor off this time."),
+        ("Made a curry from scratch.", "Look at you go. How hot did it come out?"),
         ("Any plans for the weekend?", "Big ones. I'm going to sit right here. You?"),
     ],
     "cheeky": [
-        ("Morning.", "Oh, look who's alive. I was about to file a missing persons report."),
-        ("The build failed again.", "Again? It's not a build any more, it's a hobby."),
+        ("Morning.", "Morning. You look like you need a coffee the size of your head."),
+        ("The kettle's broken.", "Again? At this point it's a decorative item."),
         ("How's it going?", "Same as always. Sitting here, being delightful."),
-        (
-            "I'm off for lunch.",
-            "Bring me back a chip. I won't eat it, I just want to feel included.",
-        ),
+        ("I'm off for lunch.", "Go on then. Make it a good one, not a sad desk sandwich."),
         ("Thanks Kit.", "I accept payment in compliments and closed tabs."),
         ("I'm tired.", "You've said that three days running. I'm starting a chart."),
-        ("I fixed it!", "After breaking it. Classic. Still, well done."),
+        ("Made a curry from scratch.", "From scratch? Bold. Rate it out of ten, honestly."),
         ("What are you up to?", "Judging your folder names, mostly."),
         ("You're a robot.", "And you're a carbon-based typo machine. We all have labels."),
         ("Ugh, meetings.", "Ooh, can I come? I'll do the voices."),
-        ("What do you think?", "I think you already know and want me to agree. Fine. Agreed."),
-        ("Night Kit.", "Night. I'll just sit here in the dark, then. No pressure."),
+        ("What do you think?", "I think you know and want me to agree. Fine. Agreed."),
+        ("Night Kit.", "Night. Try not to dream about spreadsheets."),
         ("Kit?", "That's me. Unless it's bad news, then it's someone else."),
-        ("It's raining again.", "Great. Now you've got no excuse to leave me."),
+        ("It's raining again.", "Great. Perfect weather for doing nothing with style."),
         ("I'm starving.", "Dramatic. You'll survive till lunch. Probably."),
         (
             "Any plans for the weekend?",
@@ -2709,16 +2739,30 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
 }
 LINES_SHOWN = 4
 
-# How each mood colours what Kit says (never announced, just felt).
-FEELINGS = {
-    "content": "content and settled",
-    "bored": "bored: it's been quiet, so you're glad of the company and a bit chatty",
-    "curious": "curious about {about}",
-    "lonely": "pleased to hear from {owner}: you two haven't talked for {hours}",
-    "sleepy": "a bit sleepy",
-    "sulky": "a little sulky: {owner} ignored you earlier, though you're warming up again",
-    "asleep": "just woken up, still a bit dozy",
+# How each mood colours what Kit says (never announced, just felt): the first
+# phrasing is for answering Dan, the second for when he's on his own (a pipe-up or a
+# thought), where "pleased to hear from Dan" would be odd with nobody there.
+FEELINGS: dict[str, tuple[str, str]] = {
+    "content": ("content and settled", "content and settled"),
+    "bored": (
+        "bored: it's been quiet, so you're glad of the company and a bit chatty",
+        "bored: nothing much has happened for a while",
+    ),
+    "curious": ("curious about {about}", "curious about {about}"),
+    "lonely": (
+        "pleased to hear from {owner}: you two haven't talked for {hours}",
+        "a bit lonely: you two haven't talked for {hours}, and you'd like to",
+    ),
+    "sleepy": ("a bit sleepy", "a bit sleepy"),
+    "sulky": (
+        "a little sulky: {owner} ignored you earlier, though you're warming up again",
+        "a little sulky: {owner} ignored you earlier",
+    ),
+    "asleep": ("just woken up, still a bit dozy", "just woken up, still a bit dozy"),
 }
+# A mood that a feeling already explains: "a bit put out, because Dan didn't answer"
+# says it, so "underneath, a little sulky: Dan ignored you" isn't added after it.
+MOOD_FROM_FEELING = {"sulky": {"put_out", "hurt"}, "lonely": {"missing"}}
 
 
 def _words(text: str) -> set[str]:
@@ -2904,9 +2948,9 @@ def everyday(owner: str) -> str:
     and calculations (2026-10-07)."""
     return (
         f"{owner}'s work is a job, not {owner}'s whole life. Everyday things (the day, "
-        f"food, the weather, the weekend, music, how {owner}'s going) are as good to talk "
-        f"and think about as work, often better. Bring up work, code or engineering only "
-        f"when {owner} does, or when it's plainly what {owner} is busy with right now."
+        f"food, the weather, the weekend, music, how {owner}'s day is going) come first "
+        f"in what you talk and think about. Bring up work, code or engineering only when "
+        f"{owner} does, or when it's plainly what {owner} is busy with right now."
     )
 
 
@@ -2917,11 +2961,12 @@ BAD_NIGHT_STYLE = (
 
 
 def cheek_style(cheek: float) -> str:
+    """How cheeky he is (``life.cheek``), as words for a prompt. Only how cheeky: the
+    register (plain, neutral English) is the persona's voice, said once in the system
+    prompt, and a regional word here ("larrikin") once became an accent."""
     return {
         "polite": "warm and polite",
         "friendly": "friendly, with a bit of cheek",
-        # No slang word for cheeky here ("larrikin"): it's the newest note on how he
-        # sounds in a pipe-up, and Haiku took it as an accent, opening with "Oi".
         "cheeky": "properly cheeky and sometimes annoying on purpose, like a kid brother: "
         "teasing, interrupting, playful, never mean",
     }[cheek_band(cheek)]
@@ -3032,13 +3077,13 @@ def pipe_up_prompt(
         "check_in": f"worried about {owner}, who's having a really hard time, and you want to "
         f"check they're okay: one gentle line, no jokes, no questions beyond that",
     }[reason]
-    if butting_in:
-        feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
-    if held:
+    if held:  # he waited, so he isn't butting in now, whatever the keyboard says
         feeling += (
             f". You've held this back for {held}, so say that first, in a few words "
             f"(you waited, you didn't want to interrupt)"
         )
+    elif butting_in:
+        feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
     style = cheek_style(cheek)
     if share and aim:
         base = f'You\'ve been wanting to {aim}: "{share}". Bring it up now, as yourself.'

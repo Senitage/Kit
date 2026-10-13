@@ -75,7 +75,7 @@ def memory_block(recalled: Recalled, owner: str, now: datetime | None = None) ->
         lines += [
             "",
             "Earlier conversations that may be relevant (for what was said, not how: "
-            "don't reuse your old wording or lines):",
+            "fresh words now):",
         ]
         lines += [_snippet(h) for h in recalled.conversation]
     return lines
@@ -140,19 +140,31 @@ REPLY_SHAPE_READ = REPLY_SHAPE.replace(
 
 
 def mood_lines(owner: str) -> list[str]:
-    """How to read the owner's last message, for the reading fields."""
+    """How to read the owner's last message, for the reading fields, and that they
+    (and brought_up) are private: the names are English words a model could echo."""
     lines = [
         f"Read how {owner} seems from their last message, by what they mean, not single "
         f"words ('not stressed' is fine):"
     ]
     for name, values in MOOD_FIELDS.items():
         lines.append(f"- {name}: " + "; ".join(f"{k} ({v})" for k, v in values.items()) + ".")
+    lines.append(PRIVATE_FIELDS.format(owner=owner))
     return lines
 
 
-# Beside the speech style: it beats every other note on how Kit sounds. Without it
-# Haiku kept the voice of the self-sheet, the examples and the cheek style, and a
-# custom style ("talk like ...") never showed.
+PRIVATE_FIELDS = (
+    "These fields (dan_mood, about, for_whom, expected, and brought_up) are notes for "
+    "yourself, never said: nothing of them goes in what you say to {owner}."
+)
+
+
+# Beside the speech style, once: it beats every other note on how Kit sounds. Without
+# it Haiku kept the voice of the self-sheet, the examples and the cheek style, and a
+# custom style ("talk like ...") never showed. It used to be said again at the end
+# too ("Above all, your voice"), with "in your own voice" and "not a help desk" after
+# it: eight notes on how he sounds in one prompt, which a model resolves by dropping
+# one, and which one varied. Now the system prompt says it here and nowhere else; the
+# local model's second pass (``speak_note``) is the one reminder.
 VOICE_WINS = (
     "This is how every line you say must sound, and it beats anything else here about "
     "how you talk (your self-sheet, the examples, how you feel, your quirks, and how "
@@ -252,8 +264,8 @@ def system_prompt(
             for rule in persona.rules
             if not (cloud and "to the cloud" in rule)
         ),
-        "- Use what you remember naturally, the way a friend would. Never invent a memory: "
-        "if it isn't below or in the conversation, you don't know it yet.",
+        "- Use what you remember naturally, the way a friend would, and only what's below "
+        "or in the conversation: anything else, you don't know yet.",
         f"- {everyday(owner)}",
     ]
     if cloud:
@@ -411,14 +423,10 @@ def system_prompt(
     if persona.examples and (voice is None or cloud) and not own_voice_default_examples(persona):
         lines += [
             "",
-            "Examples of how you talk (they show the tone; never reuse their lines, and say "
-            "something new each time rather than repeating yourself):",
+            "Examples of how you talk (for the tone; find your own words each time):",
         ]
         for ex in persona.examples:
             lines += [f"{owner}: {ex.user}", f"{name}: {ex.kit}"]
-    # Said again last, where a model weighs it most: a single line near the top lost
-    # to the self-sheet, the examples and the cheek style below it.
-    lines += ["", f"Above all, your voice: {persona.speech}"]
     # What changes every turn goes last, so the cached prefix above can be reused.
     lines += [
         "",
@@ -450,12 +458,12 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
         return []
     lines = [
         "",
-        f"How you feel right now: {voice.feeling}. Let it colour how you talk, lightly; "
-        f"don't announce it. Be {voice.style}, in your own voice. Sound like yourself, a "
-        f"small character with opinions, not a help desk.",
+        f"How you feel right now: {voice.feeling}. Let it colour how you talk, lightly, "
+        f"without announcing it. Be {voice.style}, as yourself: a small character with "
+        f"opinions.",
     ]
     if voice.close:
-        lines.append(f"You and {owner}: {voice.close}. Let it show; never mention it.")
+        lines.append(f"You and {owner}: {voice.close}. Let it show rather than saying it.")
     if voice.opinions:
         lines.append(
             "Views you hold and stand by (if one comes up, stick to it; share one only if it fits):"
@@ -471,14 +479,11 @@ def voice_block(voice: Voice | None, owner: str, name: str, brief: bool = False)
     elif voice.quirk:
         lines.append(f"If it fits naturally, let this quirk show: {voice.quirk}.")
     if voice.examples:
-        lines.append("The kind of thing you'd say (for tone only, never reuse these lines):")
+        lines.append("The kind of thing you'd say (for the tone; your own words each time):")
         for user, kit in voice.examples:
             lines += [f"{owner}: {user}", f"{name}: {kit}"]
     if voice.said:
-        lines.append(
-            "Your last few lines (say something new: don't repeat these, their phrases "
-            "or their jokes):"
-        )
+        lines.append("Your last few lines, so what you say next is new (fresh phrases and jokes):")
         lines += [f"- {s}" for s in voice.said]
     if voice.mind:
         lines.append(
@@ -526,7 +531,8 @@ def speak_note(
     again here so a small model answers it rather than an earlier one. ``mind`` is the
     turn's asides (a goodbye, a hello, what's true about him), said again for the same
     reason: two messages back, a small model loses them. ``speech`` is how he talks,
-    said again for the same reason."""
+    said again for the same reason: the one reminder of his voice outside the system
+    prompt, which says it once."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
@@ -534,7 +540,7 @@ def speak_note(
     if len(heard) > HEARD_CHARS:
         heard = heard[:HEARD_CHARS].rsplit(" ", 1)[0] + "..."
     said = f'{owner} just said: "{heard}". ' if heard else ""
-    feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
+    feel = f" You feel {voice.feeling}." if voice else ""
     mind = " ".join(mind.replace("[", "").replace("]", "").split())
     keep = f" Keep in mind: {mind}" if mind else ""
     talk = f" Your voice: {speech}" if speech else ""
@@ -557,6 +563,37 @@ IN_WORDS = " (Just your words this time, as plain text: no JSON, emotion or gest
 
 
 PIPED_CHARS = 200  # Kit's pipe-up, quoted beside the answer to it
+
+# How many asides ride with one message. A turn could carry a hello, a bedtime nudge,
+# "ask one question at most", "one question at most" again, "don't ask another
+# question", the bad-night aside and the answer to a pipe-up, while the reply is one
+# to three short sentences: too many bosses, and the model drops one at random.
+ASIDES_BUDGET = 2
+# Which asides give way first: a bad night beats answering a pipe-up, which beats
+# a homecoming, then one of the rest in this order. None: not an aside but what the
+# message is about (a goodbye, a question about himself, a fact to check), always sent.
+ASIDE_RANKS = {
+    "bad_night": 0,
+    "pipe_up": 1,
+    "homecoming": 2,
+    "bedtime": 3,
+    "news": 4,
+    "opener": 5,
+    "interview": 6,
+}
+
+
+def within_budget(
+    asides: list[str], kinds: list[str | None], limit: int = ASIDES_BUDGET
+) -> list[str]:
+    """``asides`` with all but the ``limit`` best-ranked ones (``ASIDE_RANKS``, by
+    ``kinds``) blanked, in their places. An aside with kind None is always kept."""
+    ranked = sorted(
+        (i for i, kind in enumerate(kinds) if kind is not None and asides[i]),
+        key=lambda i: ASIDE_RANKS[kinds[i]],
+    )
+    keep = set(ranked[:limit])
+    return [a if kinds[i] is None or i in keep else "" for i, a in enumerate(asides)]
 
 
 def answering_pipe_up(line: str, why: str, owner: str) -> str:

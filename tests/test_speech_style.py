@@ -32,18 +32,20 @@ def test_his_own_style_beats_the_sheet_examples_and_cheek():
     first = fixed.index(f"Your voice: {STYLE}")
     assert first > fixed.index(SHEET)
     assert "beats anything else here about how you talk" in fixed
-    # ...and again last in the part that stays the same, after every list and rule.
-    assert fixed.rstrip().endswith(f"Above all, your voice: {STYLE}")
+    # ...and once only: said again at the end, with "in your own voice" and "not a
+    # help desk" after it, it was eight notes on how he sounds in one prompt.
+    assert prompt.count(STYLE) == 1 and "Above all" not in prompt
+    assert "your voice" not in prompt.lower().replace(f"your voice: {STYLE.lower()}", "")
     # The default examples are in the default voice, so they go.
     assert "Coffee first, or straight into it?" not in prompt
     # The cheek style bends to it rather than replacing it.
-    assert "a little larrikin, in your own voice" in turn
+    assert "Be properly cheeky, a little larrikin, as yourself" in turn
 
 
 def test_the_default_voice_keeps_its_examples():
     prompt = chat_prompt(PersonaSettings())
     assert "Coffee first, or straight into it?" in prompt
-    assert "Above all, your voice: Short sentences" in prompt
+    assert "Your voice: Plain, neutral English" in prompt
 
 
 def test_his_own_examples_stay_with_his_own_style():
@@ -61,5 +63,6 @@ def test_a_new_style_makes_his_self_sheet_out_of_date():
 
 
 def test_the_local_speaking_step_says_his_style_again():
+    """The one reminder outside the system prompt: a small model's second pass."""
     note = speak_note(Action(kind="none"), "Dan", "sonnet", "opus", speech=STYLE)
     assert f"Your voice: {STYLE}" in note
