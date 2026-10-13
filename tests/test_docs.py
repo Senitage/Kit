@@ -87,6 +87,12 @@ def test_the_vault_has_notes():
     assert len(NOTES) > 20
 
 
+@pytest.mark.parametrize("path", NOTES, ids=lambda p: p.stem)
+def test_no_merge_left_its_markers_in_a_note(path):
+    for mark in ("<<<<<<< ", "=======\n", ">>>>>>> "):
+        assert mark not in _read(path), f"{path.name} has a merge conflict marker"
+
+
 def test_note_names_are_unique():
     seen: dict[str, Path] = {}
     for path in DOCS.rglob("*.md"):

@@ -98,10 +98,16 @@ class TrackMemory:
         self.confirm_frames = confirm_frames
         self.forget_after = forget_after
         self.visible_gap = visible_gap
+        self.last_look = 0.0  # when the detector last looked
         self.tracks: dict[int, Track] = {}
 
-    def update(self, detections: Iterable[Detection], now: float) -> list[str]:
-        """Feed one frame's detections. Returns the new event lines."""
+    def update(self, detections: Iterable[Detection] | None, now: float) -> list[str]:
+        """Feed one frame's detections. Returns the new event lines. ``None`` means the
+        detector didn't look at this frame (it rests between looks on a CPU): nothing
+        is learned from it, and what it saw at its last look stands."""
+        if detections is None:
+            return []
+        self.last_look = now
         events = []
         for track_id, label, box in detections:
             track = self.tracks.get(track_id)
@@ -124,9 +130,12 @@ class TrackMemory:
         return events
 
     def visible(self, now: float) -> list[Track]:
-        """Confirmed tracks seen just now, oldest first."""
+        """Confirmed tracks seen at the detector's last look, oldest first."""
+        seen = min(now, self.last_look)  # a look still to come can't have seen anything
         current = [
-            t for t in self.tracks.values() if t.confirmed and now - t.last_seen <= self.visible_gap
+            t
+            for t in self.tracks.values()
+            if t.confirmed and seen - t.last_seen <= self.visible_gap
         ]
         return sorted(current, key=lambda t: t.first_seen)
 

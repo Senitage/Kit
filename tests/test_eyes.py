@@ -464,6 +464,104 @@ def test_paused_eyes_let_the_camera_go_and_check_back():
     assert not eyes.paused and len(opened) == 2 and brain.reports[-1]["people"]
 
 
+def test_the_detector_can_rest_between_looks_while_faces_keep_up():
+    brain = FakeBrain()
+    eyes, _, detector = make_eyes(brain, detect_every=3)
+    for _ in range(24):
+        eyes.step()
+    assert len(detector.frames) == 8  # looks 1, 4, 7 ... 22
+    # A frame the detector rested on teaches the scene nothing: eight looks, not
+    # twenty-four frames, went into being sure of the person...
+    assert eyes.scene.memory.tracks[1].frames_seen == 8
+    # ...and on the rest frames the person it saw last look is still there for the
+    # face reader to match, and in the report.
+    assert 1 in eyes.scene.people and brain.reports[-1]["people"][0]["id"] == 1
+
+
+def test_a_one_look_false_positive_is_not_confirmed_by_the_rests_after_it():
+    # Something seen once stays unconfirmed while the detector rests, however many
+    # frames go by; it used to stand in on every rest frame and count each time.
+    brain = FakeBrain()
+    flicker = FakeDetector((7, "dog", (0, 0, 20, 20)))
+    eyes, _, _ = make_eyes(brain, detector=flicker, detect_every=3)
+    eyes.step()
+    flicker.detections = []
+    for _ in range(8):
+        eyes.step()
+    track = eyes.scene.memory.tracks[7]
+    assert track.frames_seen == 1 and not track.confirmed
+    assert not any("dog" in e for _, e in eyes.scene.events)
+
+
+def test_the_camera_coming_back_gets_a_proper_look_first():
+    brain = FakeBrain()
+    eyes, opened, detector = make_eyes(
+        brain, cameras=[FakeCamera(frames=[1, 2]), FakeCamera()], detect_every=3
+    )
+    for _ in range(3):  # two frames, then the camera stops
+        eyes.step()
+    assert eyes.camera is None and len(detector.frames) == 1
+    for _ in range(100):  # the camera comes back after the retry wait
+        eyes.step()
+        if eyes.camera is not None:
+            break
+    # Its first frame is looked at, not rested on.
+    assert len(opened) == 2 and len(detector.frames) == 2
+
+
+def test_a_missing_export_runtime_is_said_plainly(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from kit.eyes import detect
+
+    class YOLO:
+        def __init__(self, path, **kw):
+            pass
+
+        def export(self, **kw):
+            raise ModuleNotFoundError("No module named 'openvino'")
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=YOLO))
+    with pytest.raises(RuntimeError, match="pip install openvino"):
+        detect.exported(tmp_path / "yolo11n.pt", "openvino", 320)
+    with pytest.raises(RuntimeError, match="pip install ncnn pnnx"):
+        detect.YoloDetector("yolo11n", tmp_path, fmt="ncnn", size=320)
+
+
+def test_looks_per_second_rests_the_cpu_between_frames():
+    brain = FakeBrain()
+    eyes, _, _ = make_eyes(brain, looks_per_second=5)
+    rests = []
+    eyes.sleep = rests.append
+    eyes.step()
+    # Each look takes 0.1 s on the fake clock, so it rests the other 0.1 s of a fifth.
+    assert rests == [pytest.approx(0.1)]
+    eyes.settings = EyesSettings(looks_per_second=0)
+    rests.clear()
+    eyes.step()
+    assert rests == []
+
+
+def test_cpu_detector_settings_are_checked():
+    s = EyesSettings(detector_format="openvino", detector_size=320, device="cpu")
+    assert (s.detector_format, s.detector_size, s.device) == ("openvino", 320, "cpu")
+    for bad in ({"detector_size": 300}, {"detector_format": "tensorrt"}, {"device": "gpu"}):
+        with pytest.raises(ValueError):
+            EyesSettings(**bad)
+
+
+def test_exports_are_named_by_format_and_size(tmp_path, monkeypatch):
+    from kit.eyes import detect
+
+    assert detect.export_name("yolo11n.pt", "openvino", 320) == "yolo11n_320_openvino_model"
+    assert detect.export_name("yolo11n.pt", "onnx", 640) == "yolo11n_640.onnx"
+    ready = tmp_path / "yolo11n_320_ncnn_model"
+    ready.mkdir()
+    # Already made: no Ultralytics needed.
+    assert detect.exported(tmp_path / "yolo11n.pt", "ncnn", 320) == ready
+
+
 def test_while_kit_sleeps_his_eyes_shut_and_their_models_unload(monkeypatch):
     freed = []
     monkeypatch.setattr("kit.eyes.detect.free_gpu", lambda: freed.append(True))

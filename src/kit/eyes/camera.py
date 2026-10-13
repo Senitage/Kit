@@ -57,6 +57,9 @@ def open_camera(index: int, width: int | None = None, height: int | None = None)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        # Keep only the newest frame, so eyes that look a few times a second see
+        # now rather than a queue from a moment ago. Cameras that can't, ignore it.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         ok, _ = cap.read()
         if ok:
             return Camera(cap, index, cap.getBackendName())

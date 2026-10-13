@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Protocol
@@ -61,11 +62,50 @@ def device_name(device: int | str) -> str:
         return f"GPU {device}"
 
 
+def export_name(weights: str, fmt: str, size: int) -> str:
+    """Where an exported copy of ``weights`` lives in the models folder. The size is
+    in the name because an export only works at the size it was made for."""
+    stem = Path(weights).stem
+    return f"{stem}_{size}.onnx" if fmt == "onnx" else f"{stem}_{size}_{fmt}_model"
+
+
+# What each export format needs installed, said plainly when it isn't. Ultralytics
+# would otherwise pip-install it mid-run; YOLO_AUTOINSTALL stops that.
+RUNTIMES = {"openvino": "openvino", "onnx": "onnx onnxruntime", "ncnn": "ncnn pnnx"}
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+
+
+def missing_runtime(fmt: str, e: ImportError) -> RuntimeError:
+    return RuntimeError(
+        f"the {fmt} detector needs its runtime in the eyes' venv:"
+        f" pip install {RUNTIMES.get(fmt, fmt)} ({e})"
+    )
+
+
+def exported(base: Path, fmt: str, size: int) -> Path:
+    """The ``fmt`` export of the PyTorch model at ``base``, made the first time
+    (Ultralytics downloads ``base`` if it isn't there yet)."""
+    target = base.parent / export_name(base.name, fmt, size)
+    if target.exists():
+        return target
+    from ultralytics import YOLO
+
+    log.info("making the %s detector at %d px (once; this takes a minute)", fmt, size)
+    try:
+        made = Path(YOLO(str(base)).export(format=fmt, imgsz=size, verbose=False))
+    except ImportError as e:
+        raise missing_runtime(fmt, e) from e
+    made.rename(target)
+    return target
+
+
 class YoloDetector:
     """YOLO through Ultralytics. ``weights`` is a model name ("yolo11n") or a file;
-    a name is downloaded into ``folder`` the first time. ``model.track`` is
-    detect + link to the previous frame; ``persist=True`` keeps the tracker's
-    state between calls, which is what makes the ids carry over."""
+    a name is downloaded into ``folder`` the first time. ``fmt`` other than
+    "pytorch" runs an OpenVINO, ONNX or NCNN copy made from it at ``size``, which
+    is quicker on a CPU. ``model.track`` is detect + link to the previous frame;
+    ``persist=True`` keeps the tracker's state between calls, which is what makes
+    the ids carry over."""
 
     def __init__(
         self,
@@ -73,6 +113,8 @@ class YoloDetector:
         folder: Path | None = None,
         confidence: float = 0.4,
         device: int | str | None = None,
+        fmt: str = "pytorch",
+        size: int = 640,
     ) -> None:
         from ultralytics import YOLO
 
@@ -80,10 +122,17 @@ class YoloDetector:
         path = Path(folder) / name if folder is not None and "/" not in name else Path(name)
         if folder is not None:
             Path(folder).mkdir(parents=True, exist_ok=True)
-        self.model = YOLO(str(path))
+        if fmt != "pytorch" and path.suffix == ".pt":
+            path = exported(path, fmt, size)
+            device = "cpu"  # the exports are the CPU's way to run it
+        try:
+            self.model = YOLO(str(path), task="detect")
+        except ImportError as e:
+            raise missing_runtime(fmt, e) from e
         self.confidence = confidence
+        self.size = size
         self.device = pick_device() if device is None else device
-        log.info("detector %s on %s", path.name, device_name(self.device))
+        log.info("detector %s on %s at %d px", path.name, device_name(self.device), size)
 
     def detect(self, frame) -> list[Detection]:
         result = self.model.track(
@@ -91,6 +140,7 @@ class YoloDetector:
             persist=True,
             tracker="bytetrack.yaml",
             conf=self.confidence,
+            imgsz=self.size,
             device=self.device,
             verbose=False,
         )[0]

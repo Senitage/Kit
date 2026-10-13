@@ -96,6 +96,8 @@ On the desk PC, `git pull` in the eyes' copy of Kit, `pip install -e ".[eyes]"`
 if the guide says there's something new, then stop and start `kit eyes`. Their
 settings come from the brain, so there's nothing else to change. See
 [[Vision Stage 1]].
+To run them without the GPU, see [[Eyes#Without a graphics card]]: it's one
+`pip install` and a few settings.
 
 ## The ears
 
