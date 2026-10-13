@@ -52,8 +52,15 @@ Run $Python @(
     "--exclude-module", "fastapi", "--exclude-module", "uvicorn",
     "--exclude-module", "anthropic", "--exclude-module", "numpy"
 )
-# A windowed exe doesn't block PowerShell, so wait for the self-test explicitly.
-$test = Start-Process "$build\dist\Kit\Kit.exe" -ArgumentList "--selftest" -Wait -PassThru
+# A windowed exe doesn't block PowerShell, so wait for the self-test explicitly,
+# and not for ever: a packed app that can't start shows an error box nobody can
+# click on a build machine, which once held the build for hours.
+$test = Start-Process "$build\dist\Kit\Kit.exe" -ArgumentList "--selftest" -PassThru
+$null = $test.Handle  # keeps the exit code readable after WaitForExit
+if (-not $test.WaitForExit(120000)) {
+    Stop-Process -Id $test.Id -Force
+    throw "Kit.exe --selftest didn't finish in 2 minutes (an import missing from the packed app?)"
+}
 if ($test.ExitCode -ne 0) { throw "Kit.exe --selftest failed with exit code $($test.ExitCode)" }
 
 $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source

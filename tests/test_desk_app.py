@@ -966,3 +966,33 @@ def test_the_desk_draws_kit_from_the_brains_character_sheet():
     finally:
         character.use(character.builtin())
         client.close()
+
+
+def test_the_desk_app_needs_nothing_the_installer_leaves_out():
+    # The installer packs the desk app without the brain's modules (build.ps1's
+    # --exclude-module). One of them imported anyway, and the packed app stopped on
+    # an error box nobody could click, so the installer build waited for ever.
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "packaging" / "windows" / "build.ps1").read_text(encoding="utf-8")
+    left_out = re.findall(r'"--exclude-module", "([\w.]+)"', script)
+    assert "numpy" in left_out and "fastapi" in left_out
+    blocker = (
+        "import importlib.abc, sys\n"
+        f"LEFT_OUT = {left_out!r}\n"
+        "class Block(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name.split('.')[0] in LEFT_OUT:\n"
+        "            raise ImportError(f'{name} is left out of the desk app')\n"
+        "sys.meta_path.insert(0, Block())\n"
+        "import kit.desk.app\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(root / "src"), "QT_QPA_PLATFORM": "offscreen"}
+    done = subprocess.run(
+        [sys.executable, "-c", blocker], env=env, capture_output=True, text=True, timeout=120
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
