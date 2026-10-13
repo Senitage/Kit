@@ -35,6 +35,7 @@ LIFE_EVENTS = (
     "quiet",
     "dials",
     "pipe_up",
+    "remembered",
 )
 ABILITIES = (
     "screen",

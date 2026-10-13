@@ -96,9 +96,10 @@ sequenceDiagram
     emotion and gesture on his face, shows the words, and speaks each sentence
     as soon as it's whole. See [[Desk App]], [[Face]] and [[Voice]].
 11. **Afterwards.** The exchange is saved and indexed so it can be found
-    later. A "remember that..." is learned straight away; everything else
-    waits for tonight's day summary and his reflection. See [[Memory]] and
-    [[Inner Life]].
+    later, and a "remember that..." is learned, both in the background once
+    the reply is out, so the chat never waits for them; the bodies get a
+    `remembered` event when it's done. Everything else waits for tonight's
+    day summary and his reflection. See [[Memory]] and [[Inner Life]].
 
 > [!TIP] Kit keeps talking while he works
 > A slow cloud answer runs as its own task. Ask "how's it going?" meanwhile

@@ -566,6 +566,7 @@ class Brain:
         self.jobs: dict[int, Job] = {}
         self._job_ids = itertools.count(1)
         self._turns: set[asyncio.Task] = set()
+        self._learning: set[asyncio.Task] = set()  # learning after a reply is out
         # His latest pipe-up and why he said it, for when Dan answers it ("what's up?").
         self._pipe_up: tuple[int, str] | None = None
         # (his message, the thread or getting-to-know-you want it asked about), so Dan's
@@ -873,20 +874,63 @@ class Brain:
             self.memory.index_exchange(
                 user_id, settings.persona.owner, text, settings.persona.name, whole
             )
-        for fact in learn:
-            learned = await self.learner.learn(
-                fact, "person", owner, private=keep_local, cloud=cloud_background(settings)
-            )
-            emit(
-                {
-                    "type": "remembered",
-                    "fact": learned.text,
-                    "decision": learned.decision,
-                    "replaced": learned.replaced,
-                }
-            )
-        if said or learn:
+        if said or learn:  # the reply is out; learning and embedding needn't hold it up
+            self._learn_later([(fact, "person") for fact in learn], owner, keep_local, settings)
+
+    def _learn_later(
+        self, facts: list[tuple[str, str]], owner: str, private: bool, settings: Settings
+    ) -> asyncio.Task:
+        """Learn ``facts`` ((text, kind)) and embed what's new after the reply is out, as
+        a tracked background task (``close`` stops it): a "remember that" never holds
+        the chat up for the embedding model or a comparison, and in cloud-only routing
+        the local model isn't loaded for one. What was learned goes to the bodies as a
+        ``remembered`` event; anything that goes wrong is logged."""
+        task = asyncio.create_task(self._learn_now(facts, owner, private, settings))
+        self._learning.add(task)
+        task.add_done_callback(self._learning.discard)
+        return task
+
+    async def _learn_now(
+        self, facts: list[tuple[str, str]], owner: str, private: bool, settings: Settings
+    ) -> None:
+        try:
+            for text, kind in facts:
+                learned = await self.learner.learn(
+                    text,
+                    kind,
+                    owner,
+                    private=private,
+                    cloud=cloud_background(settings),
+                    local=not local_stands_in(settings),
+                )
+                self.life.publish(
+                    {
+                        "type": "remembered",
+                        "fact": learned.text,
+                        "decision": learned.decision,
+                        "replaced": learned.replaced,
+                    }
+                )
             await self.recall.index_pending()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("learning after the reply failed")
+
+    def learning(self) -> bool:
+        """Still learning or embedding something from a finished turn."""
+        return any(not t.done() for t in self._learning)
+
+    async def settle(self) -> None:
+        """Wait for the learning that follows replies to finish (tests, the terminal)."""
+        while self._learning:
+            await asyncio.gather(*list(self._learning), return_exceptions=True)
+
+    async def close(self) -> None:
+        """Shutting down: stop the learning that runs after replies, cleanly."""
+        for task in list(self._learning):
+            task.cancel()
+        await asyncio.gather(*list(self._learning), return_exceptions=True)
 
     def _answering_ask(self, text: str, before: list[Message], owner: str) -> tuple[str, str]:
         """Dan answering a thread or a getting-to-know-you question Kit just asked: how
@@ -2234,20 +2278,11 @@ class Brain:
             # Small models "remember" their own lines and guesses; only what Dan said counts.
             log.info("not remembering %r: %s didn't say it", fact, settings.persona.owner)
         elif kind == "remember" and fact:
+            # Learned once the reply is out (``_learn_later``), never on the chat path.
             private = bool(KEEP_LOCAL.search(text))
-            learned = await self.learner.learn(
-                fact,
-                reply.action.category,
-                settings.persona.owner,
-                private=private,
-                cloud=cloud_background(settings),
+            self._learn_later(
+                [(fact, reply.action.category)], settings.persona.owner, private, settings
             )
-            yield {
-                "type": "remembered",
-                "fact": learned.text,
-                "decision": learned.decision,
-                "replaced": learned.replaced,
-            }
         elif kind == "thing" and named_in(fact, " ".join(said)):
             event = self._note_thing(reply)
             if event:

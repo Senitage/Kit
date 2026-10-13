@@ -371,8 +371,13 @@ async def _chat_loop(paths: KitPaths) -> int:
 
         async def turn(text: str) -> None:
             print(f"{me}> ", end="", flush=True)
+            since = brain.life.state()["last_event"]
             async for event in brain.chat(text, "terminal"):
                 _print_event(event, me)
+            await brain.settle()  # what he learned once the reply was out
+            for event in brain.life.events_after(since):
+                if event["type"] == "remembered":
+                    _print_event(event, me)
 
         while True:
             try:

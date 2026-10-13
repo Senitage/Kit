@@ -234,6 +234,21 @@ def collect(agen):
     return asyncio.run(run())
 
 
+def chat_and_learn(brain, text, **kwargs):
+    """The turn's events, then the ``remembered`` events Kit published for the bodies
+    once the learning that follows a reply had settled. One event loop for both, since
+    learning runs as a background task of the brain's loop."""
+
+    async def run():
+        since = brain.life.state()["last_event"]
+        events = [e async for e in brain.chat(text, **kwargs)]
+        await brain.settle()
+        learned = [e for e in brain.life.events_after(since) if e["type"] == "remembered"]
+        return events, learned
+
+    return asyncio.run(run())
+
+
 class FakeEmbedder:
     """Bag-of-words vectors: texts sharing meaningful words are 'close in meaning'.
 

@@ -100,7 +100,9 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | `POST /api/life/snooze` | Keep him quiet for `minutes` (0 lets him talk again) |
 
 Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
-(asleep or awake), `look`, `doing`, `quiet`, `dials` and `pipe_up`. See
+(asleep or awake), `look`, `doing`, `quiet`, `dials`, `pipe_up` and
+`remembered` (a fact learned once a reply was out: `fact`, `decision` of
+`new`, `same` or `update`, and `replaced`). See
 [[Bodies]]. A `quiet` event says why he's keeping quiet (`because`) and, while
 his eyes see you busy, what his bubble should say (`bubble`). A `pipe_up`
 carries the line (`reply`), the line as his voice says it with any sounds
@@ -124,7 +126,8 @@ The hello's answer is what the brain can do:
  "body": {"id": "phone", "kind": "phone", "online": true, ...},
  "features": {"chat": 2, "messages": 2, "life": 1, "life_events": 1, "bodies": 1,
               "pairing": 1, "voice_out": 1, ...},
- "events": ["mood", "fidget", "react", "state", "look", "doing", "quiet", "dials", "pipe_up"],
+ "events": ["mood", "fidget", "react", "state", "look", "doing", "quiet", "dials", "pipe_up",
+            "remembered"],
  "face": {"character": "kit3d", "style": "model", "page": "/face/?app=phone"},
  "unknown_abilities": []}
 ```

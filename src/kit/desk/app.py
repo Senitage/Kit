@@ -976,6 +976,8 @@ class DeskApp(QObject):
                 self._show_doing()
             if self.online:
                 self._show_online(True, "online")
+        elif event.get("type") == "remembered":  # learned after his reply was out
+            self.chat.on_event(0, event)
         elif event.get("type") == "pipe_up":
             reply = event.get("reply") or {}
             if self.alive.asleep:

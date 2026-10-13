@@ -196,6 +196,7 @@ def create_app(
         yield
         for task in tasks:
             task.cancel()
+        await brain.close()  # learning that was running after a reply
         await brain.cloud.close()
         if speech is not None:
             await asyncio.to_thread(speech.close)
