@@ -41,7 +41,7 @@ from kit.pc_context import PcContext, Snapshot
 from kit.prompt import history_messages
 from kit.recall import Recall
 from kit.server import life_tick
-from kit.settings import OLD_PERSONA, Settings
+from kit.settings import Settings
 from kit.thinking import THOUGHT_SCHEMA
 
 # Life on its own
@@ -560,13 +560,10 @@ def test_his_state_after_a_restart():
     assert state["closeness"] == "at home" and state["goodbye"] == "off to the shops"
 
 
-def test_old_default_rules_and_knows_read_as_the_new_ones():
-    old = Settings.model_validate(
-        {"persona": {"rules": OLD_PERSONA["rules"][0], "knows": OLD_PERSONA["knows"][1]}}
-    )
-    new = Settings()
-    assert old.persona.rules == new.persona.rules and len(new.persona.rules) == 7
-    assert "partner and a cat" in old.persona.knows
+def test_the_default_persona_is_an_honest_friend_who_knows_only_what_hes_told():
+    persona = Settings().persona
+    assert len(persona.rules) == 7 and any("honest friend" in rule for rule in persona.rules)
+    assert "getting to know" in persona.knows  # no real biography in the public default
     mine = Settings.model_validate({"persona": {"rules": ["Be brief."]}})
     assert mine.persona.rules == ["Be brief."]
 

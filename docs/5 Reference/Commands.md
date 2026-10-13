@@ -152,6 +152,12 @@ See [[Eyes]].
 
 See [[Evals]].
 
+## The docs
+
+| Command | What it does |
+|---|---|
+| `kit docs check` | Report rows of [[Where Kit Is Up To]] that look stale, with no network: a part marked "Open, pull request #N" whose #N is in the "How we got here" table is **stale** (exit code 1); one with a number lower than the newest landed pull request is **worth a look**; one marked "(number to come)" **needs its number**. `--vault PATH` for a docs folder other than this checkout's |
+
 ## The desk app
 
 `kit-desk` starts the desk app from a clone (the installed app has its own

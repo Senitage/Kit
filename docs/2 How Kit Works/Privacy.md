@@ -12,8 +12,10 @@ related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 > Only the words a **cloud model** needs to answer leave the house, and
 > **"keep it local"** stops even that for anything you choose. On the PC he
 > sees **window titles, never screenshots**; through the camera he sees
-> **words and numbers, never pictures**. Every way in has a **switch**, and
-> you can see and forget anything he remembers.
+> **words and numbers, never pictures**. In **cloud-only** routing those
+> words go to the cloud chat model, the full list when you ask about your PC
+> or what he can see. Every way in has a **switch**, and you can see and
+> forget anything he remembers.
 
 ## What stays home, and what goes out
 
@@ -21,7 +23,7 @@ related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 |---|---|---|
 | Memory, the notebook, the register | always | only the few memories recalled for that message |
 | Your messages | always | when a cloud model answers them, unless kept local |
-| What's on the PC, the scene from the eyes | always | the one-line summary, with that message |
+| What's on the PC, the scene from the eyes | always | the one-line summary with every message a cloud model answers; the full picture when it answers a question about your PC or the room, or decides to look (see below) |
 | His voice | always (the engine runs on the server's GPU) | never |
 | The camera | never leaves the PC as a picture | never |
 | Notes in your vault | always | the parts recalled for that message |
@@ -29,6 +31,37 @@ related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
 Which model answers is in [[Models and Routing]]. Turning `routing.mode` to
 `local-heavy` keeps far more at home; the cloud is still there for what the
 local model can't do.
+
+## What a cloud model sees of your PC and the room
+
+Plainly, because it's easy to assume less goes out than does:
+
+- **Every message a cloud model answers** carries the **one-line summary**
+  of the PC ("VS Code: pumps.py, for 25 min. Also open: Excel, Chrome.") and
+  of what the eyes see ("one person at the desk, and the cat"), the same as
+  the rest of the prompt.
+- **A question about your PC or the room** ("what have I got open?", "can
+  you see the cat?") is answered by Kit's own model with the **full picture**
+  in the prompt: every open window's title, the browser's tabs, what's had
+  focus this hour and today, today's websites, PC health; or who's at the desk
+  by name, what they're doing or holding, what's in view and who's been in
+  today. In `local-heavy`, `balanced` and `cloud-first` routing Kit's own
+  model is the **local** one, so none of that leaves the house. In
+  **`cloud-only`** routing Kit's own model is the **cloud chat model**
+  (Haiku), so the full picture goes to it. That's a choice the owner made,
+  with eyes open: in cloud-only mode the local model only stands in.
+- **Any model answering, local or cloud, is offered the `look_at_pc` and
+  `look_around` actions** when the desk app or the eyes are running. When a
+  cloud model (chat, work or expert, in any mode) decides the summary isn't
+  enough and looks, the full picture goes to that model as its next message.
+- **"Keep it local" wins.** Say it with the question and the look, and the
+  answer, stay on the local model whatever the routing mode.
+- What the PC never shares in the first place (hidden apps and words, blanked
+  addresses, a paused switch) isn't in the full picture either. The camera
+  still never sends a picture: the full scene is words.
+
+To keep every look at home, run `balanced` or `local-heavy` routing, or say
+"keep it local". `routing.mode` is in [[Settings Reference#routing]].
 
 ## Keep it local
 
@@ -105,6 +138,7 @@ network details and the names of people and pets stay in your own
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/desk/watch.py`, `src/kit/desk/config.py`: what's read on the PC, and the hidden apps and words.
+> - `src/kit/brain.py` (`looking_role`, `own_role`): who answers a question about the PC or the room; `src/kit/prompt.py`: the one-line summaries and the look actions; `src/kit/pc_context.py` and `src/kit/scene_context.py` (`detail`): the full picture.
 > - `src/kit/memory.py`: private messages and what comes from them.
 > - `src/kit/eyes/recognise.py`: face numbers.
 > - `src/kit/credentials.py`: keys and the token.

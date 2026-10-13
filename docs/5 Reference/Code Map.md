@@ -95,6 +95,7 @@ flowchart TB
 | `src/kit/checks.py` | `kit check` | [[Stage 0 - Server Setup]] |
 | `src/kit/evals.py` | The eval suites | [[Evals]] |
 | `src/kit/settings.example.toml` | An example settings file | [[Settings Reference]] |
+| `src/kit/docs_check.py` | `kit docs check`: the stale rows of Where Kit Is Up To | [[Commands#The docs]] |
 
 ## Face
 

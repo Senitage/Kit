@@ -126,8 +126,11 @@ it. After a Kit update, press the reload arrow on Kit's card in
   to disk or to Kit's long-term memory yet, and it's gone when the brain
   restarts.
 - When a cloud model answers, the one-line summary goes with the question, the
-  same as the rest of the prompt. Add words to the hide list for anything you
-  never want sent.
+  same as the rest of the prompt. A question about the PC gets the full
+  picture (every window title and tab), which in `cloud-only` routing goes to
+  the cloud chat model too; "keep it local" keeps it home. See
+  [[Privacy#What a cloud model sees of your PC and the room]]. Add words to
+  the hide list for anything you never want sent.
 
 ## Install
 

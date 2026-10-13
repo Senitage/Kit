@@ -48,7 +48,8 @@ focus, and how long since the keyboard or mouse was touched, plus CPU,
 memory, disk and battery. With **Kit's Chrome extension** it also knows your
 open tabs and the site you're on. Kit sees one line on every message
 ("VS Code: pumps.py, for 25 min. Also open: Excel, Chrome.") and the full
-picture when he needs it (`look_at_pc`).
+picture when he needs it (`look_at_pc`). Which model sees which is in
+[[Privacy#What a cloud model sees of your PC and the room]].
 
 With the desk app on **several PCs**, Kit keeps each PC's report and follows
 the one you're using; a locked laptop in the other room doesn't make him

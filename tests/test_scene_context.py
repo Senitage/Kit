@@ -272,6 +272,19 @@ def test_questions_about_what_kit_sees_get_a_fresh_look_locally(paths, question)
     memory.close()
 
 
+def test_in_cloud_only_mode_the_chat_model_sees_the_full_scene_unless_kept_local(paths):
+    # What docs/2 How Kit Works/Privacy.md says about the cloud and the camera.
+    SettingsStore(paths).update({"routing": {"mode": "cloud-only"}}, "test")
+    brain, memory, claude = make_brain(paths, reply("Kept local."))
+    brain.saw(report(1, cat=True))
+    collect(brain.chat("can you see the cat?"))
+    assert [c["model"] for c in claude.calls] == ["claude-haiku-5-5"]
+    assert "- Cat #9: left" in claude.calls[0]["messages"][-1]["content"]
+    collect(brain.chat("keep it local: can you see the cat?"))
+    assert len(claude.calls) == 1 and "- Cat #9: left" in brain.model.calls[0][-1]["content"]
+    memory.close()
+
+
 def test_look_around_action_shows_the_detail_then_answers(paths):
     brain, memory, _ = make_brain(
         paths,

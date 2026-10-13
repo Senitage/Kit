@@ -31,8 +31,8 @@ your PC.
 | `packaging/windows/kit_desk.py` | The tiny start-up file PyInstaller freezes. |
 | `packaging/windows/build.ps1` | The build recipe (below). |
 | `packaging/windows/kit-desk.iss` | The installer recipe (Inno Setup). |
-| `.github/workflows/desk-app.yml` | Tells GitHub to run the recipe on every change. |
-| `tests/test_desk_*.py` | The desk app's tests. They run without a screen. |
+| `.github/workflows/desk-app.yml` | Tells GitHub to run the whole test suite with the desk extra installed, then the recipe, on every change. |
+| `tests/test_desk_*.py`, `tests/test_glow.py` | The desk app's tests. They run without a screen; `ci.yml` has no Qt and skips them, so the desk workflow is where they run. |
 
 No `.exe` is stored in the repo. The repo holds the recipe, and the exe is
 cooked from it each time.
@@ -123,8 +123,9 @@ never in `desk.toml` or the repo.
 
 ## Making a change to the desk app
 
-1. Change the code under `src/kit/desk/` and run the tests:
-   `pytest -q tests/test_desk_app.py tests/test_desk_update.py`.
+1. Change the code under `src/kit/desk/` and run the tests with the desk extra
+   installed (`pip install -e ".[dev,desk]"`): `pytest -q tests/`. Without it
+   the Qt tests are skipped, which is what happens in the main CI job.
 2. Try it from source with `kit-desk` (or `python -m kit.desk`).
 3. Open a pull request. The Desk app workflow builds an installer you can try
    from the run's Artifacts.

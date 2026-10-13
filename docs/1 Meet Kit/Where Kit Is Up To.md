@@ -6,7 +6,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 
 # Where Kit is up to
 
-*As of 11 October 2026.* The plan behind this is in [[Roadmap]].
+*As of 12 October 2026.* The plan behind this is in [[Roadmap]].
 
 ## At a glance
 
@@ -29,10 +29,11 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Faster voice: Chatterbox Turbo's token loop as a CUDA graph, and no 2 s wait connecting from Windows | Done | [[Voice#Faster on a graphics card]], [[Desk App#Connections]] |
 | Phone app, phase 0 (the brain's side): pairing from the app, hello, history pages; the desk on several PCs | Done | [[Phone Stage 0 - Pairing]] |
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
-| Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request (number to come) | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
-| Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request (number to come) | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
-| Memory that scales: vectors kept in step not rebuilt, one search a turn off the event loop, recency from telling not recalling, learning after the reply, the replay eval | Open, pull request (number to come) | [[Memory In Depth#Keeping it fast as memory grows]], [[Evals]] |
-| Less keyword, more judgement: the plan reads the message and decides over the word tables, a bad night only when the model agrees, a long quiet or new subject as a hint not a cut, one private flag, history as words, a one-line speaking note | Open, pull request (number to come) | [[Brain#The reading: judgement over keywords]], [[Inner Life In Depth#A bad night]], [[Privacy#Keep it local]] |
+| Review fixes: the settings file holds only what you changed, every desk test runs in CI, the privacy note says what reaches the cloud, `kit docs check` | Open, pull request #50 | [[Settings Reference#What the file holds]], [[Privacy]], [[Commands#The docs]] |
+| Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request #48 | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
+| Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request #49 | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
+| Memory that scales: vectors kept in step not rebuilt, one search a turn off the event loop, recency from telling not recalling, learning after the reply, the replay eval | Open, pull request #54 | [[Memory In Depth#Keeping it fast as memory grows]], [[Evals]] |
+| Less keyword, more judgement: the plan reads the message and decides over the word tables, a bad night only when the model agrees, a long quiet or new subject as a hint not a cut, one private flag, history as words, a one-line speaking note | Open, pull request #57 | [[Brain#The reading: judgement over keywords]], [[Inner Life In Depth#A bad night]], [[Privacy#Keep it local]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
@@ -82,4 +83,6 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 
 When a pull request merges, move its row from "Open" to "Done" above, add it
 to the history table, and update the notes it changed. The checklist is in
-[[How These Docs Work#When you change Kit]].
+[[How These Docs Work#When you change Kit]]. `kit docs check` reads this note
+and points out a row that says open for a pull request the history table
+says landed ([[Commands#The docs]]).

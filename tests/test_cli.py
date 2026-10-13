@@ -59,7 +59,9 @@ def test_config_reset_goes_back_to_defaults_and_undo_restores(paths, capsys):
     assert main(["config", "set", "persona.name", "Kip"]) == 0
     assert main(["config", "reset"]) == 0
     assert "defaults" in capsys.readouterr().out
-    assert 'name = "Kit"' in paths.settings_file.read_text(encoding="utf-8")
+    assert 'name = "Kip"' not in paths.settings_file.read_text(encoding="utf-8")
+    main(["config", "show"])
+    assert 'name = "Kit"' in capsys.readouterr().out  # show prints everything in force
     assert main(["config", "undo"]) == 0
     assert 'name = "Kip"' in paths.settings_file.read_text(encoding="utf-8")
 

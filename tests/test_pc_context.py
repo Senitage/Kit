@@ -160,6 +160,24 @@ def test_other_questions_dont_look_at_the_pc(paths, question):
     memory.close()
 
 
+def test_in_cloud_only_mode_the_chat_model_sees_the_full_pc_picture(paths):
+    """What docs/2 How Kit Works/Privacy.md says: in cloud-only mode a question about
+    the PC goes to the chat model with every window title and tab, and look_at_pc is
+    offered to it. "Keep it local" still keeps the look on the local model."""
+    SettingsStore(paths).update({"routing": {"mode": "cloud-only"}}, "test")
+    brain, memory, claude = make_brain(paths, reply("Kept local."))
+    brain.pc.update(snap())
+    collect(brain.chat("what have I got open?"))
+    assert [c["model"] for c in claude.calls] == ["claude-haiku-5-5"]
+    asked = claude.calls[0]["messages"][-1]["content"]
+    assert "Open windows (3):" in asked and "pump.py - METTOOLS" in asked
+    collect(brain.chat("Morning"))
+    assert "- look_at_pc:" in claude.calls[1]["system"][0]["text"]
+    collect(brain.chat("keep it local: what have I got open?"))
+    assert len(claude.calls) == 2 and "Open windows (3):" in brain.model.calls[0][-1]["content"]
+    memory.close()
+
+
 def test_look_at_pc_action_shows_the_detail_then_answers(paths):
     memory = Memory(paths.state_dir / "memory.db", Clock())
     model = FakeModel(

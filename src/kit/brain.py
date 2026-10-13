@@ -673,6 +673,13 @@ def own_role(settings: Settings) -> str:
     return CHAT if settings.routing.mode == "cloud-only" else LOCAL
 
 
+def looking_role(role: str, chosen: bool, settings: Settings) -> str:
+    """Who answers a question about the PC or the room, with the full picture in the
+    prompt: Kit's own role (the chat model in cloud-only), unless "keep it local" was
+    said, which keeps every window title and face at home."""
+    return LOCAL if chosen and role == LOCAL else own_role(settings)
+
+
 def reads_ahead(settings: Settings) -> bool:
     """The local model reads the conversation in ahead of Dan's next message
     (``ollama.warm_up``), while it's the one answering him. In cloud-only routing it
@@ -1002,13 +1009,13 @@ class Brain:
         about_pc = turn.reading.wants_pc_look or (again and self._pc_recently())
         if self.pc.latest is not None and about_pc and not asked_cloud:
             self._pc_at = self.memory.clock()
-            role, chosen = own_role(settings), True
+            role, chosen = looking_role(role, chosen, settings), True
             turn.pc_detail = self.pc.detail(turn.owner)
             emit({"type": "looked_at_pc", "online": self.pc.online()})
         about_scene = turn.reading.wants_camera_look or (again and self._scene_recently())
         if self.scene.latest is not None and about_scene and not turn.pc_detail and not asked_cloud:
             self._scene_at = self.memory.clock()
-            role, chosen = own_role(settings), True
+            role, chosen = looking_role(role, chosen, settings), True
             turn.scene_detail = self.scene.detail(turn.owner)
             emit({"type": "looked_around", "in_view": self.scene.in_view()})
         if turn.forecasting is not None and role != LOCAL:
