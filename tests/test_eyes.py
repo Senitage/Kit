@@ -1,6 +1,8 @@
 """Kit's eyes (kit.eyes): the scene, actions, faces, hands, the loop and how it
 finds the brain. All with fakes: no camera, no model libraries."""
 
+import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -22,8 +24,8 @@ from kit.eyes.body import (
     read_hands,
 )
 from kit.eyes.faces import Face, head_direction, read_expressions, read_faces
-from kit.eyes.run import Eyes
-from kit.eyes.scene import Scene, Stable, TrackMemory, describe, position_label
+from kit.eyes.run import Eyes, Post
+from kit.eyes.scene import UNSENT_MAX, Scene, Stable, TrackMemory, describe, position_label
 from kit.settings import EyesSettings
 
 PERSON = (1, "person", (400, 100, 800, 700))
@@ -414,6 +416,7 @@ def make_eyes(brain, cameras=None, detector=None, **settings):
         clock=tick,
         wall=clock,
         sleep=lambda s: None,
+        threaded=False,  # reports go on the spot, so each step's effect can be checked
     )
     return eyes, opened, detector
 
@@ -487,6 +490,75 @@ def test_a_lost_brain_or_camera_is_retried_not_fatal(caplog):
     for _ in range(60):
         eyes.step()
     assert eyes.error == "" and eyes.reports >= 1
+
+
+def test_events_wait_for_the_brain_instead_of_being_lost():
+    brain = FakeBrain(fail=True)
+    eyes, _, _ = make_eyes(brain, report_every_s=1.0)
+    for _ in range(60):  # the brain is down while "person #1 entered" happens
+        eyes.step()
+    assert eyes.reports == 0 and any(r["events"] for r in brain.reports)
+    brain.fail = False
+    brain.reports.clear()
+    for _ in range(60):
+        eyes.step()
+    assert eyes.reports >= 1
+    entered = [e for r in brain.reports for e in r["events"] if e["event"] == "person #1 entered"]
+    assert len(entered) == 1  # it got there, once, with the first report that did
+
+
+def test_kept_events_are_capped_at_what_one_report_carries():
+    scene = Scene(clock=Clock())
+    scene.requeue([{"at": "t", "event": f"e{n}"} for n in range(UNSENT_MAX + 20)])
+    events = scene.report()["events"]
+    assert len(events) == UNSENT_MAX and events[-1]["event"] == f"e{UNSENT_MAX + 19}"
+    assert scene.report()["events"] == []  # reported: gone until requeued
+
+
+def test_the_report_goes_from_its_own_thread_so_frames_keep_coming():
+    gate, sent = threading.Event(), []
+
+    def slow_brain(report):
+        sent.append(report)
+        gate.wait(5)  # the brain is slow: a report takes seconds to answer
+        return {"ok": True, "paused": False}
+
+    brain = FakeBrain()
+    eyes, _, detector = make_eyes(brain, report_every_s=1.0)
+    eyes.post = Post(slow_brain, dropped=eyes._dropped)  # the real thing, threaded
+    before = time.perf_counter()
+    for _ in range(25):  # 2.5 s of frames: two reports due, the brain answering neither
+        eyes.step()
+    assert time.perf_counter() - before < 2.0  # the frame loop never waited on it
+    assert len(detector.frames) == 25 and len(sent) == 1 and eyes.reports == 0
+    gate.set()  # the brain answers: the one in the slot goes, its answer is collected
+    for _ in range(50):
+        if eyes.reports == 2:
+            break
+        eyes.step()
+        time.sleep(0.01)
+    assert eyes.reports == 2 and len(sent) == 2
+    eyes.close()
+
+
+def test_a_report_pushed_out_of_the_slot_keeps_its_events_for_the_next():
+    taken = threading.Event()
+    gate = threading.Event()
+
+    def slow_brain(report):
+        taken.set()
+        gate.wait(5)
+        return {}
+
+    scene = Scene(clock=Clock())
+    post = Post(slow_brain, dropped=lambda r: scene.requeue(r["events"]))
+    post.send({"events": [{"at": "t", "event": "first: taken by the thread"}]})
+    assert taken.wait(2)
+    post.send({"events": [{"at": "t", "event": "second: waits in the slot"}]})
+    post.send({"events": [{"at": "t", "event": "third: pushes the second out"}]})
+    assert [e["event"] for e in scene.report()["events"]] == ["second: waits in the slot"]
+    gate.set()
+    post.close()
 
 
 def test_no_camera_is_said_once_and_retried():

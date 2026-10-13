@@ -190,6 +190,14 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
 
+UNSENT_MAX = 100  # events kept for the brain while it can't be reached (one report's worth)
+
+
+def _wire(at: datetime, event: str) -> dict:
+    """An event as the brain takes it."""
+    return {"at": at.isoformat(timespec="seconds"), "event": event}
+
+
 class Scene:
     def __init__(
         self,
@@ -203,7 +211,7 @@ class Scene:
         self.stable_frames = stable_frames
         self.clock = clock
         self.events: deque[tuple[datetime, str]] = deque(maxlen=max_events)
-        self._unsent: list[tuple[datetime, str]] = []  # events since the last report
+        self._unsent: list[dict] = []  # events not yet reported, as the brain takes them
         self.people: dict[int, dict] = {}  # track id -> what's known this frame
         self.stable: dict[tuple[int, str], Stable] = {}
         self.names: dict[int, str | None] = {}  # track id -> agreed name (kit.eyes.recognise)
@@ -319,7 +327,7 @@ class Scene:
         stamp = self.clock()
         stamped = [(stamp, e) for e in events]
         self.events.extend(stamped)
-        self._unsent.extend(stamped)
+        self._unsent.extend(_wire(t, e) for t, e in stamped)
         return events
 
     def recognise(self, track_id: int, name: str) -> None:
@@ -329,7 +337,7 @@ class Scene:
         self.labels.setdefault(track_id, "person")
         stamped = (self.clock(), f"recognised {name} (#{track_id})")
         self.events.append(stamped)
-        self._unsent.append(stamped)
+        self._unsent.append(_wire(*stamped))
 
     def name_of(self, track_id: int) -> str | None:
         """The recognised name for a track, or None."""
@@ -384,8 +392,7 @@ class Scene:
                 people.append(entry)
             else:
                 objects.append(entry)
-        events = [{"at": t.isoformat(timespec="seconds"), "event": e} for t, e in self._unsent]
-        self._unsent = []
+        events, self._unsent = self._unsent[-UNSENT_MAX:], []
         return {
             "camera": camera,
             "mirrored": mirrored,
@@ -396,6 +403,12 @@ class Scene:
             "objects": objects,
             "events": events,
         }
+
+    def requeue(self, events: list[dict]) -> None:
+        """A report's events didn't reach the brain (it was down, or a newer report
+        took its place): they go with the next one. The newest ``UNSENT_MAX`` are
+        kept, which is as many as the brain takes in one report."""
+        self._unsent = (list(events) + self._unsent)[-UNSENT_MAX:]
 
 
 def describe(report: dict, max_events: int = 5) -> list[str]:
