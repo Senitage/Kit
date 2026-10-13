@@ -72,8 +72,9 @@ never an invented afternoon.
   him. With `life.read_mood = meaning` (once `kit eval mood` passes on your
   own lines), he reads how you are by meaning.
 - **A bad night**: when you sound like you're having a really rough time, he
-  drops the cheek and the games for the next three hours, listens and stays,
-  and once mentions someone you can talk to or Lifeline (13 11 14). Anything
+  drops the cheek and the games for the next three hours, listens and stays
+  with it once, then follows your lead rather than bringing it up again, and
+  once mentions someone you can talk to or Lifeline (13 11 14). Anything
   about hurting yourself gets "are you safe right now?", Lifeline and 000.
   The words only raise it; the model answering confirms it's real, so "I give
   up on this bug" stays a bug ([[Inner Life In Depth#A bad night]]). This one
