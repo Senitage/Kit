@@ -173,6 +173,9 @@ class Face:
         self._dials = [0.5, 0.0]  # eased toward the values above
         self._breath: float | None = None  # breathing phase, radians
         self._colour: list[float] | None = None  # the glow colour, eased between moods
+        # How loud his voice is right now (0..1), from the sound itself, while it's
+        # playing; None when nothing is driving the mouth, and the pulse stands in.
+        self.talk_level: float | None = None
 
     # ---- what the desk app (or the arm) tells the face ----
 
@@ -216,6 +219,11 @@ class Face:
         if state not in STATES:
             raise ValueError(f"unknown state {state!r}")
         self.state = state
+
+    def talk(self, level: float | None) -> None:
+        """How loud his voice is this instant (0..1), so his mouth follows the sound
+        itself rather than a pulse; None hands the mouth back to the pulse."""
+        self.talk_level = None if level is None else _clamp(level, 0, 1)
 
     def set_dials(self, arousal: float, valence: float) -> None:
         """How lively (0 flat .. 1 up) and how happy (-1 low .. 1 happy) Kit is. The
@@ -289,7 +297,9 @@ class Face:
         c = self._cur
         open_ = max(0.0, (c["open"] + g.open) * blink)
         talk = 0.0
-        if self.state == "speaking":
+        if self.talk_level is not None:
+            talk = self.talk_level
+        elif self.state == "speaking":
             talk = 0.25 + 0.55 * abs(math.sin(now * 11.8) * math.sin(now * 18.9 + 1))
         return FaceFrame(
             open_left=open_ * max(0.0, 1 + c["asym"] * 0.45),

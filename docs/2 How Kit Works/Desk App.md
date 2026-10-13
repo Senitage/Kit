@@ -66,9 +66,17 @@ starting on a browser's old id is still recognised as one. See [[Privacy]].
 
 ## His voice and face on the desk
 
-- **Voice**: the app plays each sentence as soon as the server has made it,
-  through one steady sound output, with any sound (a chuckle) in its place.
-  His face talks for exactly as long as each sentence plays. See [[Voice]].
+- **Voice**: the app plays each sentence as it comes from the server, in
+  pieces while the rest is still being made, through one steady sound output,
+  with any sound (a chuckle) in its place. His mouth follows the sound itself:
+  the output measures how loud his voice is as it plays and his face opens its
+  mouth to match, so he talks for exactly as long as each sentence plays and
+  closes his mouth on the pauses. A reply the
+  server is slow over can't hold up the next one: each sentence gets 30 s,
+  an engine still loading answers "not yet" and is asked again briefly, and
+  when you interrupt, the new reply's sentences are fetched at once rather
+  than behind the old one's. The **boop** stays quiet when his voice is
+  saying the reply, so it doesn't land on his first word. See [[Voice]].
 - **His bubble** shows what he's said, what he's up to while you're out, or,
   while his eyes see you on your phone, that he's keeping quiet.
 - **Kit 3D**: when his character has a 3D look, the app lays the brain's face

@@ -13,6 +13,8 @@
                                (the desk app copies these into its window)
      kit.setDials(a, v)        the mood dials: arousal 0..1 (livelier moves and
                                blinks), valence -1..1 (more or less blush)
+     kit.setTalk(level)        how loud his voice is this instant, 0..1: the mouth
+                               follows the sound (null: back to the speaking pulse)
      kit.show({...})           a show from the brain (kit.shows): weather, time, date,
                                or any show in the pack by name ({kind: 'dream'})
    Asleep, he shows the pack's sleep show and now and then drifts into its dream.
@@ -49,6 +51,7 @@
   try { Object.assign(want, JSON.parse(sessionStorage.getItem('kit-face') || '{}')); } catch (e) {}
   var queue = [];
   var dials = { arousal: 0.5, valence: 0 };  // as Glow's rig reads them (kit.face.rig)
+  var talk = null;  // his voice's loudness right now, when the desk app is measuring it
   var ready = false;
   function remember() {
     try { sessionStorage.setItem('kit-face', JSON.stringify({ emotion: want.emotion, state: want.state })); } catch (e) {}
@@ -68,6 +71,9 @@
       dials.arousal = Math.max(0, Math.min(1, +arousal || 0));
       dials.valence = Math.max(-1, Math.min(1, +valence || 0));
     },
+    // How loud his voice is this instant (0..1): the mouth follows the sound itself
+    // instead of the speaking pulse. null hands the mouth back to the pulse.
+    setTalk: function (level) { talk = level === null || level === undefined ? null : Math.max(0, Math.min(1, +level || 0)); },
     show: function (what) { if (ready) startShow(what); else queue.push(['show', what]); },
     // Drawn and read in one go, so the picture is always whole.
     frame: function () { if (!ready) return null; draw(); return renderer.domElement.toDataURL('image/png'); },
@@ -410,7 +416,8 @@
     target.look_left = Math.min(1, (target.look_left || 0) + Math.max(0, -gaze.x) * 0.9);
     target.look_up = Math.min(1, (target.look_up || 0) + Math.max(0, gaze.y) * 0.7);
     target.look_down = Math.min(1, (target.look_down || 0) + Math.max(0, -gaze.y) * 0.7);
-    if (st === 'speaking') target.mouth_open = Math.max(target.mouth_open || 0, 0.25 + 0.6 * Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1)));
+    if (talk !== null) target.mouth_open = Math.max(target.mouth_open || 0, talk);
+    else if (st === 'speaking') target.mouth_open = Math.max(target.mouth_open || 0, 0.25 + 0.6 * Math.abs(Math.sin(t * 9) * Math.sin(t * 3.7 + 1)));
     for (name in cur) {
       cur[name] += ((target[name] || 0) - cur[name]) * ((name.indexOf('close') === 0 && blinkT > 0) || name.indexOf('look_') === 0 ? 1 : k);
       for (var i = 0; i < faceMeshes.length; i++) {

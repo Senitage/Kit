@@ -8,10 +8,17 @@ the graphics card memory it held, and starts the new one on the next line.
 If his usual engine can't start or runs out of graphics card memory, and
 ``speech.fallback`` names another (Kokoro on the CPU), Kit switches to it and
 stays on it until his speech settings change, so his voice carries on.
+
+A line comes back from the engine in pieces as it's made (``stream``: 16-bit
+samples, the first within a few hundred milliseconds on Chatterbox Turbo), so
+the desk can start playing it before the rest exists. ``speak`` gathers the
+pieces into one WAV for callers that want the whole clip (``kit speech say``,
+the bench).
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -20,8 +27,9 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+import wave
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -46,6 +54,14 @@ class SpeechError(Exception):
     """The voice engine couldn't start or couldn't say a line."""
 
 
+class Loading(SpeechError):
+    """The voice engine is still loading: ask again in a moment."""
+
+
+class Stale(SpeechError):
+    """The line belongs to a reply that's been overtaken, so it wasn't made."""
+
+
 class Process(Protocol):
     def poll(self) -> int | None: ...
     def terminate(self) -> None: ...
@@ -58,10 +74,34 @@ def launch(command: list[str], log_file: IO) -> Process:
 
 @dataclass
 class Spoken:
+    """A whole line as a WAV file."""
+
     wav: bytes
     synth_ms: float
     audio_ms: float
     engine: str
+
+
+@dataclass
+class Speech:
+    """A line as it's made: ``pieces`` yields 16-bit mono samples at ``rate``, the
+    first already in hand when the engine answered (``synth_ms`` is its timing)."""
+
+    rate: int
+    synth_ms: float
+    engine: str
+    pieces: Iterator[bytes] = field(repr=False)
+
+
+def pcm_wav(pcm: bytes, rate: int) -> bytes:
+    """16-bit mono samples as a WAV file."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return buf.getvalue()
 
 
 def speech_dir(paths: KitPaths) -> Path:
@@ -109,6 +149,8 @@ class SpeechService:
         self._made_at = float("-inf")  # when the last one was done
         self._making_lock = threading.Lock()
         self._closing = False  # Kit is shutting down: no more starting engines
+        self._loader: threading.Thread | None = None  # an engine loading in the background
+        self.generation: int | None = None  # the newest reply a line has come from
         # On the fallback engine: (the speech settings it happened under, why).
         self.fell_back: tuple[str, str] | None = None
 
@@ -155,24 +197,59 @@ class SpeechService:
     def running(self) -> bool:
         return self._process is not None and self._process.poll() is None
 
+    def _key_for(self, name: str) -> tuple:
+        s = self.settings()
+        if name not in s.engines:
+            raise SpeechError(f"there's no voice engine called {name!r}")
+        profile = s.engines[name]
+        # The options include whether the voice clip exists, so adding one restarts.
+        return (
+            name,
+            profile.python,
+            json.dumps(self.options(profile), sort_keys=True),
+            s.port + self.port_offset,
+        )
+
+    def _failed_lately(self, key: tuple) -> str | None:
+        """Why this engine failed, if it did within the last ``RETRY_S``: it isn't
+        reloaded straight away."""
+        if self._failed and self._failed[0] == key and self.clock() - self._failed[1] < RETRY_S:
+            return self._failed[2]
+        return None
+
+    def ready(self, engine: str | None = None) -> bool:
+        """Is the engine up with the current settings? Doesn't wait on a load."""
+        return self.running() and self._key == self._key_for(engine or self.settings().engine)
+
+    def load_soon(self, engine: str | None = None) -> None:
+        """Start loading the engine in the background, unless one is loading already."""
+        with self._making_lock:
+            if self._loader is not None and self._loader.is_alive():
+                return
+
+            def load() -> None:
+                try:
+                    self.ensure(engine)
+                except SpeechError as e:
+                    log.warning("voice engine: %s", e)
+
+            self._loader = threading.Thread(target=load, name="kit-voice-load", daemon=True)
+            self._loader.start()
+
     def ensure(self, engine: str | None = None) -> dict:
         """Start the engine (``speech.engine`` unless named) if it isn't already
-        running with these settings; returns its health."""
+        running with these settings; returns its health. Waits for the load."""
         with self._lock:
             if self._closing:
                 raise SpeechError("Kit is shutting down")
             s = self.settings()
             name = engine or s.engine
-            if name not in s.engines:
-                raise SpeechError(f"there's no voice engine called {name!r}")
-            profile = s.engines[name]
-            port = s.port + self.port_offset
-            # The options include whether the voice clip exists, so adding one restarts.
-            key = (name, profile.python, json.dumps(self.options(profile), sort_keys=True), port)
+            key = self._key_for(name)
+            profile, port = s.engines[name], key[-1]
             if self.running() and key == self._key:
                 return self.health
-            if self._failed and self._failed[0] == key and self.clock() - self._failed[1] < RETRY_S:
-                raise SpeechError(self._failed[2])  # don't keep reloading a broken engine
+            if (why := self._failed_lately(key)) is not None:
+                raise SpeechError(why)  # don't keep reloading a broken engine
             self.stop()
             try:
                 self._start(name, profile, port, s.load_timeout_s)
@@ -213,17 +290,72 @@ class SpeechService:
         raise SpeechError(f"{name} didn't finish loading in {timeout_s:.0f} s; see {log_path}")
 
     def speak(
-        self, text: str, mood: str = "neutral", engine: str | None = None, first: bool = False
+        self,
+        text: str,
+        mood: str = "neutral",
+        engine: str | None = None,
+        first: bool = False,
+        generation: int | None = None,
+        wait: bool = True,
     ) -> Spoken:
-        """``first``: the opening of a reply, where an engine may add a sound (a sigh)."""
+        """The whole line as a WAV file (``stream`` gathered up), for callers that
+        want it in one piece: ``kit speech say``, the bench, older desks."""
+        said = self.stream(text, mood, engine, first, generation, wait)
+        start = self.clock()
+        pcm = b"".join(said.pieces)
+        return Spoken(
+            wav=pcm_wav(pcm, said.rate),
+            synth_ms=said.synth_ms + 1000 * (self.clock() - start),
+            audio_ms=1000 * len(pcm) / (2 * said.rate),
+            engine=said.engine,
+        )
+
+    def stream(
+        self,
+        text: str,
+        mood: str = "neutral",
+        engine: str | None = None,
+        first: bool = False,
+        generation: int | None = None,
+        wait: bool = True,
+    ) -> Speech:
+        """The line as the engine makes it: ``Speech`` whose pieces are 16-bit samples,
+        the first already made. ``first``: the opening of a reply, where an engine may
+        add a sound (a sigh). ``generation`` numbers the reply: once a higher number
+        has been seen, lines from a lower one are stale (``Stale``) and aren't made,
+        and a line under way stops at its next piece. With ``wait`` off, an engine
+        that isn't up is started in the background and ``Loading`` raised, so a
+        caller isn't held for the minutes a load can take. His voice counts as being
+        made (``quiet_s``) until the last piece has been taken."""
+        if generation is not None and self._stale(generation):
+            raise Stale(f"reply {generation} was interrupted, so that line wasn't made")
         with self._making_lock:
             self._making += 1
+        done = False
+
+        def finish() -> None:
+            nonlocal done
+            if not done:
+                done = True
+                with self._making_lock:
+                    self._making -= 1
+                    self._made_at = self.clock()
+
         try:
-            return self._speak(text, mood, engine, first)
-        finally:
-            with self._making_lock:
-                self._making -= 1
-                self._made_at = self.clock()
+            said = self._speak(text, mood, engine, first, generation, wait)
+        except BaseException:
+            finish()
+            raise
+        pieces = said.pieces
+
+        def counted() -> Iterator[bytes]:
+            try:
+                yield from pieces
+            finally:
+                finish()
+
+        said.pieces = counted()
+        return said
 
     def quiet_s(self) -> float:
         """Seconds since Kit's voice was last being made (0 while it is), so other work
@@ -231,13 +363,39 @@ class SpeechService:
         with self._making_lock:
             return 0.0 if self._making else max(0.0, self.clock() - self._made_at)
 
-    def _speak(self, text: str, mood: str, engine: str | None, first: bool) -> Spoken:
+    def _speak(
+        self,
+        text: str,
+        mood: str,
+        engine: str | None,
+        first: bool,
+        generation: int | None,
+        wait: bool,
+    ) -> Speech:
         try:
-            return self._say(text, mood, engine or self.in_use(), first)
+            return self._say(text, mood, engine or self.in_use(), first, generation, wait)
+        except (Loading, Stale):
+            raise  # nothing wrong with the engine
         except SpeechError as e:
             if engine is not None or not self._fall_back(e):
                 raise
-            return self._say(text, mood, self.in_use(), first)
+            return self._say(text, mood, self.in_use(), first, generation, wait)
+
+    def _stale(self, generation: int) -> bool:
+        """Note the newest reply seen; is this line from an older one?"""
+        with self._making_lock:
+            if self.generation is None or generation > self.generation:
+                self.generation = generation
+            return generation < self.generation
+
+    def _overtaken(self, generation: int | None) -> bool:
+        """Has a newer reply been seen since this line began?"""
+        with self._making_lock:
+            return (
+                generation is not None
+                and self.generation is not None
+                and generation < self.generation
+            )
 
     def in_use(self) -> str:
         """The engine Kit speaks with: ``speech.engine``, or ``speech.fallback`` once
@@ -271,25 +429,52 @@ class SpeechService:
     def _settings_key(s: SpeechSettings) -> str:
         return json.dumps(s.model_dump(mode="json"), sort_keys=True)
 
-    def _say(self, text: str, mood: str, engine: str, first: bool) -> Spoken:
+    def _say(
+        self, text: str, mood: str, engine: str, first: bool, generation: int | None, wait: bool
+    ) -> Speech:
+        if not wait and not self.ready(engine):
+            if (why := self._failed_lately(self._key_for(engine))) is not None:
+                raise SpeechError(why)
+            self.load_soon(engine)
+            raise Loading(f"Kit's voice ({engine}) is still loading; ask again in a moment")
         health = self.ensure(engine)
-        payload = {"text": text, "mood": mood, "first": first}
+        payload = {"text": text, "mood": mood, "first": first, "generation": generation}
         try:
-            r = self.http.post(f"{self._url()}/speak", json=payload)
+            request = self.http.build_request("POST", f"{self._url()}/speak", json=payload)
+            r = self.http.send(request, stream=True)
         except httpx.HTTPError as e:
             raise SpeechError(f"the voice engine didn't answer: {type(e).__name__}") from e
         if r.status_code != 200:
+            r.read()
+            r.close()
+            if r.status_code == 410:
+                raise Stale(f"reply {generation} was interrupted, so that line wasn't made")
             try:
                 message = r.json().get("error", r.text)
             except ValueError:
                 message = r.text
             raise SpeechError(f"the voice engine couldn't say that: {message}")
-        return Spoken(
-            wav=r.content,
+        rate = int(r.headers.get("X-Sample-Rate") or health.get("sample_rate") or 24000)
+        return Speech(
+            rate=rate,
             synth_ms=float(r.headers.get("X-Synth-Ms", 0)),
-            audio_ms=float(r.headers.get("X-Audio-Ms", 0)),
             engine=health.get("engine", ""),
+            pieces=self._pieces(r, generation),
         )
+
+    def _pieces(self, r: httpx.Response, generation: int | None) -> Iterator[bytes]:
+        """The engine's answer as it comes, stopping once the reply is overtaken."""
+        try:
+            for piece in r.iter_bytes():
+                if self._overtaken(generation):
+                    log.info("reply %s was interrupted: dropping the rest of the line", generation)
+                    return
+                if piece:
+                    yield piece
+        except httpx.HTTPError as e:
+            raise SpeechError(f"the voice engine broke off: {type(e).__name__}") from e
+        finally:
+            r.close()
 
     def _url(self) -> str:
         return f"http://127.0.0.1:{self._key[-1]}" if self._key else self.url

@@ -130,6 +130,19 @@ def test_speaking_pulses_and_other_states_do_not():
     assert max(f.talk for f in run(face, 1, 1)) == 0
 
 
+def test_his_voice_drives_the_mouth_when_its_loudness_is_known():
+    face = Face(rng=random.Random(7))
+    face.set_state("speaking")
+    face.talk(0.7)  # the desk measures his voice as it plays: no pulse, the sound itself
+    assert {round(f.talk, 2) for f in run(face, 0, 1)} == {0.7}
+    face.talk(0.0)  # a pause inside the sentence: his mouth closes
+    assert max(f.talk for f in run(face, 1, 1)) == 0
+    face.talk(None)  # nothing measuring: the pulse again
+    assert max(f.talk for f in run(face, 2, 1)) > 0.3
+    face.talk(1.5)
+    assert face.talk_level == 1.0
+
+
 def test_eyes_follow_a_look_at_target_then_go_back_to_idle():
     face = Face(rng=random.Random(8))
     face.look_at(0.8, -0.5, 0)

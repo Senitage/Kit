@@ -8,8 +8,16 @@ library, numpy and the engine itself.
     python worker.py --engine kokoro --port 8611 --options '{"voice": "af_heart"}'
 
 GET  /health  -> {"engine", "kind", "sample_rate", "device", "cuda_graph", "ready"}
-POST /speak   {"text": "...", "mood": "happy", "first": true} -> audio/wav (16-bit mono), with
-              X-Synth-Ms (time to make it) and X-Audio-Ms (how long it plays)
+POST /speak   {"text": "...", "mood": "happy", "first": true, "generation": 7}
+              -> audio/L16 (16-bit mono PCM, no header), sent in pieces as they're
+              made (chunked), with X-Sample-Rate and X-Synth-Ms (time to the first
+              piece). An engine that makes a line in one go sends it as one piece.
+              ``generation`` numbers the reply the line belongs to: once a higher
+              number has been seen, lines from a lower one are stale (Dan
+              interrupted, or a new reply began) and get 410 instead of being made,
+              and a line under way stops at the next piece. Lines are made one at a
+              time, so the check happens between lines: a stale line waiting its
+              turn is dropped
 
 A sound in square brackets in the text ("[chuckle] Told you.") is made by Chatterbox
 Turbo and left out by the other engines.
@@ -31,6 +39,7 @@ import io
 import json
 import math
 import os
+import random
 import re
 import sys
 import threading
@@ -57,16 +66,26 @@ def without_sounds(text: str) -> str:
     return " ".join(SOUND_TAG.sub(" ", text).split())
 
 
-def wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
-    """Float audio (-1 to 1) as a 16-bit mono WAV file."""
-    pcm = (np.clip(np.asarray(audio, dtype=np.float32).reshape(-1), -1, 1) * 32767).astype("<i2")
+def pcm_bytes(audio: np.ndarray) -> bytes:
+    """Float audio (-1 to 1) as 16-bit mono samples."""
+    samples = np.clip(np.asarray(audio, dtype=np.float32).reshape(-1), -1, 1) * 32767
+    return samples.astype("<i2").tobytes()
+
+
+def pcm_wav(pcm: bytes, sample_rate: int) -> bytes:
+    """16-bit mono samples as a WAV file."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sample_rate)
-        w.writeframes(pcm.tobytes())
+        w.writeframes(pcm)
     return buf.getvalue()
+
+
+def wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
+    """Float audio (-1 to 1) as a 16-bit mono WAV file."""
+    return pcm_wav(pcm_bytes(audio), sample_rate)
 
 
 def mood_value(table: dict, mood: str, default: float) -> float:
@@ -149,11 +168,20 @@ class PiperEngine:
 
 
 def _torch_device(wanted: str) -> str:
-    import torch
-
     if wanted in ("", "auto"):
+        import torch
+
         return "cuda" if torch.cuda.is_available() else "cpu"
     return wanted
+
+
+class NoWatermark:
+    """Stands in for Chatterbox's Perth watermarker, which marks every clip (30 to
+    80 ms of processor time each) for a public web that Kit's voice never reaches.
+    The sound is handed back as it is."""
+
+    def apply_watermark(self, wav, sample_rate=None):
+        return wav
 
 
 class ChatterboxEngine:
@@ -170,6 +198,7 @@ class ChatterboxEngine:
         self.cfg_weight = float(options.get("cfg_weight", 0.5))
         if reference:
             self.tts.prepare_conditionals(reference, exaggeration=0.5)
+        self.tts.watermarker = NoWatermark()
         self.sample_rate = self.tts.sr
 
     def speak(self, text: str, mood: str, first: bool = False) -> np.ndarray:
@@ -202,7 +231,8 @@ class ChatterboxTurboEngine:
         reference = options.get("reference") or ""
         if reference:
             self.tts.prepare_conditionals(reference)
-        self.mood_tags = options.get("mood_tags", {})
+        self.tts.watermarker = NoWatermark()
+        self.openers = Openers(options)
         self.sample_rate = self.tts.sr
         self.turbo, self.graph = None, None
         if options.get("cuda_graph", True) and self.device.startswith("cuda"):
@@ -213,17 +243,50 @@ class ChatterboxTurboEngine:
                 self.turbo, self.graph = None, None
                 log(f"no CUDA graph, so Chatterbox's own token loop: {type(e).__name__}: {e}")
 
-    def speak(self, text: str, mood: str, first: bool = False) -> np.ndarray:
-        # A reply that opens with a sound of its own doesn't get the mood's one too.
-        opens = text.lstrip().startswith("[")
-        tag = self.mood_tags.get(mood, "") if first and not opens else ""
-        line = f"{tag} {text}".strip()
+    def speak(self, text: str, mood: str, first: bool = False):
+        """The line as sound: on the graph path, a window at a time as it's made
+        (an iterator of arrays); otherwise one array from Chatterbox's own loop."""
+        line = f"{self.openers.pick(mood, first, text)} {text}".strip()
         if self.graph is not None:
-            try:
-                return self.turbo.generate(self.tts, self.graph, line)
-            except ValueError as e:  # a line too long for the graph's store
-                log(f"{e}: using Chatterbox's own token loop for it")
+            return self._windows(line)
+        return self.own(line)
+
+    def own(self, line: str) -> np.ndarray:
         return self.tts.generate(line).squeeze(0).cpu().numpy()
+
+    def _windows(self, line: str):
+        made = False
+        try:
+            for piece in self.turbo.generate(self.tts, self.graph, line):
+                made = True
+                yield piece
+        except ValueError as e:  # a line too long for the graph's store: said before any sound
+            if made:
+                raise
+            log(f"{e}: using Chatterbox's own token loop for it")
+            yield self.own(line)
+
+
+class Openers:
+    """The sound Chatterbox Turbo opens a reply with in a mood (a sigh when he's
+    tired), from ``mood_tags``: one of a few for the mood, picked at random, and
+    only some of the time (``mood_tag_chance``), so his replies don't all start the
+    same way. ``seed`` in the options fixes the draw, for tests."""
+
+    def __init__(self, options: dict) -> None:
+        tags = options.get("mood_tags", {})
+        self.tags = {m: ([t] if isinstance(t, str) else list(t)) for m, t in tags.items()}
+        self.chance = float(options.get("mood_tag_chance", 0.6))
+        self.rng = random.Random(options.get("seed"))
+
+    def pick(self, mood: str, first: bool, text: str) -> str:
+        # Only the first line of a reply, and not one that opens with a sound of its own.
+        choices = [t for t in self.tags.get(mood, []) if t]
+        if not first or not choices or text.lstrip().startswith("["):
+            return ""
+        if self.rng.random() >= self.chance:
+            return ""
+        return self.rng.choice(choices)
 
 
 ENGINES = {
@@ -239,11 +302,17 @@ def log(message: str) -> None:
     print(f"[speech] {message}", file=sys.stderr, flush=True)
 
 
+class Stale(Exception):
+    """The line belongs to a reply that's been overtaken: not worth making."""
+
+
 class Worker:
     def __init__(self, name: str, kind: str, options: dict, models_dir: Path) -> None:
         self.name, self.kind = name, kind
         self.engine = ENGINES[kind](options, models_dir)
         self.lock = threading.Lock()  # one line at a time: the GPU can't share anyway
+        self.generation: int | None = None  # the newest reply a line has come from
+        self._newest_lock = threading.Lock()
 
     def health(self) -> dict:
         return {
@@ -255,22 +324,54 @@ class Worker:
             "ready": True,
         }
 
-    def speak(self, text: str, mood: str, first: bool = False) -> tuple[bytes, float, float]:
+    def speak(self, text: str, mood: str, first: bool = False, generation: int | None = None):
+        """The line as 16-bit mono samples, yielded in pieces as the engine makes
+        them (one piece from an engine that makes the line in one go). The engine's
+        lock is held until the last piece, since the graphics card can't share. A
+        line whose reply is overtaken while it's being made stops at the next piece."""
         if self.kind != "chatterbox-turbo":
             text = without_sounds(text)
+        self._newest(generation)
         with self.lock:
-            start = time.perf_counter()
+            if self._stale(generation):  # overtaken while it waited its turn
+                raise Stale(f"reply {generation} was interrupted")
             if text:
                 audio = self.engine.speak(text, mood, first)
             else:  # only a sound, which this engine can't make: a breath of silence
                 audio = np.zeros(int(0.15 * self.engine.sample_rate), dtype=np.float32)
-            synth_ms = (time.perf_counter() - start) * 1000
-        audio_ms = 1000 * len(np.asarray(audio).reshape(-1)) / self.engine.sample_rate
-        return wav_bytes(audio, self.engine.sample_rate), synth_ms, audio_ms
+            pieces = [audio] if isinstance(audio, np.ndarray) else audio
+            for piece in pieces:
+                if self._stale(generation):
+                    log(f"reply {generation} was interrupted: stopping the line")
+                    return
+                yield pcm_bytes(piece)
+
+    def say(self, text: str, mood: str, first: bool = False) -> tuple[bytes, float, float]:
+        """The whole line as a WAV file, with the time it took and how long it plays:
+        for the warm-up line and tests."""
+        start = time.perf_counter()
+        pcm = b"".join(self.speak(text, mood, first))
+        synth_ms = (time.perf_counter() - start) * 1000
+        rate = self.engine.sample_rate
+        return pcm_wav(pcm, rate), synth_ms, 1000 * len(pcm) / (2 * rate)
+
+    def _newest(self, generation: int | None) -> None:
+        if generation is None:
+            return
+        with self._newest_lock:
+            if self.generation is None or generation > self.generation:
+                self.generation = generation
+
+    def _stale(self, generation: int | None) -> bool:
+        with self._newest_lock:
+            newest = self.generation
+        return generation is not None and newest is not None and generation < newest
 
 
 def make_handler(worker: Worker):
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"  # pieces of sound as they're made, on one kept connection
+
         def log_message(self, *args) -> None:  # quiet: Kit logs what matters
             pass
 
@@ -299,18 +400,40 @@ def make_handler(worker: Worker):
                     self._json(400, {"error": "no text"})
                     return
                 mood = str(data.get("mood", "neutral"))
-                audio, synth_ms, audio_ms = worker.speak(text, mood, bool(data.get("first")))
+                generation = data.get("generation")
+                generation = int(generation) if generation is not None else None
+                start = time.perf_counter()
+                pieces = worker.speak(text, mood, bool(data.get("first")), generation)
+                first = next(pieces, b"")  # the first piece before the headers: its timing
+                synth_ms = (time.perf_counter() - start) * 1000
+            except Stale as e:
+                self._json(410, {"error": str(e), "stale": True})
+                return
             except Exception as e:  # the engine failed on this line: say why, keep running
                 log(f"failed on {data.get('text', '')!r}: {e}")
                 self._json(500, {"error": f"{type(e).__name__}: {e}"})
                 return
             self.send_response(200)
-            self.send_header("Content-Type", "audio/wav")
-            self.send_header("Content-Length", str(len(audio)))
+            self.send_header("Content-Type", "audio/L16")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("X-Sample-Rate", str(worker.engine.sample_rate))
             self.send_header("X-Synth-Ms", f"{synth_ms:.0f}")
-            self.send_header("X-Audio-Ms", f"{audio_ms:.0f}")
             self.end_headers()
-            self.wfile.write(audio)
+            try:
+                self._chunk(first)
+                for piece in pieces:
+                    self._chunk(piece)
+            except Exception as e:  # the engine failed part way: the cut-off end says so
+                log(f"failed part way through {text!r}: {e}")
+                self.close_connection = True
+                return
+            finally:
+                pieces.close()  # frees the engine's lock if the desk went away
+            self.wfile.write(b"0\r\n\r\n")
+
+        def _chunk(self, data: bytes) -> None:
+            if data:
+                self.wfile.write(f"{len(data):X}\r\n".encode() + data + b"\r\n")
 
     return Handler
 
@@ -353,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         worker = Worker(args.engine, kind, json.loads(args.options), Path(args.models_dir))
         if args.warm_up:
-            worker.speak("Warming up.", "neutral")
+            worker.say("Warming up.", "neutral")
     except Exception as e:
         log(f"{args.engine} couldn't start: {type(e).__name__}: {e}")
         return 1

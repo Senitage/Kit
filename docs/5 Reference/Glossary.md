@@ -33,6 +33,7 @@ Up: [[Home]] · Reference
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |
+| **Generation (voice)** | The number a reply's sentences carry to the voice engine; a sentence from a lower number than one already seen is dropped, so interrupting him doesn't leave the engine finishing the old reply | [[Voice#How a sentence becomes sound]] |
 | **Held pipe-up** | Something he wanted to say while you were busy, saved till you're free | [[Inner Life In Depth#Busy and held pipe-ups]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |
@@ -44,6 +45,7 @@ Up: [[Home]] · Reference
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
 | **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
+| **Piece** | A bit of a sentence's sound (about a second), sent to the desk while the rest is still being made | [[Voice#How a sentence becomes sound]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
 | **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Reading** | What your message is, as read: the words guess (a goodbye, news, about Kit, a bad-night phrase), then the model's plan decides (`intent`, `about_kit`, `wants_pc_look`, `wants_camera_look`, `said_it`, `crisis_candidate`) | [[Brain#The reading: judgement over keywords]] |

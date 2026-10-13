@@ -1005,16 +1005,17 @@ DEFAULT_MOOD_SPEED: dict[str, float] = {
 }
 
 
-# Sounds Chatterbox Turbo makes to open a reply in these emotions. Its tags (from its
-# tokenizer, 2026-10-07): [advertisement] [angry] [chuckle] [clear throat] [cough]
-# [crying] [dramatic] [fear] [gasp] [groan] [happy] [laugh] [narration] [sarcastic]
-# [shush] [sigh] [sniff] [surprised] [whispering]. Each adds about half a second.
-DEFAULT_MOOD_TAGS: dict[str, str] = {
-    "tired": "[sigh]",
-    "sad": "[sigh]",
-    "grumpy": "[groan]",
-    "playful": "[chuckle]",
-    "surprised": "[gasp]",
+# Sounds Chatterbox Turbo may open a reply with in these emotions, one picked at
+# random each time. Its tags (from its tokenizer, 2026-10-07): [advertisement]
+# [angry] [chuckle] [clear throat] [cough] [crying] [dramatic] [fear] [gasp] [groan]
+# [happy] [laugh] [narration] [sarcastic] [shush] [sigh] [sniff] [surprised]
+# [whispering]. Each adds about half a second.
+DEFAULT_MOOD_TAGS: dict[str, list[str]] = {
+    "tired": ["[sigh]", "[groan]"],
+    "sad": ["[sigh]", "[sniff]"],
+    "grumpy": ["[groan]", "[sigh]", "[clear throat]"],
+    "playful": ["[chuckle]", "[laugh]"],
+    "surprised": ["[gasp]", "[surprised]"],
 }
 
 
@@ -1059,10 +1060,17 @@ class SpeechEngine(_Section):
     cfg_weight: float = Field(
         0.5, ge=0, le=1, description="chatterbox: lower is slower and more deliberate."
     )
-    mood_tags: dict[str, str] = Field(
-        default_factory=lambda: dict(DEFAULT_MOOD_TAGS),
-        description="chatterbox-turbo: a sound that opens a reply in that emotion, such as "
-        "[sigh] or [chuckle].",
+    mood_tags: dict[str, str | list[str]] = Field(
+        default_factory=lambda: {m: list(t) for m, t in DEFAULT_MOOD_TAGS.items()},
+        description="chatterbox-turbo: sounds that may open a reply in that emotion, such as "
+        "[sigh] or [chuckle]; one is picked at random. A single sound works too.",
+    )
+    mood_tag_chance: float = Field(
+        0.6,
+        ge=0,
+        le=1,
+        description="chatterbox-turbo: how often a reply in one of those emotions opens with "
+        "a sound (0.6: six in ten); the rest just start.",
     )
     cuda_graph: bool = Field(
         True,

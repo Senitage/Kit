@@ -121,14 +121,17 @@ class Performer:
     sentence at a time) and stay up long enough to read once he's finished.
 
     With his voice on (``voiced``), his voice keeps the time instead of a guess from
-    the words' length: each sentence, as it starts playing, makes him talk for
-    exactly as long as it lasts (``spoken``), and a segment's gesture plays as its
+    the words' length: each sentence puts its words up and starts his mouth as it
+    starts playing (``heard``), his mouth follows how loud his voice is as it plays
+    (``talk``), and he stops talking as the sentence ends (``spoken``), so his mouth
+    moves for exactly as long as his voice does. A segment's gesture plays as its
     first words do. If his voice doesn't come (it couldn't be made), the guess
     takes over after a few seconds."""
 
     WHOLE_UP_TO = 220  # characters: longer replies show a sentence at a time
     NO_VOICE_S = 5.0  # a voiced reply whose voice hasn't started by then is acted out anyway
     TAIL_S = 0.15  # the mouth stays a moment after the sound stops
+    LOST_VOICE_S = 30.0  # a sentence whose end never comes: his mouth stops anyway
 
     def __init__(self, widget: FaceWidget, caption: QLabel) -> None:
         self.widget = widget
@@ -179,9 +182,9 @@ class Performer:
             self._gesture_at(0)
             self._waiting.start(int(self.NO_VOICE_S * 1000))
 
-    def spoken(self, turn: int, sentence: str, seconds: float) -> None:
-        """His voice has started saying ``sentence`` of the reply for ``turn``: he
-        talks for ``seconds``, and the words go up."""
+    def heard(self, turn: int, sentence: str) -> None:
+        """His voice has started saying ``sentence`` of the reply for ``turn``: the
+        words go up and he talks, until ``spoken`` says the sentence has ended."""
         self._waiting.stop()
         if turn != self._turn:  # a new reply: the caption starts afresh
             self._turn, self._said = turn, []
@@ -196,10 +199,24 @@ class Performer:
         self.caption.setText(whole if len(whole) <= self.WHOLE_UP_TO else sentence)
         self._gesture_for(sentence)
         face.set_state("speaking")
-        self._quiet.start(int(max(0.3, seconds + self.TAIL_S) * 1000))
+        self._quiet.start(int(self.LOST_VOICE_S * 1000))
+
+    def spoken(self, turn: int, sentence: str, seconds: float) -> None:
+        """His voice has finished ``sentence`` of the reply for ``turn`` (it played
+        for ``seconds``; 0 if it couldn't be voiced): his mouth stops in a moment,
+        unless the next sentence starts first."""
+        if turn != self._turn:
+            self.heard(turn, sentence)
+        if self.widget.face.state == "speaking":
+            self._quiet.start(int(self.TAIL_S * 1000))
+
+    def talk(self, level: float) -> None:
+        """How loud his voice is right now (0..1): his mouth follows it."""
+        self.widget.face.talk(level)
 
     def _voice_stopped(self) -> None:
         self.widget.face.set_state("idle")
+        self.widget.face.talk(None)
         clear = QTimer(singleShot=True)
         clear.timeout.connect(lambda: self.caption.setText(""))
         clear.start(int(self.linger(self.caption.text()) * 1000))

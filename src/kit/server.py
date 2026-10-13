@@ -18,9 +18,10 @@ from datetime import datetime
 from importlib import resources
 from typing import Annotated
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import iterate_in_threadpool
 
 import kit
 from kit.body_registry import API_VERSION, LIFE_EVENTS, BodyRegistry, Hello
@@ -39,7 +40,7 @@ from kit.reply import Reply, voiced
 from kit.scene_context import SceneReport
 from kit.settings import Settings, SettingsError
 from kit.settings_store import SettingsStore
-from kit.speech.service import SpeechError, SpeechService
+from kit.speech.service import Loading, SpeechError, SpeechService, Stale
 from kit.things import THINGS, Register
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,10 @@ class SpeakIn(BaseModel):
     emotion: str = Field("neutral", max_length=20)
     # The opening of a reply, where an engine may add a sound (a sigh, a chuckle).
     first: bool = False
+    # Numbers the reply this line is from, going up with each one the desk begins. Once
+    # a higher number has been seen, lines from a lower one (a reply Dan interrupted)
+    # are dropped with 410 instead of being made. Left out, every line is made.
+    generation: int | None = Field(None, ge=0)
 
 
 class FactIn(BaseModel):
@@ -839,31 +844,46 @@ def create_app(
         return {"available": True, **speech.status()}
 
     @app.post("/api/speech/say", dependencies=auth)
-    async def speech_say(body: SpeakIn) -> Response:
-        """One sentence of Kit's speech as a WAV file, in the voice engine in use."""
+    async def speech_say(body: SpeakIn, request: Request, wav: bool = False) -> Response:
+        """One sentence of Kit's speech in the voice engine in use, sent in pieces as
+        it's made: 16-bit mono samples (``audio/L16``) with the rate in
+        ``X-Sample-Rate``, so the desk can start playing before the rest exists.
+        With ``Accept: audio/wav`` or ``?wav=1`` the whole sentence comes as one WAV
+        file instead (older desks, the command line). 503 while the engine is still
+        loading (it loads in the background; ask again in a moment), 410 for a line
+        from a reply that's been overtaken, which also cuts short a line under way."""
         if speech is None or not store.current().speech.enabled:
             raise HTTPException(409, "speech is off; turn it on with `kit speech on`")
+        whole = wav or "audio/wav" in request.headers.get("accept", "")
+        args = (body.text, body.emotion, None, body.first)
         try:
-            spoken = await asyncio.to_thread(
-                speech.speak, body.text, body.emotion, None, body.first
+            said = await asyncio.to_thread(
+                speech.speak if whole else speech.stream,
+                *args,
+                generation=body.generation,
+                wait=False,
             )
+        except Loading as e:
+            raise HTTPException(503, str(e), headers={"Retry-After": "1"}) from e
+        except Stale as e:
+            raise HTTPException(410, str(e)) from e
         except SpeechError as e:
             raise HTTPException(503, str(e)) from e
         if body.first:
             log.info(
-                "turn: first sound made in %.2f s (%.1f s of speech), %.2f s after the message",
-                spoken.synth_ms / 1000,
-                spoken.audio_ms / 1000,
+                "turn: first sound made in %.2f s, %.2f s after the message",
+                said.synth_ms / 1000,
                 turn.since(),
             )
-        return Response(
-            spoken.wav,
-            media_type="audio/wav",
-            headers={
-                "X-Synth-Ms": f"{spoken.synth_ms:.0f}",
-                "X-Audio-Ms": f"{spoken.audio_ms:.0f}",
-                "X-Engine": spoken.engine,
-            },
+        headers = {"X-Synth-Ms": f"{said.synth_ms:.0f}", "X-Engine": said.engine}
+        if whole:
+            headers["X-Audio-Ms"] = f"{said.audio_ms:.0f}"
+            return Response(said.wav, media_type="audio/wav", headers=headers)
+        headers["X-Sample-Rate"] = str(said.rate)
+        return StreamingResponse(
+            iterate_in_threadpool(said.pieces),
+            media_type=f"audio/L16; rate={said.rate}",
+            headers=headers,
         )
 
     @app.get("/api/spend", dependencies=auth)

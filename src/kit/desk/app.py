@@ -68,7 +68,7 @@ from kit.desk import face3d, startup, theme
 from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
-from kit.desk.client import BrainClient, BrainError, SpeechOff, follow_life
+from kit.desk.client import BrainClient, BrainError, Sound, SpeechOff, follow_life
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
@@ -412,7 +412,9 @@ class _Signals(QObject):
     life = Signal(dict)
     eyes = Signal(bool)  # the "Let Kit see me" switch, as the brain has it
     character = Signal()
-    spoke = Signal(int, str, float)  # his voice started a sentence: (turn, sentence, seconds)
+    heard = Signal(int, str)  # his voice started a sentence: (turn, sentence)
+    spoke = Signal(int, str, float)  # his voice finished a sentence: (turn, sentence, seconds)
+    talk = Signal(float)  # how loud his voice is right now, 0..1
 
 
 class DeskApp(QObject):
@@ -458,12 +460,15 @@ class DeskApp(QObject):
         self.chat.state.connect(self._chat_state)
         self.chat.settings_wanted.connect(lambda: self.open_window("Kit's settings"))
         self.chat.resized.connect(self._chat_resized)
+        self._signals.heard.connect(self.performer.heard)
         self._signals.spoke.connect(self.performer.spoken)
+        self._signals.talk.connect(self.performer.talk)
         self.chat.speaker = Speaker(
             self._speak,
-            heard=self.chat.heard,
+            heard=self._heard,
             spoke=self._signals.spoke.emit,
             connect=self._connect_voice,
+            talk=self._signals.talk.emit,
         )
         self._save_soon = QTimer(self)
         self._save_soon.setSingleShot(True)
@@ -589,11 +594,18 @@ class DeskApp(QObject):
         if self.client is not None:
             self.client.health()
 
-    def _speak(self, text: str, emotion: str, first: bool) -> bytes:
-        """One sentence of Kit's speech from the server (SpeechOff if it's turned off)."""
+    def _speak(self, text: str, emotion: str, first: bool, generation: int) -> Sound:
+        """One sentence of Kit's speech from the server, in pieces as it's made
+        (SpeechOff if it's turned off)."""
         if self.client is None:
             raise SpeechOff("not connected")
-        return self.client.speak(text, emotion, first)
+        return self.client.speak(text, emotion, first, generation)
+
+    def _heard(self, turn: int, sentence: str) -> None:
+        """His voice has started a sentence (from the voice thread): the chat shows
+        its words, and his face starts talking."""
+        self.chat.heard(turn, sentence)
+        self._signals.heard.emit(turn, sentence)
 
     def _chat_resized(self, size) -> None:
         if (size.width(), size.height()) != (self.config.chat_width, self.config.chat_height):
@@ -1049,12 +1061,13 @@ class DeskApp(QObject):
             self.face.face.set_state("idle")
 
     def _act_out(self, reply: dict) -> None:
-        """Kit said something: he acts it out, says it under his face, and boops."""
+        """Kit said something: he acts it out, says it under his face, and boops,
+        unless his voice is saying it (the boop landed on his first word)."""
         self.bubble.enabled = self.config.speech_bubble
         sound, self._next_sound = self._next_sound, "boop"
         if not reply.get("segments"):
             return
-        if self.config.boop:
+        if self.config.boop and not self.chat.voicing:
             self.sounds.play(sound)
         self.performer.perform(reply, voiced=self.chat.voicing)
         self._answered = True

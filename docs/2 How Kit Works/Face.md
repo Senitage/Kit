@@ -44,6 +44,12 @@ each app or body draws, so the desk can be 3D while a little robot screen stays
 States bend the pose for what's going on between replies: `idle`,
 `listening`, `thinking`, `speaking`, `working`, `sleeping` and `offline`.
 
+While he's `speaking`, his mouth follows his voice: the desk app measures how
+loud each bit of sound is as it plays and the face opens its mouth to match
+(`talk`), so it moves on his words, closes on pauses and stops when the sound
+does. With nothing measuring (no voice, a body without the sound), a steady
+talking pulse stands in. See [[Voice#How a sentence becomes sound]].
+
 ## Emotions and gestures
 
 The brain only ever picks from these names (`src/kit/reply.py`), and every

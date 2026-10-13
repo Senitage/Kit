@@ -3,8 +3,11 @@
 Speech starts as soon as the first sentence is whole, so Kit is talking while the
 brain is still writing the rest. The first sentence is cut short when it can be,
 because a voice engine like Chatterbox makes a whole piece before any of it plays:
-at its first comma ("Yeah, I reckon...") or, failing that, before an "and", "but"
-or "so" once a few words are in. The rest is made while the opening plays.
+at the first comma after at least four words ("Yeah, I had a look at that,") or,
+failing that, before an "and", "but" or "so" once a dozen words are in. A clause
+of one or two words ("Yeah,") is never cut off on its own: the engine gives it
+its own falling tune and a gap follows, which sounds like a stammer. The rest is
+made while the opening plays.
 """
 
 from __future__ import annotations
@@ -53,13 +56,18 @@ _JOIN = re.compile(r"\s(?=(?:and|but|so|because|though|which|or)\s)", re.IGNOREC
 
 class SentenceSplitter:
     """``feed`` streamed text in, get back the pieces that are ready to speak;
-    ``flush`` at the end for whatever is left."""
+    ``flush`` at the end for whatever is left.
 
-    def __init__(self, first_clause_words: int = 6, min_clause_words: int = 1) -> None:
+    ``min_clause_words`` is the fewest words the first piece may have when it's cut
+    short, at a comma or before an "and"; the cut before an "and" also needs
+    ``long_sentence_words`` in the buffer first, so a short sentence stays whole.
+    Every caller (the desk, ``kit speech say``, the bench) uses the defaults."""
+
+    def __init__(self, min_clause_words: int = 4, long_sentence_words: int = 12) -> None:
         self.buffer = ""
         self.started = False
-        self.first_clause_words = first_clause_words
-        self.min_clause_words = min_clause_words
+        self.min_clause_words = max(1, min_clause_words)
+        self.long_sentence_words = long_sentence_words
 
     def feed(self, text: str) -> list[str]:
         self.buffer += text
@@ -93,12 +101,17 @@ class SentenceSplitter:
         while (end := self._sentence_end()) is not None:
             if piece := self._take(end):
                 return piece
-        if not self.started and len(self.buffer.split()) >= self.first_clause_words:
+        if not self.started:
             for match in _CLAUSE.finditer(self.buffer):
-                if len(self.buffer[: match.end()].split()) >= self.min_clause_words:
+                if self._words(self.buffer[: match.end()]) >= self.min_clause_words:
                     return self._take(match.end())
-            if len(self.buffer.split()) >= 2 * self.first_clause_words:
+            if self._words(self.buffer) >= self.long_sentence_words:
                 for match in _JOIN.finditer(self.buffer):
-                    if len(self.buffer[: match.start()].split()) >= 4:
+                    if self._words(self.buffer[: match.start()]) >= self.min_clause_words:
                         return self._take(match.start())
         return ""
+
+    @staticmethod
+    def _words(text: str) -> int:
+        """Spoken words: a sound tag ("[chuckle]") isn't one."""
+        return len(without_sounds(text).split())
