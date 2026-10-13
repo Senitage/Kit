@@ -426,15 +426,18 @@ class Memory:
 
     def save_day(self, day: str, summary: str, private: bool = False) -> None:
         """The summary of ``day``; ``private`` if Dan kept something local that day,
-        since the summary may tell it."""
+        since the summary may tell it. It's dated the end of that day, in the clock's
+        zone like every other item (older ones were saved without a zone; readers
+        take either, see kit.pastimes.parse_time)."""
         if summary.strip():
+            end = datetime.fromisoformat(f"{day}T23:59:59").replace(tzinfo=self.clock().tzinfo)
             self.index.add(
                 DAYS,
                 "day",
                 summary.strip(),
                 title=f"Summary of {day}",
                 ref=day,
-                created=f"{day}T23:59:59",
+                created=end.isoformat(timespec="seconds"),
                 meta={"private": True} if private else None,
             )
         with self._lock, self.db:

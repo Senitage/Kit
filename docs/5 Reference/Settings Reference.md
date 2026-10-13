@@ -153,7 +153,7 @@ How memories are found and kept. See [[Memory]].
 | `conversation_snippets` | `4` | Older conversation snippets recalled into each turn. |
 | `own_memories` | `3` | Entries from Kit's own notebook (his thoughts, opinions, moments and journal) recalled into each turn, most relevant first. |
 | `min_similarity` | `0.59` | How close in meaning a memory must be to count as relevant (0 to 1). It depends on the embedding model: `kit eval memory` suggests a value. |
-| `weight_floor` | `0.3` | Among relevant memories, the ones that matter more to your life and the ones recalled lately come first; this is the least an old, small one counts (0 to 1). 1 weighs them all the same. |
+| `weight_floor` | `0.3` | Among relevant memories, the ones that matter more to your life and the ones you told Kit or confirmed lately come first; this is the least an old, small one counts (0 to 1). 1 weighs them all the same. |
 | `now_days` | `14` | Days a 'now' memory lasts: how you've been or what's going on lately (flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep the gist. |
 | `day_pass` | `work` | Who reads each finished day after midnight, writes its summary and sorts what's worth remembering about you into the right kinds. work: the work model (Sonnet), a few cents a night, with the local model stepping in if the cloud can't; a day with something you kept local always stays home. local: the local model only. |
 | `backups_keep` | `14` | Daily memory backups to keep. |

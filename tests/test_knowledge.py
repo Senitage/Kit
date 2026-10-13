@@ -168,3 +168,107 @@ def test_meta_changes_keep_the_vector_and_items_filter_by_kind(memory):
     assert not memory.index.set_meta(9999, {})
     assert [i.text for i in memory.index.items("self", kind="want")] == ["Ask Dan about lunch."]
     assert len(memory.index.items("self")) == 2
+
+
+# The vector cache: kept in step with every write, never rebuilt for one change
+
+
+def _vector_ids(memory, embedder):
+    return set(memory.index.similarities(query(embedder, "x"), embedder.model))
+
+
+def test_saved_vectors_join_the_cache_without_a_rebuild(memory):
+    e = FakeEmbedder()
+    first = memory.add_fact("Rex is the dog.")
+    embed_all(memory, e)
+    before = memory.index.similarities(query(e, "Rex"), e.model)
+    matrix = memory.index._cache.matrix
+    second = memory.add_fact("Tax returns are in Documents/Finance/Tax.")
+    embed_all(memory, e)
+    assert _vector_ids(memory, e) == {first, second}
+    assert memory.index._cache.matrix is matrix  # the same matrix, one more row
+    assert not memory.index._cache.dirty
+    assert memory.index.similarities(query(e, "Rex"), e.model)[first] == before[first]
+
+
+def test_superseded_edited_and_deleted_items_leave_the_cache(memory):
+    e = FakeEmbedder()
+    old = memory.add_fact("Dan drives a Hilux.")
+    edited = memory.add_fact("The dog is called Rex.")
+    gone = memory.add_fact("Dan once had a red bike.")
+    memory.index.add("notes", "chunk", "a", ref="file1")
+    kept = memory.index.add("notes", "chunk", "b", ref="file2")
+    embed_all(memory, e)
+    assert len(_vector_ids(memory, e)) == 5
+    new = memory.replace_fact(old, "Dan drives a Ford Ranger.")  # supersedes old
+    memory.index.update(edited, text="The dog is called Max.")  # its vector went
+    memory.forget(gone)
+    memory.index.delete_source("notes", ref="file1")
+    assert _vector_ids(memory, e) == {kept}  # new and edited have no vector yet
+    embed_all(memory, e)
+    assert _vector_ids(memory, e) == {new, edited, kept}
+    memory.index.delete_source("notes")
+    assert _vector_ids(memory, e) == {new, edited}
+    assert not memory.index._cache.dirty  # none of it needed a rebuild
+
+
+def test_the_kept_cache_matches_a_rebuild_from_sqlite(memory):
+    e = FakeEmbedder()
+    ids = [memory.add_fact(f"fact number {n} about {'Rex' if n % 3 else 'tax'}") for n in range(12)]
+    embed_all(memory, e)
+    memory.index.supersede(ids[0], ids[1])
+    memory.index.delete(ids[5])
+    memory.index.update(ids[7], text="rewritten")
+    memory.add_fact("Rex ate a sock.")
+    embed_all(memory, e)
+    q = query(e, "Rex")
+    kept = memory.index.similarities(q, e.model)
+    memory.index.mark_dirty()
+    rebuilt = memory.index.similarities(q, e.model)
+    assert kept == rebuilt and len(kept) == 11
+
+
+def test_the_cache_grows_past_its_spare_rows(memory):
+    from kit.knowledge import _SPARE_ROWS
+
+    e = FakeEmbedder()
+    memory.add_fact("the first")
+    embed_all(memory, e)  # a small matrix, with spare rows
+    ids = [memory.add_fact(f"fact {n}") for n in range(_SPARE_ROWS + 20)]
+    embed_all(memory, e)
+    found = _vector_ids(memory, e)
+    assert len(found) == _SPARE_ROWS + 21 and set(ids) <= found
+    memory.index.delete(ids[3])
+    assert len(_vector_ids(memory, e)) == _SPARE_ROWS + 20
+
+
+def test_a_vector_for_a_superseded_item_is_not_searched(memory):
+    e = FakeEmbedder()
+    old = memory.add_fact("Dan drives a Hilux.")
+    embed_all(memory, e)
+    new = memory.replace_fact(old, "Dan drives a Ranger.")
+    memory.index.save_vectors(e.model, [(old, query(e, "Hilux")), (new, query(e, "Ranger"))])
+    assert _vector_ids(memory, e) == {new}
+
+
+def test_search_many_ranks_each_group_like_its_own_search(memory):
+    from kit.knowledge import Query
+
+    e = FakeEmbedder()
+    for n in range(6):
+        memory.add_fact(f"Rex fact {n}: the dog Rex and the beach.", "person")
+    for n in range(40):
+        memory.index.add(CONVERSATION, "exchange", f"Dan: Rex at the beach again {n}")
+    memory.index.add("self", "thought", "I like hearing about Rex.")
+    embed_all(memory, e)
+    q = "Rex at the beach"
+    vec = query(e, q)
+    groups = [Query([FACTS], 4), Query([CONVERSATION], 5, frozenset({7})), Query(["self"], 3)]
+    together = memory.index.search_many(q, vec, e.model, groups, min_similarity=0.3)
+    apart = [
+        memory.index.search(q, vec, e.model, g.sources, g.k, 0.3, set(g.exclude)) for g in groups
+    ]
+    assert [[(h.item.id, h.score) for h in hits] for hits in together] == [
+        [(h.item.id, h.score) for h in hits] for hits in apart
+    ]
+    assert [len(hits) for hits in together] == [4, 5, 1]

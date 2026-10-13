@@ -172,3 +172,26 @@ def test_spend_summary_by_day_and_model(memory, clock):
     assert s["models"][0]["cached_tokens"] == 2500 and s["models"][1]["cached_tokens"] == 0
     assert s["total_usd"] == pytest.approx(0.071)
     assert memory.spend_summary(1)["total_usd"] == pytest.approx(0.05)
+
+
+def test_a_day_summary_is_dated_in_the_clocks_zone(paths):
+    from datetime import datetime, timedelta, timezone
+
+    from kit.memory import DAYS, Memory
+    from kit.pastimes import parse_time
+
+    zone = timezone(timedelta(hours=10))
+    now = datetime(2026, 10, 5, 9, tzinfo=zone)
+    memory = Memory(paths.state_dir / "memory.db", lambda: now)
+    try:
+        memory.save_day("2026-10-04", "A quiet day.")
+        memory.index.add(
+            DAYS, "day", "An old one.", ref="2026-09-01", created="2026-09-01T23:59:59"
+        )
+        days = memory.index.items(DAYS)
+        assert days[0].created == "2026-10-04T23:59:59+10:00"
+        # Old summaries without a zone still read, and compare with new ones.
+        olds = [parse_time(d.created, now) for d in days]
+        assert olds[1] < olds[0]
+    finally:
+        memory.close()
