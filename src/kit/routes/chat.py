@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from kit import body as bodies
 from kit.routes.state import AUTH, Device, State
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ class ChatIn(BaseModel):
     sent_at: datetime | None = None
     # Said out loud rather than typed (the phone's talk mode).
     spoken: bool = False
+    # Who's talking, when it isn't Dan (kit.audience): a name, such as a visitor's.
+    speaker: str | None = Field(None, max_length=50)
 
 
 @router.post("/api/chat")
@@ -41,19 +44,25 @@ async def chat(state: State, body: ChatIn, device: Device) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         turn.started = time.monotonic()
         first_words = True
-        async for event in brain.chat(
-            body.text,
-            body.channel,
-            sent_at=body.sent_at,
-            spoken=body.spoken,
-            body=came_through,
-        ):
-            if first_words and event.get("type") == "say" and event.get("text"):
-                first_words = False
-                log.info("turn: first words %.2f s after the message", turn.since())
-            elif event.get("type") == "reply":
-                log.info("turn: reply done %.2f s after the message", turn.since())
-            yield json.dumps(event) + "\n"
+        moments = bodies.ChatMoments(brain.life, brain.room)  # the body feed acts it out
+        try:
+            async for event in brain.chat(
+                body.text,
+                body.channel,
+                sent_at=body.sent_at,
+                spoken=body.spoken,
+                body=came_through,
+                speaker=body.speaker,
+            ):
+                moments.see(event)
+                if first_words and event.get("type") == "say" and event.get("text"):
+                    first_words = False
+                    log.info("turn: first words %.2f s after the message", turn.since())
+                elif event.get("type") == "reply":
+                    log.info("turn: reply done %.2f s after the message", turn.since())
+                yield json.dumps(event) + "\n"
+        finally:
+            moments.done()
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
 

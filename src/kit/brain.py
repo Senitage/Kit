@@ -70,6 +70,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
+from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
 from kit.body_registry import BodyRegistry
 from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError
@@ -261,6 +262,8 @@ DEEP_RECALL = 10
 CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("channel", default="web")
 # How it came (said aloud, written earlier, through which body), the same way.
 ARRIVAL: contextvars.ContextVar[Arrival | None] = contextvars.ContextVar("arrival", default=None)
+# Who sent it, when it wasn't Dan (kit.audience); empty for Dan.
+SPEAKER: contextvars.ContextVar[str] = contextvars.ContextVar("speaker", default="")
 # Reading the conversation into the local model ahead of Dan's next message
 # (ollama.warm_up): a moment after Kit has finished, once his voice has been quiet
 # for a moment too (they share the GPU, and his voice mustn't stutter).
@@ -663,6 +666,15 @@ async def _replay(events: list[Event]) -> AsyncIterator[Event]:
         yield event
 
 
+def _message_meta(arrival: Arrival | None, speaker: str, owner: str) -> str | None:
+    """What's kept with Dan's message: how it came (kit.channels.Arrival) and who
+    sent it when it wasn't Dan (kit.audience.speaker_meta)."""
+    meta = dict(arrival.meta()) if arrival and arrival.meta() else {}
+    if who := speaker_meta(speaker, owner):
+        meta.update(json.loads(who))
+    return json.dumps(meta) if meta else None
+
+
 def _asked(exchange: str) -> str:
     """What Dan said in an indexed exchange ("Dan: ...\nKit: ...")."""
     first = exchange.split("\n", 1)[0]
@@ -773,6 +785,34 @@ class Brain:
         in_use = snap is not None and not away_on(snap)
         return self.bodies.speaker(self.pc.host(), in_use)
 
+    def room(self) -> dict[str, tuple[float, float]]:
+        """Who Kit's eyes see in the room by name (people and pets), and where."""
+        pets = [
+            (t.name, " ".join([t.about, *t.aliases]))
+            for t in self.register.all()
+            if t.kind == "pet"
+        ]
+        return self.scene.present(pets_by_kind(pets))
+
+    def _speaker(self, speaker: str | None, channel: str) -> str:
+        owner = self.settings().persona.owner
+        if speaker and speaker.strip():
+            name = speaker.strip()
+            return "" if name.lower() == owner.lower() else name
+        if aloud(channel):  # nobody said: the one person in the room Kit knows
+            people = list(self.scene.present(animals=False))
+            if len(people) == 1 and not self.scene.strangers() and people[0] != owner:
+                return people[0]
+        return ""
+
+    def _channel_line(self, owner: str) -> str:
+        """Where the message came from, who can hear Kit, and who sent it."""
+        channel = CHANNEL.get()
+        room = self.room()
+        heard = audience_line(channel, owner, SPEAKER.get(), room, self.scene.strangers())
+        came = channel_line(channel, owner, ARRIVAL.get(), self.memory.clock())
+        return f"{came} {heard}"
+
     def talking(self) -> bool:
         """A chat turn is under way."""
         return bool(self._turns)
@@ -785,12 +825,15 @@ class Brain:
         sent_at: datetime | None = None,
         spoken: bool = False,
         body: str | None = None,
+        speaker: str | None = None,
     ) -> AsyncIterator[Event]:
         """One message's events, as they happen. The turn runs as its own task, so
         other messages can be answered meanwhile, and it finishes (and is saved)
         even if whoever asked stops listening. ``sent_at`` is when it was written if
         it waited to be sent, ``spoken`` that it was said aloud, and ``body`` which of
-        Kit's bodies it came through (kit.body_registry)."""
+        Kit's bodies it came through (kit.body_registry). ``speaker`` is who sent it,
+        when that isn't Dan; out loud, if nobody says, it's the one person Kit's eyes
+        know in the room."""
         text = text.strip()
         if not text:
             return
@@ -801,6 +844,7 @@ class Brain:
         context.run(CHANNEL.set, known(channel))
         if sent_at is not None or spoken or body:
             context.run(ARRIVAL.set, Arrival(spoken=spoken, sent_at=sent_at, body=body))
+        context.run(SPEAKER.set, self._speaker(speaker, known(channel)))
         self._cancel_warm()
         task = asyncio.create_task(self._turn(text, queue.put_nowait), context=context)
         self._turns.add(task)
@@ -865,7 +909,7 @@ class Brain:
             "user",
             text,
             channel=CHANNEL.get(),
-            meta_json=json.dumps(arrival.meta()) if arrival and arrival.meta() else None,
+            meta_json=_message_meta(arrival, SPEAKER.get(), owner),
             private=private,
         )
         now = self.memory.clock()
@@ -2376,9 +2420,7 @@ class Brain:
             quirks=self.quirks,
             voice=voice,
             pc=self.pc.now_line(settings.persona.owner),
-            channel=channel_line(
-                CHANNEL.get(), settings.persona.owner, ARRIVAL.get(), self.memory.clock()
-            ),
+            channel=self._channel_line(settings.persona.owner),
             weather=self.weather is not None,
             notes=bool(settings.nas.vault),
             note_names=self.notes.names() if settings.nas.vault else None,

@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from kit.audience import speaker_of
 from kit.channels import SHORT
 from kit.knowledge import Hit, Item
 from kit.life import everyday, gap_words
@@ -877,13 +878,15 @@ def history_messages(
     Kit's latest reply keeps its written detail (cut short so it doesn't crowd the
     local model's context), for "explain step 3"; older detail is dropped, or a small
     model copies it under every answer. Messages that came in another way than
-    ``channel`` say where from, e.g. "(from their phone)"."""
+    ``channel`` say where from, e.g. "(from their phone)", and ones someone else sent say who."""
     out = []
     last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
     for i, m in enumerate(history):
         if m.role == "user":
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
+            if who := speaker_of(m.meta_json):
+                note += f"({who} said) "
             later = later_note(history[i - 1].at, m.at) if i else ""
             out.append({"role": "user", "content": later + note + m.text})
         else:

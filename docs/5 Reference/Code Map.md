@@ -97,6 +97,13 @@ flowchart TB
 | `src/kit/body_registry.py` | Bodies saying hello, the brain's features, and which bodies are around | [[Phone App#Saying hello]], [[Bodies]] |
 | `src/kit/devices.py` | Paired devices, each with a token of its own (`kit pair`) | [[Phone App#Pairing]] |
 
+## Bodies
+
+| Module | What it does | Explained in |
+|---|---|---|
+| `src/kit/body.py` | The plain-text body feed, chat moments and pats | [[Pod In Depth#The body feed]] |
+| `src/kit/audience.py` | Who can hear him, and who his words are for | [[Bodies#Who can hear him]] |
+
 ## Setup and settings
 
 | Module | What it does | Explained in |

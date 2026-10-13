@@ -7,8 +7,10 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from kit import body as bodies
 from kit.brain import Brain
 from kit.reply import Reply, voiced
 from kit.routes.state import AUTH, State, item
@@ -179,6 +181,25 @@ async def life_events(
     if life.missed_since(after):
         found["resync"] = True  # older events are gone: re-read /api/life
     return found
+
+
+@router.get("/api/body/feed", dependencies=AUTH, response_class=PlainTextResponse)
+async def body_feed(
+    state: State, after: int | None = None, wait: Annotated[float, Query(ge=0, le=60)] = 20
+) -> str:
+    """For a robot body (the Pod): Kit's face, sleep and liveliness now, then what
+    happened after event ``after``, one plain line each (see kit.body). Without
+    ``after`` (a body that's just started) it answers at once, with no old events."""
+    life = state.brain.life
+    events = [] if after is None else await life.wait_for_events(after, wait)
+    return bodies.feed(life, events)
+
+
+@router.post("/api/body/touch", dependencies=AUTH)
+def body_touch(state: State) -> dict:
+    """Dan patted a body's head."""
+    bodies.touched(state.brain.life, state.store.current().persona.owner)
+    return {"ok": True}
 
 
 @router.post("/api/life/poke", dependencies=AUTH)
