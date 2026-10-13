@@ -39,11 +39,10 @@ import sys
 import threading
 import time
 import wave
+from array import array
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
-
-import numpy as np
 
 from kit.desk.client import BrainError, Sound, SpeechLoading, SpeechOff, SpeechStale
 from kit.speech.sentences import SentenceSplitter, without_sounds
@@ -273,9 +272,11 @@ class StreamOutput:
         """How loud this bit of sound is, smoothed, for his mouth."""
         loud = 0.0
         if chunk:
-            samples = np.frombuffer(chunk[: len(chunk) - len(chunk) % 2], dtype="<i2")
+            samples = array("h", chunk[: len(chunk) - len(chunk) % 2])  # 16-bit
+            if sys.byteorder == "big":
+                samples.byteswap()  # the sound is little-endian
             if len(samples):
-                loud = math.sqrt(float(np.mean(samples.astype(np.float32) ** 2))) / 32768
+                loud = math.sqrt(sum(x * x for x in samples) / len(samples)) / 32768
                 loud *= len(chunk) / size  # the rest of the block is silence
         level = min(1.0, loud * TALK_GAIN)
         dt = frames / self._format[0]
