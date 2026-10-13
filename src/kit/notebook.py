@@ -213,14 +213,6 @@ def tomorrow_morning(now: datetime, wake: str) -> str:
     return morning(now.date() + timedelta(days=1), wake)
 
 
-def _later(when: datetime, now: datetime) -> str:
-    days = (when.date() - now.date()).days
-    part = "morning" if when.hour < 12 else "afternoon" if when.hour < 17 else "evening"
-    if days <= 0:
-        return f"this {part}"
-    return f"tomorrow {part}" if days == 1 else f"on {when:%A}"
-
-
 def later_want(text: str, owner: str) -> str:
     """What the owner asked to be asked later, as a want of Kit's own: "Ask me
     tomorrow how the shutdown went." is "Ask Dan how the shutdown went." When the ask
@@ -477,11 +469,12 @@ class Notebook:
         return None
 
     def on_mind(self, limit: int = 3, shared: bool = False) -> list[Item]:
-        """What's on his mind lately: what he wants to bring up (two at most, ones
-        for later last), then his newest thoughts and opinions. ``shared``: only what
-        may go to a cloud model (nothing from what Dan kept local)."""
-        # A thread waits till it's over: knowing it's coming, a small model asked early.
-        wants = [w for w in self.unsaid_wants() if w.kind != "thread" or self.due(w)]
+        """What's on his mind lately: what he wants to bring up (two at most), then his
+        newest thoughts and opinions. ``shared``: only what may go to a cloud model
+        (nothing from what Dan kept local). A want that isn't due yet (one for
+        tomorrow, a thread not over) stays in the journal till it is: shown under
+        "bring one up if it fits" with "not before" on it, a small model asked early."""
+        wants = [w for w in self.unsaid_wants() if self.due(w)]
         items = [w for w in wants if not (shared and w.meta.get("private"))][:2]
         for e in self.entries(limit=20):
             if len(items) >= limit:
@@ -508,10 +501,7 @@ class Notebook:
             if e.kind not in ASKING:
                 return f"({ago(parse_time(e.created, now), now)}) {e.text}"
             aim, about = aim_of(e, owner, now)
-            after = self._after(e)
-            if after is None or now >= after:
-                return f"(you want to {aim}) {about}"
-            return f"(you want to {aim} {_later(after, now)}, not before) {about}"
+            return f"(you want to {aim}) {about}"
 
         return [(e.id, line(e)) for e in self.on_mind(limit, shared)]
 
@@ -807,16 +797,17 @@ class Notebook:
 
     def drop_slang(self, owner: str, rng: random.Random | None = None) -> list[str]:
         """Once: a slang quirk he picked goes for another, and his next reflection is
-        told to keep Australian slang out of his self-sheet and quirks. It crept into
-        his lines ("Oi", "mate", "reckon") and the owner didn't want it (2026-10-10).
+        told to keep slang out of his self-sheet and quirks. It crept into his lines
+        ("Oi", "mate", "reckon") and the owner didn't want it (2026-10-10); the register
+        itself (plain, neutral English) is the persona's voice, said once there.
         Returns the quirks that went."""
         if self.memory.self_value(PLAIN_KEY) is not None:
             return []
         gone = self._swap_out(SLANG_QUIRKS, rng)
         self.add_veto(
-            f"{owner} doesn't want you talking with Australian slang (no 'Oi', 'mate', "
-            f"'reckon', 'arvo', 'righto'), so keep it out of your self-sheet and quirks, and "
-            f"take out any that's there."
+            f"{owner} wants your self-sheet and quirks in the plain, neutral English of your "
+            f"voice: no slang or regional words ('Oi', 'mate', 'reckon', 'righto'). Take out "
+            f"any that's there."
         )
         self.memory.set_self_value(PLAIN_KEY, self._now().date().isoformat())
         return gone

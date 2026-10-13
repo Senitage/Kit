@@ -74,7 +74,7 @@ def thinking_messages(
     feelings = ", ".join(THOUGHT_FEELINGS)
     system = [
         f"You are {name}'s inner voice. {name} is a small companion who lives on {owner}'s "
-        f"desk and helps out. This is {name} thinking to himself: nobody hears it.",
+        f"desk. This is {name} thinking to himself: nobody hears it.",
         f"Who {name} is, in his own words: {who}",
     ]
     if quirks:
