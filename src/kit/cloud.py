@@ -3,7 +3,8 @@
 Each provider has an adapter that turns Kit's chat messages (a system prompt
 then alternating turns) into one request and returns the text and token
 counts. ``Cloud`` picks the adapter for a model profile, keeps to the monthly
-budget, and logs what every call cost, so swapping models is a settings change.
+budget (in Australian dollars), and logs what every call cost at the day's
+prices and rate (``kit.prices``), so swapping models is a settings change.
 
 As the budget runs low, calls give way in a set order (``SKIP_ORDER``): evals
 first, then fact checks and key moments, then chat, so Kit's nightly reflection
@@ -32,13 +33,14 @@ import anthropic
 import httpx
 
 from kit.memory import Memory
+from kit.prices import Prices, Usage
 from kit.prompt import TURN_PART
 from kit.settings import ModelProfile, PersonaSettings, Settings
 
+__all__ = ["Usage"]  # the providers fill one in; it lives with the prices
 log = logging.getLogger(__name__)
 
-CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
-# Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
+# Who gives way as the month's budget runs low: each step stops cloud.reserve_aud
 # sooner than the one before, so evals can never use up the nightly reflection's share.
 # His background thoughts and pipe-ups ("life") go first, with evals: the local model can
 # have them.
@@ -47,15 +49,6 @@ SKIP_ORDER = {"reflect": 0, "chat": 1, "moment": 2, "check": 2, "eval": 3, "life
 
 class CloudError(Exception):
     """The cloud model couldn't answer. The message is said to Dan as is."""
-
-
-@dataclass
-class Usage:
-    input_tokens: int = 0  # every input token, cached ones included
-    output_tokens: int = 0  # thinking included
-    cached_tokens: int = 0
-    cache_write_tokens: int = 0
-    searches: int = 0
 
 
 @dataclass
@@ -71,7 +64,7 @@ class Completion:
 class CloudAnswer:
     text: str
     model: str
-    cost_usd: float
+    cost_aud: float  # at the day's prices and exchange rate
     searches: int
     truncated: bool
 
@@ -119,17 +112,6 @@ class Provider(Protocol):
         where: Where | None = None,
         on_text: Text | None = None,
     ) -> Completion: ...
-
-
-def estimate_cost(profile: ModelProfile, usage: Usage) -> float:
-    """What one call cost, from the profile's prices."""
-    fresh = usage.input_tokens - usage.cached_tokens - usage.cache_write_tokens
-    return (
-        fresh * profile.input_usd_per_mtok
-        + usage.cache_write_tokens * profile.input_usd_per_mtok * CACHE_WRITE_MULTIPLIER
-        + usage.cached_tokens * profile.cached_input_usd_per_mtok
-        + usage.output_tokens * profile.output_usd_per_mtok
-    ) / 1_000_000 + usage.searches * profile.search_usd_per_k / 1000
 
 
 def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
@@ -536,10 +518,12 @@ class Cloud:
         memory: Memory,
         api_key: Callable[[str], str | None],
         providers: dict[str, Provider],
+        prices: Prices | None = None,
     ) -> None:
         self.memory = memory
         self.api_key = api_key
         self.providers = providers
+        self.prices = prices or Prices(None)  # built-in prices until one is given
 
     async def close(self) -> None:
         """Let go of the providers' connections (when Kit stops)."""
@@ -566,13 +550,13 @@ class Cloud:
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
         spent = self.memory.month_spend()
-        cap = settings.cloud.monthly_cap_usd
-        kept = settings.cloud.reserve_usd * SKIP_ORDER.get(priority, 1)
+        cap = settings.cloud.monthly_cap_aud
+        kept = settings.cloud.reserve_aud * SKIP_ORDER.get(priority, 1)
         if spent >= cap - kept:
-            saving = f", keeping the last ${kept:.2f} for my nightly reflection" if kept else ""
+            saving = f", keeping the last A${kept:.2f} for my nightly reflection" if kept else ""
             raise CloudError(
-                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}{saving}). "
-                "You can raise cloud.monthly_cap_usd in my settings."
+                f"I've used this month's cloud budget (A${spent:.2f} of A${cap:.2f}{saving}). "
+                "You can raise cloud.monthly_cap_aud in my settings."
             )
         key = self.api_key(profile.provider)
         if not key:
@@ -586,20 +570,22 @@ class Cloud:
             done = await provider.complete(profile, system, turns, key, on_step, where)
         else:
             done = await provider.complete(profile, system, turns, key, on_step, where, on_text)
-        cost = estimate_cost(profile, done.usage)
+        cost = self.prices.cost(profile.model, profile.provider, done.usage)
         question = question or turns[-1]["content"]
         self.memory.record_spend(
             done.model,
             done.usage.input_tokens,
             done.usage.output_tokens,
-            cost,
+            cost.usd,
             question,
             cached_tokens=done.usage.cached_tokens,
             cache_write_tokens=done.usage.cache_write_tokens,
             searches=done.usage.searches,
+            cost_aud=cost.aud,
+            aud_per_usd=cost.aud_per_usd,
         )
         if done.refused:
             raise CloudError(f"{profile.name} declined to answer that one.")
         if not done.text:
             raise CloudError(f"{profile.name} came back empty.")
-        return CloudAnswer(done.text, done.model, cost, done.usage.searches, done.truncated)
+        return CloudAnswer(done.text, done.model, cost.aud, done.usage.searches, done.truncated)

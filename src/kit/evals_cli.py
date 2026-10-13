@@ -88,7 +88,9 @@ async def _eval_compare(paths: KitPaths, names: list[str], n: int) -> int:
 
             def show(r):
                 mark = "ok  " if r.ok else "FAIL"
-                print(f"{mark} {r.model:<14} {r.seconds:5.1f}s  ${r.cost_usd:.4f}  {r.prompt[:50]}")
+                print(
+                    f"{mark} {r.model:<14} {r.seconds:5.1f}s  A${r.cost_aud:.4f}  {r.prompt[:50]}"
+                )
                 if r.error:
                     print(f"       {r.error}")
 

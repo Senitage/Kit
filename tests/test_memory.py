@@ -113,14 +113,18 @@ def test_old_database_is_migrated_forward(tmp_path, clock):
 
 
 def test_spend_by_month(memory, clock):
-    memory.record_spend("claude-opus-5-5", 10, 20, 0.5, "q")
-    memory.record_spend("claude-opus-5-5", 10, 20, 0.25, "q", cached_tokens=8, searches=1)
-    assert memory.month_spend() == pytest.approx(0.75)
+    memory.record_spend("claude-opus-5-5", 10, 20, 0.5, "q", cost_aud=0.75, aud_per_usd=1.5)
+    memory.record_spend(
+        "claude-opus-5-5", 10, 20, 0.25, "q", cached_tokens=8, searches=1, aud_per_usd=2.0
+    )
+    assert memory.month_spend() == pytest.approx(0.75 + 0.5)  # Australian dollars
     clock.now += timedelta(days=31)
     assert memory.month_spend() == 0
     newest, older = memory.spend_log()
     assert (newest.cached_tokens, newest.cache_write_tokens, newest.searches) == (8, 0, 1)
     assert (older.cached_tokens, older.searches) == (0, 0)
+    assert (newest.cost_usd, newest.cost_aud, newest.aud_per_usd) == (0.25, 0.5, 2.0)
+    assert (older.cost_aud, older.aud_per_usd) == (0.75, 1.5)
 
 
 def test_replace_keeps_where_the_fact_came_from(memory):
@@ -159,19 +163,21 @@ def test_new_chat_hides_earlier_turns_but_keeps_the_log(memory):
 
 
 def test_spend_summary_by_day_and_model(memory, clock):
-    memory.record_spend("claude-sonnet-5-5", 1000, 200, 0.02, "q")
-    memory.record_spend("claude-haiku-5-5", 500, 100, 0.001, "q")
+    memory.record_spend("claude-sonnet-5-5", 1000, 200, 0.01, "q", aud_per_usd=2.0)
+    memory.record_spend("claude-haiku-5-5", 500, 100, 0.0005, "q", aud_per_usd=2.0)
     clock.now += timedelta(days=2)
-    memory.record_spend("claude-sonnet-5-5", 3000, 400, 0.05, "q", cached_tokens=2500)
+    memory.record_spend(
+        "claude-sonnet-5-5", 3000, 400, 0.025, "q", cached_tokens=2500, aud_per_usd=2.0
+    )
     s = memory.spend_summary(7)
     assert len(s["days"]) == 7 and s["days"][-1]["date"] == clock.now.date().isoformat()
     assert s["days"][-1]["by_model"] == {"claude-sonnet-5-5": 0.05}
-    assert s["days"][-3]["cost_usd"] == pytest.approx(0.021)
+    assert s["days"][-3]["cost_aud"] == pytest.approx(0.021)
     assert [m["model"] for m in s["models"]] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
     assert s["models"][0]["calls"] == 2 and s["models"][0]["input_tokens"] == 4000
     assert s["models"][0]["cached_tokens"] == 2500 and s["models"][1]["cached_tokens"] == 0
-    assert s["total_usd"] == pytest.approx(0.071)
-    assert memory.spend_summary(1)["total_usd"] == pytest.approx(0.05)
+    assert s["total_aud"] == pytest.approx(0.071)
+    assert memory.spend_summary(1)["total_aud"] == pytest.approx(0.05)
 
 
 def test_a_day_summary_is_dated_in_the_clocks_zone(paths):

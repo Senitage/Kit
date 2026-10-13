@@ -78,14 +78,14 @@ def test_a_thought_from_what_dan_kept_local_stays_home(memory):
 
 
 def test_when_the_cloud_cant_the_local_model_thinks(memory):
-    brain, model, claude = make(memory, thought(), cloud={"monthly_cap_usd": 0})
+    brain, model, claude = make(memory, thought(), cloud={"monthly_cap_aud": 0})
     assert asyncio.run(brain.think()) is not None
     assert len(model.calls) == 1
 
 
 def test_without_the_local_fallback_he_just_doesnt_think(memory):
     brain, model, _ = make(
-        memory, thought(), cloud={"monthly_cap_usd": 0}, routing={"fallback_to_local": False}
+        memory, thought(), cloud={"monthly_cap_aud": 0}, routing={"fallback_to_local": False}
     )
     assert asyncio.run(brain.think()) is None
     assert model.calls == []
@@ -127,7 +127,7 @@ def test_a_pipe_up_from_what_dan_kept_local_stays_home(memory):
 
 
 def test_when_the_cloud_cant_the_local_model_pipes_up(memory):
-    brain, model, _ = make(memory, reply("Quiet in here."), cloud={"monthly_cap_usd": 0})
+    brain, model, _ = make(memory, reply("Quiet in here."), cloud={"monthly_cap_aud": 0})
     events = collect(brain.pipe_up("bored"))
     assert any(e["type"] == "reply" for e in events) and len(model.calls) == 1
 

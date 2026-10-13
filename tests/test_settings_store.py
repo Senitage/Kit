@@ -105,12 +105,12 @@ def test_a_version_1_file_is_rewritten_once_in_todays_layout(store, paths):
     from kit.settings import Settings, settings_to_toml
 
     full = settings_to_toml(Settings.model_validate({"persona": {"name": "Kip"}}))
-    paths.settings_file.write_text(full.replace("schema_version = 2", "schema_version = 1"))
+    paths.settings_file.write_text(full.replace("schema_version = 3", "schema_version = 1"))
     assert "[ollama]" in paths.settings_file.read_text(encoding="utf-8")
     assert store.current().persona.name == "Kip"
     text = paths.settings_file.read_text(encoding="utf-8")
-    assert text == 'schema_version = 2\n\n[persona]\nname = "Kip"\n'
+    assert text == 'schema_version = 3\n\n[persona]\nname = "Kip"\n'
     assert store.last_good_file.read_text(encoding="utf-8") == text
     assert store.history() == []  # a layout change isn't one of yours to undo
     store.update({"persona": {"name": "Kit"}}, "test")
-    assert paths.settings_file.read_text(encoding="utf-8") == "schema_version = 2\n"
+    assert paths.settings_file.read_text(encoding="utf-8") == "schema_version = 3\n"

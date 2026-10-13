@@ -20,6 +20,7 @@ from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
+from kit.prices import PRICES_FILE, Prices
 from kit.settings import (
     Settings,
     SettingsError,
@@ -74,6 +75,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.extend(checks.check_nas(settings))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
+    if "prices" not in skip:
+        results.append(checks.check_prices(settings, Prices(paths.state_dir / PRICES_FILE)))
     if "eyes" not in skip:
         results.append(checks.check_eyes(settings))
     return results
@@ -131,39 +134,118 @@ async def _weather(paths: KitPaths, place: str | None) -> int:
 
 
 def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
-    """Show the models Kit can use and which one does what, or switch one."""
+    """Show the models Kit can use, with today's prices, and which one does what;
+    switch a role; add or remove a model; or fetch the prices now."""
     store = SettingsStore(paths)
-    if args.role:
-        if args.name is None:
-            print("give a model name too, for example: kit models work gpt-sol")
-            return 2
-        try:
-            store.update({"routing": {args.role: args.name}}, "cli")
-        except SettingsError as e:
-            print(e)
-            return 1
-        print(f"{args.role} now uses {args.name}; Kit uses it from the next message")
-        return 0
+    prices = Prices(paths.state_dir / PRICES_FILE)
+    action = args.action
+    try:
+        if action in ("chat", "work", "expert"):
+            if args.name is None:
+                print(f"give a model name too, for example: kit models {action} sonnet")
+                return 2
+            store.update({"routing": {action: args.name}}, "cli")
+            print(f"{action} now uses {args.name}; Kit uses it from the next message")
+            return 0
+        if action == "add":
+            return _add_model(store, prices, args)
+        if action == "remove":
+            return _remove_model(store, args.name)
+    except SettingsError as e:
+        print(e)
+        return 1
+    if action == "prices":
+        return asyncio.run(_fetch_prices(prices))
     s = store.current()
     roles: dict[str, list[str]] = {}
     in_use = (["chat"] if s.routing.mode == "cloud-only" else []) + ["work", "expert"]
     for role in in_use:
         roles.setdefault(getattr(s.routing, role), []).append(role)
     print(f"routing: {s.routing.mode}   local model: {s.ollama.model}")
-    print(f"cloud budget: ${s.cloud.monthly_cap_usd:.2f} a month\n")
+    print(f"cloud budget: A${s.cloud.monthly_cap_aud:.2f} a month")
+    print(f"{prices.table.line()}\n")
     print(
         f"  {'name':<14} {'role':<13} {'provider':<10} {'model':<20} {'effort':<7}"
-        f" {'$ in/out per M':<15} {'search/1k'}"
+        f" {'A$ in/out per M':<17} {'search/1k'}"
     )
+    rate = prices.table.aud_per_usd
     for name, m in s.models.items():
-        price = f"{m.input_usd_per_mtok:g}/{m.output_usd_per_mtok:g}"
-        search = f"${m.search_usd_per_k:g}" if m.web_search else "off"
+        price = prices.price_of(m.model, m.provider)
+        if m.provider == "ollama":
+            cost, search = "free (local)", "off"
+        elif price is None:
+            cost, search = "no price yet", "?"
+        else:
+            cost = f"{price.input_per_mtok * rate:.2f}/{price.output_per_mtok * rate:.2f}"
+            search = f"A${price.search_per_k * rate:.2f}" if m.web_search else "off"
         print(
             f"  {name:<14} {', '.join(roles.get(name, [])):<13} {m.provider:<10} {m.model:<20}"
-            f" {m.effort:<7} {price:<15} {search}"
+            f" {m.effort:<7} {cost:<17} {search}"
         )
-    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-only")
+    print(
+        "\nSwitch:  kit models work <name>"
+        "\nAdd:     kit models add <name> --provider anthropic --model <id>"
+        "\nRemove:  kit models remove <name>"
+        "\nPrices:  kit models prices   (fetched daily while Kit runs)"
+    )
     return 0
+
+
+def _add_model(store: SettingsStore, prices: Prices, args: argparse.Namespace) -> int:
+    """``kit models add NAME --provider P --model ID [...]``: only what's given is
+    written, so the rest takes the profile's defaults."""
+    if not (args.name and args.provider and args.model):
+        print("give a name, --provider and --model, for example:")
+        print("  kit models add sonnet-6 --provider anthropic --model claude-sonnet-6")
+        return 2
+    if args.name in store.current().models:
+        print(f"there's a model called {args.name} already; remove it first, or pick a name")
+        return 1
+    profile: dict = {"provider": args.provider, "model": args.model}
+    for field in ("label", "effort", "max_tokens"):
+        if getattr(args, field) is not None:
+            profile[field] = getattr(args, field)
+    if args.no_thinking:
+        profile["thinking"] = False
+    if args.no_search:
+        profile["web_search"] = False
+    store.update({"models": {args.name: profile}}, "cli")
+    print(f"added {args.name} ({args.provider} {args.model})")
+    if args.provider != "ollama" and prices.price_of(args.model, args.provider) is None:
+        print(
+            f"no price known for {args.model} yet: its calls count as free in the budget until "
+            "the price list has it (kit models prices fetches today's)"
+        )
+    print(f"use it with: kit models work {args.name}")
+    return 0
+
+
+def _remove_model(store: SettingsStore, name: str | None) -> int:
+    if not name:
+        print("say which model to remove, for example: kit models remove gpt-sol")
+        return 2
+    s = store.current()
+    if name not in s.models:
+        print(f"there's no model called {name} ({', '.join(s.models)})")
+        return 1
+    using = [role for role in ("chat", "work", "expert") if getattr(s.routing, role) == name]
+    if using:
+        print(f"{name} is the {' and '.join(using)} model; point that at another model first")
+        return 1
+    store.update({"models": {name: None}}, "cli")
+    print(f"removed {name}")
+    return 0
+
+
+async def _fetch_prices(prices: Prices) -> int:
+    """``kit models prices``: fetch today's price list and exchange rate now."""
+    async with httpx.AsyncClient() as client:
+        prices.client = client
+        problems = await prices.refresh()
+    for problem in problems:
+        print(problem)
+    print(prices.table.line())
+    return 1 if problems else 0
 
 
 def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
@@ -328,7 +410,8 @@ def make_cloud(paths: KitPaths, memory, client: httpx.AsyncClient):
         "openai": OpenAIProvider(client),
         "google": GoogleProvider(client),
     }
-    return Cloud(memory, lambda provider: cloud_api_key(paths, provider), providers)
+    prices = Prices(paths.state_dir / PRICES_FILE, client)
+    return Cloud(memory, lambda provider: cloud_api_key(paths, provider), providers, prices)
 
 
 def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -1076,13 +1159,13 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
         keep = SettingsStore(paths).current().memory.backups_keep
         print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
     elif args.action == "spend":
-        cap = SettingsStore(paths).current().cloud.monthly_cap_usd
-        print(f"Cloud models this month: ${memory.month_spend():.2f} of ${cap:.2f}")
+        cap = SettingsStore(paths).current().cloud.monthly_cap_aud
+        print(f"Cloud models this month: A${memory.month_spend():.2f} of A${cap:.2f}")
         # "cached 1830/2400": how much of the input was read from the prompt cache.
         for s in memory.spend_log(20):
             print(
                 f"  {s.at}  {s.model}  in {s.input_tokens}  cached {s.cached_tokens}/"
-                f"{s.input_tokens}  out {s.output_tokens}  ${s.cost_usd:.4f}  {s.question[:60]}"
+                f"{s.input_tokens}  out {s.output_tokens}  A${s.cost_aud:.4f}  {s.question[:60]}"
             )
     memory.close()
     return code
@@ -1343,11 +1426,29 @@ def main(argv: list[str] | None = None) -> int:
     crestore.add_argument("version")
     csub.add_parser("check", help="check the settings file is valid")
 
-    models = sub.add_parser("models", help="see the models Kit uses, or switch one")
-    models.add_argument(
-        "role", nargs="?", choices=["chat", "work", "expert"], help="role to switch"
+    models = sub.add_parser(
+        "models", help="the models Kit uses and their prices; switch, add or remove one"
     )
-    models.add_argument("name", nargs="?", help="model profile to use for it")
+    models.add_argument(
+        "action",
+        nargs="?",
+        choices=["chat", "work", "expert", "add", "remove", "prices"],
+        help="a role to switch (chat, work, expert), add, remove, or prices (fetch today's)",
+    )
+    models.add_argument("name", nargs="?", help="the model's name in settings")
+    models.add_argument(
+        "--provider", choices=["anthropic", "openai", "google", "ollama"], help="add: who runs it"
+    )
+    models.add_argument("--model", help="add: the provider's model id, e.g. claude-sonnet-5-5")
+    models.add_argument("--label", help="add: the name Kit calls it")
+    models.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "xhigh", "max"],
+        help="add: how hard it thinks",
+    )
+    models.add_argument("--max-tokens", type=int, dest="max_tokens", help="add: longest answer")
+    models.add_argument("--no-thinking", action="store_true", help="add: no thinking first")
+    models.add_argument("--no-search", action="store_true", help="add: no web search")
 
     speech = sub.add_parser("speech", help="Kit's voice: engines, switch, try a line, compare")
     spsub = speech.add_subparsers(dest="action")

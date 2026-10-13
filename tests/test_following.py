@@ -450,11 +450,11 @@ def test_a_hello_after_a_night_away_is_the_work_models(memory):
 
 
 def test_the_budget_keeps_the_last_few_dollars_for_the_nightly_reflection(memory):
-    settings = Settings.model_validate({"cloud": {"monthly_cap_usd": 20, "reserve_usd": 3}})
+    settings = Settings.model_validate({"cloud": {"monthly_cap_aud": 20, "reserve_aud": 3}})
     cloud = make_cloud(memory, FakeAnthropic())
     profile = settings.profile("work")
     messages = [{"role": "user", "content": "hi"}]
-    memory.record_spend("m", 0, 0, 15.0, "earlier")  # $5 left
+    memory.record_spend("m", 0, 0, 10.0, "earlier", cost_aud=15.0)  # A$5 left
 
     def ask(priority):
         return asyncio.run(cloud.answer(profile, messages, settings, "q", priority=priority))

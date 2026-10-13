@@ -68,7 +68,7 @@ The reply's shape is in [[Brain#One shape for every reply]].
 |---|---|
 | `GET /api/settings` | The settings in force |
 | `GET /api/settings/schema` | The settings schema (JSON Schema), which the settings pages are drawn from |
-| `PATCH /api/settings` | Change settings. Merges one level deep, so send a model profile whole. Kit's own token only |
+| `PATCH /api/settings` | Change settings. Merges one level deep, so send a model profile whole; a model sent as `null` is taken out of the list. Kit's own token only |
 | `GET /api/settings/history` | Earlier versions |
 | `POST /api/settings/undo` | Go back one change. Kit's own token only |
 
@@ -167,9 +167,9 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend, memory size, what the PC, eyes and ears last said |
+| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said |
 | `GET /api/health` | Is he up (no token) |
-| `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log (each call with its `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (with each model's `cached_tokens`) |
+| `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend in Australian dollars (`month_aud`, `cap_aud`, `aud_per_usd`), as a log (each call with its `cost_usd` as billed, `cost_aud` at the day's rate, `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (`cost_aud`, `total_aud`, with each model's `cached_tokens`) |
 
 ## Under the hood
 - `src/kit/server.py`: builds the app and runs the background loops.

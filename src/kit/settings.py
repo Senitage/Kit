@@ -4,9 +4,13 @@ The schema (``Settings.model_json_schema()``) is what configurators such as
 home_app will draw their forms from, so every field carries a description.
 
 The file holds only what differs from the defaults (``settings_file_toml``), so
-a default that changes in the code, a model's price or a persona line, reaches
-an install that never chose its own. Version 1 files held every value; the
-first read of one drops what was never chosen (``_from_version_1``).
+a default that changes in the code, a persona line or a voice engine's field,
+reaches an install that never chose its own. The models are the one exception:
+``models`` is your own list, written whole once it differs from the three
+starters, and a model's price is never in it (``kit.prices`` fetches those).
+Version 1 files held every value and version 2 files carried built-in model
+profiles and prices; the first read of either brings it up to date
+(``_from_older``).
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from pydantic import (
 
 from kit.face import character as characters
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class _Section(BaseModel):
@@ -130,8 +134,9 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class ModelProfile(_Section):
-    """One model Kit can use, with what it costs. Swap models by pointing a role
-    (``routing.chat``, ``routing.work``, ``routing.expert``) at a different profile."""
+    """One model Kit can use. Swap models by pointing a role (``routing.chat``,
+    ``routing.work``, ``routing.expert``) at a different profile. What it costs
+    isn't here: ``kit.prices`` keeps the price list up to date by itself."""
 
     label: str = Field("", description="Name Kit uses when it mentions this model.")
     provider: Provider = Field(
@@ -153,22 +158,42 @@ class ModelProfile(_Section):
     web_search: bool = Field(
         True, description="Let the model search the web (the provider's own search)."
     )
-    input_usd_per_mtok: float = Field(0, ge=0, description="Price per million input tokens.")
-    cached_input_usd_per_mtok: float = Field(
-        0, ge=0, description="Price per million input tokens read from the prompt cache."
-    )
-    output_usd_per_mtok: float = Field(
-        0, ge=0, description="Price per million output tokens, thinking included."
-    )
-    search_usd_per_k: float = Field(0, ge=0, description="Price per 1,000 web searches.")
 
     @property
     def name(self) -> str:
         return self.label or self.model
 
 
-# Prices are US dollars from each provider's price list on 6 October 2026.
-DEFAULT_MODELS: dict[str, dict] = {
+# The three models a new Kit starts with: Claude for everyday chat, work and the
+# hardest questions. They're a starting list, not presets: `kit models add` and
+# `kit models remove` make the list your own, and the file then holds it whole.
+STARTER_MODELS: dict[str, dict] = {
+    "haiku": {
+        "label": "Haiku",
+        "provider": "anthropic",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "thinking": False,  # everyday chat: the first words sooner
+    },
+    "sonnet": {
+        "label": "Sonnet",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+    },
+    "opus": {
+        "label": "Opus",
+        "provider": "anthropic",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        # An expert answer thinks at length first; room for both (answers stream).
+        "max_tokens": 32000,
+    },
+}
+# The built-in model profiles a version-2 file took for granted (it held only the
+# fields you changed), with the prices that were settings then. Frozen: never
+# edit, it describes old files. See _from_version_2.
+_V2_MODELS: dict[str, dict] = {
     "sonnet": {
         "label": "Sonnet",
         "provider": "anthropic",
@@ -184,20 +209,18 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "anthropic",
         "model": "claude-opus-5-5",
         "effort": "medium",
-        # An expert answer thinks at length first; room for both (answers stream).
         "max_tokens": 32000,
         "input_usd_per_mtok": 4.0,
         "cached_input_usd_per_mtok": 0.2,
         "output_usd_per_mtok": 20.0,
         "search_usd_per_k": 10.0,
     },
-    # Cheap enough for everyday chat; prompts over 100K tokens cost five times more.
     "haiku": {
         "label": "Haiku",
         "provider": "anthropic",
         "model": "claude-haiku-5-5",
         "effort": "low",
-        "thinking": False,  # everyday chat: the first words sooner
+        "thinking": False,
         "input_usd_per_mtok": 0.1,
         "cached_input_usd_per_mtok": 0.01,
         "output_usd_per_mtok": 0.5,
@@ -218,18 +241,25 @@ DEFAULT_MODELS: dict[str, dict] = {
         "provider": "google",
         "model": "gemini-3.8-flash",
         "effort": "low",
-        # Introductory prices until 31 December 2026, when they double.
         "input_usd_per_mtok": 0.75,
         "cached_input_usd_per_mtok": 0.075,
         "output_usd_per_mtok": 3.75,
-        # 5,000 grounded requests a month are free; this prices the ones after that.
         "search_usd_per_k": 14.0,
     },
 }
+_PRICE_FIELDS = (
+    "input_usd_per_mtok",
+    "cached_input_usd_per_mtok",
+    "output_usd_per_mtok",
+    "search_usd_per_k",
+)
+# What a version-2 budget in US dollars becomes in Australian dollars (the first
+# price fetch brings the real rate; the cap is a round figure anyway).
+_V2_AUD_PER_USD = 1.5
 
 
 # The built-in model profiles as a version-1 settings file holds them (every save
-# wrote them all). Frozen: never edit, it describes old files. See _from_version_1.
+# wrote them all). Frozen: never edit, it describes old files. See _without_v1_defaults.
 _V1_MODELS: dict[str, dict] = {
     "sonnet": {
         "label": "Sonnet",
@@ -285,7 +315,7 @@ _V1_MODELS: dict[str, dict] = {
 
 
 def _default_models() -> dict[str, ModelProfile]:
-    return {name: ModelProfile.model_validate(p) for name, p in DEFAULT_MODELS.items()}
+    return {name: ModelProfile.model_validate(p) for name, p in STARTER_MODELS.items()}
 
 
 Mode = Literal["local-heavy", "balanced", "cloud-first", "cloud-only"]
@@ -361,16 +391,20 @@ class RoutingSettings(_Section):
 
 
 class CloudSettings(_Section):
-    monthly_cap_usd: float = Field(
-        40.0, ge=0, description="Kit stops using cloud models once this month's spend reaches this."
-    )
-    reserve_usd: float = Field(
-        3.0,
+    monthly_cap_aud: float = Field(
+        60.0,
         ge=0,
-        le=100,
+        description="Kit stops using cloud models once this month's spend reaches this, in "
+        "Australian dollars. Every call is costed at the day's prices and exchange rate.",
+    )
+    reserve_aud: float = Field(
+        5.0,
+        ge=0,
+        le=150,
         description="As the budget runs low, cloud calls give way in order, each this much "
-        "sooner than the last: evals first, then fact checks and key moments, then chat. "
-        "Kit's nightly reflection always has the last of it. 0 treats them all the same.",
+        "sooner than the last (in Australian dollars): evals first, then fact checks and key "
+        "moments, then chat. Kit's nightly reflection always has the last of it. 0 treats "
+        "them all the same.",
     )
     stream: bool = Field(
         True,
@@ -1329,16 +1363,19 @@ class SpeechSettings(_Section):
 
 
 class Settings(_Section):
-    schema_version: Literal[2] = Field(
+    schema_version: Literal[3] = Field(
         SCHEMA_VERSION,
-        description="The settings file's layout. 2: the file holds only what you changed.",
+        description="The settings file's layout. 3: the file holds only what you changed, "
+        "and the models are your own list with no prices in it.",
     )
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     routing: RoutingSettings = Field(default_factory=RoutingSettings)
     models: dict[str, ModelProfile] = Field(
         default_factory=_default_models,
-        description="Models Kit can use, by name. Built-in profiles are always there; "
-        "change their fields or add your own.",
+        description="The models Kit can use, by name: your own list. A new Kit starts with "
+        "haiku, sonnet and opus; add any model with `kit models add` and take one out with "
+        "`kit models remove` (or send it as null). What each costs is fetched daily "
+        "(`kit models`), never set here.",
     )
     cloud: CloudSettings = Field(default_factory=CloudSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
@@ -1353,27 +1390,23 @@ class Settings(_Section):
 
     @model_validator(mode="before")
     @classmethod
-    def _from_version_1(cls, data):
-        """A version-1 file holds every setting, chosen or not; read only what was."""
+    def _from_older(cls, data):
+        """A version-1 file holds every setting, chosen or not; a version-2 file leans on
+        built-in model profiles and holds prices. Either is read as today's layout."""
         if isinstance(data, dict) and data.get("schema_version") == 1:
-            return _without_v1_defaults(data)
+            data = _without_v1_defaults(data)
+        if isinstance(data, dict) and data.get("schema_version") == 2:
+            data = _from_version_2(data)
         return data
 
     @field_validator("models", mode="before")
     @classmethod
-    def _keep_built_in_models(cls, value):
-        """Built-in profiles stay available; settings change their fields or add more."""
+    def _models_table(cls, value):
+        """The table is the whole list; a model sent as null is taken out, which is how
+        a settings page or `kit models remove` drops one."""
         if not isinstance(value, dict):
             return value
-        merged = {name: dict(p) for name, p in DEFAULT_MODELS.items()}
-        for name, profile in value.items():
-            if isinstance(profile, BaseModel):
-                profile = profile.model_dump()
-            if isinstance(profile, dict):
-                merged[name] = {**merged.get(name, {}), **profile}
-            else:
-                merged[name] = profile
-        return merged
+        return {name: profile for name, profile in value.items() if profile is not None}
 
     @model_validator(mode="after")
     def _roles_name_models(self) -> Settings:
@@ -1452,8 +1485,9 @@ def settings_to_toml(settings: Settings) -> str:
 
 def settings_file_toml(settings: Settings) -> str:
     """The settings as the file holds them: only what differs from the defaults, so a
-    default that changes in the code reaches the install. A built-in model or voice
-    engine profile is written field by field the same way; your own profiles whole."""
+    default that changes in the code reaches the install. A built-in voice engine is
+    written field by field the same way; your own engines whole. The models are
+    written whole as soon as the list differs from the starters: it's your list."""
     return tomli_w.dumps({"schema_version": SCHEMA_VERSION, **changes(settings, Settings())})
 
 
@@ -1474,6 +1508,10 @@ def changes(settings: BaseModel, defaults: BaseModel) -> dict:
         value, default = getattr(settings, name), getattr(defaults, name)
         if isinstance(value, BaseModel) and isinstance(default, BaseModel):
             sub = changes(value, default)
+        elif name == "models" and _profiles(value) and _profiles(default):
+            if value != default:  # your own list, kept whole
+                out[name] = {key: _dump(profile) for key, profile in value.items()}
+            continue
         elif _profiles(value) and _profiles(default):
             sub = {}
             for key, profile in value.items():
@@ -1496,11 +1534,11 @@ def _without_v1_defaults(raw: dict) -> dict:
     (``_V1_MODELS``, ``_V1_SPEECH_ENGINES``, ``_V1_PERSONA``; today's for the rest)
     is dropped, so today's default is read instead. What the owner changed stays."""
     v1 = _dump(Settings())
-    v1["models"] = {n: _dump(ModelProfile.model_validate(p)) for n, p in _V1_MODELS.items()}
+    v1["models"] = {n: _v1_profile(p) for n, p in _V1_MODELS.items()}
     v1["speech"]["engines"] = {
         n: _dump(SpeechEngine.model_validate(p)) for n, p in _V1_SPEECH_ENGINES.items()
     }
-    out: dict = {"schema_version": SCHEMA_VERSION}
+    out: dict = {"schema_version": 2}  # then _from_version_2 brings it to today's
     for section, value in raw.items():
         if section == "schema_version":
             continue
@@ -1520,6 +1558,44 @@ def _without_v1_defaults(raw: dict) -> dict:
             }
         out[section] = value
     return out
+
+
+def _from_version_2(raw: dict) -> dict:
+    """A version-2 file as version 3. Its models were the built-ins plus what it
+    changed or added; the list becomes the profiles a role uses and the ones the
+    file names, whole, with the prices (fetched now) dropped. The budget in US
+    dollars becomes Australian dollars."""
+    out = {k: v for k, v in raw.items() if k != "schema_version"}
+    out["schema_version"] = SCHEMA_VERSION
+    named = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    routing = raw.get("routing") if isinstance(raw.get("routing"), dict) else {}
+    defaults = RoutingSettings()
+    roles = [routing.get(role, getattr(defaults, role)) for role in ("chat", "work", "expert")]
+    models = {}
+    for name in [*named, *roles]:
+        changed = named.get(name)
+        if name in models or (name in named and not isinstance(changed, dict)):
+            continue
+        profile = {**_V2_MODELS.get(name, {}), **(changed or {})}
+        if profile:
+            models[name] = {k: v for k, v in profile.items() if k not in _PRICE_FIELDS}
+    starters = [n for n in STARTER_MODELS if n in models]
+    out["models"] = {n: models[n] for n in [*starters, *(n for n in models if n not in starters)]}
+    cloud = dict(raw.get("cloud") or {})
+    if "monthly_cap_usd" in cloud:
+        cloud["monthly_cap_aud"] = float(round(cloud.pop("monthly_cap_usd") * _V2_AUD_PER_USD))
+    if "reserve_usd" in cloud:
+        cloud["reserve_aud"] = round(cloud.pop("reserve_usd") * _V2_AUD_PER_USD, 1)
+    if cloud:
+        out["cloud"] = cloud
+    return out
+
+
+def _v1_profile(profile: dict) -> dict:
+    """A version-1 built-in profile with every field filled in, prices included."""
+    fields = {k: v for k, v in profile.items() if k not in _PRICE_FIELDS}
+    prices = {k: v for k, v in profile.items() if k in _PRICE_FIELDS}
+    return {**_dump(ModelProfile.model_validate(fields)), **prices}
 
 
 def _profiles_without(profiles, v1: dict[str, dict]):

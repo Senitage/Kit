@@ -5,6 +5,7 @@ import anthropic
 import httpx
 import pytest
 
+from fakes import models_with
 from kit import checks
 from kit.checks import Status
 from kit.credentials import anthropic_api_key
@@ -190,7 +191,7 @@ def test_other_providers_and_local_profiles():
     s = Settings.model_validate(
         {
             "routing": {"work": "gpt-sol", "expert": "big"},
-            "models": {"big": {"provider": "ollama", "model": "qwen3.8:27b"}},
+            "models": models_with(big={"provider": "ollama", "model": "qwen3.8:27b"}),
         }
     )
     gpt, big = checks.check_cloud(s, keys(openai="sk-o"), fake_factory())
