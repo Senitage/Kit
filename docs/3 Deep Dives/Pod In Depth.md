@@ -287,9 +287,9 @@ The face plate comes in two versions; print both and keep the one you like.
 
 ![[pod-face-options.jpg]]
 
-*Left, studs: four countersunk screws through the plate and a nut on each, so
-the screen comes out again. Right, pins: the screen presses onto four printed
-pins with a dab of hot glue.*
+*Left, screws: four M2 screws go in from the back, through the board into the
+plate's posts, so nothing shows from the front and the screen comes out again.
+Right, pins: the screen presses onto four printed pins with a dab of hot glue.*
 
 ## What's next for the Pod
 

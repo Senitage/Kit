@@ -41,6 +41,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Done, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
 | Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Done, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
+| The Pod's printed parts fit the real servo horns and the screen, and the head goes on from the back | Open, pull request #39 | [[Building the Pod]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
 ## What's next

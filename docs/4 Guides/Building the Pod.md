@@ -24,7 +24,7 @@ Kit. How it all works is in [[Pod In Depth]].
 | 1.5" SSD1351 colour OLED, 128 x 128 | the 7-pin SPI board |
 | 2 x SG90 servos | with their horns and screws |
 | Jumper wires and a short wire for the pat pad | |
-| M3 screws | 4 x M3 x 10 countersunk + 4 nuts (studs face only), 4 x M3 x 10, 3 x M3 x 16, 3 x M3 x 8 countersunk |
+| Screws | 4 x M2 x 4 (screws face only), 4 x M3 x 10, 3 x M3 x 16, 3 x M3 x 8 countersunk |
 | Filament | PLA: white, black, grey, dark grey and a little orange (one colour and paint works too) |
 
 | Software | |
@@ -48,11 +48,16 @@ python3 kit_pod_v2.py check    # reports any parts that hit, head level and nodd
 
 **Test pieces first.** These three check the fits that depend on your parts:
 
-1. `face`: screw the screen onto its four posts. The picture should sit in the
-   middle of the square window.
+1. `face`: screw the screen onto its four posts (M2: the board's holes are
+   2 mm). The picture should sit in the middle of the square window.
 2. `top`: the turn servo drops into its cutout and its tab holes line up.
 3. `neck`: the servo's cross horn presses into the pocket underneath, and the
-   single horn into the pocket on the right arm.
+   single horn into the pocket on the right arm. The pockets are drawn for a
+   36 mm cross horn and a 22 mm single horn with 0.5 mm to spare; if yours
+   differ, change `horn_double_len` and `horn_single_len` in `kit_pod_v2.py`.
+   The two arms stand on a bar-shaped collar across the top of the round
+   base, with a 45° underside, so they print as one piece with it and don't
+   snap off at the root.
 
 Then print the rest:
 
@@ -60,7 +65,7 @@ Then print the rest:
 |---|---|---|---|
 | head | white | back opening down | yes, tree supports |
 | cover | white | flat side down | none |
-| face (studs) or face_pins | black | front down | none |
+| face (screws) or face_pins | black | front down | none |
 | ear x 2 | orange | flat side down | none |
 | neck | dark grey | disc down | touching the bed only |
 | cap | white | as laid | none |
@@ -99,6 +104,13 @@ the plate.
 ![[pod-step-03.jpg|420]]
 ![[pod-step-04.jpg|420]]
 ![[pod-step-05.jpg|420]]
+
+> [!NOTE] Step 5
+> The head goes on from behind, level, not down from above: the arms slide in
+> through the open ends of the floor slots and the pin runs forward along the
+> channel in its bracket. At the end the head settles 2 mm so the pin sits up
+> in its round seat, and it can't slide back out.
+
 ![[pod-step-06.jpg|420]]
 
 > [!NOTE] Step 6

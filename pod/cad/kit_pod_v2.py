@@ -50,6 +50,9 @@ pic_dx = (pic_left - pic_right) / 2      # -0.3: picture centre a little left of
 pic_dz = (pic_bottom - pic_top) / 2      # +3.05: picture centre above the board centre
 spline_above_tab = 12.2   # top of the tabs to the top of the output shaft
 tab_top_to_bottom = 20.0  # top of the tabs to the bottom of the servo (Dan, 2026-10-11)
+horn_single_len, horn_double_len = 22.0, 36.0   # servo horns, end to end (Dan, 2026-10-11)
+horn_above_shaft = 34.2 - 32.0   # the horn's outer face stands this far past the end of the shaft (Dan, 2026-10-12)
+board_hole = 2.0          # the screen board's fixing holes, so M2 screws (Dan, 2026-10-12)
 
 # ---------- estimates ----------
 win = 28.5                # window (the picture is 27.2 x 27.5)
@@ -61,6 +64,7 @@ horn_t = 1.6
 esp_l, esp_w, esp_t = 52.0, 28.5, 1.6   # ESP32 dev board
 pilot = 2.6               # M3 screw biting into plastic
 clear3 = 3.4              # M3 clearance
+clear2 = 2.4              # M2 clearance
 servo_screw = 1.8
 
 # ---------- layout ----------
@@ -73,6 +77,8 @@ PLATE_Z1 = TURN_TAB_Z + PLATE_T         # top of the plate = bottom of the cap
 LIP_R_IN, LIP_Z = 24.4, 4.5             # the cap's opening round the neck
 TOP_SCREW_R = 28.4
 DISC_R = 22.0
+COLLAR_R, COLLAR_Z1 = 27.0, DISC_Z0 + 4.5 + 2.5   # a collar over the cap's lip that the arms stand on
+COLLAR_HALF_Y = 9.0                     # the collar is a bar under the arms, so the tilting head clears it
 DISC_Z1 = DISC_Z0 + 4.5
 
 # head
@@ -98,14 +104,18 @@ BOARD_CX, BOARD_CZ = -pic_dx, FACE_ZC - pic_dz   # so the picture sits in the mi
 # tilt servo inside the head: shaft along +X, body toward the front (-Y), width along Z
 ARM_T = 4.5
 SLIDE = 4.5                             # room to slide the tilt servo off its horn (spline + hub), for fitting it
+POCKET = horn_t + 0.5                   # the horn pocket's depth: the horn's outer face sits on its bottom
 # top of the tilt servo's tabs, picked so the two arms sit the same distance either side of centre
-TILT_TAB_X = ((tab_under + tab_t) + SLIDE + 3.0 + 0.5 - (spline_above_tab - horn_t)) / 2
+BRACKET_T = 4.0                         # the pin bracket's thickness
+TILT_TAB_X = ((tab_under + tab_t) + SLIDE + BRACKET_T + 0.5 - (spline_above_tab + horn_above_shaft - POCKET)) / 2
 SHAFT_TOP_X = TILT_TAB_X + spline_above_tab
-R_ARM_X0 = SHAFT_TOP_X - horn_t                  # inside face of the right arm
+R_ARM_X0 = SHAFT_TOP_X + horn_above_shaft - POCKET   # inside face of the right arm, so the tabs meet their wall
 L_BRACKET_X1 = TILT_TAB_X - (tab_under + tab_t) - SLIDE   # pin bracket inside the head; the servo's end slides up to it
-L_BRACKET_X0 = L_BRACKET_X1 - 3.0
+L_BRACKET_X0 = L_BRACKET_X1 - BRACKET_T
 L_ARM_X1 = L_BRACKET_X0 - 0.5                    # inside face of the left arm
 ARM_HALF_Y = 7.0
+PIN_DROP = 2.0                                   # the pin comes in along a channel this far below its seat, then
+                                                 # the head settles onto it: it can't slide back out
 BULK_X0, BULK_X1 = TILT_TAB_X, TILT_TAB_X + 3.0  # tabs pull against the -X face of this wall
 WIRE_XY = (-13.5, TILT_Y + 10.5)                 # wires from the head down through the neck
 
@@ -185,8 +195,11 @@ def sg90_screw_holes(z0, z1, d=servo_screw):
     return out
 
 
+HUB_D, TIP_D = 7.5, 4.2   # servo horn hub and arm-tip widths (estimates)
+
+
 def _arm(length, clear):
-    r1, r2 = (7.5 + clear) / 2, (4.2 + clear) / 2
+    r1, r2 = (HUB_D + clear) / 2, (TIP_D + clear) / 2
     t = horn_t + clear
     hub = cyl(2 * r1, t, (0, 0, 0))
     tip = cyl(2 * r2, t, (length, 0, 0))
@@ -194,12 +207,15 @@ def _arm(length, clear):
     return hub.union(tip).union(web)
 
 
-def horn_single(clear=0.3):
-    return _arm(15.0, clear)
+def horn_single(clear=0.5):
+    """Single-arm horn, 22 mm end to end (Dan measured)."""
+    return _arm(horn_single_len - HUB_D / 2 - TIP_D / 2, clear)
 
 
-def horn_double(clear=0.3):
-    return _arm(15.5, clear).union(_arm(15.5, clear).rotate((0, 0, 0), (0, 0, 1), 180))
+def horn_double(clear=0.5):
+    """Two-arm horn, 36 mm tip to tip (Dan measured)."""
+    arm = horn_double_len / 2 - TIP_D / 2
+    return _arm(arm, clear).union(_arm(arm, clear).rotate((0, 0, 0), (0, 0, 1), 180))
 
 
 def to_tilt(shape):
@@ -235,14 +251,20 @@ def head_shell():
     return head_outer().cut(inner)
 
 
+BOSS_D = 6.0
+
+
 def head_cover_bosses():
-    return [(sx * 27.8, H_ZC + sz * 13.0) for sx in (-1, 1) for sz in (-1, 1)]
+    return [(sx * 28.6, H_ZC + sz * 13.0) for sx in (-1, 1) for sz in (-1, 1)]
 
 
 def arm_slot(x0, x1):
-    """Slot in the head floor an arm passes through, long enough for the full tilt."""
+    """Slot in the head floor an arm passes through: long enough for the full tilt, and open at the back,
+    so the neck slides in through the head's open back."""
     sweep = (TILT_Z - H_Z0) * math.tan(math.radians(TILT_DEG)) + 1.0
-    return rrect_z(x1 - x0, 2 * (ARM_HALF_Y + sweep), 2.0, H_Z0 - 1, FLOOR + 5, (x0 + x1) / 2, TILT_Y)
+    y0 = TILT_Y - ARM_HALF_Y - sweep
+    # up to the tilt axis: the cavity's back corners curve inward, and the arms pass them on the way in
+    return rrect_z(x1 - x0, H_CUT + 2 - y0, 2.0, H_Z0 - 1, TILT_Z, (x0 + x1) / 2, (y0 + H_CUT + 2) / 2)
 
 
 def head():
@@ -259,14 +281,19 @@ def head():
     bulk = bulk.cut(box(BULK_X0 - 1, TILT_Y - servo_l + shaft_from_end - 0.4, TILT_Z - servo_w / 2 - 0.4,
                         BULK_X1 + 1, TILT_Y + shaft_from_end + 0.4, 99))
     bulk = bulk.cut(to_tilt(sg90_screw_holes(-0.01, 3.0)))
-    # bracket for the left arm's pin: a notch open at the bottom
-    brk = box(L_BRACKET_X0, TILT_Y - ARM_HALF_Y, FLOOR - 0.5, L_BRACKET_X1, H_CUT, TILT_Z + 6.0)
-    notch = box(L_BRACKET_X0 - 1, TILT_Y - 3.2, FLOOR - 1, L_BRACKET_X1 + 1, TILT_Y + 3.2, TILT_Z)
-    brk = brk.cut(notch.union(cyl(6.4, 5, (L_BRACKET_X0 - 1, TILT_Y, TILT_Z), "X")))
+    # bracket for the left arm's pin: a channel open toward the back, a step below the seat, so the pin slides
+    # forward along it as the neck comes in through the open back; at the end the head settles PIN_DROP onto
+    # the pin, which lifts into its round seat, and the pin can't slide back along the channel
+    brk = box(L_BRACKET_X0, TILT_Y - 10.3, FLOOR - 0.5, L_BRACKET_X1, H_CUT, TILT_Z + 10.0)   # 7 mm leg, 6.7 mm over the seat
+    x0, x1 = L_BRACKET_X0 - 1, L_BRACKET_X1 + 1
+    channel = (box(x0, TILT_Y, TILT_Z - PIN_DROP - 3.3, x1, H_CUT + 1, TILT_Z - PIN_DROP + 3.3)
+               .union(cyl(6.6, x1 - x0, (x0, TILT_Y, TILT_Z - PIN_DROP), "X")))
+    seat = cyl(6.6, x1 - x0, (x0, TILT_Y, TILT_Z), "X").union(box(x0, TILT_Y - 3.3, TILT_Z - PIN_DROP, x1, TILT_Y + 3.3, TILT_Z))
+    brk = brk.cut(channel.union(seat))
     shell = shell.union(bulk.union(brk).intersect(inside))
     # bosses for the back cover
     for x, z in head_cover_bosses():
-        shell = shell.union(cyl(7, 10, (x, H_CUT - 10, z), "Y").intersect(inside))
+        shell = shell.union(cyl(BOSS_D, 10, (x, H_CUT - 10, z), "Y").intersect(inside))
         shell = shell.cut(cyl(pilot, 9, (x, H_CUT - 9, z), "Y"))
     # floor: slots for the neck's arms and the wire hole
     shell = shell.cut(arm_slot(R_ARM_X0 - 0.5, R_ARM_X0 + ARM_T + 0.5))
@@ -306,19 +333,20 @@ def cover():
 
 POST_D = 4.4              # screen posts: slim enough to miss the screen glass beside the holes
 POST_TOP = PCB_Y - 0.15   # a hair short of the board, so the glass always sits flat on the face plate
-BOARD_HOLE = 3.2          # the screen board's fixing holes (M3)
+POST_OUT, POST_HALF = 4.5, 3.5   # each post is backed by a block on its outer side, away from the glass
+BOARD_HOLE = board_hole
+PILOT_M2 = 1.6            # an M2 screw cutting its own thread in PLA
 
 
 def screen_holes():
     return [(BOARD_CX + sx * hole_dx / 2, BOARD_CZ + sz * hole_dz / 2) for sx in (-1, 1) for sz in (-1, 1)]
 
 
-def face_plate(style="studs"):
+def face_plate(style="screws"):
     """The black face round the screen. Two ways to hold the screen, to test-print:
-    studs: M3 countersunk screws go in from the front of the face plate (before it's glued in) and stick out
-           the back as studs; the screen goes on over them and an M3 nut holds each corner. Nuts come off
-           from inside the head, so the screen can still come out after the face plate is glued in.
-    pins:  plastic pins go through the screen's holes; a dab of hot glue on each pin holds it (peels off).
+    screws: M2 x 4 screws go in from the back, through the board, into blind holes in the posts (the plastic
+            takes the thread), so nothing shows from the front and the screen still comes out.
+    pins:   plastic pins go through the screen's holes; a dab of hot glue on each pin holds it (peels off).
     """
     tab = rrect_y(OPEN_W - 0.3, OPEN_H - 0.3, OPEN_R - 0.15, H_Y0 + 0.4, FACE_IN, 0, FACE_ZC)
     flange = rrect_y(FLANGE_W, FLANGE_H, FLANGE_R, FACE_IN, GLASS_Y, 0, FACE_ZC)
@@ -326,10 +354,14 @@ def face_plate(style="studs"):
     pad = rrect_y(hole_dx + 6.0, hole_dz + 6.0, 4.0, FACE_IN, GLASS_Y, BOARD_CX, BOARD_CZ)
     p = tab.union(flange).union(pad)
     for x, z in screen_holes():
+        # a round post the glass side, backed by a block away from the glass (the round alone was a 0.5 mm shell)
+        sx = 1 if x > BOARD_CX else -1
         p = p.union(cyl(POST_D, POST_TOP - GLASS_Y + 0.01, (x, GLASS_Y - 0.01, z), "Y"))
+        p = p.union(box(min(x, x + sx * POST_OUT), GLASS_Y - 0.01, z - POST_HALF, max(x, x + sx * POST_OUT),
+                        POST_TOP, z + POST_HALF).edges("|Y").fillet(1.0))
         if style == "pins":
             pin_len = PCB_Y + 1.5 + 1.6 - POST_TOP      # through the 1.5 mm board and 1.6 mm out the back
-            pin = cyl(BOARD_HOLE - 0.4, pin_len, (x, POST_TOP - 0.01, z), "Y").faces(">Y").chamfer(0.4)
+            pin = cyl(BOARD_HOLE - 0.4, pin_len, (x, POST_TOP - 0.01, z), "Y").faces(">Y").chamfer(0.3)
             p = p.union(pin)
     # window: square with a chamfer out to the front
     p = p.cut(rrect_y(win, win, 1.5, H_Y0, GLASS_Y + 0.1, 0, FACE_ZC))
@@ -338,12 +370,10 @@ def face_plate(style="studs"):
     room = head_solid(HW - 2 * H_WALL - 0.6, HD - 2 * H_WALL, HH - 2 * H_WALL - 0.6, H_R - H_WALL - 0.3,
                       H_FRONT_R - H_WALL + 0.3, H_BACK_R - H_WALL, FACE_IN - 0.02)
     p = p.intersect(room.union(box(-50, H_Y0 - 1, -10, 50, FACE_IN - 0.01, 120)))
-    if style == "studs":
+    if style == "screws":
         for x, z in screen_holes():
-            p = p.cut(cyl(3.4, 20, (x, H_Y0 - 5, z), "Y"))
-            # countersink for the screw head, flush with the front of the flange (it sits against the head wall)
-            p = p.cut(cone(6.6, 3.4, 1.6, (x, FACE_IN - 0.01, z), "Y"))
-            p = p.cut(cyl(6.6, 3.0, (x, FACE_IN - 3.0, z), "Y"))      # head has to get past the tab too
+            # blind pilot hole from the back, 0.5 mm short of the front face
+            p = p.cut(cyl(PILOT_M2, POST_TOP - FACE_IN - 0.5 + 0.01, (x, FACE_IN + 0.5, z), "Y"))
     return p
 
 
@@ -352,12 +382,20 @@ def neck():
     disc = cyl(2 * DISC_R, DISC_Z1 - DISC_Z0, (0, 0, DISC_Z0)).edges(">Z").fillet(1.5)
     plane = cq.Plane(origin=(0, 0, 0), xDir=(0, 1, 0), normal=(1, 0, 0))
 
+    # The arms reach past the turntable's edge (the cap's opening limits how big it can be), so a collar
+    # sits on the turntable just above the cap's lip, wide enough for the whole foot of each arm to stand on.
+    # Its underside is a 45 degree cone, so it prints without support and clears the lip. It is a bar
+    # across the arms, not a full ring: at the front and back the head's floor swings down to it on a full tilt.
+    collar = cone(2 * DISC_R, 2 * COLLAR_R, COLLAR_R - DISC_R, (0, 0, COLLAR_Z1 - (COLLAR_R - DISC_R)))
+    collar = collar.intersect(box(-COLLAR_R - 1, TILT_Y - COLLAR_HALF_Y, 0, COLLAR_R + 1, TILT_Y + COLLAR_HALF_Y, 20)
+                              .edges("|Z").fillet(3.0))
+
     def arm(x0, x1):
-        a = box(x0, TILT_Y - ARM_HALF_Y, DISC_Z1 - 0.5, x1, TILT_Y + ARM_HALF_Y, TILT_Z).edges("|Z").fillet(1.8)
+        a = box(x0, TILT_Y - ARM_HALF_Y, COLLAR_Z1 - 0.5, x1, TILT_Y + ARM_HALF_Y, TILT_Z).edges("|Z").fillet(1.8)
         return a.union(cq.Workplane(plane).workplane(offset=x0).center(TILT_Y, TILT_Z)
                        .circle(ARM_HALF_Y).extrude(x1 - x0))
 
-    n = disc.union(arm(R_ARM_X0, R_ARM_X0 + ARM_T)).union(arm(L_ARM_X1 - ARM_T, L_ARM_X1))
+    n = disc.union(collar).union(arm(R_ARM_X0, R_ARM_X0 + ARM_T)).union(arm(L_ARM_X1 - ARM_T, L_ARM_X1))
     # pin on the left arm
     n = n.union(cyl(5.9, L_BRACKET_X1 - 0.3 - L_ARM_X1, (L_ARM_X1 - 0.01, TILT_Y, TILT_Z), "X"))
     # tilt horn pocket on the inside of the right arm, arm pointing down, and a hole for its screw
@@ -367,7 +405,7 @@ def neck():
     # turn horn pocket underneath, its screw from above, and the wire hole
     n = n.cut(horn_double().translate((0, 0, DISC_Z0 - 0.01)))
     n = n.cut(cyl(5.5, 20, (0, 0, DISC_Z0 - 1)))
-    n = n.cut(rrect_z(5.0, 9.0, 2.45, DISC_Z0 - 1, DISC_Z1 + 1, *WIRE_XY))
+    n = n.cut(rrect_z(5.0, 9.0, 2.45, DISC_Z0 - 1, COLLAR_Z1 + 1, *WIRE_XY))
     return n
 
 
@@ -550,11 +588,20 @@ def references():
 
 
 def check(p):
-    """Every pair of solids that overlaps, at rest and with the head tilted fully up and down."""
+    """Every pair of solids that overlaps, at rest and with the head tilted fully up and down, then the neck
+    (with its tilt horn in) on its way in through the head's open back."""
     solids = {**p, **{k: v[0] for k, v in references().items()}}
     for i, at in enumerate(feet()):
         solids[f"foot {i + 1}"] = foot(at)
     problems = []
+    horn = horn_single(0.0).rotate((0, 0, 0), (0, 1, 0), 90).translate((R_ARM_X0 + POCKET - horn_t, TILT_Y, TILT_Z))
+    hub = cyl(HUB_D, horn_above_shaft + 2.0, (SHAFT_TOP_X - 2.0, TILT_Y, TILT_Z), "X")
+    coming = p["neck"].union(horn).union(hub)
+    # along the channel the head rides PIN_DROP high on the neck, then settles onto the pin
+    for back, up in ((20.0, PIN_DROP), (14.0, PIN_DROP), (8.0, PIN_DROP), (3.0, PIN_DROP), (0.0, PIN_DROP), (0.0, PIN_DROP / 2)):
+        vol = p["head"].intersect(coming.translate((0, back, -up))).val().Volume()
+        if vol > 0.05:
+            problems.append((back, f"neck coming in, head {up:.0f} mm up", "head", round(vol, 2)))
     for deg in (0, TILT_DEG, -TILT_DEG):
         moved = {k: tilted(v, deg) if k in TILTING else v for k, v in solids.items()}
         names = list(moved)
@@ -592,7 +639,7 @@ def main():
     flat = {
         "head": p["head"].rotate((0, 0, 0), (1, 0, 0), -90),      # back opening down
         "cover": p["cover"].rotate((0, 0, 0), (1, 0, 0), 90),     # cut face down
-        "face": p["face"].rotate((0, 0, 0), (1, 0, 0), 90),       # front down (the "studs" way)
+        "face": p["face"].rotate((0, 0, 0), (1, 0, 0), 90),       # front down (the "screws" way)
         "face_pins": face_plate("pins").rotate((0, 0, 0), (1, 0, 0), 90),
         "neck": p["neck"],                                        # turntable down
         "cap": p["cap"],                                          # upright, bottom down
@@ -615,6 +662,7 @@ def main():
 if __name__ == "__main__":
     if sys.argv[1:] == ["check"]:
         found = check(parts())
-        print("\n".join(f"tilt {d:+5.1f}: {a} hits {b} ({v} mm3)" for d, a, b, v in found) or "No parts hit each other.")
+        print("\n".join(f"{'back' if a.startswith('neck coming in') else 'tilt'} {d:+5.1f}: {a} hits {b} ({v} mm3)"
+                        for d, a, b, v in found) or "No parts hit each other.")
     else:
         main()

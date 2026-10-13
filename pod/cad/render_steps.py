@@ -176,12 +176,12 @@ def steps():
         [((k.R_ARM_X0 - 22, -12, k.TILT_Z + 6), (k.R_ARM_X0 - 4, -12, k.TILT_Z + 6))],
         (-60, 25, 170), (5, 0, 15))
 
-    yield ("Head onto the arms", [
-        "Lower the head straight down so both arms go up through the slots in its floor.",
-        "The pin on the left arm drops into the notch in the bracket inside.",
+    yield ("Head on from the back", [
+        "Hold the head behind the neck, level, and slide it forward (seen from behind here).",
+        "The arms go in through the open ends of the slots in its floor; the pin on the left arm runs along the bracket's channel, then the head settles 2 mm onto it.",
     ], [part("body"), part("top"), part("cap"), part("neck"), part("horn_tilt", HORN),
-        part("head", move=(0, 0, 30), opacity=0.35)],
-        [((0, -40, 75), (0, -40, 55))], (-25, 20, 360), (0, 0, 25))
+        part("head", move=(0, 24, 0), opacity=0.45)],
+        [((0, 50, k.TILT_Z + 16), (0, 28, k.TILT_Z + 16))], (155, 16, 300), (0, 12, 30))
 
     sx = -k.SLIDE + 0.2
     yield ("Tilt servo in through the back", [
@@ -200,8 +200,8 @@ def steps():
         [((50, 0, k.TILT_Z), (k.HW / 2 + 2, 0, k.TILT_Z))], (60, 15, 260), (5, 0, k.TILT_Z))
 
     yield ("Face and screen", [
-        "Push 4 countersunk M3 x 10 screws in from the front of the face plate, then glue it into the window from inside.",
-        "Screen onto the screw ends, header pins toward the horn-screw side, an M3 nut on each. (Pins option: a dab of hot glue on each pin.)",
+        "Glue the face plate into the window from inside. Nothing shows from the front: no screw heads.",
+        "Screen onto the four posts, header pins toward the horn-screw side, 4 x M2 x 4 screws from the back into the posts. (Pins option: a dab of hot glue on each pin.)",
     ], [part("head", opacity=0.35), part("face"), part("screen", (0.2, 0.4, 0.75), (0, 18, 0))],
         [((0, 32, k.FACE_ZC), (0, 6, k.FACE_ZC))], (150, 18, 260), (0, -15, k.FACE_ZC))
 
