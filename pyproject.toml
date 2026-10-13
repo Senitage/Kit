@@ -8,6 +8,15 @@ version = "0.1.0"
 description = "Kit, a personal AI assistant with a personality"
 readme = "README.md"
 requires-python = ">=3.11"
+# Each version here is in the CI matrix (.github/workflows/ci.yml); a test checks they agree.
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "anthropic>=1.0",
     "httpx>=0.27",
@@ -26,6 +35,9 @@ desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 # don't install plain opencv-python beside it. For GPU detection install PyTorch's
 # CUDA build first (docs/4 Guides/Vision Stage 1.md).
 eyes = ["opencv-contrib-python>=4.10", "ultralytics>=8.3", "lap>=0.5.12", "mediapipe>=1.0"]
+# Kit's ears, on the PC with the mic: speech to text, voice detection and voice prints
+# on the processor through sherpa-onnx (no PyTorch, no graphics card).
+hearing = ["sherpa-onnx>=1.12", "sounddevice>=0.4.6"]
 
 [project.scripts]
 kit = "kit.cli:main"

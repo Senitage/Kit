@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 
 API_VERSION = 1  # bumped only if an old body could no longer talk to the brain
 ONLINE_FOR = timedelta(seconds=90)  # a body that polls events checks in every ~25 s
-# The events bodies hear on /api/life/events (kit.life and kit.server).
+FORGET_AFTER = timedelta(days=1)  # a body quiet this long is dropped from the list
+# The events bodies hear on /api/life/events (kit.life and kit.routes.life).
 LIFE_EVENTS = (
     "mood",
     "fidget",
@@ -35,6 +36,7 @@ LIFE_EVENTS = (
     "quiet",
     "dials",
     "pipe_up",
+    "remembered",
 )
 ABILITIES = (
     "screen",
@@ -122,6 +124,7 @@ class BodyRegistry:
         """A body says hello (again): what it is and what it can do. A paired device
         is always known by its device name, whatever id it sends."""
         now = self.clock()
+        self._forget_old(now)
         body_id = device or hello.id.strip() or hello.kind
         old = self._bodies.get(body_id)
         abilities = tuple(dict.fromkeys(a for a in hello.abilities if a in ABILITIES))
@@ -183,6 +186,7 @@ class BodyRegistry:
         return self._bodies.get(body_id)
 
     def all(self) -> list[Body]:
+        self._forget_old(self.clock())
         return sorted(self._bodies.values(), key=lambda b: b.last_seen, reverse=True)
 
     def online(self) -> list[Body]:
@@ -197,6 +201,13 @@ class BodyRegistry:
 
     def forget(self, body_id: str) -> None:
         self._bodies.pop(body_id, None)
+
+    def _forget_old(self, now: datetime) -> None:
+        """Bodies not heard from for a day go: a body that sends a fresh id every
+        hello would otherwise grow the list forever."""
+        for body_id, body in list(self._bodies.items()):
+            if now - body.last_seen > FORGET_AFTER:
+                del self._bodies[body_id]
 
     def listing(self) -> list[dict]:
         now = self.clock()

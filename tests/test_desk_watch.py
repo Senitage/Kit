@@ -6,6 +6,7 @@ brain is the real API in-process.
 
 import socket
 import sys
+import threading
 from types import SimpleNamespace
 
 import httpx
@@ -14,9 +15,10 @@ from fastapi.testclient import TestClient
 
 from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
 from kit.brain import Brain
-from kit.desk.client import BrainClient, BrainError
+from kit.desk.client import BrainClient, BrainError, follow_life, life_step
 from kit.desk.config import DeskConfig, load_token, save_token
 from kit.desk.watch import (
+    ExeNames,
     OpenWindow,
     Privacy,
     Reporter,
@@ -265,6 +267,115 @@ def test_client_connects_over_ipv4_unless_kits_address_is_ipv6(monkeypatch):
         (("kit-server", 8600), ("0.0.0.0", 0)),
         (("::1", 8600), None),  # an IPv6 address is used as given
     ]
+
+
+class FakePsutil:
+    """psutil as ExeNames sees it: a process table that can change under a pid."""
+
+    class Error(Exception):
+        pass
+
+    def __init__(self, table: dict):
+        self.table = table  # pid -> (started at, exe), or None for a pid that's gone
+        self.looked_up = 0
+
+    def Process(self, pid):  # noqa: N802 (psutil's name)
+        row = self.table.get(pid)
+        if row is None:
+            raise self.Error(pid)
+        psutil = self
+
+        class Proc:
+            def create_time(self):
+                return row[0]
+
+            def name(self):
+                psutil.looked_up += 1
+                return row[1]
+
+        return Proc()
+
+
+def test_a_reused_pid_is_looked_up_again_so_a_hidden_apps_titles_cant_leak():
+    ps = FakePsutil({40: (100.0, "chrome.exe")})
+    exes = ExeNames(ps)
+    assert exes(40) == "chrome.exe" and exes(40) == "chrome.exe" and ps.looked_up == 1
+    ps.table[40] = (250.0, "KeePass.exe")  # the browser quit; Windows gave its pid away
+    assert exes(40) == "KeePass.exe" and ps.looked_up == 2  # not "chrome.exe" from the cache
+    ps.table[40] = None
+    assert exes(40) == ""  # gone: nothing, and nothing remembered
+    ps.table[40] = (300.0, "firefox.exe")
+    assert exes(40) == "firefox.exe"
+
+
+def test_the_exe_cache_stays_small():
+    ps = FakePsutil({pid: (1.0, f"app{pid}.exe") for pid in range(ExeNames.MAX + 50)})
+    exes = ExeNames(ps)
+    for pid in range(ExeNames.MAX + 50):
+        exes(pid)
+    assert len(exes._known) <= ExeNames.MAX
+
+
+class FakeLife:
+    """The brain's life feed: ``answers`` are what life_events gives back in turn,
+    an Exception among them being raised."""
+
+    def __init__(self, answers, state=None):
+        self.answers = list(answers)
+        self.state = state or {"last_event": 3, "mood": "awake", "face": "happy"}
+        self.asked = []
+
+    def life(self):
+        return self.state
+
+    def life_events(self, after, wait=25.0):
+        self.asked.append(after)
+        if not self.answers:
+            raise BrainError("Can't reach Kit")
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def test_a_malformed_life_event_doesnt_end_the_feed():
+    good = {"events": [{"id": 4, "type": "fidget", "gesture": "yawn"}], "last": 4}
+    brain = FakeLife(
+        [
+            {"events": "not a list of events"},  # a wrong shape: KeyError/TypeError
+            ValueError("Expecting value: line 1 column 1"),  # a bad body (json decoding)
+            {"events": [], "last": None},  # a None where a number should be
+            good,
+            {"events": [], "last": 4},
+        ]
+    )
+    got, stop = [], threading.Event()
+
+    def emit(event):
+        got.append(event)
+        if event.get("type") == "fidget":
+            stop.set()
+
+    follow_life(stop, lambda: brain, emit, retry_s=0.001, retry_max_s=0.004)
+    assert any(e.get("type") == "fidget" for e in got)  # it got past three bad answers
+    assert got[0] == {"type": "mood", "face": "happy"}  # his current face came first
+    assert brain.asked.count(3) >= 4  # after each failure it started again from now
+
+
+def test_the_life_feed_starts_from_now_and_notices_a_brain_restart():
+    brain = FakeLife([{"events": [{"id": 9, "type": "react"}], "last": 9}])
+    got = []
+    after = life_step(brain, None, got.append)
+    assert brain.asked == [3] and after == 9  # from the brain's last event, not from 0
+    assert got == [{"type": "mood", "face": "happy"}, {"id": 9, "type": "react"}]
+    brain.answers.append({"events": [], "last": 1})  # ids began again: the brain restarted
+    with pytest.raises(BrainError, match="restarted"):
+        life_step(brain, after, got.append)
+    brain.state["mood"] = "asleep"
+    brain.answers.append({"events": [], "last": 3})
+    got.clear()
+    life_step(brain, None, got.append)
+    assert got[0] == {"type": "state", "state": "asleep"}
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="reads real Windows windows")

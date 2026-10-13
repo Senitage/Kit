@@ -12,6 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("chatterbox")
 
+import numpy as np  # noqa: E402
 from transformers.generation.logits_process import (  # noqa: E402
     LogitsProcessorList,
     RepetitionPenaltyLogitsProcessor,
@@ -52,8 +53,18 @@ class FakeTTS:
     """Just the parts of ChatterboxTurboTTS the token loop uses."""
 
     def __init__(self, t3) -> None:
-        self.t3, self.device = t3, "cpu"
-        self.conds = type("Conds", (), {"t3": t3.cond})()
+        self.t3, self.device, self.sr = t3, "cpu", 24000
+        self.conds = type("Conds", (), {"t3": t3.cond, "gen": {}})()
+        self.s3gen = self
+        self.watermarker = self
+        self.decoded: list[int] = []  # tokens handed to the decoder each time
+
+    def inference(self, speech_tokens, ref_dict, n_cfm_timesteps):
+        self.decoded.append(len(speech_tokens))
+        return torch.ones(1, 2 * len(speech_tokens)), None
+
+    def apply_watermark(self, wav, sample_rate=None):
+        raise AssertionError("Kit's voice isn't watermarked")
 
     def tokenizer(self, text, return_tensors="pt"):
         ids = torch.tensor([[(ord(c) * 37) % 50000 for c in text[:20]]])
@@ -125,3 +136,95 @@ def test_the_loop_yields_tokens_and_stops(t3):
     assert 1 <= len(tokens) <= 13
     assert all(0 <= t < 6563 for t in tokens)
     assert t3.hp.stop_speech_token not in tokens
+
+
+def prompt(t3, text_len: int):
+    with torch.inference_mode():
+        start = t3.hp.start_speech_token * torch.ones(1, 1, dtype=torch.long)
+        return t3.prepare_input_embeds(
+            t3_cond=t3.cond,
+            text_tokens=torch.randint(0, 50000, (1, text_len)),
+            speech_tokens=start,
+            cfg_weight=0.0,
+        )
+
+
+def test_the_prefill_matches_chatterboxs_own_forward_pass(t3):
+    graph = turbo.GraphTokens(FakeTTS(t3), max_len=500, max_new=50)
+    embeds, n_cond = prompt(t3, 10)
+    with torch.inference_mode():
+        out = t3.tfmr(inputs_embeds=embeds, use_cache=True)
+        theirs = t3.speech_head(out[0][:, -1:])[:, -1, :].float()
+        # In two parts, as a line is run: the conditioning, then its text.
+        graph.prefill(embeds[:, :n_cond], 0)
+        ours = graph.prefill(embeds[:, n_cond:], int(n_cond))
+        assert torch.allclose(ours, theirs, atol=1e-4)
+        n = embeds.shape[1]
+        for i in range(len(t3.tfmr.h)):
+            k, v = turbo._kv(out.past_key_values, i)
+            assert torch.allclose(graph.keys[i, :, :, :n], k, atol=1e-4)
+            assert torch.allclose(graph.values[i, :, :, :n], v, atol=1e-4)
+
+
+def test_the_speaker_conditioning_is_worked_out_once_and_kept(t3):
+    graph = turbo.GraphTokens(FakeTTS(t3), max_len=500, max_new=8, check_every=4)
+    runs = []
+    real = graph.prefill
+
+    def counted(embeds, start):
+        runs.append((embeds.shape[1], start))
+        return real(embeds, start)
+
+    graph.prefill = counted
+    list(graph("Yeah, I reckon so."))
+    list(graph("Told you."))
+    n_cond = int(prompt(t3, 3)[1])
+    assert runs[0] == (n_cond + 18 + 1, 0)  # the whole prompt, the first time
+    assert runs[1] == (9 + 1, n_cond)  # then only the text and the start token
+    # The kept keys and values are the ones a full run gives.
+    embeds, _ = prompt(t3, 5)
+    with torch.inference_mode():
+        graph._cond = None
+        graph.prefill(embeds, 0)
+        full = graph.keys[:, :, :, :n_cond].clone()
+        graph._prompt(embeds, n_cond)
+        graph._prompt(embeds, n_cond)
+        assert torch.equal(graph.keys[:, :, :, :n_cond], full)
+        assert torch.equal(graph._cond[1], full)
+
+
+def test_generate_hands_back_the_sound_without_a_watermark(t3):
+    tts = FakeTTS(t3)
+    graph = turbo.GraphTokens(tts, max_len=500, max_new=8, check_every=4)
+    wav = np.concatenate(list(turbo.generate(tts, graph, "Yeah.")))
+    assert wav.ndim == 1 and wav.dtype.name == "float32" and (wav == 1).all()
+    # A short line is one window, ending on three silence tokens.
+    assert len(tts.decoded) == 1 and len(wav) == 2 * tts.decoded[0] and tts.decoded[0] >= 3
+
+
+class _Tokens:
+    """Stands in for ``GraphTokens``: hands out tokens already chosen."""
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def __call__(self, text):
+        yield from self.tokens
+
+
+def test_the_sound_comes_a_window_at_a_time_with_the_joins_cross_faded():
+    tts = FakeTTS(None)
+    tokens = list(range(1, 24))  # 23 tokens: two whole windows and three left over
+    pieces = list(turbo.generate(tts, _Tokens(tokens), "ignored", window=10, overlap=3))
+    assert len(pieces) == 3
+    # Each window is decoded with the three tokens before it; the last with the silence.
+    assert tts.decoded == [10, 13, 3 + 3 + 3]
+    wav = np.concatenate(pieces)
+    # Every token's sound is there once (two samples a token here): the shared tokens
+    # are cross-faded into one reading, not doubled.
+    assert len(wav) == 2 * (23 + 3) and (wav == 1).all()
+    assert [len(p) for p in pieces] == [14, 20, 18]  # the last three tokens' sound held back
+    # Tokens that aren't sounds are left out, and a line with none is a breath of silence.
+    tts.decoded.clear()
+    wav = np.concatenate(list(turbo.generate(tts, _Tokens([turbo.OOV + 1]), "", window=10)))
+    assert tts.decoded == [3] and len(wav) == 6

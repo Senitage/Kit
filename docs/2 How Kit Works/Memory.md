@@ -61,19 +61,35 @@ Every search runs two ways at once and merges the results:
 A match only counts if it's close enough in meaning (`memory.min_similarity`),
 which is what lets him say "I don't know" instead of guessing. If the
 embedding model is down he searches by words alone, and catches up later.
+Your message goes to the embedding model once a turn: the same vector serves
+the new-topic check ([[Brain#Conversations, chats and topics]]) and every search of
+the turn.
 
 Among relevant facts, the ones that **matter more** (people, things about
-you) and the ones **recalled lately** come first, the way a person's memory
-works. **Pinned** facts are always in mind.
+you) and the ones you **told him or confirmed lately** come first, the way a
+person's memory works. Being recalled doesn't count for that: a fact that won
+once would otherwise keep winning. **Pinned** facts are always in mind.
+
+The whole turn is **one search**: facts and days, old conversation, his
+notebook and the register are looked up together and split by source, and it
+runs off to the side, so his voice and his bodies never wait on it. The
+meaning vectors stay in memory and are kept in step as facts are added,
+replaced or forgotten, so a search costs the same at ten thousand memories as
+at a hundred.
 
 ## Learning without a mess
 
 A new fact is compared with the closest facts he already has, and a model
-decides: **same** (nothing added), **update** (the new fact supersedes the
-old, which stays in its history), or **new**. Facts come from "remember
-that...", from who someone is to you ("Emma's my cousin"), and from the
-**end-of-day pass** after midnight, which writes the day's summary and learns
-its lasting facts.
+decides: **same** (nothing added, but the fact counts as confirmed today),
+**update** (the new fact supersedes the old, which stays in its history), or
+**new**. Facts come from "remember that...", from who someone is to you
+("Emma's my cousin"), and from the **end-of-day pass** after midnight, which
+writes the day's summary and learns its lasting facts.
+
+Learning happens **after his reply is out**, in the background: a "remember
+that" never holds the chat up for the embedding model or the comparison, and
+in cloud-only routing the local model isn't woken for one. The bodies are told
+what he kept ("Remembered: ...") when it's done.
 
 Two kinds of fact know about time: **now** facts ("been sleeping badly") fade
 after two weeks, and **plans** keep their date, so a past one isn't upcoming.
@@ -93,7 +109,9 @@ recall, not in the nightly reflection. See [[Privacy]].
 - `kit memory tidy` sorts what he knows by today's rules, showing the plan
   first.
 - Memory is **backed up** daily to `backups/` in the data folder.
-- `kit eval memory` checks accuracy on a scratch memory ([[Evals]]).
+- `kit eval memory` checks accuracy on a scratch memory, and `kit eval memory
+  --replay` asks your own questions of a backup of the real one, to see the
+  right fact still comes first after months of use ([[Evals]]).
 
 ## Go deeper
 - [[Memory In Depth]]: the full story, every rule and number.

@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
+from kit.when import how_long
+
 SEEN = "seen"  # knowledge source: arrivals and sightings worth remembering
 STALE_AFTER = timedelta(seconds=30)  # the eyes report every second or so
 KEEP_FOR = timedelta(hours=16)
@@ -79,11 +81,13 @@ class SceneEvent(BaseModel):
 
 class SceneReport(BaseModel):
     """One report from the eyes. ``off`` means the eyes are running but paused
-    (the camera is released), so nothing is in view by choice."""
+    (the camera is released), so nothing is in view by choice; ``asleep`` that
+    they're shut because Kit is asleep (their models are unloaded too)."""
 
     camera: str = Field("desk", max_length=50)
     mirrored: bool = True
     off: bool = False
+    asleep: bool = False
     frame_size: list[int] = Field(default_factory=lambda: [0, 0], max_length=2)
     fps: float | None = None
     recognising: bool = False  # the eyes know some faces and are putting names to people
@@ -114,14 +118,6 @@ class Happening:
     who: list[str] = field(default_factory=list)  # names recognised, if any
 
 
-def _mins(minutes: float) -> str:
-    if minutes < 1:
-        return "under a minute"
-    if minutes < 90:
-        return f"{round(minutes)} min"
-    return f"{minutes / 60:.1f} h"
-
-
 def join_names(names: list[str]) -> str:
     """ "Sam", "Dan and Sam", "Dan, Sam and Lou"."""
     if len(names) <= 1:
@@ -142,7 +138,7 @@ def _facing(looking: str) -> str:
 def _person_bits(p: SeenPerson, since: datetime | None, now: datetime) -> list[str]:
     bits = [p.position]
     if since is not None:
-        bits.append(f"here {_mins((now - since).total_seconds() / 60)}")
+        bits.append(f"here {how_long((now - since).total_seconds() / 60)}")
     if p.unknown and not p.name:
         bits.append("nobody you know")
     if p.face is not None:
@@ -231,7 +227,7 @@ class SceneContext:
             text = f"{name} {'are' if len(who) > 1 else 'is'} at the desk (the first your eyes "
             text += "have seen today)."
             return Happening("arrived", text, who=who)
-        gone = _mins(away_s / 60)
+        gone = how_long(away_s / 60)
         text = f"{name} just sat down at the desk after {gone} with nobody there."
         remember = away_s >= REMEMBER_AWAY_AFTER.total_seconds()
         return Happening("arrived", text, away_s=away_s, remember=remember, who=who)
@@ -244,7 +240,7 @@ class SceneContext:
         if self._arriving is not None:  # gone before anyone was told they'd come
             self._arriving = None
             return None
-        stayed = _mins((last.end - last.start).total_seconds() / 60)
+        stayed = how_long((last.end - last.start).total_seconds() / 60)
         who = join_names(last.names) or "whoever was there"
         return Happening(
             "left", f"The desk is empty: {who} left after {stayed}.", who=list(last.names)
@@ -294,16 +290,42 @@ class SceneContext:
         if not self.in_view():
             return None
         p = self.latest.people[0]
-        if p.face is not None:
-            x1, y1, x2, y2 = p.face
+        return self._aim(p.box, p.face)
+
+    def _aim(self, box: list[float], face: list[float] | None = None) -> tuple[float, float]:
+        if face is not None:
+            x1, y1, x2, y2 = face
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
         else:
-            x1, y1, x2, y2 = p.box
+            x1, y1, x2, y2 = box
             cx, cy = (x1 + x2) / 2, y1 + 0.15 * (y2 - y1)  # about head height
         x = (cx - 0.5) * 2
-        if not self.latest.mirrored:
+        if self.latest is not None and not self.latest.mirrored:
             x = -x  # a camera facing you: your left is the picture's right
         return round(max(-1.0, min(1.0, x)), 2), round(max(-1.0, min(1.0, (cy - 0.5) * 2)), 2)
+
+    def present(
+        self, pets: dict[str, str] | None = None, animals: bool = True
+    ) -> dict[str, tuple[float, float]]:
+        """Who's in view right now and where, by name: people Kit knows by name,
+        and animals, named by the eyes or from ``pets`` (an animal's kind, such as
+        "cat", to the name of the one pet of that kind). Unnamed people are left
+        out. Empty if the eyes are off or not working."""
+        r = self.latest
+        if r is None or r.off or not self.online():
+            return {}
+        out = {p.name: self._aim(p.box, p.face) for p in r.people if p.name}
+        for o in r.objects if animals else []:
+            if o.label in ANIMALS and (name := o.name or (pets or {}).get(o.label)):
+                out.setdefault(name, self._aim(o.box))
+        return out
+
+    def strangers(self) -> int:
+        """How many people in view Kit can't put a name to."""
+        r = self.latest
+        if r is None or r.off or not self.online():
+            return 0
+        return sum(1 for p in r.people if not p.name)
 
     def now_line(self, owner: str) -> str:
         """One line for every prompt; empty if the eyes have never reported."""
@@ -312,6 +334,8 @@ class SceneContext:
             return ""
         if not self.online():
             return f"Your eyes stopped working at {self.seen:%I:%M %p}, so you can't see right now."
+        if r.off and r.asleep:
+            return "Your eyes are still opening after your sleep, so you can't see the desk yet."
         if r.off:
             return f"{owner} has switched your eyes off, so you can't see the desk right now."
         now = self.clock()
@@ -319,7 +343,7 @@ class SceneContext:
             line = f"{SEE}: nobody at the desk"
             last = self.visits[-1] if self.visits else None
             if last and not last.open:
-                line += f"; someone left {_mins((now - last.end).total_seconds() / 60)} ago"
+                line += f"; someone left {how_long((now - last.end).total_seconds() / 60)} ago"
             line += "."
         else:
             since = self.since()
@@ -359,7 +383,9 @@ class SceneContext:
             lines.append("The eyes have stopped reporting, so this is out of date.")
         if r.off:
             lines.append(
-                f"{owner} has switched your eyes off, so you can't see anything right now."
+                "Your eyes are still opening after your sleep, so you can't see anything yet."
+                if r.asleep
+                else f"{owner} has switched your eyes off, so you can't see anything right now."
             )
             return "\n".join(lines + self._today(now))
         since = self.since()
@@ -370,7 +396,7 @@ class SceneContext:
             who = (
                 f"{o.name} the {o.label} (#{o.id})" if o.name else f"{o.label.capitalize()} #{o.id}"
             )
-            lines.append(f"- {who}: {o.position}, in view {_mins(o.seen_for_s / 60)}.")
+            lines.append(f"- {who}: {o.position}, in view {how_long(o.seen_for_s / 60)}.")
         if not r.people and not r.objects:
             lines.append("Nothing in view: the desk is empty.")
         recent = [(t, e) for t, e in self.events if now - t <= timedelta(minutes=10)][-10:]

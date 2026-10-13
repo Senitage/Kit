@@ -120,7 +120,10 @@ class OllamaModel:
                 async for line in response.aiter_lines():
                     if not line.strip():
                         continue
-                    data = json.loads(line)
+                    try:
+                        data = json.loads(line)
+                    except ValueError as e:  # a proxy's error page, or a half-written line
+                        raise LocalModelError(f"Ollama sent something that isn't JSON: {e}") from e
                     if "error" in data:
                         raise LocalModelError(f"Ollama error: {data['error']}")
                     piece = data.get("message", {}).get("content", "")

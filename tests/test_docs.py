@@ -262,3 +262,19 @@ def test_every_command_is_in_commands(monkeypatch):
             if not any(re.search(rf"\b{re.escape(word)}\b", line) for line in ours):
                 missing.append(f"kit {name} {word}")
     assert not missing, f"add these to Commands: {missing}"
+
+
+def test_ci_runs_every_python_and_the_desk_job_runs_every_test():
+    """The workflows stay honest: ci.yml tests every Python pyproject.toml names, and the
+    desk job (the only one with Qt) runs the whole suite, not a list of files that
+    forgets the newest one."""
+    import tomllib
+
+    ci = _read(ROOT / ".github" / "workflows" / "ci.yml")
+    classifiers = tomllib.loads(_read(ROOT / "pyproject.toml"))["project"]["classifiers"]
+    pythons = [c.rsplit(":: ", 1)[1] for c in classifiers if "Python :: 3." in c]
+    matrix = re.search(r"python: \[([^\]]+)\]", ci).group(1)
+    assert sorted(re.findall(r'"([^"]+)"', matrix)) == sorted(pythons) == ["3.11", "3.12", "3.13"]
+    desk = _read(ROOT / ".github" / "workflows" / "desk-app.yml")
+    assert re.search(r"^\s*run: pytest -q tests/\s*$", desk, re.MULTILINE)
+    assert "QT_QPA_PLATFORM: offscreen" in desk

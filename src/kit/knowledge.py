@@ -104,11 +104,73 @@ class Hit:
 
 @dataclass
 class _VectorCache:
-    version: int = -1
+    """Every current item's unit vector, one row each, kept in step with the index.
+
+    A saved vector is appended (``put``), and a superseded, edited or deleted item's
+    row is dropped (``drop``), so a search after a change costs a dot product, not a
+    rebuild from SQLite. The matrix has spare rows so appending is cheap; the first
+    ``len(ids)`` are in use. ``dirty`` sends the next read back to SQLite (the cold
+    start, and the safety net for anything the cache wasn't told about)."""
+
     model: str = ""
     ids: list[int] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    rows: dict[int, int] = field(default_factory=dict)  # item id -> its row
     matrix: np.ndarray | None = None
+    dirty: bool = True
+
+    def used(self) -> np.ndarray | None:
+        return None if self.matrix is None or not self.ids else self.matrix[: len(self.ids)]
+
+    def put(self, item_id: int, source: str, vec: np.ndarray) -> None:
+        norm = np.linalg.norm(vec)
+        vec = vec / (norm or 1)
+        row = self.rows.get(item_id)
+        if row is not None:
+            self.matrix[row] = vec
+            self.sources[row] = source
+            return
+        n = len(self.ids)
+        if self.matrix is None:
+            self.matrix = np.empty((_SPARE_ROWS, vec.shape[0]), dtype=np.float32)
+        elif n == self.matrix.shape[0]:
+            grown = np.empty((n + max(_SPARE_ROWS, n // 4), vec.shape[0]), dtype=np.float32)
+            grown[:n] = self.matrix
+            self.matrix = grown
+        self.matrix[n] = vec
+        self.ids.append(item_id)
+        self.sources.append(source)
+        self.rows[item_id] = n
+
+    def drop(self, item_ids: Iterable[int]) -> None:
+        """Rows go by swapping the last row into the hole; order doesn't matter."""
+        for item_id in list(item_ids):
+            row = self.rows.pop(item_id, None)
+            if row is None:
+                continue
+            last = len(self.ids) - 1
+            if row != last:
+                self.matrix[row] = self.matrix[last]
+                self.ids[row], self.sources[row] = self.ids[last], self.sources[last]
+                self.rows[self.ids[row]] = row
+            self.ids.pop()
+            self.sources.pop()
+
+    def drop_source(self, source: str) -> None:
+        self.drop([i for i, s in zip(self.ids, self.sources, strict=True) if s == source])
+
+
+_SPARE_ROWS = 256
+
+
+@dataclass(frozen=True)
+class Query:
+    """One search's bounds, for ``Index.search_many``: which sources, how many hits
+    and which items to leave out."""
+
+    sources: list[str] | None = None
+    k: int = 8
+    exclude: frozenset[int] = frozenset()
 
 
 def fts_query(text: str) -> str:
@@ -129,14 +191,30 @@ class Index:
         self.lock = lock
         self.clock = clock
         self._version = 0
-        self._cache = _VectorCache()
+        self._source_versions: dict[str, int] = {}  # changes to each source's items
+        self._cache = _VectorCache()  # built from SQLite on first use, then kept in step
 
     def _now(self) -> str:
         return self.clock().isoformat(timespec="seconds")
 
-    def _changed(self) -> None:
+    def _changed(self, *sources: str | None) -> None:
+        """A write happened, to items of ``sources`` where known."""
         with self.lock:
             self._version += 1
+            for source in sources:
+                if source is not None:
+                    self._source_versions[source] = self._source_versions.get(source, 0) + 1
+
+    def _source_of(self, item_id: int) -> str | None:
+        with self.lock:
+            row = self.db.execute("SELECT source FROM items WHERE id = ?", (item_id,)).fetchone()
+        return row[0] if row else None
+
+    def changes(self, source: str) -> int:
+        """How many times ``source``'s items have changed since start-up (not their
+        vectors), so a cached view of them (the notes' names) knows when it's stale."""
+        with self.lock:
+            return self._source_versions.get(source, 0)
 
     def _row(self, row) -> Item:
         return Item(
@@ -185,7 +263,7 @@ class Index:
                     int(pinned),
                 ),
             )
-        self._changed()
+        self._changed(source)
         return int(cur.lastrowid)
 
     def supersede(self, old_id: int, new_id: int) -> None:
@@ -201,7 +279,8 @@ class Index:
                 " (SELECT pinned FROM items WHERE id = ?) = 1",
                 (new_id, old_id),
             )
-        self._changed()
+            self._cache.drop([old_id])
+        self._changed(self._source_of(new_id))
 
     def update(self, item_id: int, text: str | None = None, kind: str | None = None) -> None:
         with self.lock, self.db:
@@ -210,9 +289,10 @@ class Index:
                     "UPDATE items SET text = ?, updated = ? WHERE id = ?",
                     (text, self._now(), item_id),
                 )
+                self._cache.drop([item_id])  # its vector went with the old words
             if kind is not None:
                 self.db.execute("UPDATE items SET kind = ? WHERE id = ?", (kind, item_id))
-        self._changed()
+        self._changed(self._source_of(item_id))
 
     def set_meta(self, item_id: int, meta: dict) -> bool:
         """Replace an item's meta, e.g. to mark one of Kit's wants as said. Its text and
@@ -241,19 +321,21 @@ class Index:
             cur = self.db.execute(
                 "UPDATE items SET pinned = ? WHERE id = ?", (int(pinned), item_id)
             )
-        self._changed()
+        self._changed(self._source_of(item_id))
         return cur.rowcount > 0
 
     def delete(self, item_id: int) -> bool:
         """Delete an item and every earlier version of it, so nothing of it is recalled."""
-        ids = [i.id for i in self.history(item_id)]
+        versions = self.history(item_id)
+        ids = [i.id for i in versions]
         if not ids:
             return False
         marks = ",".join("?" * len(ids))
         with self.lock, self.db:
             self.db.execute(f"UPDATE items SET superseded_by = NULL WHERE id IN ({marks})", ids)
             self.db.execute(f"DELETE FROM items WHERE id IN ({marks})", ids)
-        self._changed()
+            self._cache.drop(ids)
+        self._changed(*{i.source for i in versions})
         return True
 
     def delete_source(self, source: str, ref: str | None = None) -> int:
@@ -261,11 +343,16 @@ class Index:
         with self.lock, self.db:
             if ref is None:
                 cur = self.db.execute("DELETE FROM items WHERE source = ?", (source,))
+                self._cache.drop_source(source)
             else:
+                going = self.db.execute(
+                    "SELECT id FROM items WHERE source = ? AND ref = ?", (source, ref)
+                ).fetchall()
                 cur = self.db.execute(
                     "DELETE FROM items WHERE source = ? AND ref = ?", (source, ref)
                 )
-        self._changed()
+                self._cache.drop([r[0] for r in going])
+        self._changed(source)
         return cur.rowcount
 
     # Reading
@@ -339,34 +426,79 @@ class Index:
         return [self._row(r) for r in rows]
 
     def save_vectors(self, model: str, vectors: list[tuple[int, list[float]]]) -> None:
+        """Keep ``vectors`` and, when they're from the model the cache holds, add each
+        current item's row to it, so the next search doesn't rebuild the matrix."""
         with self.lock, self.db:
             self.db.executemany(
                 "INSERT OR REPLACE INTO vectors (item_id, model, vec) VALUES (?, ?, ?)",
                 [(item_id, model, _to_blob(vec)) for item_id, vec in vectors],
             )
-        self._changed()
+            cache = self._cache
+            if cache.dirty or cache.model != model or not vectors:
+                return
+            marks = ",".join("?" * len(vectors))
+            current = dict(
+                self.db.execute(
+                    f"SELECT id, source FROM items WHERE id IN ({marks}) AND superseded_by IS NULL",
+                    [item_id for item_id, _ in vectors],
+                ).fetchall()
+            )
+            for item_id, vec in vectors:
+                source = current.get(item_id)
+                if source is None:
+                    continue  # superseded or gone: never searched
+                row = np.asarray(vec, dtype=np.float32)
+                if cache.matrix is not None and row.shape[0] != cache.matrix.shape[1]:
+                    cache.dirty = True  # a different size of vector: let SQLite sort it out
+                    return
+                cache.put(item_id, source, row)
 
     def _matrix(self, model: str) -> _VectorCache:
+        """The cache for ``model``, built from SQLite when it's cold, dirty or for another
+        model; otherwise as the writes have kept it. Call with the lock held."""
         cache = self._cache
-        if cache.version != self._version or cache.model != model:
-            with self.lock:
-                # The version is taken before the read, so a write that lands
-                # while this builds makes the result stale at once, not never.
-                version = self._version
-                rows = self.db.execute(
-                    "SELECT v.item_id, i.source, v.vec FROM vectors v"
-                    " JOIN items i ON i.id = v.item_id"
-                    " WHERE v.model = ? AND i.superseded_by IS NULL",
-                    (model,),
-                ).fetchall()
-            matrix = None
+        if cache.dirty or cache.model != model:
+            rows = self.db.execute(
+                "SELECT v.item_id, i.source, v.vec FROM vectors v"
+                " JOIN items i ON i.id = v.item_id"
+                " WHERE v.model = ? AND i.superseded_by IS NULL",
+                (model,),
+            ).fetchall()
+            cache = _VectorCache(model, dirty=False)
             if rows:
-                matrix = np.vstack([np.frombuffer(r[2], dtype=np.float32) for r in rows])
-                norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-                matrix = matrix / np.where(norms == 0, 1, norms)
-            cache = _VectorCache(version, model, [r[0] for r in rows], [r[1] for r in rows], matrix)
+                n, dim = len(rows), len(rows[0][2]) // 4
+                cache.matrix = np.empty((n + _SPARE_ROWS, dim), dtype=np.float32)
+                for row, r in enumerate(rows):
+                    cache.matrix[row] = np.frombuffer(r[2], dtype=np.float32)
+                norms = np.linalg.norm(cache.matrix[:n], axis=1, keepdims=True)
+                cache.matrix[:n] /= np.where(norms == 0, 1, norms)
+                cache.ids = [r[0] for r in rows]
+                cache.sources = [r[1] for r in rows]
+                cache.rows = {item_id: row for row, item_id in enumerate(cache.ids)}
             self._cache = cache
         return cache
+
+    def mark_dirty(self) -> None:
+        """The next search rebuilds the vector cache from SQLite: the safety net for a
+        write the cache wasn't told about."""
+        with self.lock:
+            self._cache.dirty = True
+
+    def _scores(
+        self, query_vec: list[float], model: str
+    ) -> tuple[list[int], list[str], list[float]]:
+        """Cosine similarity of the query to every current item with a vector: (ids,
+        their sources, the scores), row for row."""
+        with self.lock:
+            cache = self._matrix(model)
+            matrix = cache.used()
+            if matrix is None:
+                return [], [], []
+            q = np.asarray(query_vec, dtype=np.float32)
+            if q.shape[0] != matrix.shape[1]:
+                return [], [], []
+            q = q / (np.linalg.norm(q) or 1)
+            return list(cache.ids), list(cache.sources), (matrix @ q).tolist()
 
     # Searching
 
@@ -397,22 +529,11 @@ class Index:
     ) -> dict[int, float]:
         """Cosine similarity of the query to every current item (in ``sources``) with a
         vector."""
-        cache = self._matrix(model)
-        if cache.matrix is None:
-            return {}
-        q = np.asarray(query_vec, dtype=np.float32)
-        if q.shape[0] != cache.matrix.shape[1]:
-            return {}
-        q = q / (np.linalg.norm(q) or 1)
-        scores = (cache.matrix @ q).tolist()
+        ids, srcs, scores = self._scores(query_vec, model)
         if not sources:
-            return dict(zip(cache.ids, scores, strict=True))
+            return dict(zip(ids, scores, strict=True))
         wanted = set(sources)
-        return {
-            i: v
-            for i, src, v in zip(cache.ids, cache.sources, scores, strict=True)
-            if src in wanted
-        }
+        return {i: v for i, src, v in zip(ids, srcs, scores, strict=True) if src in wanted}
 
     def search(
         self,
@@ -433,22 +554,53 @@ class Index:
         question about something Kit never heard of recalls nothing. Items with
         no vector yet (or when the embedding model is down) go on words alone.
         """
-        exclude = exclude or set()
-        sims = {}
-        if query_vec is not None and model:
-            sims = self.similarities(query_vec, model, sources)
-        hits: dict[int, Hit] = {}
+        one = Query(sources, k, frozenset(exclude or ()))
+        return self.search_many(query, query_vec, model, [one], min_similarity, word_slack)[0]
 
-        for rank, item_id in enumerate(self.word_search(query, sources)):
+    def search_many(
+        self,
+        query: str,
+        query_vec: list[float] | None,
+        model: str,
+        queries: list[Query],
+        min_similarity: float = 0.5,
+        word_slack: float = 0.15,
+    ) -> list[list[Hit]]:
+        """Several searches of the same query at once, one per ``Query``, each ranked
+        within its own sources exactly as ``search`` would rank it. The costly part,
+        the dot product over every vector, is done once and split by source; the
+        word search runs per query, so a source with thousands of matches can't
+        starve another. A turn's recall of facts, conversation, Kit's notebook and the
+        register is one call, not four."""
+        ids: list[int] = []
+        srcs: list[str] = []
+        scores: list[float] = []
+        if query_vec is not None and model:
+            ids, srcs, scores = self._scores(query_vec, model)
+        out = []
+        for q in queries:
+            if q.sources:
+                wanted = set(q.sources)
+                sims = {i: v for i, s, v in zip(ids, srcs, scores, strict=True) if s in wanted}
+            else:
+                sims = dict(zip(ids, scores, strict=True))
+            out.append(self._merge(query, sims, q, min_similarity, word_slack))
+        return out
+
+    def _merge(
+        self, query: str, sims: dict[int, float], q: Query, min_similarity: float, word_slack: float
+    ) -> list[Hit]:
+        hits: dict[int, Hit] = {}
+        for rank, item_id in enumerate(self.word_search(query, q.sources)):
             sim = sims.get(item_id)
-            if item_id in exclude or (sim is not None and sim < min_similarity - word_slack):
+            if item_id in q.exclude or (sim is not None and sim < min_similarity - word_slack):
                 continue
             hit = hits.setdefault(item_id, Hit(None, 0.0, sim))  # type: ignore[arg-type]
             hit.score += 1 / (RRF_K + rank)
             hit.word_match = True
 
         close = sorted(
-            ((i, v) for i, v in sims.items() if v >= min_similarity and i not in exclude),
+            ((i, v) for i, v in sims.items() if v >= min_similarity and i not in q.exclude),
             key=lambda iv: iv[1],
             reverse=True,
         )[:60]
@@ -457,7 +609,7 @@ class Index:
             hit.score += 1 / (RRF_K + rank)
             hit.similarity = sim
 
-        ranked = sorted(hits.items(), key=lambda kv: kv[1].score, reverse=True)[:k]
+        ranked = sorted(hits.items(), key=lambda kv: kv[1].score, reverse=True)[: q.k]
         out = []
         for item_id, hit in ranked:
             item = self.get(item_id)

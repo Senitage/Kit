@@ -12,14 +12,24 @@ and replayed with a single call per token: about 2.4 times faster on Dan's RTX
 2070 Super (32 to 76-80 tokens a second). It does the same sums as Chatterbox's
 own loop, so Kit's voice doesn't change.
 
+``generate`` turns the tokens into sound as they come, a window at a time
+(``WINDOW`` tokens, about a second of speech), so the first second of a sentence
+is on its way to the desk while the rest is still being made. Each window is
+decoded with the last few tokens of the one before (``OVERLAP``) and the join
+cross-faded, since the decoder shapes each sound by its neighbours.
+
 Like ``worker.py`` this runs inside the voice's own Python, so it imports
 nothing from Kit, and torch only when it's used.
 """
 
 from __future__ import annotations
 
+import numpy as np
+
 SILENCE = 4299  # Chatterbox's S3GEN_SIL token: a short silence the decoder ends on
 OOV = 6561  # speech tokens at or above this aren't sounds
+WINDOW = 25  # tokens decoded into sound at a time: a second of speech
+OVERLAP = 3  # tokens each window shares with the one before, cross-faded
 
 
 def rules(logits, seen, temperature=0.8, top_k=1000, top_p=0.95, penalty=1.2):
@@ -60,7 +70,13 @@ class GraphTokens:
     One step works on fixed buffers: a key/value store sized for the longest line,
     the current token and its place. Python only looks at the result every
     ``check_every`` tokens, to hand them on and spot the end. Without a graphics
-    card the same step just runs normally, which is how the tests check it."""
+    card the same step just runs normally, which is how the tests check it.
+
+    Every line starts with the same speaker conditioning (the voice clip as 375
+    tokens and a speaker embedding), so its keys and values are worked out once
+    and kept (``_cond``); each line then only runs its own text through the model
+    before the loop starts. If the conditioning ever differs, the whole prompt is
+    run again and the cache replaced."""
 
     def __init__(self, tts, max_len=1600, max_new=1000, check_every=4) -> None:
         import torch
@@ -81,6 +97,7 @@ class GraphTokens:
             self.out = torch.zeros(1, max_new + check_every, dtype=torch.long, device=dev)
             self.places = torch.arange(max_len, device=dev)
         self.graph = None
+        self._cond = None  # (conditioning embeds, their keys, their values)
         if str(dev).startswith("cuda"):
             self._record()
 
@@ -101,6 +118,49 @@ class GraphTokens:
             x = x + block.attn.c_proj(a.transpose(1, 2).reshape(1, 1, self.width))
             x = x + block.mlp(block.ln_2(x))
         return t3.speech_head(tf.ln_f(x))[:, -1, :].float()
+
+    def prefill(self, embeds, start: int):
+        """A run of prompt embeddings at places ``start`` on, through the model at
+        once, filling the key/value store: the logits for the last of them. The same
+        sums as ``logits`` for a run of tokens, so Chatterbox's own forward pass
+        isn't needed and the store can be filled part by part."""
+        import torch.nn.functional as F
+
+        t3, tf = self.tts.t3, self.tts.t3.tfmr
+        heads, size = self.heads, self.width // self.heads
+        n = embeds.shape[1]
+        places = self.places[start : start + n]
+        x = embeds + tf.wpe(places).unsqueeze(0)
+        mask = (self.places.view(1, -1) <= places.view(-1, 1)).view(1, 1, n, -1)
+        for i, block in enumerate(tf.h):
+            q, k, v = block.attn.c_attn(block.ln_1(x)).split(self.width, dim=2)
+            q, k, v = (t.view(1, n, heads, size).transpose(1, 2) for t in (q, k, v))
+            self.keys[i][:, :, start : start + n].copy_(k)
+            self.values[i][:, :, start : start + n].copy_(v)
+            a = F.scaled_dot_product_attention(q, self.keys[i], self.values[i], attn_mask=mask)
+            x = x + block.attn.c_proj(a.transpose(1, 2).reshape(1, n, self.width))
+            x = x + block.mlp(block.ln_2(x))
+        return t3.speech_head(tf.ln_f(x[:, -1:]))[:, -1, :].float()
+
+    def _prompt(self, embeds, n_cond: int):
+        """Fill the store for the prompt: the kept conditioning when it's the same
+        as last time, and only the text after it through the model."""
+        import torch
+
+        cond = embeds[:, :n_cond]
+        kept = self._cond
+        if kept is not None and kept[0].shape == cond.shape and torch.equal(kept[0], cond):
+            for i in range(len(self.tts.t3.tfmr.h)):
+                self.keys[i][:, :, :n_cond].copy_(kept[1][i])
+                self.values[i][:, :, :n_cond].copy_(kept[2][i])
+            return self.prefill(embeds[:, n_cond:], n_cond)
+        logits = self.prefill(embeds, 0)
+        self._cond = (
+            cond.clone(),
+            self.keys[:, :, :, :n_cond].clone(),
+            self.values[:, :, :, :n_cond].clone(),
+        )
+        return logits
 
     def _step(self) -> None:
         token = pick(self.logits(), self.seen)
@@ -134,22 +194,18 @@ class GraphTokens:
         ids = tts.tokenizer(punc_norm(text), return_tensors="pt").input_ids.to(tts.device)
         start = t3.hp.start_speech_token * torch.ones_like(ids[:, :1])
         with torch.inference_mode():
-            embeds, _ = t3.prepare_input_embeds(
+            embeds, n_cond = t3.prepare_input_embeds(
                 t3_cond=tts.conds.t3, text_tokens=ids, speech_tokens=start, cfg_weight=0.0
             )
             n = embeds.shape[1]
             if n + self.max_new + self.check_every > self.max_len:
                 raise ValueError(f"line too long for the token store ({n} prompt tokens)")
-            out = t3.tfmr(inputs_embeds=embeds, use_cache=True)
-            for i in range(len(t3.tfmr.h)):
-                k, v = _kv(out.past_key_values, i)
-                self.keys[i, :, :, :n].copy_(k)
-                self.values[i, :, :, :n].copy_(v)
+            logits = self._prompt(embeds, int(n_cond))
             # The first token is chosen with only the start token counted as seen,
             # as Chatterbox's own loop does; after that, only spoken tokens count.
             self.seen.zero_()
             self.seen[0, t3.hp.start_speech_token] = True
-            first = pick(t3.speech_head(out[0][:, -1:])[:, -1, :].float(), self.seen)
+            first = pick(logits, self.seen)
             if int(first) == stop:
                 return
             self.seen.zero_()
@@ -174,16 +230,63 @@ class GraphTokens:
                 yield token
 
 
-def generate(tts, graph: GraphTokens, text: str):
-    """``ChatterboxTurboTTS.generate`` with the faster token loop: the same decoder,
-    watermark and settings, as a float numpy array."""
+def crossfade(tail: np.ndarray, head: np.ndarray) -> np.ndarray:
+    """The sound where two windows meet: ``tail`` (the end of the last window) fading
+    out as ``head`` (the start of this one, the same tokens decoded again with what
+    follows them known) fades in. Lengths that differ are matched to the shorter."""
+    n = min(len(tail), len(head))
+    if n == 0:
+        return head[:0]
+    fade = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    return tail[-n:] * (1 - fade) + head[:n] * fade
+
+
+def decode(tts, tokens: list[int]) -> np.ndarray:
+    """Speech tokens through Chatterbox's decoder: sound as a float numpy array."""
     import torch
 
-    tokens = [t for t in graph(text) if t < OOV] + [SILENCE] * 3
     with torch.inference_mode():
         speech = torch.tensor(tokens, dtype=torch.long, device=tts.device)
         wav, _ = tts.s3gen.inference(
             speech_tokens=speech, ref_dict=tts.conds.gen, n_cfm_timesteps=2
         )
-    wav = wav.squeeze(0).detach().float().cpu().numpy()
-    return tts.watermarker.apply_watermark(wav, sample_rate=tts.sr)
+    return wav.squeeze(0).detach().float().cpu().numpy()
+
+
+def generate(tts, graph: GraphTokens, text: str, window: int = WINDOW, overlap: int = OVERLAP):
+    """``ChatterboxTurboTTS.generate`` with the faster token loop and the sound
+    yielded a window at a time (float numpy arrays), so it can be played while the
+    rest is made. The same decoder and settings; without Chatterbox's watermark,
+    which cost 30 to 80 ms of processor time a clip and marked sound that never
+    leaves the house.
+
+    Every ``window`` tokens the decoder runs over them plus the last ``overlap``
+    tokens of the window before, whose sound was held back; the two readings of
+    those tokens are cross-faded, so the join doesn't click. The last window gets
+    three silence tokens, as Chatterbox's own loop ends on."""
+    tokens: list[int] = []
+    voiced = 0  # tokens decoded so far (the last ``overlap`` of them held back)
+    held = np.zeros(0, dtype=np.float32)  # their sound, waiting to be cross-faded
+
+    def piece(end: int, last: bool):
+        nonlocal voiced, held
+        start = max(0, voiced - overlap)
+        chunk = tokens[start:end] + ([SILENCE] * 3 if last else [])
+        wav = decode(tts, chunk)
+        lap = min(len(held), len(wav))  # the held tokens' sound, read again
+        out = np.concatenate([crossfade(held, wav[:lap]), wav[lap:]])
+        if last:
+            held = held[:0]
+        else:
+            hold = int(round(len(wav) / max(1, len(chunk)) * overlap))  # samples a token
+            out, held = out[: len(out) - hold], out[len(out) - hold :]
+        voiced = end
+        return out
+
+    for token in graph(text):
+        if token >= OOV:
+            continue
+        tokens.append(token)
+        if len(tokens) - voiced >= window:
+            yield piece(len(tokens), last=False)
+    yield piece(len(tokens), last=True)

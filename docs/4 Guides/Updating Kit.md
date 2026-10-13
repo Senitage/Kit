@@ -34,6 +34,24 @@ kit check
   with `kit config show` or the settings page.
 - A stage guide says if anything else is needed (a new package, model or key).
 
+### Settings from an older Kit
+
+From October 2026 `settings.toml` holds only what you changed
+([[Settings Reference#What the file holds]]). An older file held every value,
+so a price or a persona line that moved in the code never reached it. The
+first start after this update reads the old file, keeps what you had changed,
+drops the rest and rewrites it as `schema_version = 2`. Two things to check
+afterwards:
+
+- `kit models` now shows the current built-in prices and model ids. A profile
+  of your own (one you added under `[models]`) is kept exactly as it was.
+- `persona.knows` used to start with a line of the author's own life; the
+  built-in line now says Kit is still getting to know you. If yours was the
+  built-in one, Kit no longer knows those things from his settings (his memory
+  is untouched). Put your own in:
+  `kit config set persona.knows "Lives in Richmond with ..."`, or on the
+  settings page.
+
 ## Try a pull request before it's merged
 
 ```
@@ -78,6 +96,16 @@ On the desk PC, `git pull` in the eyes' copy of Kit, `pip install -e ".[eyes]"`
 if the guide says there's something new, then stop and start `kit eyes`. Their
 settings come from the brain, so there's nothing else to change. See
 [[Vision Stage 1]].
+
+## The ears
+
+The same on the PC with the mic: `git pull` in that copy of Kit,
+`pip install -e ".[hearing]"` if the guide says there's something new, then
+stop and start `kit hearing`. See [[Companion Stage 5]].
+
+A setting saved in your settings file keeps its value when an update changes
+the default. So if `hearing.names` is already there, add any new spellings of
+his name yourself (`kit config show` lists what's set).
 
 ## The voice engine
 

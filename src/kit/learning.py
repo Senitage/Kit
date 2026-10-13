@@ -250,18 +250,22 @@ class Learner:
         importance: float | None = None,
         private: bool = False,
         cloud: bool = False,
+        local: bool = True,
     ) -> Learned:
         """Keep ``text`` as a fact: new, the same as one Kit has, or an update to one.
         ``private`` when it came from what Dan kept local (kit.memory.KEEP_LOCAL).
         ``cloud``: the work model compares it with what Kit knows (never a private one,
-        or one compared with a private fact)."""
+        or one compared with a private fact). ``local`` False keeps the local model out
+        of it (cloud-only routing, where it only stands in and would have to be loaded):
+        if the cloud can't compare, the fact is simply added. A fact Kit already had
+        ("same") is marked confirmed, which counts for recency (kit.recall.weight)."""
         text = " ".join(text.split())
         await self.recall.index_pending()
         candidates = [h.item for h in await self.recall.search(text, [FACTS], CANDIDATES)]
         decision = "new", 0, text
         if candidates:
             cloud = cloud and not private and not any(c.meta.get("private") for c in candidates)
-            decision = await self._decide(text, candidates, owner, cloud)
+            decision = await self._decide(text, candidates, owner, cloud, local)
         what, which, wording = decision
         changed = relation_change(text, candidates + self._naming(text, candidates, owner), owner)
         if changed is not None:  # the same person, a different relation: always an update
@@ -273,7 +277,10 @@ class Learner:
         if what == "update" and kind == "now" and lasting:
             what = "new"  # "been sleeping badly" fades; what Kit knew for good stays
         if what == "same" and 1 <= which <= len(candidates):
-            learned = Learned("same", candidates[which - 1].id, candidates[which - 1].text)
+            known = candidates[which - 1]
+            now = self.memory.clock().isoformat(timespec="seconds")
+            self.memory.index.update_meta([known.id], {"confirmed": now})
+            learned = Learned("same", known.id, known.text)
         elif what == "update" and 1 <= which <= len(candidates):
             old = candidates[which - 1]
             keep_kind = old.kind if kind == "other" else kind
@@ -308,7 +315,7 @@ class Learner:
         ]
 
     async def _decide(
-        self, text: str, candidates, owner: str, cloud: bool = False
+        self, text: str, candidates, owner: str, cloud: bool = False, local: bool = True
     ) -> tuple[str, int, str]:
         listing = "\n".join(f"{n}. ({c.day}) {c.text}" for n, c in enumerate(candidates, start=1))
         messages = [
@@ -330,6 +337,9 @@ class Learner:
             raw = None
             if cloud and self.ask is not None:
                 raw = await self.ask(messages, DECISION_SCHEMA, DECISION_SHAPE, "Kit's memory")
+            if raw is None and not local:
+                log.info("keeping %r as new: the cloud couldn't compare it", text)
+                return "new", 0, text
             if raw is None:
                 raw = json.loads(await self.model.complete(messages, DECISION_SCHEMA))
             if raw["decision"] not in ("new", "same", "update"):

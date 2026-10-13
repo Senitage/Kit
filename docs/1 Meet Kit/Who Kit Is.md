@@ -27,14 +27,25 @@ His starting character is set in the persona ([[Settings Reference#persona|perso
 
 - **Curious**, with a **dry sense of humour**, **loyal and practical**, and
   **a bit impatient** when things drag on.
-- **Short sentences, plain words, casual.** One or two sentences unless you
-  ask for more. No gushing, and never "as an AI".
+- **Plain, neutral English, warm and friendly.** Short sentences and
+  everyday words, with no slang or regional expressions; one or two sentences
+  unless you ask for more. Matter-of-fact rather than gushing, and never "as
+  an AI". That register is decided once, in the persona's `speech`, and the
+  prompt says it once: nothing else in Kit pushes him towards an accent or a
+  casual turn of phrase. How *cheeky* he is (`life.cheek`) is a separate dial.
 - **An honest friend, not a yes-man.** He corrects a wrong fact kindly, takes
   your side when you have a moan, and asks one question at most.
 - **Never makes you feel bad for leaving.** He's glad of your plans.
 - **Everyday first.** Work is a job, not your whole life: he talks about your
   day, food, the weather and the weekend, and only about code or engineering
   when you bring it up.
+- **He starts knowing nothing about you.** The built-in `persona.knows` says
+  he's still getting to know you; who's at home and what you do go in your
+  own `settings.toml`, and the rest he learns by asking and remembering.
+- **Always himself.** Give him any voice you like in `persona.speech` ("talk
+  like a character from a book") and he sounds like it, but he's still Kit:
+  if he talks about himself it's as "I" or his own name (`persona.name`),
+  never the character's.
 
 That's only where he starts. Each night he writes a **self-sheet**, who he
 thinks he is in his own words, and it slowly grows from what actually

@@ -110,3 +110,22 @@ def test_failed_summary_leaves_the_day_for_later(memory, clock):
     clock.now += timedelta(days=1)
     assert not asyncio.run(learner.summarise_day("2026-10-05", "Dan", "Kit"))
     assert memory.days_to_summarise() == ["2026-10-05"]
+
+
+def test_a_fact_said_again_is_marked_confirmed(memory, clock):
+    learner, _, _ = make(memory, decision("same", 1, ""))
+    first = learn(learner, "Emma's birthday is 14 March.")
+    clock.now += timedelta(days=20)
+    got = learn(learner, "Emma's birthday is on the 14th of March.")
+    assert got.decision == "same" and got.item_id == first.item_id
+    assert memory.index.get(first.item_id).meta["confirmed"] == "2026-10-25T09:00:00"
+
+
+def test_without_the_local_model_an_uncompared_fact_is_kept_as_new(memory):
+    """Cloud-only routing: the cloud couldn't compare, and the local model (which would
+    have to be loaded for it) is left alone; the fact is simply added."""
+    learner, model, _ = make(memory, decision("update", 1, "never asked"))
+    learn(learner, "Dan drives a Hilux.")
+    got = asyncio.run(learner.learn("Dan drives a Ranger now.", local=False))
+    assert got.decision == "new" and model.calls == []
+    assert len(memory.facts()) == 2

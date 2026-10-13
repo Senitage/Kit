@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 
-from kit import checks
+from kit import checks, docs_check
 from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
@@ -371,8 +371,13 @@ async def _chat_loop(paths: KitPaths) -> int:
 
         async def turn(text: str) -> None:
             print(f"{me}> ", end="", flush=True)
+            since = brain.life.state()["last_event"]
             async for event in brain.chat(text, "terminal"):
                 _print_event(event, me)
+            await brain.settle()  # what he learned once the reply was out
+            for event in brain.life.events_after(since):
+                if event["type"] == "remembered":
+                    _print_event(event, me)
 
         while True:
             try:
@@ -481,6 +486,13 @@ def cmd_life(paths: KitPaths, action: str, transport: httpx.BaseTransport | None
     if state.get("presence") and state["presence"] != "here":
         doing = f", {state['doing']}" if state.get("doing") else ""
         print(f"where:    {state['presence']}{doing}")
+    if state.get("sleep"):
+        wakes = state.get("wakes_at") or ""
+        print(f"sleep:    {state['sleep']}, wakes by himself about {wakes[11:16] or 'soon'}")
+    elif state.get("groggy"):
+        print("sleep:    just woken up, still groggy")
+    for line in state.get("slept_lately", [])[-6:]:
+        print(f"slept:    {line}")
     felt = state.get("feeling")
     if felt:
         print(f"feeling:  {felt['name']}, because {felt['why']} (since {felt['since'][11:16]})")
@@ -773,6 +785,175 @@ def cmd_eyes(
     return 0
 
 
+def _enrol_voice(client, args: argparse.Namespace, settings, parts=None) -> int:
+    """``kit hearing enrol``: someone reads a few lines; their voice prints go to the
+    brain. Stop ``kit hearing`` first if the mic can only be opened once."""
+    from kit.desk.client import BrainError
+    from kit.hearing import enrol
+
+    who = args.who
+    if who.casefold() == "me":
+        who = client.settings()["settings"].get("persona", {}).get("owner", "") or who
+    mic = None
+    try:
+        if parts is None:
+            from kit.hearing.engines import CamPlusPlus, SileroVad
+            from kit.hearing.link import models_dir
+            from kit.hearing.mic import SoundDeviceMic, input_devices, pick_device
+
+            folder = models_dir()
+            device = pick_device(settings.mic, input_devices()) if settings.mic else None
+            parts = (lambda: SoundDeviceMic(device), SileroVad(folder, settings, ahead=False))
+            parts += (CamPlusPlus(folder, settings),)
+        open_mic, vad, printer = parts
+        mic = open_mic()
+        print(f"{who}: read these out loud, at your normal pace and distance from the mic:\n")
+        for line in enrol.LINES:
+            print(f"  {line}")
+        print()
+        stretches = enrol.listen_for(mic.read, vad, args.seconds)
+        prints = enrol.voice_prints(stretches, printer)
+    except ImportError as e:
+        print(f'introducing a voice needs the hearing libraries: pip install "kit[hearing]" ({e})')
+        return 1
+    except ValueError as e:  # no such mic
+        print(e)
+        return 1
+    finally:
+        if mic is not None:
+            mic.close()
+    if len(prints) < 3:
+        print(f"only heard {len(prints)} good stretch(es) of {who} talking; try again, closer")
+        return 1
+    try:
+        done = client.enrol_voice(who, prints)
+    except BrainError as e:
+        print(f"Kit's brain didn't take them ({e})")
+        return 1
+    print(
+        f"Kit's ears know {done['name']}'s voice now ({done['count']} prints). Running ears "
+        "pick this up by themselves; `kit hearing forget` undoes it."
+    )
+    return 0
+
+
+def cmd_hearing(
+    paths: KitPaths,
+    args: argparse.Namespace,
+    transport: httpx.BaseTransport | None = None,
+    mics=None,
+    build=None,
+    parts=None,
+) -> int:
+    """Kit's ears (kit.hearing): run them beside the mic, list mics, save where the
+    brain is, switch them off and on, or introduce voices to them (enrol, voices,
+    forget)."""
+    from kit.desk.client import BrainClient, BrainError
+    from kit.hearing import link
+    from kit.settings import HearingSettings
+
+    action = args.hearing_action or "run"
+    if action == "mics":
+        try:
+            if mics is None:
+                from kit.hearing.mic import input_devices
+
+                mics = input_devices
+            found = mics()
+        except ImportError:
+            print('the sound libraries aren\'t installed here: pip install "kit[hearing]"')
+            return 1
+        if not found:
+            print("No microphones found.")
+            return 1
+        for index, name in found:
+            print(f"  {index}: {name}")
+        return 0
+    if action == "connect":
+        folder = link.save_connection(args.url, args.token)
+        print(f"saved the brain's address and token in {folder}")
+        return 0
+    conn = link.find_connection(args.brain, args.token, paths=paths)
+    if conn is None:
+        print(
+            "Kit's ears don't know where the brain is. Run `kit hearing connect URL TOKEN` "
+            "with the brain's address (as in the desk app's settings) and the token from "
+            "`kit token` on the server."
+        )
+        return 1
+    client = BrainClient(conn.url, conn.token, transport=transport)
+    try:
+        if action == "show":
+            ears = client.hearing()
+            state = "switched off" if ears.get("paused") else "on"
+            online = "listening" if ears.get("online") else "not running"
+            print(f"Kit's ears: {state}, {online}" + (f" ({ears['mic']})" if ears["mic"] else ""))
+            if ears.get("last"):
+                last = ears["last"]
+                print(f"last heard at {last['at']}: {last['action']} ({last['why']})")
+            return 0
+        if action == "voices":
+            names = client.known_voices().get("names", {})
+            if not names:
+                print("Kit's ears don't know anyone's voice yet: `kit hearing enrol NAME`.")
+            for name, count in names.items():
+                print(f"  {name}: {count} voice prints")
+            return 0
+        if action == "forget":
+            gone = client.forget_voice(args.who)["forgot"]
+            print(f"Kit's ears have forgotten {gone}'s voice; nothing of it is kept.")
+            return 0
+        if action in ("pause", "resume"):
+            state = client.set_hearing(action == "resume")
+            print(
+                "Kit's ears are off: the mic is let go until `kit hearing resume`."
+                if state["paused"]
+                else "Kit's ears are on."
+            )
+            return 0
+        client.check()  # proves the token before loading any model
+        settings = HearingSettings.model_validate(client.settings()["settings"].get("hearing", {}))
+    except BrainError as e:
+        print(f"can't reach Kit's brain at {conn.url} ({e})")
+        return 1
+    except (KeyError, ValueError) as e:
+        print(f"Kit's brain gave an answer the ears don't understand ({e}); update both sides")
+        return 1
+    if not settings.enabled:
+        print("hearing.enabled is false in Kit's settings; turn it on first (`kit config set`)")
+        return 1
+    if action == "enrol":
+        try:
+            return _enrol_voice(client, args, settings, parts)
+        finally:
+            client.close()
+    if build is None:
+        from kit.hearing.run import build_ears
+
+        build = build_ears
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    try:
+        ears = build(settings, client, mic_name=args.name, words=args.words)
+    except ImportError as e:
+        print(f'the ears need the sound and speech libraries: pip install "kit[hearing]" ({e})')
+        return 1
+    except ValueError as e:  # no such mic
+        print(e)
+        return 1
+    print(
+        f"Kit's ears are open: {settings.mic or 'the default mic'}, reporting to {conn.url} "
+        f"(found via {conn.source}). Sound stays on this PC. Ctrl+C closes them."
+    )
+    try:
+        ears.run(max_steps=args.steps)
+    except KeyboardInterrupt:
+        print("ears closed")
+    finally:
+        client.close()
+    return 0
+
+
 def tailscale_address(run: checks.Runner = checks.run_command) -> str | None:
     """This machine's Tailscale address, for a pairing code, if Tailscale is up."""
     try:
@@ -895,10 +1076,11 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
     elif args.action == "spend":
         cap = SettingsStore(paths).current().cloud.monthly_cap_usd
         print(f"Cloud models this month: ${memory.month_spend():.2f} of ${cap:.2f}")
+        # "cached 1830/2400": how much of the input was read from the prompt cache.
         for s in memory.spend_log(20):
             print(
-                f"  {s.at}  {s.model}  in {s.input_tokens}  out {s.output_tokens}"
-                f"  ${s.cost_usd:.4f}  {s.question[:60]}"
+                f"  {s.at}  {s.model}  in {s.input_tokens}  cached {s.cached_tokens}/"
+                f"{s.input_tokens}  out {s.output_tokens}  ${s.cost_usd:.4f}  {s.question[:60]}"
             )
     memory.close()
     return code
@@ -991,427 +1173,6 @@ async def _tidy(paths: KitPaths, store, memory, brain, apply: bool) -> int:
     print(f"backed up to {backup}; moved or reworded {changed}, dropped {gone}")
     print("A moved fact keeps its old version in its history on the memory page.")
     return 0
-
-
-async def _eval(paths: KitPaths, n: int) -> int:
-    from datetime import datetime
-
-    from kit.evals import PROMPTS, run_eval
-    from kit.local_model import OllamaModel
-
-    store = SettingsStore(paths)
-    settings = store.current()
-    prompts = (PROMPTS * (n // len(PROMPTS) + 1))[:n]
-    async with httpx.AsyncClient() as client:
-        model = OllamaModel(lambda: settings.ollama, client)
-        print(f"warming up {settings.ollama.model}...")
-        await run_eval(model, settings, ["Hi."], datetime.now())
-
-        def show(r):
-            mark = "ok  " if r.valid else "BAD "
-            t = f"{r.first_word_s:.2f}s" if r.first_word_s is not None else "  -  "
-            print(f"{mark} {t}  {r.prompt[:60]}" + (f"\n       {r.error}" if r.error else ""))
-
-        report = await run_eval(model, settings, prompts, datetime.now(), on_result=show)
-    median, p90 = report.latency(0.5), report.latency(0.9)
-    print()
-    print(f"valid replies: {report.valid}/{len(report.results)}")
-    if median is not None:
-        print(f"first words:   median {median:.2f}s, 90% within {p90:.2f}s")
-    return 0 if report.valid == len(report.results) else 1
-
-
-async def _eval_compare(paths: KitPaths, names: list[str], n: int) -> int:
-    """Ask several cloud models the same questions and write their answers side by side."""
-    from datetime import datetime
-
-    from kit.evals import COMPARE_PROMPTS, compare_report, run_compare
-    from kit.memory import Memory
-
-    paths.ensure()
-    settings = SettingsStore(paths).current()
-    unknown = [name for name in names if name not in settings.models]
-    if unknown:
-        print(f"unknown model(s): {', '.join(unknown)}; see `kit models`")
-        return 2
-    prompts = COMPARE_PROMPTS[: max(1, n)]
-    print(f"asking {', '.join(names)} {len(prompts)} questions each; this spends real money")
-    memory = Memory(paths.state_dir / "memory.db")
-    try:
-        async with httpx.AsyncClient() as client:
-            cloud = make_cloud(paths, memory, client)
-
-            def show(r):
-                mark = "ok  " if r.ok else "FAIL"
-                print(f"{mark} {r.model:<14} {r.seconds:5.1f}s  ${r.cost_usd:.4f}  {r.prompt[:50]}")
-                if r.error:
-                    print(f"       {r.error}")
-
-            results = await run_compare(
-                cloud, settings, names, prompts, datetime.now(), on_result=show
-            )
-    finally:
-        memory.close()
-    out = paths.state_dir / "evals" / f"compare-{datetime.now():%Y%m%d-%H%M%S}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    report = compare_report(results, names)
-    out.write_text(report, encoding="utf-8")
-    print()
-    print("\n".join(line for line in report.splitlines() if line.startswith("- **")))
-    print(f"\nfull answers, side by side: {out}")
-    return 0 if all(r.ok for r in results) else 1
-
-
-async def _eval_memory(paths: KitPaths) -> int:
-    """Run the memory test in a scratch memory inside the data folder, then delete it."""
-    from kit.embed import OllamaEmbedder
-    from kit.evals import run_memory_eval
-    from kit.learning import Learner
-    from kit.local_model import OllamaModel
-    from kit.memory import Memory
-    from kit.recall import Recall
-
-    paths.ensure()
-    store = SettingsStore(paths)
-    scratch = paths.state_dir / "memory-eval"
-    shutil.rmtree(scratch, ignore_errors=True)
-    memory = Memory(scratch / "memory.db")
-    try:
-        async with httpx.AsyncClient() as client:
-            model = OllamaModel(lambda: local_settings(store.current()), client)
-            recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
-            print("teaching Kit 13 facts, some repeated or changed...")
-            report = await run_memory_eval(memory, Learner(memory, recall, model), recall)
-    finally:
-        memory.close()
-        shutil.rmtree(scratch, ignore_errors=True)
-    if recall.embed_problem:
-        print(f"warning: searching by words only: {recall.embed_problem}")
-    for decision, text in report.learned:
-        print(f"  {decision:<6} {text}")
-    print()
-    for question, ok, texts in report.found:
-        print(f"{'ok  ' if ok else 'MISS'} {question}")
-        if not ok:
-            for t in texts[:3]:
-                print(f"       recalled: {t}")
-    for question, texts in report.unknown:
-        print(f"{'ok  ' if not texts else 'NOISE'} {question}")
-        for t in texts[:3]:
-            print(f"       recalled: {t}")
-    for name, ok in report.tidy:
-        print(f"{'ok  ' if ok else 'MESSY'} {name}")
-    print()
-    print(f"recalled the right fact:    {report.recall_score}/{len(report.found)}")
-    print(f"nothing for unknown things: {report.unknown_clean}/{len(report.unknown)}")
-    print(f"memory kept tidy:           {report.tidy_score}/{len(report.tidy)}")
-    if report.right and report.unrelated:
-        cutoff = store.current().memory.min_similarity
-        print()
-        print(f"closeness of the right facts:   {min(report.right):.2f} to {max(report.right):.2f}")
-        print(f"closest fact to unknown things: {max(report.unrelated):.2f}")
-        print(f"memory.min_similarity is now:   {cutoff:.2f}")
-        suggested = report.suggested_cutoff()
-        if suggested is None:
-            print("the two overlap, so no cut-off separates them for this embedding model")
-        elif abs(suggested - cutoff) >= 0.02:
-            print(f"try: kit config set memory.min_similarity {suggested}")
-    return 0 if report.passed else 1
-
-
-async def _eval_routing(paths: KitPaths) -> int:
-    """Check Kit knows where to look: the built-in questions against a scratch
-    register, then Dan's own questions (routing-questions.toml) against his register."""
-    from kit.embed import OllamaEmbedder
-    from kit.evals import load_routing_questions, run_routing_eval, seed_routing_things
-    from kit.memory import Memory
-    from kit.recall import Recall
-    from kit.things import Register
-
-    paths.ensure()
-    store = SettingsStore(paths)
-    scratch = paths.state_dir / "routing-eval"
-    shutil.rmtree(scratch, ignore_errors=True)
-    reports = []
-    async with httpx.AsyncClient() as client:
-        embedder = OllamaEmbedder(store.current, client)
-        memory = Memory(scratch / "memory.db")
-        try:
-            seed_routing_things(Register(memory))
-            recall = Recall(memory, embedder, store.current)
-            reports.append(("built-in questions", await run_routing_eval(recall), recall))
-        finally:
-            memory.close()
-            shutil.rmtree(scratch, ignore_errors=True)
-        own = paths.config_dir / "routing-questions.toml"
-        if own.exists():
-            memory = Memory(paths.state_dir / "memory.db")
-            try:
-                recall = Recall(memory, embedder, store.current)
-                questions = load_routing_questions(own)
-                reports.append(
-                    (
-                        f"your questions ({own.name})",
-                        await run_routing_eval(recall, questions),
-                        recall,
-                    )
-                )
-            finally:
-                memory.close()
-    passed = True
-    for title, report, recall in reports:
-        print(f"{title}:")
-        if recall.embed_problem:
-            print(f"  warning: searching by words only: {recall.embed_problem}")
-        for r in report.results:
-            print(f"  {'ok  ' if r.ok else 'MISS'} {r.question}")
-            if not r.ok:
-                print(f"         wanted {r.system}: {r.target}")
-                for line in r.got[:3] or ["(nothing recalled)"]:
-                    print(f"         recalled: {line}")
-        print(f"  knew where to look: {report.score}/{len(report.results)}\n")
-        passed = passed and report.passed
-    if len(reports) == 1:
-        print(f"add your own questions in {own} to test your real register")
-    return 0 if passed else 1
-
-
-async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, prompts, show):
-    """One model's turn at the voice eval, in a scratch memory that's deleted after."""
-    from kit.evals import run_voice_eval
-
-    return await _local_run(
-        paths,
-        client,
-        settings,
-        lambda brain, name: run_voice_eval(brain, name, prompts, on_line=show),
-    )
-
-
-async def _local_run(
-    paths: KitPaths, client: httpx.AsyncClient, settings: Settings, run, clock=None
-):
-    """``run(brain, model name)`` for one local model, with Kit seeded the same way
-    every time (``seed_voice``), in a scratch memory that's deleted after. ``clock``
-    sets the time Kit thinks it is."""
-    from kit.brain import Brain
-    from kit.cloud import Cloud
-    from kit.evals import seed_voice
-    from kit.local_model import LocalModelError, OllamaModel
-    from kit.memory import Memory
-    from kit.recall import Recall
-
-    name = settings.ollama.model
-    model = OllamaModel(lambda: settings.ollama, client)
-    print(f"warming up {name}...")
-    try:
-        await model.complete([{"role": "user", "content": "Hi."}], None)
-    except LocalModelError as e:
-        print(f"  skipped {name}: {e}\n  (is it pulled? ollama pull {name})")
-        return None
-    scratch = paths.state_dir / "voice-eval"
-    shutil.rmtree(scratch, ignore_errors=True)
-    memory = Memory(scratch / "memory.db", clock) if clock else Memory(scratch / "memory.db")
-    try:
-        # No cloud, no web and words-only recall: the local model alone, as on the desk.
-        cloud = Cloud(memory, lambda provider: None, {})
-        brain = Brain(
-            lambda: settings, memory, model, cloud, Recall(memory, None, lambda: settings)
-        )
-        seed_voice(brain)
-        return await run(brain, name)
-    finally:
-        memory.close()
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-async def _eval_voice(paths: KitPaths, names: list[str], one_pass: bool, n: int | None) -> int:
-    """The same chat, pipe-ups and thoughts through each local model, written side by
-    side, to pick the model that sounds most like Kit."""
-    from datetime import datetime
-
-    from kit.evals import VOICE_PROMPTS, voice_report
-
-    paths.ensure()
-    base = SettingsStore(paths).current()
-    names = names or [base.ollama.model]
-    prompts = VOICE_PROMPTS[:n] if n else VOICE_PROMPTS
-
-    def show(line):
-        mark = "FAIL" if not line.ok else ("ECHO" if line.echo else "ok  ")
-        t = line.first_s if line.first_s is not None else line.total_s
-        said = line.error or line.text or "(nothing came to mind)"
-        print(f"{mark} {t:4.1f}s  {line.prompt[:28]:<28}  {said[:90]}")
-
-    reports = []
-    async with httpx.AsyncClient() as client:
-        for name in names:
-            settings = _eval_settings(base, name, one_pass)
-            report = await _voice_run(paths, client, settings, prompts, show)
-            if report is not None:
-                reports.append(report)
-            print()
-    if not reports:
-        return 1
-    out = paths.state_dir / "evals" / f"voice-{datetime.now():%Y%m%d-%H%M%S}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(voice_report(reports), encoding="utf-8")
-    for report in reports:
-        print(f"- {report.summary()}".replace("**", ""))
-    print(f"\nevery line, side by side: {out}")
-    print("pick one with: kit config set ollama.model <name>")
-    return 0 if all(r.answered == len(r.spoken) for r in reports) else 1
-
-
-def _eval_settings(base: Settings, name: str, one_pass: bool = False) -> Settings:
-    """Settings for a local-model eval: that model, local-heavy (no key moments for the
-    work model either), no nightly reflection."""
-    return base.model_copy(
-        update={
-            "ollama": base.ollama.model_copy(update={"model": name, "speak_pass": not one_pass}),
-            "routing": base.routing.model_copy(
-                update={"mode": "local-heavy", "key_moments": False}
-            ),
-            "life": base.life.model_copy(update={"reflect_with": "off"}),
-        }
-    )
-
-
-async def _eval_mood(paths: KitPaths) -> int:
-    """Calibrate reading Dan's mood by meaning (``life.read_mood``): Dan's labelled
-    lines (companion-lines.toml in Kit's config folder) read by the model that would
-    read them in chat, against the word rules. Reading by meaning switches on only
-    once it beats them on at least 40 lines; the result is kept in Kit's memory."""
-    import json
-    from datetime import datetime
-
-    from kit.brain import CHAT, MOOD_CALIBRATION, own_role
-    from kit.evals import (
-        MOOD_LINES_FILE,
-        MOOD_LINES_NEEDED,
-        load_mood_lines,
-        mood_starter,
-        run_mood_eval,
-    )
-    from kit.local_model import OllamaModel
-    from kit.memory import Memory
-    from kit.prompt import mood_lines
-    from kit.reply import mood_read, plan_schema
-
-    paths.ensure()
-    store = SettingsStore(paths)
-    settings = store.current()
-    own = paths.config_dir / MOOD_LINES_FILE
-    if not own.exists():
-        own.write_text(mood_starter(), encoding="utf-8")
-        print(f"started {own} with a few generic lines: add your own, the way you talk")
-    lines = load_mood_lines(own)
-    owner = settings.persona.owner
-    system = "\n".join(
-        [
-            f"You read how {owner} seems from one message they sent.",
-            *mood_lines(owner),
-            "Answer only with JSON: emotion, gesture, dan_mood, about, for_whom, expected, "
-            'and action {"kind": "none"}.',
-        ]
-    )
-
-    def messages(text: str) -> list[dict]:
-        return [{"role": "system", "content": system}, {"role": "user", "content": text}]
-
-    memory = Memory(paths.state_dir / "memory.db")
-    try:
-        async with httpx.AsyncClient() as client:
-            role = own_role(settings)
-            plain = None
-            if role == CHAT:
-                cloud = make_cloud(paths, memory, client)
-                profile = settings.profile(CHAT).model_copy(update={"web_search": False})
-                reader = profile.name
-
-                async def read(text: str):
-                    answer = await cloud.answer(profile, messages(text), settings, "mood eval")
-                    return mood_read(answer.text)
-
-            else:
-                model = OllamaModel(lambda: settings.ollama, client)
-                reader = settings.ollama.model
-
-                async def read(text: str):
-                    return mood_read(await model.complete(messages(text), plan_schema(True)))
-
-                async def plain(text: str):
-                    await model.complete(messages(text), plan_schema(False))
-
-            print(f"reading {len(lines)} lines with {reader}...")
-
-            def show(line) -> None:
-                mark = "ok  " if line.meaning_right else "MISS"
-                words = "ok" if line.words_right else "miss"
-                print(
-                    f"{mark} {line.seconds:4.1f}s  {line.text[:52]:52}  wanted {line.label}, "
-                    f"meaning {line.meaning}, words {line.words} ({words})"
-                )
-
-            report = await run_mood_eval(lines, read, plain, owner, show)
-        result = report.as_dict(datetime.now(), reader)
-        memory.set_self_value(MOOD_CALIBRATION, json.dumps(result))
-    finally:
-        memory.close()
-    print()
-    print(f"right by meaning: {report.meaning}/{len(report.lines)}")
-    print(f"right by words:   {report.words}/{len(report.lines)}")
-    if report.seconds() is not None:
-        print(f"reading took:     median {report.seconds():.2f}s a line")
-    if report.added_seconds() is not None:
-        print(f"adds to a plan:   median {report.added_seconds():+.2f}s before he starts talking")
-    if len(report.lines) < MOOD_LINES_NEEDED:
-        print(f"add more lines to {own}: {MOOD_LINES_NEEDED} are needed, there are {len(lines)}")
-    if report.passed:
-        print("passed: with life.read_mood = meaning, Kit now reads you by meaning")
-    else:
-        print("not passed: Kit keeps reading your words, whatever life.read_mood says")
-    return 0 if report.passed else 1
-
-
-async def _eval_companion(paths: KitPaths, names: list[str]) -> int:
-    """Goodbyes, hellos, wrong facts and news through each local model: does he act
-    like a good companion? Written side by side to read."""
-    from datetime import datetime
-
-    from kit.evals import companion_clock, companion_report, run_companion_eval
-
-    paths.ensure()
-    base = SettingsStore(paths).current()
-    names = names or [base.ollama.model]
-
-    def show(line):
-        mark = "ok  " if line.passed else "FAIL"
-        print(f"{mark} {line.kind:<9} {line.prompt[:30]:<30}  {(line.text or line.why)[:80]}")
-
-    reports = []
-    async with httpx.AsyncClient() as client:
-        for name in names:
-            settings = _eval_settings(base, name)
-            report = await _local_run(
-                paths,
-                client,
-                settings,
-                lambda brain, n: run_companion_eval(brain, n, show),
-                companion_clock(),
-            )
-            if report is not None:
-                reports.append(report)
-            print()
-    if not reports:
-        return 1
-    out = paths.state_dir / "evals" / f"companion-{datetime.now():%Y%m%d-%H%M%S}.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(companion_report(reports), encoding="utf-8")
-    for report in reports:
-        print(f"- {report.summary()}".replace("**", ""))
-    print(f"\nevery line, side by side: {out}")
-    return 0 if all(r.passed == len(r.lines) for r in reports) else 1
 
 
 def _parse_link(text: str) -> dict:
@@ -1625,6 +1386,35 @@ def main(argv: list[str] | None = None) -> int:
     forget_face.add_argument("who")
     esub.add_parser("pause", help="switch the eyes off (the camera is released)")
     esub.add_parser("resume", help="switch the eyes on again")
+    hearing = sub.add_parser(
+        "hearing",
+        help="Kit's ears: run them beside the mic (docs/4 Guides/Companion Stage 5.md)",
+    )
+    hearing.add_argument("--brain", help="the brain's address, e.g. http://kit-server:8600")
+    hearing.add_argument("--token", help="Kit's API token (`kit token` on the server)")
+    hearing.add_argument("--name", default="desk", help="what to call this mic (default: desk)")
+    hearing.add_argument(
+        "--words",
+        action="store_true",
+        help="show the words the ears heard, in this window only (for tuning hearing.names)",
+    )
+    hearing.add_argument("--steps", type=int, help="stop after this many 32 ms steps (testing)")
+    hsub = hearing.add_subparsers(dest="hearing_action")
+    hsub.add_parser("mics", help="list the microphones on this machine")
+    hconnect = hsub.add_parser(
+        "connect", help="save where the brain is, e.g. http://kit-server:8600 TOKEN"
+    )
+    hconnect.add_argument("url")
+    hconnect.add_argument("token")
+    hsub.add_parser("show", help="whether Kit's ears are listening, and what he last made of it")
+    henrol = hsub.add_parser("enrol", help="introduce someone's voice to Kit's ears")
+    henrol.add_argument("who", help="their name, or `me` for you (persona.owner)")
+    henrol.add_argument("--seconds", type=float, default=30, help="how long to listen")
+    hsub.add_parser("voices", help="whose voices Kit's ears know")
+    forget_voice = hsub.add_parser("forget", help="forget someone's voice completely")
+    forget_voice.add_argument("who")
+    hsub.add_parser("pause", help="switch the ears off (the mic is let go)")
+    hsub.add_parser("resume", help="switch the ears on again")
     things = sub.add_parser("things", help="the register of things and where they live")
     tsub = things.add_subparsers(dest="action", required=True)
     tsub.add_parser("list", help="list the register")
@@ -1649,6 +1439,15 @@ def main(argv: list[str] | None = None) -> int:
     ]:
         tsub.add_parser(name, help=text).add_argument("id", type=int)
 
+    docs = sub.add_parser("docs", help="the docs vault: what's gone stale")
+    dosub = docs.add_subparsers(dest="docs_action", required=True)
+    dcheck = dosub.add_parser(
+        "check", help="report rows of Where Kit Is Up To that say open for a landed pull request"
+    )
+    dcheck.add_argument(
+        "--vault", type=Path, default=None, help="the docs folder (default: the checkout's)"
+    )
+
     ev = sub.add_parser(
         "eval",
         help="test the local model's replies, memory recall, routing, voice, how good a "
@@ -1670,6 +1469,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     ev.add_argument(
         "--one-pass", action="store_true", help="voice: answer in one JSON pass, as in stage 1"
+    )
+    ev.add_argument(
+        "--replay",
+        metavar="SNAPSHOT",
+        help="memory: ask your own questions (config/memory-questions.toml) of a copy of "
+        "this memory snapshot, e.g. a backup from backups/, to see the right fact still wins",
+    )
+    ev.add_argument(
+        "--questions", metavar="FILE", help="memory --replay: a different questions file"
     )
 
     args = parser.parse_args(argv)
@@ -1704,27 +1512,18 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_notes(paths)
     if args.command == "eyes":
         return cmd_eyes(paths, args)
+    if args.command == "hearing":
+        return cmd_hearing(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "docs":
+        return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":
         return asyncio.run(_weather(paths, args.place))
     if args.command == "eval":
-        if args.which == "routing":
-            return asyncio.run(_eval_routing(paths))
-        if args.which == "memory":
-            return asyncio.run(_eval_memory(paths))
-        if args.which == "voice":
-            return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
-        if args.which == "companion":
-            return asyncio.run(_eval_companion(paths, args.models))
-        if args.which == "mood":
-            return asyncio.run(_eval_mood(paths))
-        if args.which == "compare":
-            if not args.models:
-                print("name the models to compare, e.g. kit eval compare --models sonnet gpt-sol")
-                return 2
-            return asyncio.run(_eval_compare(paths, args.models, args.n or 10))
-        return asyncio.run(_eval(paths, args.n or 50))
+        from kit.evals_cli import cmd_eval
+
+        return cmd_eval(paths, args)
     results = run_checks(paths, set(args.skip))
     print_report(results)
     return 1 if any(r.status is Status.FAIL for r in results) else 0

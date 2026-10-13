@@ -48,7 +48,8 @@ focus, and how long since the keyboard or mouse was touched, plus CPU,
 memory, disk and battery. With **Kit's Chrome extension** it also knows your
 open tabs and the site you're on. Kit sees one line on every message
 ("VS Code: pumps.py, for 25 min. Also open: Excel, Chrome.") and the full
-picture when he needs it (`look_at_pc`).
+picture when he needs it (`look_at_pc`). Which model sees which is in
+[[Privacy#What a cloud model sees of your PC and the room]].
 
 With the desk app on **several PCs**, Kit keeps each PC's report and follows
 the one you're using; a locked laptop in the other room doesn't make him
@@ -58,13 +59,24 @@ loud; the others show the words.
 
 Password managers, banking and private-browsing titles are blanked **on the
 PC** before anything is sent, addresses lose everything after `?` or `#`, and
-**Share what I'm working on** pauses it all. See [[Privacy]].
+**Share what I'm working on** pauses it all. Which program owns a window is
+read from its process, remembered together with the process's start time:
+Windows hands a finished program's id to the next one, so a password manager
+starting on a browser's old id is still recognised as one. See [[Privacy]].
 
 ## His voice and face on the desk
 
-- **Voice**: the app plays each sentence as soon as the server has made it,
-  through one steady sound output, with any sound (a chuckle) in its place.
-  His face talks for exactly as long as each sentence plays. See [[Voice]].
+- **Voice**: the app plays each sentence as it comes from the server, in
+  pieces while the rest is still being made, through one steady sound output,
+  with any sound (a chuckle) in its place. His mouth follows the sound itself:
+  the output measures how loud his voice is as it plays and his face opens its
+  mouth to match, so he talks for exactly as long as each sentence plays and
+  closes his mouth on the pauses. A reply the
+  server is slow over can't hold up the next one: each sentence gets 30 s,
+  an engine still loading answers "not yet" and is asked again briefly, and
+  when you interrupt, the new reply's sentences are fetched at once rather
+  than behind the old one's. The **boop** stays quiet when his voice is
+  saying the reply, so it doesn't land on his first word. See [[Voice]].
 - **His bubble** shows what he's said, what he's up to while you're out, or,
   while his eyes see you on your phone, that he's keeping quiet.
 - **Kit 3D**: when his character has a 3D look, the app lays the brain's face
@@ -72,6 +84,16 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 - **Reflexes**: the only things the desk decides itself. Every so often he
   glances at the window you're working in. When the brain says he's asleep,
   he yawns and slides down the screen; awake, he climbs back.
+- **A newer brain** can send an emotion or gesture this desk doesn't know yet.
+  The face shows neutral (or no gesture) and the rest of the reply carries on,
+  with one line in the log, instead of the words sticking half shown.
+- **The life feed** (his fidgets, moods and pipe-ups from the brain) outlives
+  whatever goes wrong with it: a brain away, a malformed answer, a settings
+  change mid-call. It's logged once and tried again after 10 s, then 20, up to
+  two minutes between tries, until the brain is back.
+- **Quit** stops his voice, lets the speakers go and closes the connection to
+  the brain, so nothing hangs on the way out and the next start finds the
+  sound device free.
 
 ## Connections
 
@@ -86,6 +108,13 @@ It connects over IPv4, which is what the brain listens on. Windows tries a
 name's IPv6 address first (`localhost` gives `::1`) and waits about 2 s for an
 answer that never comes, which made his voice start 2 s late on every reply.
 Kit's eyes use the same connection.
+
+A connection is kept open for a minute between calls (httpx would drop it
+after 5 s, so every sentence after a pause opened a new one), and the moment
+you send a message the app makes one cheap call to `/api/health`, so the
+connection is open and warm before his first sentence is asked for. The
+server's speech service keeps its connection to the voice worker the same way.
+See [[Voice#How a sentence becomes sound]].
 
 ## Updates
 

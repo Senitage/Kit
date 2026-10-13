@@ -300,8 +300,9 @@ class FaceWidget(QWidget):
         self._timer.start(16)
         self.setMinimumSize(120, 120)
 
-    def _step(self) -> None:
-        now = time.monotonic()
+    def tick_face(self, now: float) -> None:
+        """Follow the mouse while it moves, and tick the rig. Glow's timer does this
+        every frame; the 3D face (kit.desk.face3d) does it while that timer is stopped."""
         pos = QCursor.pos()
         if self.follow_mouse and pos != self._cursor:
             self._cursor = pos
@@ -309,6 +310,10 @@ class FaceWidget(QWidget):
             reach = max(self.width(), 300)
             self.face.look_at((pos.x() - centre.x()) / reach, (pos.y() - centre.y()) / reach, now)
         self._frame = self.face.tick(now)
+
+    def _step(self) -> None:
+        now = time.monotonic()
+        self.tick_face(now)
         if self.scene is not None and now - self._scene_at > self.scene.seconds:
             self.scene = None
         self.update()

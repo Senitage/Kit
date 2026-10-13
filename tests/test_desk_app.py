@@ -246,10 +246,14 @@ def test_app_starts_into_the_tray_and_quits(qapp, desk_dir, monkeypatch):
         desk.set_watching(False)
         assert DeskConfig.load(desk_dir).watch is False
         desk._act_out(reply_event("Hi")["reply"])
+        closed = []
+        desk.chat.speaker.output.close = lambda: closed.append("output")
+        client = desk.client
     finally:
         desk.quit()
         desk.chat.close()
         desk.face.close()
+    assert "output" in closed and client._http.is_closed  # nothing left open at exit
 
 
 def test_glow_sleeps_and_wakes_when_the_brain_says_and_glances_by_himself(qapp):
@@ -850,6 +854,10 @@ def test_he_boops_when_he_talks_unless_told_not_to(qapp, desk_dir, monkeypatch):
         desk._on_life({"type": "pipe_up", "reply": reply_event("Psst.")["reply"]})
         _wait(qapp, 1.0)
         assert played[-1] == "bip_boop-1.wav"
+        desk.chat.voicing = True  # his voice is saying it: no boop over his first word
+        desk._act_out(reply_event("Said aloud")["reply"])
+        desk.chat.voicing = False
+        assert len(played) == 2
         desk.boop_action.setChecked(False)  # the tray switch
         assert DeskConfig.load(desk_dir).boop is False
         desk._act_out(reply_event("Quiet now")["reply"])
@@ -928,9 +936,19 @@ def test_the_mood_page_shows_his_needs_and_cant_change_them(qapp, sync_window, t
     # Only to look at: nothing on the page can set a need.
     for kind in (QAbstractButton, QSlider, QAbstractSpinBox, QLineEdit):
         assert not page.findChildren(kind)
-    brain.life = lambda: {**LIFE, "dials": None, "mood": "asleep", "feeling": None}
+    brain.life = lambda: {
+        **LIFE,
+        "dials": None,
+        "mood": "asleep",
+        "feeling": None,
+        "presence": "asleep",
+        "wakes_at": "2026-10-11T13:45",
+        "slept_lately": ["13:05 to now, a doze"],
+    }
     page.refresh()
     assert "Happiness" not in page.bars and page.face.face.state == "sleeping"
+    assert "waking about 13:45" in page.presence.text()
+    assert page.slept.text() == "Slept: 13:05 to now, a doze"
     win.close()
 
 
@@ -962,3 +980,80 @@ def test_the_desk_draws_kit_from_the_brains_character_sheet():
     finally:
         character.use(character.builtin())
         client.close()
+
+
+def test_the_desk_app_needs_nothing_the_installer_leaves_out():
+    # The installer packs the desk app without the brain's modules (build.ps1's
+    # --exclude-module). One of them imported anyway, and the packed app stopped on
+    # an error box nobody could click, so the installer build waited for ever.
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "packaging" / "windows" / "build.ps1").read_text(encoding="utf-8")
+    left_out = re.findall(r'"--exclude-module", "([\w.]+)"', script)
+    assert "numpy" in left_out and "fastapi" in left_out
+    blocker = (
+        "import importlib.abc, sys\n"
+        f"LEFT_OUT = {left_out!r}\n"
+        "class Block(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name.split('.')[0] in LEFT_OUT:\n"
+        "            raise ImportError(f'{name} is left out of the desk app')\n"
+        "sys.meta_path.insert(0, Block())\n"
+        "import kit.desk.app\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(root / "src"), "QT_QPA_PLATFORM": "offscreen"}
+    done = subprocess.run(
+        [sys.executable, "-c", blocker], env=env, capture_output=True, text=True, timeout=120
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+
+
+def test_what_kits_ears_heard_shows_and_his_reply_streams_in(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    read = []
+
+    def heard_turn(turn):
+        read.append(turn)
+        yield {"type": "say", "text": "Sunny all day."}
+        yield reply_event("Sunny all day.")
+
+    desk.client.heard_turn = heard_turn
+    stopped = []
+    try:
+        desk._on_life({"type": "state", "state": "asleep"})
+        desk._on_life({"type": "heard", "turn": 7, "text": "Kit, what's the weather?"})
+        assert not desk.alive.asleep  # his name woke him
+        import time as _t
+
+        end = _t.time() + 2
+        while "Sunny all day." not in desk.chat.text() and _t.time() < end:
+            qapp.processEvents()
+            _t.sleep(0.02)
+        assert read == [7]
+        text = desk.chat.text()
+        assert text.index("Kit, what's the weather?") < text.index("Sunny all day.")
+        desk.chat.speaker.stop = lambda turn=None: stopped.append(turn)
+        desk._on_life({"type": "hush"})  # talked over: his voice stops
+        assert stopped == [None]
+        assert desk.ears_action.isChecked()
+        desk._show_ears(False)
+        assert not desk.ears_action.isChecked()
+        switched = []
+        desk.client.set_hearing = lambda on: switched.append(on)
+        desk.ears_action.setChecked(True)
+        end = _t.time() + 2
+        while not switched and _t.time() < end:
+            qapp.processEvents()
+            _t.sleep(0.02)
+        assert switched == [True]
+    finally:
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

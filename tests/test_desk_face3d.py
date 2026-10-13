@@ -153,7 +153,9 @@ def test_glow_stops_only_while_kits_model_is_on_screen():
     assert shown.blanks == 0 and shown.grabs == 0  # counted, then logged and reset
     assert widget.grab().toImage().pixelColor(20, 20) == QColor(255, 0, 0)
     widget.face.tick(0.0)
-    shown._tick_face()  # the rig still runs: moods expire, gaze follows the mouse
+    shown._ready = False  # covering, page not ready: only the rig is stepped
+    shown._step()  # the rig still runs: moods expire, gaze follows the mouse
+    shown._ready = True
     assert widget.face._last > 0.0
 
     shown._loading()  # a reload: Glow comes back until the model is drawn again

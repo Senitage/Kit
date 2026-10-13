@@ -10,7 +10,16 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
+from fakes import (
+    Clock,
+    FakeAnthropic,
+    FakeEmbedder,
+    FakeModel,
+    chat_and_learn,
+    collect,
+    make_cloud,
+    reply,
+)
 from kit.brain import Brain
 from kit.cloud import CloudError
 from kit.learning import relations_in
@@ -127,7 +136,7 @@ def test_the_dentist_on_thursday_arvo_is_asked_about_thursday_evening_only(memor
     at(memory, "2026-10-07T09:00:00")  # Wednesday: not yet
     collect(brain.chat("Morning Kit"))
     assert brain.notebook.open_wants() == []
-    assert "dentist" not in model.calls[-1][0]["content"]  # not even on his mind yet
+    assert not any("dentist" in m for m in brain.notebook.mind("Dan"))  # not on his mind yet
     at(memory, "2026-10-08T17:30:00")  # Thursday evening
     brain.pc.update(snap())
     assert brain.notebook.open_wants()[0].id == thread.id
@@ -194,8 +203,8 @@ def test_emma_is_my_cousin_puts_the_old_fact_right(memory):
     brain, model, _ = make(memory, reply("Ah, cousin. Noted."))
     old = memory.add_fact("Emma, Dan's sister, celebrates her birthday on the 14th of March.")
     asyncio.run(brain.recall.index_pending())
-    events = collect(brain.chat("Emma's my cousin, not my sister"))
-    learned = next(e for e in events if e["type"] == "remembered")
+    _, remembered = chat_and_learn(brain, "Emma's my cousin, not my sister")
+    learned = remembered[0]
     assert learned["decision"] == "update"
     assert learned["fact"] == "Emma, Dan's cousin, celebrates her birthday on the 14th of March."
     assert memory.index.get(old).superseded_by  # the old one is in its history
@@ -334,9 +343,9 @@ def test_getting_to_know_you_a_question_at_a_time(memory):
     want = brain.notebook.open_wants()[0]
     assert want.text == "Ask Dan: what's your partner's name?"
     collect(brain.pipe_up("want"))
-    events = collect(brain.chat("Sarah"))
+    _, learned = chat_and_learn(brain, "Sarah")
     assert "answering your getting-to-know-you question" in asked(model)
-    assert any(e["type"] == "remembered" for e in events)
+    assert learned
     assert "Sarah is Dan's partner." in [f.text for f in memory.facts()]
     assert brain.daily.next_question().key == "cat"  # known now: on to the next one
     assert brain.offer_wants() == []  # one a day
@@ -597,7 +606,7 @@ def test_a_private_fact_stays_private_when_its_put_right(memory):
 
 def test_a_relation_kept_local_is_learned_privately(memory):
     brain, model, _ = make(memory, reply("Got it."))
-    collect(brain.chat("Keep it local: Jess is my sister."))
+    chat_and_learn(brain, "Keep it local: Jess is my sister.")
     assert [(f.text, f.meta.get("private")) for f in memory.facts()] == [
         ("Jess is Dan's sister.", True)
     ]

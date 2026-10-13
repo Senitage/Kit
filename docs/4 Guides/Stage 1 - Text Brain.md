@@ -65,9 +65,10 @@ firewall rule is needed.
     Documents/Finance/Tax".
   - When you mention something it can't see, Kit searches deeper before
     answering, and says plainly when it doesn't know.
-  - "Remember that ..." saves a fact straight away. If Kit already knows it, it
-    doesn't save a copy; if it changes something ("I sold the Hilux"), the old
-    fact is replaced and kept in its history.
+  - "Remember that ..." saves a fact once the reply is out (the desk app shows
+    "Remembered: ..." when it's done). If Kit already knows it, it doesn't
+    save a copy; if it changes something ("I sold the Hilux"), the old fact is
+    replaced and kept in its history.
   - At the end of each day Kit writes a summary of the day and learns its
     facts the same way. Old conversations are searchable too.
   - Pin a fact to keep it always in mind.
@@ -278,6 +279,10 @@ run `sudo systemctl restart kit`.
       worded differently from the facts and 3 about things it was never told.
       It needs 10/10 recalled, 3/3 with nothing recalled, and a tidy memory
       (no stale or duplicate facts). Your real memory isn't touched.
+- [ ] **The right fact still wins:** once Kit has been running a while, put a
+      few questions about what he knows in `config/memory-questions.toml`
+      (see [[Evals]]) and run `kit eval memory --replay` on last night's
+      backup in `backups/`. Every question should say `ok`.
 - [ ] **Chats while it works:** ask something slow ("think hard about the
       best way to size a thickener for 200 t/h, with the maths"). While it's
       working, ask "how are you going?". The local model answers straight

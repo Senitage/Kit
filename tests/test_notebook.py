@@ -11,6 +11,7 @@ from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
     EVERYDAY_KEY,
     FOR_LATER,
+    OWN_NAME_KEY,
     PLAIN_KEY,
     Notebook,
     as_aim,
@@ -110,10 +111,9 @@ def test_a_want_for_tomorrow_waits_till_the_morning(book, clock):
     assert [w.id for w in book.open_wants()] == [lunch]
     assert [w.id for w in book.unsaid_wants()] == [lunch, later]
     assert book.pressure(book.index.get(later)) == 0.0
-    assert book.mind("Dan") == [
-        "(you want to ask Dan) about lunch.",
-        "(you want to ask Dan tomorrow morning, not before) how the shutdown went.",
-    ]
+    # Not on his mind till it's due: under "bring one up if it fits", a "not before"
+    # want was brought up early. It stays in the journal and comes back in the morning.
+    assert book.mind("Dan") == ["(you want to ask Dan) about lunch."]
     book.mark_said(lunch)
     assert book.pressing() == pytest.approx(0.0) and book.to_share() is None
     clock.now += timedelta(hours=21)  # 07:00 the next day
@@ -284,6 +284,15 @@ def test_slang_is_dropped_once(memory):
     assert book.drop_slang("Dan", random.Random(1)) == [SLANG_QUIRKS[0]]
     quirks = book.quirks()
     assert quirks[0] == puns and len(quirks) == 2 and set(quirks) <= set(QUIRK_POOL)
-    assert "Australian slang" in book.vetoes()[-1]  # his reflection takes it out of the sheet
+    assert "no slang" in book.vetoes()[-1]  # his reflection takes it out of the sheet
     assert memory.self_value(PLAIN_KEY) is not None
     assert book.drop_slang("Dan") == [] and len(book.vetoes()) == 1  # only once
+
+
+def test_keeps_his_own_name_once(memory):
+    # A voice copying a character had Kit calling himself by the character's name.
+    book = Notebook(memory)
+    assert book.keep_own_name("Dan", "Kit")
+    assert "Your name is Kit" in book.vetoes()[-1]  # his reflection takes other names out
+    assert memory.self_value(OWN_NAME_KEY) is not None
+    assert not book.keep_own_name("Dan", "Kit") and len(book.vetoes()) == 1  # only once

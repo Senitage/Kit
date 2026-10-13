@@ -1,14 +1,14 @@
 """Kit's bodies saying hello, paired devices with their own tokens, and what a
 phone needs from the API: history pages, messages written earlier, spoken ones."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
 
 from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
-from kit.body_registry import ONLINE_FOR, BodyRegistry, Hello
+from kit.body_registry import FORGET_AFTER, ONLINE_FOR, BodyRegistry, Hello
 from kit.brain import Brain
 from kit.channels import Arrival, channel_line
 from kit.cli import main
@@ -80,6 +80,20 @@ def test_a_body_says_hello_and_goes_quiet():
     assert registry.online()[0].id == "desk-pc"
 
 
+def test_a_body_not_heard_from_for_a_day_is_dropped():
+    clock = Clock()
+    registry = BodyRegistry(clock)
+    registry.hello(Hello(id="phone", kind="phone"))
+    for n in range(5):  # a misbehaving body with a fresh id every hello
+        registry.hello(Hello(id=f"pod-{n}", kind="robot"))
+    assert len(registry.all()) == 6
+    clock.now += FORGET_AFTER + timedelta(seconds=1)
+    registry.hello(Hello(id="phone", kind="phone"))
+    assert [b.id for b in registry.all()] == ["phone"]  # the quiet ones are gone
+    clock.now += FORGET_AFTER - timedelta(hours=1)
+    assert registry.listing()  # heard from within the day: kept
+
+
 def test_a_paired_device_is_known_by_its_device_name():
     registry = BodyRegistry(Clock())
     assert registry.hello(Hello(id="whatever", kind="phone"), device="phone").id == "phone"
@@ -118,7 +132,7 @@ def test_a_message_that_waited_is_old_news():
     soon = channel_line("phone", "Dan", Arrival(sent_at=now - timedelta(seconds=30)), now)
     assert "wrote this" not in soon
     aware = datetime.fromisoformat("2026-10-05T07:40:00+00:00")
-    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), now.astimezone())
+    assert "ago" in channel_line("phone", "Dan", Arrival(sent_at=aware), now.replace(tzinfo=UTC))
 
 
 # The API
@@ -161,6 +175,29 @@ def test_a_device_token_opens_the_api_until_forgotten(api):
     assert client.get("/api/life", headers=phone).status_code == 200
     devices.forget("phone")
     assert client.get("/api/life", headers=phone).status_code == 401
+
+
+def test_a_device_token_cant_change_settings_or_read_faces_or_list_devices(api):
+    client, devices, *_ = api
+    phone = {"Authorization": f"Bearer {devices.pair('phone')}"}
+    r = client.patch("/api/settings", json={"brain": {"host": "0.0.0.0"}}, headers=phone)
+    assert r.status_code == 403 and "paired device" in r.json()["detail"]
+    assert client.post("/api/settings/undo", headers=phone).status_code == 403
+    assert client.get("/api/eyes/faces", headers=phone).status_code == 403
+    assert (
+        client.post(
+            "/api/eyes/faces", json={"name": "Sam", "embeddings": []}, headers=phone
+        ).status_code
+        == 403
+    )
+    assert client.delete("/api/eyes/faces/Sam", headers=phone).status_code == 403
+    assert client.get("/api/bodies", headers=phone).status_code == 403
+    # What a phone is for still works, and Kit's own token still does everything.
+    assert client.get("/api/settings", headers=phone).status_code == 200
+    assert client.get("/api/life", headers=phone).status_code == 200
+    assert client.get("/api/eyes/faces", headers=AUTH).status_code == 200
+    assert client.get("/api/bodies", headers=AUTH).status_code == 200
+    assert client.patch("/api/settings", json={}, headers=AUTH).status_code == 200
 
 
 def test_hello_answers_with_what_the_brain_can_do(api):

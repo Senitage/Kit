@@ -31,7 +31,7 @@ Kit data folder/
 │   └── history/                 every earlier version, for undo
 ├── secrets/                     API keys and the API token (owner-only)
 ├── state/
-│   ├── memory.db                his memory: messages, facts, register, notebook, spend
+│   ├── memory.db                his memory: messages, facts, register, notebook, spend log
 │   ├── faces.json               people his eyes know (numbers, never pictures)
 │   ├── speech/                  his voice clip and recent speech
 │   └── evals/                   eval reports
@@ -62,6 +62,9 @@ flowchart LR
   `kit config restore`, or Undo on the settings page.
 - **Changes apply from the next message**. Nothing to restart, apart from the
   brain's own address and port.
+- **The file holds only what you changed.** Everything else is at its default,
+  so a default that moves in a Kit update reaches you without a hand edit.
+  `kit config show` prints the lot. See [[Settings Reference#What the file holds]].
 - The schema drives the pages, so a new setting shows up on the settings page,
   the desk app and home_app by itself.
 

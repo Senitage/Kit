@@ -25,7 +25,8 @@ related: ["[[Vision Stage 1]]", "[[Vision Stage 2]]", "[[Inner Life]]"]
   hand. They go into his thoughts, and arrivals and animals into his memory
   (`seen`), so "when did I get in this morning?" has an answer.
 - **Have a proper look** when you ask ("what am I holding?") with the
-  `look_around` action.
+  `look_around` action. In `cloud-only` routing that look goes to the cloud
+  chat model, as words ([[Privacy#What a cloud model sees of your PC and the room]]).
 - **Mind his manners**: no pipe-ups while you're on your phone or talking to
   someone, and nothing said out loud to an empty room.
 
@@ -77,6 +78,11 @@ flowchart LR
   deletes them.
 - **Settings come from the brain** (`[eyes]`), so there's one place to change
   them, and running eyes pick changes up.
+- **Reports go from their own thread**, so a slow or absent brain never holds
+  up the camera loop (a stall used to drop tracks, and with them who was who).
+  A newer report takes the place of one still waiting, and the events of a
+  report that didn't get through ("Dan sat down", "waved") go with the next
+  one that does, up to the hundred the brain takes in one report.
 
 ## The switch
 

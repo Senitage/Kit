@@ -19,6 +19,27 @@ next message and can be undone. How that works is in [[Settings and Data]].
 > `kit config show` prints what's in force now. A test checks every setting
 > is listed here.
 
+## What the file holds
+
+`settings.toml` starts with `schema_version = 2` and then holds **only what
+you changed**. A setting that isn't in the file is at its default, so when a
+default moves in a Kit update (a model's price or id in `models`, a voice
+engine's field in `speech.engines`, a line of his character in `persona`), it
+reaches you by itself. A built-in model or voice engine profile is written the
+same way, field by field; a profile you added yourself is written whole.
+
+- `kit config show` prints everything in force, defaults included; the file
+  is the short version. Set a value equal to its default and it leaves the
+  file.
+- A value you type into the file by hand is yours, even if it equals today's
+  default, until the next save from a page or `kit config set` tidies it out.
+- **Version 1 files** (before October 2026) held every value, chosen or not.
+  The first time Kit reads one he drops everything that was a default in
+  version 1 (the built-in profiles and persona lines of the day are kept in
+  the code for this; for every other setting, version 1's default is today's)
+  and rewrites the file as version 2, with no history entry. What you had
+  changed stays. See [[Updating Kit#Settings from an older Kit]].
+
 ## ollama
 
 The local model, run by Ollama on the server. See [[Models and Routing]].
@@ -80,7 +101,8 @@ Each profile has these fields:
 | `provider` | Who runs it. anthropic, openai and google need an API key in Kit's secrets folder; ollama runs on this machine. |
 | `model` | The provider's model id. |
 | `effort` | How hard the model thinks before answering. Higher costs more. |
-| `max_tokens` | Longest answer, thinking included, in tokens. |
+| `max_tokens` | Longest answer, thinking included, in tokens. 16000 unless set; the built-in `opus` profile has 32000, since an expert answer thinks at length first. |
+| `thinking` | Let the model think before it answers. Off, the first words come sooner; only Claude Haiku takes it (Sonnet and Opus always think). The built-in `haiku` profile has it off. |
 | `web_search` | Let the model search the web (the provider's own search). |
 | `input_usd_per_mtok` | Price per million input tokens. |
 | `cached_input_usd_per_mtok` | Price per million input tokens read from the prompt cache. |
@@ -117,11 +139,11 @@ Who Kit is and who he's with. See [[Who Kit Is]].
 | `owner` | `Dan` | Who Kit works for. |
 | `backstory` | built in | Who Kit is, in a sentence or two. |
 | `traits` | built in | Three to five core traits. |
-| `speech` | built in | How Kit talks. |
+| `speech` | built in | How Kit talks: his register, decided here and nowhere else. The default: "Plain, neutral English, warm and friendly: short sentences and everyday words, with no slang or regional expressions. One or two sentences unless asked for detail. Matter-of-fact rather than gushing, and never 'as an AI'." The two older defaults are read as this one. A style copied from a character is only how he sounds: he still calls himself by `name`. |
 | `location` | empty | Where the owner is, for weather and local searches, as 'city, state', e.g. Richmond, NSW. |
 | `country` | empty | The owner's country as a two-letter code, e.g. AU. |
 | `timezone` | empty | The owner's time zone, e.g. Australia/Sydney. |
-| `knows` | built in | What Kit knows about the owner. |
+| `knows` | "Only what they've told you so far; you're still getting to know them." | What Kit knows about the owner: who's at home, what they do for work, what they're into. A few lines in your own words; the built-in line says he's still getting to know you. Your real details belong here in your own `settings.toml`, never in the code: the repo is public. |
 | `rules` | built in | Rules Kit always follows. {owner} stands for the owner's name. |
 | `examples` | built in | Sample exchanges. Small models keep character best with a few of these. |
 
@@ -133,8 +155,8 @@ The brain's address and how conversations start and end. See [[Brain]].
 |---|---|---|
 | `host` | `127.0.0.1` | Address the brain listens on. 127.0.0.1 is this PC only; 0.0.0.0 lets the home network and Tailscale in. |
 | `port` | `8600` | Port for the chat page and API. |
-| `new_chat_after_minutes` | `120` | Start a fresh conversation when you come back after this long quiet (the old one stays in memory). 0 never does. |
-| `new_topic_below` | `0.45` | Start fresh when a message's meaning is this far from your last few (similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never count as a new topic. |
+| `new_chat_after_minutes` | `120` | Coming back after this long quiet, Kit picks up one thing from last time, as a new chat does; the conversation itself carries on, marked "(3 hours later)". 0 never does. |
+| `new_topic_below` | `0.45` | A message this far in meaning from your last few (similarity below this, 0 to 1) is noted as a change of subject beside it; the conversation is kept. 0 never does. Short or 'that/it' messages never count as a new topic. |
 | `history_messages` | `20` | Recent messages Kit sees each turn. |
 
 ## memory
@@ -144,6 +166,7 @@ How memories are found and kept. See [[Memory]].
 | Setting | Default | What it does |
 |---|---|---|
 | `embed_model` | `nomic-embed-text` | Ollama model that turns text into meaning vectors, so Kit can find memories by meaning as well as by words. Changing it re-indexes everything. |
+| `embed_keep_alive` | `24h` | How long the embedding model stays loaded after it was last used (Ollama's keep_alive, e.g. 24h, 30m, -1 for always). It is small, and recall needs it before every reply, so loading it again after a quiet spell would hold up the first answer. |
 | `query_prefix` | `search_query: ` | Text the embedding model wants before a search. |
 | `document_prefix` | `search_document: ` | Text the embedding model wants before stored text. |
 | `relevant_memories` | `8` | Memories recalled into each turn, most relevant first. |
@@ -151,7 +174,7 @@ How memories are found and kept. See [[Memory]].
 | `conversation_snippets` | `4` | Older conversation snippets recalled into each turn. |
 | `own_memories` | `3` | Entries from Kit's own notebook (his thoughts, opinions, moments and journal) recalled into each turn, most relevant first. |
 | `min_similarity` | `0.59` | How close in meaning a memory must be to count as relevant (0 to 1). It depends on the embedding model: `kit eval memory` suggests a value. |
-| `weight_floor` | `0.3` | Among relevant memories, the ones that matter more to your life and the ones recalled lately come first; this is the least an old, small one counts (0 to 1). 1 weighs them all the same. |
+| `weight_floor` | `0.3` | Among relevant memories, the ones that matter more to your life and the ones you told Kit or confirmed lately come first; this is the least an old, small one counts (0 to 1). 1 weighs them all the same. |
 | `now_days` | `14` | Days a 'now' memory lasts: how you've been or what's going on lately (flat out, crook, a visitor staying). Then it's forgotten; the day summaries keep the gist. |
 | `day_pass` | `work` | Who reads each finished day after midnight, writes its summary and sorts what's worth remembering about you into the right kinds. work: the work model (Sonnet), a few cents a night, with the local model stepping in if the cloud can't; a day with something you kept local always stays home. local: the local model only. |
 | `backups_keep` | `14` | Daily memory backups to keep. |
@@ -168,7 +191,10 @@ His inner life and the companion habits. See [[Inner Life]] and [[Companion]].
 | `max_per_hour` | `3` | Most times an hour Kit pipes up unprompted. |
 | `quiet_from` | `22:00` | Kit doesn't pipe up from this time... |
 | `quiet_until` | `07:00` | ...until this time. |
-| `sleep_after_minutes` | `10` | Kit dozes off after you've been away this long. |
+| `sleep_after_minutes` | `10` | Kit dozes off after you've been away this long. Dozing while you're out lasts about two naps, then he gets up for this long before dozing again. |
+| `naps` | on | Kit sometimes nods off for a nap when he's bored, nobody's talked to him for half an hour and nothing's going on, even with you at the PC. Never mid-conversation or in quiet hours, at most twice a day. Talking to him wakes him. |
+| `nap_minutes` | `20` | Roughly how long a nap lasts (give or take a third). |
+| `turns_in` | on | Past bedtime, once nobody's talked to him for a quarter of an hour, Kit goes to bed himself, even if you're still up. He gets up around the end of quiet hours. |
 | `think_every_minutes` | `8` | Roughly how often Kit has a private thought in a quiet moment while you're around. Things happening (you coming back, something new on screen, a build failing, a chat ending) prompt one sooner. |
 | `thoughts_per_hour` | `6` | Most thoughts Kit has in an hour (each is a quick local model call). 0 stops him thinking between conversations. |
 | `reflect_with` | `cloud` | Who writes Kit's journal and self-sheet each night. cloud: the work model, a few cents a day, logged as spend (the local model steps in if the cloud can't). local: the local model only. off: Kit doesn't reflect or change. |
@@ -182,7 +208,7 @@ His inner life and the companion habits. See [[Inner Life]] and [[Companion]].
 | `chat_opener` | on | When you come back to a new chat, Kit picks up one thing from the last one (how something went), the way a friend would. |
 | `interview` | on | Kit gets to know you by chat: at most one everyday question a day (your partner's name, the cat's, your mates, what you like doing), until he knows. He skips what he already knows. |
 | `nudges` | on | Once a day each: a nudge toward bed when you're still up past bedtime, and toward getting outside or seeing someone after a long stretch at the desk. |
-| `bedtime` | `22:30` | When Kit starts nudging you toward bed (with nudges on). |
+| `bedtime` | `22:30` | When Kit starts nudging you toward bed (with nudges on), and from when he may turn in himself (with turns_in on). |
 | `desk_hours` | `3.0` | Hours at the desk without a break before Kit nudges you outside (with nudges on, in the daytime). |
 | `work_triggers` | off | Kit gets curious about work apps and sites (code, Teams, Excel, GitHub) and reacts to builds and tests on screen. Off: only everyday things catch his eye. |
 | `alone_thoughts_per_hour` | `0` | While you're away and he's awake, Kit entertains himself (watching the weather, rereading yesterday's journal, thinking about someone in the register, listening to what's playing if the desk app shares it) and has this many private thoughts an hour about it, always with the local model, never in quiet hours. The desk face shows what he's doing. 0: he just waits, then dozes. |
@@ -219,6 +245,30 @@ The camera, read by `kit eyes` on the PC. See [[Eyes]].
 | `recognise` | on | Tell people apart by their faces, once they've been introduced with `kit eyes enrol NAME`. Kit keeps numbers worked out from a face, never pictures. |
 | `match` | `0.4` | How alike a face must be to someone Kit knows to count as them. Higher is stricter: fewer mix-ups, but more 'someone I don't know'. |
 
+## hearing
+
+The microphone, read by `kit hearing` on the PC. Sound never leaves that PC.
+See [[Hearing]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | on | Kit listens through a microphone when `kit hearing` is running on the PC with the mic. The tray's "Let Kit hear me" switch turns it off and on. |
+| `mic` | empty | Which microphone to use: part of its name, or its number from `kit hearing mics`. Empty uses the PC's default. |
+| `names` | `["Kit", "Kitt", "Ki", "Kid"]` | What Kit answers to. Said at the start or end of a sentence ("Kit, what's the weather?"), it means you're talking to him. After his name come the ways the ears sometimes write it; `kit hearing --words` shows what they hear, so add a word they often hear instead. |
+| `follow_up_s` | `8.0` | After Kit stops talking, this many seconds when you can answer him without saying his name. 0 means always say his name. |
+| `barge_in` | on | Talking over Kit stops him, as typing does. His own voice from the speakers doesn't count. |
+| `barge_in_ms` | `500` | How long you must talk over Kit before he stops (milliseconds). |
+| `laugh_s` | `10.0` | A laugh within this many seconds of Kit saying something makes him chuffed. 0 turns it off. |
+| `tone` | on | Kit notices how you sound (down, cross, cheerful). He may ask about it, never tells you how you feel. |
+| `match` | `0.45` | How alike a voice must be to someone Kit knows to count as them (`kit hearing enrol NAME`). Higher is stricter. |
+| `own_voice` | `0.5` | How alike a voice must be to Kit's own for him to know it's himself coming back from the speakers, while he's talking. It must also be more like him than like anyone he knows. Lower ignores more. |
+| `threshold` | `0.5` | How sure the voice detector must be that a sound is speech. Higher ignores more background noise, but may miss quiet speech. |
+| `pause_ms` | `600` | How long a pause ends what you're saying (milliseconds). Shorter answers sooner; too short cuts you off mid-thought. |
+| `min_speech_s` | `0.4` | Shorter sounds than this are ignored (a cough, a click). |
+| `max_speech_s` | `20.0` | Longest stretch of talking heard as one go. |
+| `language` | `en` | The language Kit's ears listen for: `en`, `zh`, `ja`, `ko`, `yue`, or `auto`, which works it out each time, a little less reliably. |
+| `threads` | `2` | Processor threads the speech models use on the mic's PC. Up to about half its cores makes the words come sooner. |
+
 ## speech
 
 His voice. See [[Voice]].
@@ -249,7 +299,8 @@ His voice. See [[Voice]].
 | `mood_speed` | kokoro and piper: speed change per emotion. |
 | `exaggeration` | chatterbox: how strongly each emotion is acted out, 0 to 2. |
 | `cfg_weight` | chatterbox: lower is slower and more deliberate. |
-| `mood_tags` | chatterbox-turbo: a sound that opens a reply in that emotion, such as [sigh] or [chuckle]. |
+| `mood_tags` | chatterbox-turbo: sounds that may open a reply in that emotion, such as `[sigh]` or `[chuckle]`; one is picked at random each time (a single sound works too). See [[Voice#Sounds in his voice]]. |
+| `mood_tag_chance` | chatterbox-turbo: how often a reply in one of those emotions opens with a sound (0.6: six in ten); the rest just start. |
 | `cuda_graph` | chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop. On by default. See [[Voice#Faster on a graphics card]]. |
 
 ## face
