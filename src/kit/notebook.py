@@ -213,14 +213,6 @@ def tomorrow_morning(now: datetime, wake: str) -> str:
     return morning(now.date() + timedelta(days=1), wake)
 
 
-def _later(when: datetime, now: datetime) -> str:
-    days = (when.date() - now.date()).days
-    part = "morning" if when.hour < 12 else "afternoon" if when.hour < 17 else "evening"
-    if days <= 0:
-        return f"this {part}"
-    return f"tomorrow {part}" if days == 1 else f"on {when:%A}"
-
-
 def later_want(text: str, owner: str) -> str:
     """What the owner asked to be asked later, as a want of Kit's own: "Ask me
     tomorrow how the shutdown went." is "Ask Dan how the shutdown went." When the ask
@@ -265,6 +257,18 @@ def thread_when(item: Item, like: datetime) -> When | None:
     except ValueError:
         return None
     return When(start, end, "", str(meta["span"]), part=str(meta.get("part", "")))
+
+
+def share_kind(item: Item | None) -> str:
+    """What kind of thing a pipe-up brought up, for counting how each kind lands
+    (kit.life ``piped_up``): a game, a nudge, a getting-to-know-you question, a
+    thread, a want or a thought; "" with nothing shared."""
+    if item is None:
+        return ""
+    for key in ("game", "nudge", "interview"):
+        if item.meta.get(key):
+            return key
+    return item.kind
 
 
 def aim_of(item: Item, owner: str, now: datetime | None = None) -> tuple[str, str]:
@@ -425,7 +429,8 @@ class Notebook:
     def said_in(self, text: str, owner: str) -> list[int]:
         """He just said ``text``: wants it brought up are said, so he doesn't ask
         again. A want counts when at least half the words saying what it's about
-        are there ("How did the shutdown go?" for "Ask Dan how the shutdown went")."""
+        are there ("How did the shutdown go?" for "Ask Dan how the shutdown went").
+        The fallback for a reply with no plan to say so (``brought_up``)."""
         words = _meaning(text)
         done = []
         for want in self.open_wants():
@@ -464,11 +469,12 @@ class Notebook:
         return None
 
     def on_mind(self, limit: int = 3, shared: bool = False) -> list[Item]:
-        """What's on his mind lately: what he wants to bring up (two at most, ones
-        for later last), then his newest thoughts and opinions. ``shared``: only what
-        may go to a cloud model (nothing from what Dan kept local)."""
-        # A thread waits till it's over: knowing it's coming, a small model asked early.
-        wants = [w for w in self.unsaid_wants() if w.kind != "thread" or self.due(w)]
+        """What's on his mind lately: what he wants to bring up (two at most), then his
+        newest thoughts and opinions. ``shared``: only what may go to a cloud model
+        (nothing from what Dan kept local). A want that isn't due yet (one for
+        tomorrow, a thread not over) stays in the journal till it is: shown under
+        "bring one up if it fits" with "not before" on it, a small model asked early."""
+        wants = [w for w in self.unsaid_wants() if self.due(w)]
         items = [w for w in wants if not (shared and w.meta.get("private"))][:2]
         for e in self.entries(limit=20):
             if len(items) >= limit:
@@ -482,18 +488,37 @@ class Notebook:
     def mind(self, owner: str, limit: int = 3, shared: bool = False) -> list[str]:
         """What's on his mind lately, as lines for his prompt: thoughts with how long
         ago, wants as what he means to do (``as_aim``) and when."""
+        return [line for _, line in self.mind_with_ids(owner, limit, shared)]
+
+    def mind_with_ids(
+        self, owner: str, limit: int = 3, shared: bool = False
+    ) -> list[tuple[int, str]]:
+        """``mind``, each line with the id of the item behind it, so the plan can say
+        which it brought up by number (``brought_up``)."""
         now = self._now()
 
         def line(e: Item) -> str:
             if e.kind not in ASKING:
                 return f"({ago(parse_time(e.created, now), now)}) {e.text}"
             aim, about = aim_of(e, owner, now)
-            after = self._after(e)
-            if after is None or now >= after:
-                return f"(you want to {aim}) {about}"
-            return f"(you want to {aim} {_later(after, now)}, not before) {about}"
+            return f"(you want to {aim}) {about}"
 
-        return [line(e) for e in self.on_mind(limit, shared)]
+        return [(e.id, line(e)) for e in self.on_mind(limit, shared)]
+
+    def brought_up(self, numbers: list[int], shown: list[int]) -> list[int]:
+        """The plan said which of the things on his mind (``shown``, the ids behind the
+        numbered lines) his reply brings up: the wants among them are said, so he
+        doesn't ask again. Returns their ids."""
+        done = []
+        for n in numbers:
+            if not 1 <= n <= len(shown):
+                continue
+            item = self.index.get(shown[n - 1])
+            if item is None or item.kind not in ASKING or item.meta.get("said"):
+                continue
+            self.mark_said(item.id)
+            done.append(item.id)
+        return done
 
     # Threads: what's coming up in Dan's life
 
@@ -772,16 +797,17 @@ class Notebook:
 
     def drop_slang(self, owner: str, rng: random.Random | None = None) -> list[str]:
         """Once: a slang quirk he picked goes for another, and his next reflection is
-        told to keep Australian slang out of his self-sheet and quirks. It crept into
-        his lines ("Oi", "mate", "reckon") and the owner didn't want it (2026-10-10).
+        told to keep slang out of his self-sheet and quirks. It crept into his lines
+        ("Oi", "mate", "reckon") and the owner didn't want it (2026-10-10); the register
+        itself (plain, neutral English) is the persona's voice, said once there.
         Returns the quirks that went."""
         if self.memory.self_value(PLAIN_KEY) is not None:
             return []
         gone = self._swap_out(SLANG_QUIRKS, rng)
         self.add_veto(
-            f"{owner} doesn't want you talking with Australian slang (no 'Oi', 'mate', "
-            f"'reckon', 'arvo', 'righto'), so keep it out of your self-sheet and quirks, and "
-            f"take out any that's there."
+            f"{owner} wants your self-sheet and quirks in the plain, neutral English of your "
+            f"voice: no slang or regional words ('Oi', 'mate', 'reckon', 'righto'). Take out "
+            f"any that's there."
         )
         self.memory.set_self_value(PLAIN_KEY, self._now().date().isoformat())
         return gone

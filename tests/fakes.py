@@ -10,10 +10,14 @@ from types import SimpleNamespace
 from kit.local_model import LocalModelError
 
 
-def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail="", **read):
-    """A canned reply. ``read`` is the model's reading of Dan's message (intent,
-    about_kit, said_it, crisis_candidate...; kit.reply.READING_FIELDS), which goes
-    in the reply JSON and into the plan a two-pass reply makes from it."""
+def reply(
+    *says, emotion="happy", gesture="nod", action="none", text="", detail="", brought_up=(), **read
+):
+    """A canned reply. ``brought_up`` numbers the things on his mind it brings up; the
+    two-pass fake carries them into its plan (kit.reply.Plan). ``read`` is the model's
+    reading of Dan's message (intent, about_kit, said_it, crisis_candidate...;
+    kit.reply.READING_FIELDS), which goes in the reply JSON and into the plan a
+    two-pass reply makes from it."""
     return json.dumps(
         {
             "emotion": emotion,
@@ -21,14 +25,21 @@ def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail=
             **read,
             "action": {"kind": action, "text": text},
             **({"detail": detail} if detail else {}),
+            **({"brought_up": list(brought_up)} if brought_up else {}),
         }
     )
 
 
-def plan(emotion="happy", gesture="nod", action="none", text="", **read):
+def plan(emotion="happy", gesture="nod", action="none", text="", brought_up=(), **read):
     """The first pass of a two-pass reply (kit.reply.Plan)."""
     return json.dumps(
-        {"emotion": emotion, "gesture": gesture, **read, "action": {"kind": action, "text": text}}
+        {
+            "emotion": emotion,
+            "gesture": gesture,
+            **read,
+            "brought_up": list(brought_up),
+            "action": {"kind": action, "text": text},
+        }
     )
 
 
@@ -96,6 +107,7 @@ class FakeModel:
                 "emotion": data.get("emotion", "neutral"),
                 "gesture": segments[0].get("gesture", "none"),
                 **{k: v for k, v in data.items() if k not in REPLY_KEYS},  # its reading
+                "brought_up": data.get("brought_up", []),
                 "action": data.get("action", {"kind": "none"}),
             }
         )
@@ -226,10 +238,13 @@ def make_cloud(memory, claude=None, key="sk-test", **providers):
 
 
 class Clock:
-    """A clock tests can move."""
+    """A clock tests can move. ``tz`` makes it zone-aware, as production's clock is
+    (``memory.local_now`` is ``datetime.now().astimezone()``, a fixed offset)."""
 
-    def __init__(self, when="2026-10-05T09:00:00"):
+    def __init__(self, when="2026-10-05T09:00:00", tz=None):
         self.now = datetime.fromisoformat(when)
+        if tz is not None and self.now.tzinfo is None:
+            self.now = self.now.replace(tzinfo=tz)
 
     def __call__(self):
         return self.now

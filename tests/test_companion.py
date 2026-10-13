@@ -662,8 +662,10 @@ def test_back_at_the_desk_he_says_hello_without_guilt(memory):
     event = brain.life.events_after(0)[-1]
     assert event["type"] == "pipe_up" and event["reason"] == "back"
     assert brain.life.homecoming is None and not brain.life.awaiting_reply
+    # The hello's own facts say how long Dan was gone, so the time line stays out
+    # rather than saying it twice.
     system = model.calls[0][0]["content"]
-    assert "Dan came back to the PC at 10:51 am, after 51 minutes away." in system
+    assert "came back to the PC" not in system
 
 
 def test_a_hello_is_not_judged_for_saying_the_same_thing_as_last_time(memory):

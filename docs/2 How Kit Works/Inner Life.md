@@ -32,7 +32,8 @@ his needs as bars. It only looks; nothing here can set them.*
 | Energy | follows the clock: sleepy late, a dip after lunch | sleep restores it |
 
 Out of these comes his **mood**: content, bored, curious, lonely, sleepy, or
-sulky after being ignored. Every half minute he may **fidget** (a sigh, a
+sulky after being ignored (a sulk passes by itself in forty minutes, and he
+forgets being ignored within the hour). Every half minute he may **fidget** (a sigh, a
 look around, a peek) with a gesture that suits it. His mood is also the face
 he wears between replies.
 
@@ -67,9 +68,13 @@ fresh by the model from what you're doing and what he's been thinking. He
 never pipes up in quiet hours (10 pm to 7 am), on a call, while his eyes see
 you on your phone or talking to someone, while you're typing, when you're
 away, right after a chat, or more than a few times an hour. With
-`life.hold_pipe_ups` what he wanted to say waits till you're free, and he says
-why he waited.
-Ignore him and he sulks a little and waits longer next time. Say **"shush"**
+`life.hold_pipe_ups` what he wanted to say waits till you're free (and for the
+same manners), and he says why he waited (then he isn't "butting in", whatever
+the keyboard says). Something he means to bring up later ("ask me tomorrow")
+stays in his notebook, out of his prompts, until it's due.
+Ignore him and he sulks a little and waits longer next time; being on a call
+or your phone isn't ignoring him. On a bad night he's never bored or curious at
+you: he checks in once, gently, and otherwise waits for you. Say **"shush"**
 or **"not now"** and he's quiet for an hour. `life.chattiness` turns him up
 or down.
 

@@ -139,7 +139,7 @@ Who Kit is and who he's with. See [[Who Kit Is]].
 | `owner` | `Dan` | Who Kit works for. |
 | `backstory` | built in | Who Kit is, in a sentence or two. |
 | `traits` | built in | Three to five core traits. |
-| `speech` | built in | How Kit talks. |
+| `speech` | built in | How Kit talks: his register, decided here and nowhere else. The default: "Plain, neutral English, warm and friendly: short sentences and everyday words, with no slang or regional expressions. One or two sentences unless asked for detail. Matter-of-fact rather than gushing, and never 'as an AI'." The two older defaults are read as this one. |
 | `location` | empty | Where the owner is, for weather and local searches, as 'city, state', e.g. Richmond, NSW. |
 | `country` | empty | The owner's country as a two-letter code, e.g. AU. |
 | `timezone` | empty | The owner's time zone, e.g. Australia/Sydney. |

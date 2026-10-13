@@ -130,6 +130,35 @@ progress, for how long, and what's been done so far. The slow answer arrives
 when it's ready, even if the page that asked has closed. `/api/status` lists
 it under `working_on`.
 
+## One voice, two asides at most
+
+Everything the model is told about how Kit sounds is said once: his voice
+(the persona's `speech`, plain neutral English), with one line saying it beats
+every other note on how he talks (his self-sheet, the example lines, his mood,
+his quirks). The example lines are for the tone; his mood and how cheeky to be
+(`life.cheek`) come as one sentence with this turn's part. Nothing is repeated
+"above all" at the end, and nothing says "not a help desk": a model given the
+same instruction eight ways drops one of them, and which one varied. The only
+reminder outside the system prompt is in the local model's second pass, where
+a small model's words are made ([[Inner Life In Depth#Two passes: deciding, then talking]]).
+
+An **aside** is a stage direction that rides beside your message in square
+brackets: the answer to something he piped up with, a hello when you're back,
+a bedtime nudge, "you're telling me something, not asking", picking up one
+thing from last time after a long quiet, a hint that the subject changed, your answer to a getting-to-know-you question, or
+staying with you on a bad night. One message can earn several, each wanting a
+different thing from a reply of one to three sentences, so **at most two go**,
+the best-ranked: a bad night first, then answering a pipe-up, then a hello,
+then one of the rest (bedtime, news, the opener, the interview, and last the
+new-subject hint). What the message is itself about (a goodbye, a question
+about himself, a fact to check, words that may mean a hard time) always goes. The ones left out aren't lost: a bedtime nudge is owed once
+either way, and a hello that isn't said is still in how he feels.
+
+When a model reads how you seem (`dan_mood`, `about`, `for_whom`, `expected`,
+and `brought_up` for what on his mind a reply brings up), the prompt says
+those fields are notes for himself, never said: their names are English words
+a model could otherwise echo. See [[Inner Life In Depth#Reading how you are]].
+
 ## Beyond answering
 
 The brain also runs Kit's **heartbeat** (drives, fidgets, pipe-ups and

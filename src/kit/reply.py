@@ -216,6 +216,12 @@ class Reply(BaseModel):
         )
 
 
+BROUGHT_UP = Field(
+    default_factory=list,
+    description="The numbers of the things on your mind lately that you bring up in this "
+    "reply, if any. Usually empty.",
+)
+
 # The reading fields, shared by both plans. They come before the action, so stopping
 # early at a "none" action keeps them, and each is None when the model left it out
 # (then the words decide, kit.brain.Reading).
@@ -244,8 +250,9 @@ class _Reads:
 class Plan(_Reads, BaseModel):
     """The quick first pass of a two-pass reply: how Kit feels, a gesture, his reading
     of the message (what it is, whether it's about him, whether a look is needed,
-    whether Dan really said what's being kept, whether it's real distress), and what
-    to do. His words come next, in plain text."""
+    whether Dan really said what's being kept, whether it's real distress), which of
+    the things on his mind he's bringing up, and what to do. His words come next, in
+    plain text."""
 
     model_config = ConfigDict(extra="forbid")
     emotion: Emotion
@@ -256,6 +263,7 @@ class Plan(_Reads, BaseModel):
     wants_camera_look: bool | None = _WANTS_CAMERA_LOOK
     said_it: bool | None = _SAID_IT
     crisis_candidate: bool | None = _CRISIS_CANDIDATE
+    brought_up: list[int] = BROUGHT_UP
     action: Action
 
     @classmethod
@@ -280,6 +288,7 @@ class ReadingPlan(_Reads, BaseModel):
     wants_camera_look: bool | None = _WANTS_CAMERA_LOOK
     said_it: bool | None = _SAID_IT
     crisis_candidate: bool | None = _CRISIS_CANDIDATE
+    brought_up: list[int] = BROUGHT_UP
     action: Action
 
 
@@ -305,6 +314,15 @@ def mood_read(text: str) -> dict[str, str] | None:
 
 
 _PLAN_FIELD = re.compile(r'"(emotion|gesture|kind)"\s*:\s*"([a-z_]+)"')
+_BROUGHT_UP = re.compile(r'"brought_up"\s*:\s*\[([0-9,\s]*)\]')
+
+
+def brought_up_in(text: str) -> list[int]:
+    """The numbers in a plan's ``brought_up``, from its JSON so far."""
+    found = _BROUGHT_UP.search(text)
+    return [int(n) for n in found.group(1).split(",") if n.strip()] if found else []
+
+
 _MOOD_FIELD = re.compile(r'"(dan_mood|about|for_whom|expected)"\s*:\s*"([a-z_]+)"')
 _READING_FIELD = re.compile(
     r'"(intent)"\s*:\s*"([a-z_]+)"|'
@@ -337,6 +355,7 @@ def early_plan(text: str, read: bool = False) -> Plan | None:
         return Plan(
             emotion=found["emotion"],
             gesture=found["gesture"],
+            brought_up=brought_up_in(text),
             action=Action(kind="none"),
             **reading_read(text),
         )

@@ -458,6 +458,9 @@ _V1_PERSONA: dict[str, list] = {
             "especially ones with other people.",
         ],
     ],
+    # Slang crept into every line from the first; the second said "casual" and "no
+    # slang" in one breath while other prompts pushed the other way. The register is
+    # now decided once, here.
     "speech": [
         "Short sentences, plain words, Australian-casual. One or two sentences unless asked "
         "for detail. Never gushes, never says 'as an AI'.",
@@ -509,9 +512,10 @@ class PersonaSettings(_Section):
         description="Three to five core traits.",
     )
     speech: str = Field(
-        "Short sentences, plain words, casual. One or two sentences unless asked for "
-        "detail. No slang. Never gushes, never says 'as an AI'.",
-        description="How Kit talks.",
+        "Plain, neutral English, warm and friendly: short sentences and everyday words, "
+        "with no slang or regional expressions. One or two sentences unless asked for "
+        "detail. Matter-of-fact rather than gushing, and never 'as an AI'.",
+        description="How Kit talks: his register, decided here and nowhere else.",
     )
     location: str = Field(
         "",

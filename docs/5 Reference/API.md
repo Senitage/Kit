@@ -91,7 +91,7 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | Method and path | What it does |
 |---|---|
 | `GET /api/life` | Mood, feeling and why, drives, thoughts, what's coming up |
-| `GET /api/life/events?after=N&wait=25` | Events for bodies, waiting up to `wait` seconds for a new one |
+| `GET /api/life/events?after=N&wait=25` | Events for bodies, waiting up to `wait` seconds for a new one; `resync: true` when events after N are already gone, so re-read `/api/life` |
 | `GET /api/life/notebook` | His notebook |
 | `DELETE /api/life/notebook/{id}` | Forget a notebook entry |
 | `POST /api/life/sheet/restore` | Give back an earlier self-sheet |
@@ -103,7 +103,9 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 (asleep or awake), `look`, `doing`, `quiet`, `dials`, `pipe_up` and
 `remembered` (a fact learned once a reply was out: `fact`, `decision` of
 `new`, `same` or `update`, and `replaced`). See
-[[Bodies]]. A `quiet` event says why he's keeping quiet (`because`) and, while
+[[Bodies]]. The last 200 are kept, and `look` events (every couple of
+seconds while someone's in view) the last few, apart, so they never push the
+others out. A `quiet` event says why he's keeping quiet (`because`) and, while
 his eyes see you busy, what his bubble should say (`bubble`). A `pipe_up`
 carries the line (`reply`), the line as his voice says it with any sounds
 (`voice`), whether to say it out loud (`aloud`: false when his eyes see

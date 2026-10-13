@@ -755,7 +755,7 @@ def test_local_replies_get_a_mood_fresh_examples_and_recent_lines(memory, clock)
     collect(brain.chat("Morning Kit"))
     first = model.calls[0][0]["content"]
     assert "How you feel right now:" in first and "haven't talked for 5 hours" in first
-    assert "never reuse these lines" in first
+    assert "The kind of thing you'd say" in first
     collect(brain.chat("whats up?"))
     collect(brain.chat("ok"))
     third = model.calls[2][0]["content"]
@@ -768,7 +768,7 @@ def test_examples_change_from_turn_to_turn(memory):
     brain, model, _ = make(memory, *[reply("Hi.")] * 6)
     for _ in range(6):
         collect(brain.chat("hi"))
-    shown = {c[0]["content"].split("never reuse these lines):")[1][:300] for c in model.calls}
+    shown = {c[0]["content"].split("your own words each time):")[1][:300] for c in model.calls}
     assert len(shown) > 1
 
 

@@ -14,11 +14,13 @@ Up: [[Home]] · Reference
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
+| **Aside** | A stage direction in square brackets beside your message (a hello, a bedtime nudge, a bad night); at most two ride with one message | [[Brain#One voice, two asides at most]] |
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
+| **Check-in** | The one gentle pipe-up he allows himself on a bad night, asking if you're okay | [[Inner Life In Depth#A bad night]] |
 | **Cheek** | How cheeky he is, 0 to 1 (`life.cheek`) | [[Inner Life]] |
 | **CUDA graph** | GPU work recorded once and replayed in one go; it makes Chatterbox Turbo's voice about 2.4 times faster | [[Voice#Faster on a graphics card]] |
 | **Data folder** | The one folder holding everything Kit owns | [[Settings and Data]] |
