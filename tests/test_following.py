@@ -136,7 +136,7 @@ def test_the_dentist_on_thursday_arvo_is_asked_about_thursday_evening_only(memor
     at(memory, "2026-10-07T09:00:00")  # Wednesday: not yet
     collect(brain.chat("Morning Kit"))
     assert brain.notebook.open_wants() == []
-    assert "dentist" not in model.calls[-1][0]["content"]  # not even on his mind yet
+    assert not any("dentist" in m for m in brain.notebook.mind("Dan"))  # not on his mind yet
     at(memory, "2026-10-08T17:30:00")  # Thursday evening
     brain.pc.update(snap())
     assert brain.notebook.open_wants()[0].id == thread.id

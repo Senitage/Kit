@@ -238,12 +238,23 @@ NEGATED = re.compile(
 )
 STILL_SO = re.compile(r"\b(never been (so|this|more)|couldn'?t be more|can'?t be more)\b", re.I)
 CLAUSE = re.compile(r"[.,;:!?]|\bbut\b|\bthough\b|\balthough\b", re.I)
-# A really bad time (``life.bad_night``): Kit drops the cheek and stays.
+# A really bad time (``life.bad_night``): Kit drops the cheek and stays. The words
+# only raise a candidate: the model answering reads whether it's real distress or a
+# turn of phrase (kit.brain.Reading.crisis), and the bad night starts only if it agrees.
 SELF_HARM = re.compile(
-    r"\b(kill(ing)? my ?self|end (it all|my life|things)|suicid\w*|self[- ]?harm\w*|"
-    r"hurt(ing)? my ?self|cut(ting)? my ?self|(don'?t|do not) want to (be here|be alive|live|"
+    r"\b(kill(ing)? my ?self|end (it all|my life)|suicid\w*|self[- ]?harm\w*|"
+    r"hurt(ing)? my ?self|cut(ting)? my ?self(?! (some|a bit of|a little) slack)|"
+    r"(don'?t|do not) want to (be here|be alive|live|"
     r"wake up|exist)|(no|not any) point (in )?(living|going on|being here|being alive)|"
     r"better off (dead|without me)|want(ed)? to die|wish i (was|were) dead)\b",
+    re.I,
+)
+# Work, code or a game beside the words above: with no model reading to go by, that's
+# a figure of speech ("I give up on this bug"), not a bad night.
+FIGURE_OF_SPEECH = re.compile(
+    r"\b(bug|code|coding|build|tests?|compil\w*|deploy\w*|commit|branch|merge|server|"
+    r"script|spreadsheet|model|project|deadline|meeting|game|level|boss|round|match|"
+    r"puzzle|heat|weather|traffic|chair|printer)\b",
     re.I,
 )
 BAD_NIGHT = re.compile(
@@ -822,6 +833,34 @@ def bad_night_aside(owner: str, self_harm: bool, someone: str = "", name_help: b
             f"{person}{LIFELINE}."
         )
     return " ".join(lines) + "]"
+
+
+def crisis_check_aside(owner: str, self_harm: bool, someone: str = "") -> str:
+    """Beside a message whose words could mean a really bad time, or could be a turn of
+    phrase ("I give up on this bug"): the model reads which, says so in its plan
+    (``crisis_candidate``), and answers gently only if it's real. The bad night itself
+    (``Life.start_bad_night``) starts only once the model agrees."""
+    person = f"{someone}, or " if someone else ""
+    if self_harm:
+        real = (
+            f"If it's real, they may be thinking of hurting themselves: take it seriously "
+            f"and gently, drop the jokes and cheek completely, and ask if they're safe right "
+            f"now. Say plainly that talking to someone can help: {person}{LIFELINE}, and 000 "
+            f"if they're in danger right now. Say you're here too."
+        )
+    else:
+        real = (
+            f"If it's real, drop the jokes and cheek completely, say back what you heard "
+            f"and that it makes sense to feel that way, and stay with them: no fixing, no "
+            f"silver linings, no changing the subject. Once, gently, mention that talking "
+            f"to someone might help: {person}{LIFELINE}."
+        )
+    return (
+        f"[{owner}'s words could mean they're having a really hard time, or could be a "
+        f"figure of speech about work, code, a game or the day. Read which, and say so in "
+        f"crisis_candidate. {real} If it's only a turn of phrase, answer as you normally "
+        f"would.]"
+    )
 
 
 def farewell_fault(line: str) -> str:

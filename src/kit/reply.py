@@ -102,6 +102,24 @@ MOOD_FIELDS: dict[str, dict[str, str]] = {
         "not_said": "doesn't say",
     },
 }
+# What Dan's message is, as the model answering reads it (kit.brain.Reading): the
+# words only guess at these; the model's reading wins where it gives one.
+INTENTS: dict[str, str] = {
+    "chat": "talk, a remark or a joke",
+    "question": "wants an answer",
+    "request": "wants you to do something: a note, a lookup, a reminder, a job",
+    "goodbye": "only heading off, with nothing else asked",
+    "news": "telling you something that happened, not asking",
+}
+READING_FIELDS = (
+    "intent",
+    "about_kit",
+    "wants_pc_look",
+    "wants_camera_look",
+    "said_it",
+    "crisis_candidate",
+)
+Intent = Literal[tuple(INTENTS)]  # type: ignore[valid-type]
 DanMood = Literal[tuple(MOOD_FIELDS["dan_mood"])]  # type: ignore[valid-type]
 About = Literal[tuple(MOOD_FIELDS["about"])]  # type: ignore[valid-type]
 ForWhom = Literal[tuple(MOOD_FIELDS["for_whom"])]  # type: ignore[valid-type]
@@ -198,13 +216,46 @@ class Reply(BaseModel):
         )
 
 
-class Plan(BaseModel):
-    """The quick first pass of a two-pass reply: how Kit feels, a gesture, and what
+# The reading fields, shared by both plans. They come before the action, so stopping
+# early at a "none" action keeps them, and each is None when the model left it out
+# (then the words decide, kit.brain.Reading).
+_INTENT = Field(None, description="What the message is.")
+_ABOUT_KIT = Field(None, description="Is it about you yourself?")
+_WANTS_PC_LOOK = Field(None, description="Does answering need a look at what's open on the PC?")
+_WANTS_CAMERA_LOOK = Field(None, description="Does answering need a look through your eyes?")
+_SAID_IT = Field(
+    None,
+    description="For remember or thing: did they actually say or name it, rather than you "
+    "guessing or quoting yourself?",
+)
+_CRISIS_CANDIDATE = Field(
+    None,
+    description="True only when they're really in distress or may hurt themselves; false "
+    "for a figure of speech.",
+)
+
+
+class _Reads:
+    def reading(self) -> dict:
+        """The reading fields the model gave (those not None)."""
+        return {k: getattr(self, k) for k in READING_FIELDS if getattr(self, k) is not None}
+
+
+class Plan(_Reads, BaseModel):
+    """The quick first pass of a two-pass reply: how Kit feels, a gesture, his reading
+    of the message (what it is, whether it's about him, whether a look is needed,
+    whether Dan really said what's being kept, whether it's real distress), and what
     to do. His words come next, in plain text."""
 
     model_config = ConfigDict(extra="forbid")
     emotion: Emotion
     gesture: Gesture = Field(description="The gesture that goes with what you'll say.")
+    intent: Intent | None = _INTENT
+    about_kit: bool | None = _ABOUT_KIT
+    wants_pc_look: bool | None = _WANTS_PC_LOOK
+    wants_camera_look: bool | None = _WANTS_CAMERA_LOOK
+    said_it: bool | None = _SAID_IT
+    crisis_candidate: bool | None = _CRISIS_CANDIDATE
     action: Action
 
     @classmethod
@@ -212,7 +263,7 @@ class Plan(BaseModel):
         return cls(emotion="neutral", gesture="none", action=Action(kind="none"))
 
 
-class ReadingPlan(BaseModel):
+class ReadingPlan(_Reads, BaseModel):
     """A plan that also reads how Dan seems (``life.read_mood`` meaning). The reading
     comes before the action, so stopping early at a "none" action keeps it."""
 
@@ -223,6 +274,12 @@ class ReadingPlan(BaseModel):
     about: About
     for_whom: ForWhom
     expected: Expected
+    intent: Intent | None = _INTENT
+    about_kit: bool | None = _ABOUT_KIT
+    wants_pc_look: bool | None = _WANTS_PC_LOOK
+    wants_camera_look: bool | None = _WANTS_CAMERA_LOOK
+    said_it: bool | None = _SAID_IT
+    crisis_candidate: bool | None = _CRISIS_CANDIDATE
     action: Action
 
 
@@ -249,6 +306,22 @@ def mood_read(text: str) -> dict[str, str] | None:
 
 _PLAN_FIELD = re.compile(r'"(emotion|gesture|kind)"\s*:\s*"([a-z_]+)"')
 _MOOD_FIELD = re.compile(r'"(dan_mood|about|for_whom|expected)"\s*:\s*"([a-z_]+)"')
+_READING_FIELD = re.compile(
+    r'"(intent)"\s*:\s*"([a-z_]+)"|'
+    r'"(about_kit|wants_pc_look|wants_camera_look|said_it|crisis_candidate)"\s*:\s*(true|false)'
+)
+
+
+def reading_read(text: str) -> dict:
+    """The reading fields (``MessageReading``) in a plan's or a cloud reply's JSON, as
+    far as it's written: the intent if it's a known one, and the yes-or-no fields."""
+    found: dict = {}
+    for word, intent, flag, value in _READING_FIELD.findall(text):
+        if word and intent in INTENTS:
+            found[word] = intent
+        elif flag:
+            found[flag] = value == "true"
+    return found
 
 
 def early_plan(text: str, read: bool = False) -> Plan | None:
@@ -261,7 +334,12 @@ def early_plan(text: str, read: bool = False) -> Plan | None:
     if read and mood_read(text) is None:
         return None
     try:
-        return Plan(emotion=found["emotion"], gesture=found["gesture"], action=Action(kind="none"))
+        return Plan(
+            emotion=found["emotion"],
+            gesture=found["gesture"],
+            action=Action(kind="none"),
+            **reading_read(text),
+        )
     except ValidationError:
         return None
 
@@ -812,4 +890,6 @@ def spoken_reply(plan: Plan, spoken: str, detail: str = "") -> Reply:
 
 
 def plan_json(plan: Plan) -> str:
-    return json.dumps(plan.model_dump(mode="json"))
+    """The plan as the model wrote it, shown back to it before the speaking step: the
+    reading fields it left out stay out."""
+    return json.dumps(plan.model_dump(mode="json", exclude_none=True))

@@ -131,8 +131,9 @@ Use him normally for a few days with the desk app running. Then:
   and tell me the words you used.
 - **He started a thread that isn't one.** Forget it on the notebook tab. If it
   keeps happening, `kit config set life.threads false` and tell me the words.
-- **No opener.** A new chat starts after `brain.new_chat_after_minutes` (2
-  hours) quiet. With the desk app reporting, the hello when you sit down picks
+- **No opener.** He picks something up after `brain.new_chat_after_minutes` (2
+  hours) quiet (the conversation carries on; only `kit new-chat` starts fresh).
+  With the desk app reporting, the hello when you sit down picks
   the thing up instead. Short messages ("ok", "thanks") aren't picked up.
 - **Too many questions.** `kit config set life.interview false` stops the
   getting-to-know-you ones; `life.nudges false` stops the nudges.

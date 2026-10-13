@@ -49,10 +49,16 @@ sequenceDiagram
    Kit is told, so on the phone he keeps it short and at the desk "this"
    means what's on screen. See [[Brain#Where you're talking from]].
 2. **He hears it before he answers.** Words like "legend", "stressed" or
-   "rough night" give him a feeling with a reason. A goodbye is noted, a hello
-   he owed you is folded in, and a quick **reaction** goes to the face straight
-   away (a perk, a wave, a wiggle) so you can see he heard. See [[Inner Life]]
-   and [[Companion]].
+   "rough night" give him a feeling with a reason. The words also give a first
+   **reading** of the message (a goodbye, news, about him, a bad-night
+   phrase), which the model's own reading replaces once it has read it
+   ([[Brain#The reading: judgement over keywords]]). If you said "keep it
+   local", the message is stored with that flag, read once, and nothing from
+   it reaches a cloud model. A goodbye is noted, a hello he owed you is folded
+   in, and a quick **reaction** goes to the face straight away (a perk, a
+   wave, a wiggle) so you can see he heard. A long quiet or a change of
+   subject is a note in the prompt, not a cut to the conversation. See
+   [[Inner Life]] and [[Companion]].
 3. **Quick answers skip the model.** "Yes" to a suggested note, a "shush", or
    a yes to a new entry in the register get answered on the spot.
 4. **He looks things up while he thinks.** If you asked the time or the
@@ -80,25 +86,29 @@ sequenceDiagram
    conversation read the same as last turn and a cloud model serves them from
    its cache. See [[Models and Routing#Caching]].
 8. **The answer.** The local model answers in two passes: a quick plan in JSON
-   (emotion, gesture, action), then his words in plain text, streamed as they
-   come. A cloud model answers in the same shape, streamed too, so he starts
+   (emotion, gesture, his reading of your message, action), then his words in
+   plain text, streamed as they come. His old turns are shown to the model as
+   the words he said, not the JSON, with one line reminding it of the shape. A cloud model answers in the same shape, streamed too, so he starts
    talking as soon as its first words arrive (`cloud.stream`). Either way the
    reply has **words**, an **emotion**, **gestures**, maybe an **action**, and
    maybe some **detail** to read on screen (code, steps, a link).
 9. **Actions.** If the plan says so, Kit does something and answers again
    with what he found: `recall` searches memory harder, `look_at_pc` reads the
-   full picture of your PC, `look_around` reads everything his eyes see,
-   `weather` gets the forecast, `ask_cloud` or `ask_expert` hands the question
-   up. `remember`, `note` and `thing` save something. See [[Brain#What he can do mid-answer]].
+   full picture of your PC (also when the plan's reading says a look is
+   wanted), `look_around` reads everything his eyes see, `weather` gets the
+   forecast, `ask_cloud` or `ask_expert` hands the question up. `remember`,
+   `note` and `thing` save something, when the reading says you actually said
+   or asked for it. See [[Brain#What he can do mid-answer]].
 10. **Out to the body.** Events stream back: his mood first, then his words,
     then `spoken` as soon as his words are complete (so his voice doesn't wait
     for the screen detail), then the finished reply. The desk app plays the
     emotion and gesture on his face, shows the words, and speaks each sentence
     as soon as it's whole. See [[Desk App]], [[Face]] and [[Voice]].
-11. **Afterwards.** The exchange is saved and indexed so it can be found
-    later, and a "remember that..." is learned, both in the background once
-    the reply is out, so the chat never waits for them; the bodies get a
-    `remembered` event when it's done. Everything else waits for tonight's
+11. **Afterwards.** What the model read changes how he feels, and a bad
+    night starts if the words raised one and the model agreed. The exchange is
+    saved and indexed so it can be found later, and a "remember that..." is
+    learned, both in the background once the reply is out, so the chat never
+    waits for them; the bodies get a `remembered` event when it's done. Everything else waits for tonight's
     day summary and his reflection. See [[Memory]] and [[Inner Life]].
 
 > [!TIP] Kit keeps talking while he works
@@ -108,7 +118,9 @@ sequenceDiagram
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/server.py`: `POST /api/chat` streams the events.
-> - `src/kit/brain.py`: `Brain.chat` and `_run_turn`, the whole journey above.
+> - `src/kit/brain.py`: `Brain.chat` and `_run_turn`, the whole journey above
+>   in five steps: `_read`, `_recall`, `_route`, `_converse_turn`, `_afterwards`.
+>   `Reading` is the message as read, by the words and then the model.
 > - `src/kit/recall.py`, `src/kit/prompt.py`, `src/kit/reply.py`: recall, the
 >   prompt and the shape of a reply.
 > - `src/kit/desk/chat.py`, `src/kit/desk/voice.py`: the desk side.

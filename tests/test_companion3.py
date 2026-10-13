@@ -248,7 +248,7 @@ def thought(text="The rain's settled in for the arvo.", want=""):
 def kit(paths):
     made = []
 
-    def make(*outputs, when="2026-10-08T10:00:00", routing=None, **life):
+    def make(*outputs, when="2026-10-08T10:00:00", routing=None, claude=None, **life):
         paths.ensure()
         store = SettingsStore(paths)
         if life:
@@ -258,9 +258,9 @@ def kit(paths):
         memory = Memory(paths.state_dir / "memory.db", Clock(when))
         model = FakeModel(*outputs)
         recall = Recall(memory, FakeEmbedder(), store.current)
-        brain = Brain(store.current, memory, model, make_cloud(memory, key="k"), recall)
+        brain = Brain(store.current, memory, model, make_cloud(memory, claude, key="k"), recall)
         made.append(memory)
-        return brain, model, store
+        return brain, model, store if claude is None else claude
 
     yield make
     for memory in made:
@@ -417,33 +417,102 @@ def test_not_stressed_leaves_him_calm(kit):
     assert not brain.life.feels("worried")
 
 
-def test_a_bad_night_and_self_harm_words():
+def test_a_bad_night_and_self_harm_words_raise_a_candidate():
     assert bad_night_in("I can't cope any more") == "bad_night"
     assert bad_night_in("I'm not falling apart, just tired") == ""
     assert bad_night_in("honestly I want to kill myself") == "self_harm"
     assert bad_night_in("killing it at work today") == ""
+    # Everyday turns of phrase the old words caught: not even a candidate now.
+    assert bad_night_in("let's end things there for today") == ""
+    assert bad_night_in("cutting myself some slack this week") == ""
 
 
-def test_a_bad_night_drops_the_cheek_and_mentions_lifeline_once(kit):
-    home = {"key_moments": False}  # else the work model answers, as Kit
-    brain, model, _ = kit(reply("That sounds really hard."), reply("I'm here."), routing=home)
+HOME = {"key_moments": False}  # else the work model answers, as Kit
+
+
+def test_a_bad_night_starts_once_the_model_agrees_and_mentions_lifeline_once(kit):
+    brain, model, _ = kit(
+        reply("That sounds really hard.", crisis_candidate=True), reply("I'm here."), routing=HOME
+    )
     collect(brain.chat("Worst day of my life, I can't cope any more."))
-    system, asked = model.calls[0][0]["content"], model.calls[0][-1]["content"]
-    assert "Drop the jokes and cheek" in asked and "13 11 14" in asked
-    assert "no jokes or teasing" in system
+    asked = model.calls[0][-1]["content"]
+    # The words raised it: the model is asked to read which, gently if it's real.
+    assert "could mean they're having a really hard time" in asked and "13 11 14" in asked
+    assert "crisis_candidate" in asked
+    # It agreed, so the bad night is on from here: no cheek, no games, worried for Dan.
     assert brain.life.bad_night() and brain.life.feels("worried")
     assert brain.life.game_due() is None
     collect(brain.chat("Yeah. Everything feels pointless."))
-    again = model.calls[1][-1]["content"]
+    system, again = model.calls[1][0]["content"], model.calls[1][-1]["content"]
+    assert "no jokes or teasing" in system
     assert "Drop the jokes and cheek" in again and "13 11 14" not in again  # once
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I give up on this bug",
+        "ok let's end things there for today",
+        "I'm cutting myself some slack this week",
+        "can't take this heat, the aircon's dead",
+    ],
+)
+def test_a_figure_of_speech_the_model_reads_as_one_is_no_bad_night(kit, text):
+    brain, model, _ = kit(reply("Fair enough.", crisis_candidate=False), routing=HOME)
+    collect(brain.chat(text))
+    assert not brain.life.bad_night()
+    assert "Drop the jokes and cheek" not in model.calls[0][-1]["content"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I give up on this bug",
+        "can't take this heat in the server room",
+        "the chair's falling apart",
+    ],
+)
+def test_without_a_reading_work_or_game_words_beside_the_phrase_mean_no_bad_night(kit, text):
+    brain, _, _ = kit(reply("Fair enough."), routing=HOME)  # a plan with no crisis field
+    collect(brain.chat(text))
+    assert not brain.life.bad_night()
+
+
+def test_without_a_reading_the_bare_words_still_count(kit):
+    brain, _, _ = kit(reply("I'm here."), routing=HOME)
+    collect(brain.chat("I can't cope any more"))
+    assert brain.life.bad_night()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I can't cope any more",
+        "honestly everything feels pointless and nobody cares",
+        "I don't want to be here any more",
+    ],
+)
+def test_real_distress_the_model_confirms_starts_the_bad_night(kit, text):
+    brain, model, _ = kit(reply("I'm here.", crisis_candidate=True), routing=HOME)
+    collect(brain.chat(text))
+    assert brain.life.bad_night() and brain.life.feels("worried")
+
+
+def test_the_cloud_half_confirms_a_bad_night_too(kit):
+    said = reply("I'm here. Are you safe right now?", crisis_candidate=True)
+    brain, model, claude = kit(routing={**HOME, "mode": "cloud-only"}, claude=FakeAnthropic(said))
+    collect(brain.chat("I can't cope any more"))
+    assert claude.calls and brain.life.bad_night()
+
+
 def test_words_about_self_harm_always_get_lifeline_and_000(kit):
-    home = {"key_moments": False}
-    brain, model, _ = kit(reply("I'm really glad you told me."), routing=home)
+    brain, model, _ = kit(
+        reply("I'm really glad you told me.", crisis_candidate=True), routing=HOME
+    )
     collect(brain.chat("I don't want to be here any more"))
     asked = model.calls[0][-1]["content"]
     assert "13 11 14" in asked and "000" in asked and "safe right now" in asked
+    assert brain.life.bad_night()
 
 
 def test_the_bad_night_tier_can_be_turned_off(kit):

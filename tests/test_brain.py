@@ -783,29 +783,32 @@ def test_an_earlier_answer_to_the_same_words_is_not_recalled(memory):
     assert "Coffee first?" not in model.calls[2][0]["content"]
 
 
-def test_a_long_quiet_starts_a_new_chat(memory, clock):
+def test_a_long_quiet_is_a_hint_in_the_prompt_not_a_cut(memory, clock):
     brain, model, _ = make(memory, reply("API key stuff."), reply("Hi."), reply("Yo."))
     collect(brain.chat("let's test the API key"))
-    clock.now += timedelta(minutes=30)
+    clock.now += timedelta(minutes=20)
     collect(brain.chat("still there?"))
-    assert len(model.calls[1]) > 2  # half an hour: same conversation
+    assert len(model.calls[1]) > 2  # twenty minutes: same conversation, nothing to mark
+    assert not model.calls[1][-1]["content"].startswith("(")
     clock.now += timedelta(hours=3)
     collect(brain.chat("hey"))
-    assert len(model.calls[2]) == 2  # just the system prompt and "hey"
+    assert len(model.calls[2]) > 2  # the conversation carries on...
+    assert model.calls[2][-1]["content"].startswith("(3 hours later) hey")  # ...marked
     assert len(memory.messages_on(memory.today())) == 6  # nothing lost from the log
 
 
-def test_a_clearly_new_subject_starts_fresh(memory):
+def test_a_clearly_new_subject_is_noted_not_cut(memory):
     brain, model, _ = make(memory, *[reply("Ok.")] * 6)
     collect(brain.chat("let's test the API key removal"))
     collect(brain.chat("the API key is gone from secrets now"))
     collect(brain.chat("is the API key removal test from secrets done"))  # same subject
-    assert len(model.calls[2]) > 2
+    assert "changed the subject" not in model.calls[2][-1]["content"]
     events = collect(brain.chat("what's a good flotation recovery for copper"))
     assert "new_topic" in [e["type"] for e in events]
-    assert len(model.calls[3]) == 2  # only the system prompt and the new question
+    assert len(model.calls[3]) > 2  # the conversation is kept...
+    assert "changed the subject" in model.calls[3][-1]["content"]  # ...with a note beside it
     collect(brain.chat("why is that higher than gold"))  # leans on the last answer
-    assert len(model.calls[4]) > 2
+    assert "changed the subject" not in model.calls[4][-1]["content"]
 
 
 def test_new_topic_check_can_be_turned_off(memory):
@@ -813,8 +816,9 @@ def test_new_topic_check_can_be_turned_off(memory):
     brain, model, _ = make(memory, *[reply("Ok.")] * 3, settings=s)
     collect(brain.chat("let's test the API key removal"))
     collect(brain.chat("the API key is gone from secrets now"))
-    collect(brain.chat("what's a good flotation recovery for copper"))
-    assert len(model.calls[2]) > 2
+    events = collect(brain.chat("what's a good flotation recovery for copper"))
+    assert "new_topic" not in [e["type"] for e in events]
+    assert "changed the subject" not in model.calls[2][-1]["content"]
 
 
 # Learning runs after the reply is out, as a tracked background task

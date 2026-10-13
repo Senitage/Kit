@@ -102,8 +102,22 @@ the games for the next three hours, listens and stays. He validates first,
 says one honest line after, and once in that time mentions someone you can
 talk to (by name, if he knows your partner or a mate) or Lifeline on 13 11 14.
 Anything about hurting yourself gets "are you safe right now?", Lifeline and
-000, every time. `life.bad_night` is on by default; it's the one stage 3
-change that is, because it matters most the first time it's needed.
+000. `life.bad_night` is on by default; it's the one stage 3 change that is,
+because it matters most the first time it's needed.
+
+The words only raise a **candidate**. "I give up on this bug", "let's end
+things there for today", "cutting myself some slack" and "can't take this
+heat" used to start three hours of no cheek and a Lifeline mention, which
+felt scripted and taught you to ignore the real one. Now a phrase that could
+mean a bad night puts a note beside your message asking the model to read
+which it is, and to answer gently (with Lifeline, and 000 for anything about
+hurting yourself) only if it's real; its plan says so in `crisis_candidate`.
+The bad night itself, with its three-hour window, the worried feeling and no
+games, starts only when the model agrees, and everything downstream is as
+before. If the model gave no reading at all (a one-pass local reply), the
+words alone count unless something in them says work, code or a game. The
+model's reading of your mood as "awful" (`life.read_mood`) still starts one
+on its own, as it did.
 
 ## Energy
 
@@ -653,9 +667,12 @@ always has the last few dollars.
 ## Two passes: deciding, then talking
 
 With `ollama.speak_pass` on (the default), the local model answers in two
-steps. First a quick JSON plan: his emotion, his gesture, and whether to look
-something up, hand over to the cloud or remember something. Then his words, in
-plain text, at a livelier setting (`ollama.speak_temperature`, `min_p`,
+steps. First a quick JSON plan: his emotion, his gesture, his reading of your
+message (what it is, whether it's about him, whether a look is wanted, whether
+you really said the thing he'd remember, whether it's real distress; see
+[[Brain#The reading: judgement over keywords]]), and whether to look something
+up, hand over to the cloud or remember something. Then his words, in plain
+text, at a livelier setting (`ollama.speak_temperature`, `min_p`,
 `top_k`, `top_p`, `repeat_penalty`, `repeat_last_n`; top_k 64 and top_p 0.95
 are what Gemma's makers suggest). Small models sound stiff when they write speech inside JSON;
 in plain text they sound more like themselves. He starts talking about half a
@@ -669,7 +686,10 @@ another line of chat there is dropped, since in the box it looked like he was
 answering himself. If he writes his plan again where his words should be
 (`{"emotion": ..., "gesture": ...}`), it's dropped, never shown, and he's asked
 again for plain words; JSON that got into earlier lines is kept out of what he
-sees of the chat, so he doesn't copy it. Cloud models write the same JSON, read
+sees of the chat, so he doesn't copy it. The speaking step says your message
+again and what the plan decided, then points back at the notes in the prompt
+(how he feels, his voice, the asides) in one line rather than repeating them,
+which a small model read twice in one turn. Cloud models write the same JSON, read
 as it streams in (`cloud.stream`): his mood as soon as it's written, then his
 words, so he starts talking within about a second. A goodbye or hello that's
 checked for guilt is still read whole first.

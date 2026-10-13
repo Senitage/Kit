@@ -10,22 +10,29 @@ from types import SimpleNamespace
 from kit.local_model import LocalModelError
 
 
-def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail=""):
+def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail="", **read):
+    """A canned reply. ``read`` is the model's reading of Dan's message (intent,
+    about_kit, said_it, crisis_candidate...; kit.reply.READING_FIELDS), which goes
+    in the reply JSON and into the plan a two-pass reply makes from it."""
     return json.dumps(
         {
             "emotion": emotion,
             "segments": [{"say": s, "gesture": gesture} for s in says],
+            **read,
             "action": {"kind": action, "text": text},
             **({"detail": detail} if detail else {}),
         }
     )
 
 
-def plan(emotion="happy", gesture="nod", action="none", text=""):
+def plan(emotion="happy", gesture="nod", action="none", text="", **read):
     """The first pass of a two-pass reply (kit.reply.Plan)."""
     return json.dumps(
-        {"emotion": emotion, "gesture": gesture, "action": {"kind": action, "text": text}}
+        {"emotion": emotion, "gesture": gesture, **read, "action": {"kind": action, "text": text}}
     )
+
+
+REPLY_KEYS = {"emotion", "segments", "action", "detail"}
 
 
 class FakeModel:
@@ -88,6 +95,7 @@ class FakeModel:
             {
                 "emotion": data.get("emotion", "neutral"),
                 "gesture": segments[0].get("gesture", "none"),
+                **{k: v for k, v in data.items() if k not in REPLY_KEYS},  # its reading
                 "action": data.get("action", {"kind": "none"}),
             }
         )

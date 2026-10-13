@@ -38,13 +38,32 @@ gestures is in [[Face]].
 ## Two passes when the local model talks
 
 With `ollama.speak_pass` on (the default), the local model answers in two
-steps: a quick plan in JSON (emotion, gesture, action), then his words in
-plain text at a livelier temperature. Small models sound stiff when they
-write speech inside JSON; in plain text they sound like themselves. His
-opening is checked against what he said lately, so he doesn't repeat himself.
-Cloud models answer in the same JSON, read as it streams in, so he starts
-talking as soon as the first words arrive. More in [[Inner Life In Depth]],
-under "Two passes".
+steps: a quick plan in JSON (emotion, gesture, his **reading** of your
+message, action), then his words in plain text at a livelier temperature.
+Small models sound stiff when they write speech inside JSON; in plain text
+they sound like themselves. His opening is checked against what he said
+lately, so he doesn't repeat himself. The speaking step points back at the
+notes in the prompt (how he feels, his voice, the asides) rather than
+repeating them. Cloud models answer in the same JSON, read as it streams in,
+so he starts talking as soon as the first words arrive. More in
+[[Inner Life In Depth]], under "Two passes".
+
+## The reading: judgement over keywords
+
+The words of a message only **guess** what it is. Hello, goodbye, news, a
+question about Kit himself, a "..., isn't it?", a question about the PC or
+the room, a bad-night phrase: each has a table of words that fires as the
+message arrives, and shapes the first prompt. Then the model that answers
+gives its own reading, in the plan (or a cloud reply): `intent` (chat,
+question, request, goodbye, news), `about_kit`, `wants_pc_look`,
+`wants_camera_look`, `said_it` (did you actually say the thing he wants to
+remember or put in the register) and `crisis_candidate`. Where the model gave
+a field, it decides everything after: a `remember` goes ahead on `said_it`,
+not on a word count; a note is taken on a `request`, not a phrase; a look at
+the PC the words missed still happens; a bad night starts only when the
+model agrees ([[Inner Life In Depth#A bad night]]). Where it left a field out
+(a small model forgot it, or the one-pass local reply, whose schema has no
+room for it), the words decide as before.
 
 ## What he can do mid-answer
 
@@ -92,12 +111,14 @@ couple of minutes ago he's told so, and that it may be old news. See
 
 - **One conversation**, shared by every way in. The model sees the last
   `brain.history_messages` (20) messages.
-- **A new chat** starts when you come back after `brain.new_chat_after_minutes`
-  (2 hours) quiet, and opens by picking up one thing from the last
-  ([[Companion]]). `kit new-chat` starts one by hand. The old one stays in
-  memory.
-- **A new topic** starts fresh when a message is far in meaning from your last
-  few (`brain.new_topic_below`).
+- **A long quiet** (`brain.new_chat_after_minutes`, 2 hours) is a hint, not a
+  cut: your message is marked "(3 hours later)" and he picks up one thing from
+  last time ([[Companion]]), but the conversation carries on, so a reset after
+  dinner no longer makes him forget what you were just doing. `kit new-chat`
+  (and the desk app's New chat) still starts fresh by hand.
+- **A new topic** (a message far in meaning from your last few,
+  `brain.new_topic_below`) gets a note beside it saying you've changed the
+  subject; the conversation is kept.
 - **Settings are read every turn**, so a change on the settings page applies
   from the next message, with no restart.
 
@@ -124,7 +145,7 @@ thoughts), the **nightly upkeep** (day summaries, reflection, backups) and the
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/brain.py`: the conversation loop, actions, pipe-ups, thoughts.
 > - `src/kit/prompt.py`: what the model sees each turn.
-> - `src/kit/reply.py`: the reply shape, emotions and gestures, the streaming reader.
+> - `src/kit/reply.py`: the reply shape, the plan and its reading fields, emotions and gestures, the streaming reader.
 > - `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.
 > - `src/kit/channels.py`: where you're talking from.
 > - `src/kit/server.py`: the pages, the API and the background loops.

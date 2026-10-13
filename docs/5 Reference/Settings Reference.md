@@ -134,8 +134,8 @@ The brain's address and how conversations start and end. See [[Brain]].
 |---|---|---|
 | `host` | `127.0.0.1` | Address the brain listens on. 127.0.0.1 is this PC only; 0.0.0.0 lets the home network and Tailscale in. |
 | `port` | `8600` | Port for the chat page and API. |
-| `new_chat_after_minutes` | `120` | Start a fresh conversation when you come back after this long quiet (the old one stays in memory). 0 never does. |
-| `new_topic_below` | `0.45` | Start fresh when a message's meaning is this far from your last few (similarity below this, 0 to 1). 0 never does. Short or 'that/it' messages never count as a new topic. |
+| `new_chat_after_minutes` | `120` | Coming back after this long quiet, Kit picks up one thing from last time, as a new chat does; the conversation itself carries on, marked "(3 hours later)". 0 never does. |
+| `new_topic_below` | `0.45` | A message this far in meaning from your last few (similarity below this, 0 to 1) is noted as a change of subject beside it; the conversation is kept. 0 never does. Short or 'that/it' messages never count as a new topic. |
 | `history_messages` | `20` | Recent messages Kit sees each turn. |
 
 ## memory

@@ -71,8 +71,10 @@ never an invented afternoon.
 - **A bad night**: when you sound like you're having a really rough time, he
   drops the cheek and the games for the next three hours, listens and stays,
   and once mentions someone you can talk to or Lifeline (13 11 14). Anything
-  about hurting yourself gets "are you safe right now?", Lifeline and 000,
-  every time. This one is on by default.
+  about hurting yourself gets "are you safe right now?", Lifeline and 000.
+  The words only raise it; the model answering confirms it's real, so "I give
+  up on this bug" stays a bug ([[Inner Life In Depth#A bad night]]). This one
+  is on by default.
 - **Honest, not a yes-man**: he corrects a wrong fact kindly, sticks to his
   opinions, and asks one question at most.
 - **Closeness** grows slowly as you get on (getting to know you, warming up,

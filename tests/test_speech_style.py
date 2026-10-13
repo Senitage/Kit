@@ -60,6 +60,6 @@ def test_a_new_style_makes_his_self_sheet_out_of_date():
     assert basis(PersonaSettings(speech=STYLE)) != basis(default)
 
 
-def test_the_local_speaking_step_says_his_style_again():
+def test_the_local_speaking_step_points_back_at_his_style_rather_than_repeating_it():
     note = speak_note(Action(kind="none"), "Dan", "sonnet", "opus", speech=STYLE)
-    assert f"Your voice: {STYLE}" in note
+    assert STYLE not in note and "your voice" in note  # one short reminder, no second copy

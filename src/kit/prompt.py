@@ -4,7 +4,6 @@ conversation."""
 
 from __future__ import annotations
 
-import json
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -16,12 +15,11 @@ from kit.recall import Recalled
 from kit.reply import (
     EMOTIONS,
     GESTURES,
+    INTENTS,
     MOOD_FIELDS,
     Action,
     Reply,
     ReplyError,
-    Segment,
-    reply_json,
     without_plans,
     written,
 )
@@ -131,12 +129,46 @@ REPLY_SHAPE = (
 )
 
 
+# The reading of Dan's message (kit.reply.READING_FIELDS) goes before the action in
+# every cloud reply, where the plan has it too.
+READING_SHAPE = (
+    '"intent": "chat", "about_kit": false, "wants_pc_look": false, '
+    '"wants_camera_look": false, "said_it": false, "crisis_candidate": false, '
+)
+REPLY_SHAPE = REPLY_SHAPE.replace('"action"', READING_SHAPE + '"action"', 1)
 REPLY_SHAPE_READ = REPLY_SHAPE.replace(
-    '"action"',
+    '"intent"',
     '"dan_mood": "fine", "about": "nothing", "for_whom": "no_one", "expected": "not_said", '
-    '"action"',
+    '"intent"',
     1,
 )
+
+
+def reading_lines(owner: str, pc: bool = False, scene: bool = False) -> list[str]:
+    """How to read the owner's message, for the reading fields (kit.reply.Plan). The
+    words it uses only guess at these; the reading here decides. The looks are offered
+    only where there's a PC (``pc``) or eyes (``scene``) to look at."""
+    kinds = "; ".join(f"{k} ({v})" for k, v in INTENTS.items())
+    looks = []
+    if pc:
+        looks.append(
+            f"- wants_pc_look: true when answering needs to know what's open on {owner}'s PC."
+        )
+    if scene:
+        looks.append("- wants_camera_look: true when answering needs a look through your eyes.")
+    return [
+        f"Your reading of {owner}'s message, by what it means, not single words:",
+        f"- intent: {kinds}. A message that heads off but also asks for something is a "
+        f"request, not a goodbye.",
+        "- about_kit: true when it's about you yourself (how you feel, why you went quiet, "
+        "what you can see, whether you're real); false for 'how do you feel about X'.",
+        *looks,
+        f"- said_it: for remember or thing, true when {owner} actually said or named it in "
+        f"this conversation; false when it's your own line, a guess or something you saw.",
+        f"- crisis_candidate: true only when {owner} is really in distress or may hurt "
+        f"themselves. Ordinary talk that borrows strong words ('I give up on this bug', "
+        f"'can't take this heat', 'let's end things there for today') is false.",
+    ]
 
 
 def mood_lines(owner: str) -> list[str]:
@@ -287,7 +319,8 @@ def system_prompt(
             "",
             "First answer only with JSON: the emotion you feel, a gesture, "
             + ("how {owner} seems, " if reading else "").format(owner=owner)
-            + "and an action. You'll be asked for your words right after, in plain text.",
+            + f"your reading of {owner}'s message, and an action. You'll be asked for your "
+            "words right after, in plain text.",
         ]
     else:
         lines += [
@@ -295,6 +328,7 @@ def system_prompt(
             "Answer only with JSON: an emotion, one to three short segments (each a gesture "
             "plus a sentence to say), "
             + ("how {owner} seems, " if reading else "").format(owner=owner)
+            + (f"your reading of {owner}'s message, " if cloud else "")
             + "an action, and detail.",
         ]
     if cloud:
@@ -302,6 +336,8 @@ def system_prompt(
         lines.append(f"No code fences or text outside the JSON. Its shape: {shape}")
     if reading:
         lines += mood_lines(owner)
+    if planning or cloud:  # the one-pass local reply has no room for it in its schema
+        lines += reading_lines(owner, pc=bool(pc), scene=bool(scene))
     lines += [
         "Emotions: " + "; ".join(f"{k} ({v})" for k, v in EMOTIONS.items()) + ".",
         "Gestures: " + "; ".join(f"{k} ({v})" for k, v in GESTURES.items()) + ".",
@@ -522,10 +558,11 @@ def speak_note(
 ) -> str:
     """The second step of a two-pass reply: say it, in plain words, as himself. It
     follows the plan, where Dan's message would be. ``heard`` is Dan's message, said
-    again here so a small model answers it rather than an earlier one. ``mind`` is the
-    turn's asides (a goodbye, a hello, what's true about him), said again for the same
-    reason: two messages back, a small model loses them. ``speech`` is how he talks,
-    said again for the same reason."""
+    again here so a small model answers it rather than an earlier one. ``mind`` is
+    anything new since the plan (what's true about Kit, when the plan read the
+    message as about him); the asides, his feeling and his voice are already in the
+    instructions and get one short reminder, not a second copy. ``voice`` and
+    ``speech`` are kept for callers but no longer repeated."""
     what = SPEAK_FOR.get(action.kind, SPEAK_FOR["none"]).format(
         owner=owner, helper=helper, expert=expert, text=action.text.strip()
     )
@@ -533,12 +570,13 @@ def speak_note(
     if len(heard) > HEARD_CHARS:
         heard = heard[:HEARD_CHARS].rsplit(" ", 1)[0] + "..."
     said = f'{owner} just said: "{heard}". ' if heard else ""
-    feel = f" You feel {voice.feeling}; be {voice.style}." if voice else ""
     mind = " ".join(mind.replace("[", "").replace("]", "").split())
-    keep = f" Keep in mind: {mind}" if mind else ""
-    talk = f" Your voice: {speech}" if speech else ""
+    keep = f" Also: {mind}" if mind else ""
+    # The asides, his feeling, the style and his voice are all in the instructions
+    # already; one short reminder points back at them rather than saying them again.
+    remind = " Keep to the notes above (how you feel, your voice, what to keep in mind)."
     return (
-        f"[Not from {owner}. {said}{what}{keep}{feel}{talk} Say it as yourself, in plain "
+        f"[Not from {owner}. {said}{what}{keep}{remind} Say it as yourself, in plain "
         f"spoken words: one to three short sentences. No JSON, no quotes around it, no stage "
         f"directions or emojis, and nothing you've said before. If {owner} asked for "
         f"something to read (a list, steps or code), say one short line, then a blank "
@@ -778,40 +816,54 @@ def recall_results(query: str, hits: list[Hit], owner: str) -> str:
 
 
 HISTORY_DETAIL_CHARS = 600
+# Under Kit's latest line when he answers in JSON: his old turns are shown as words
+# (about 60 tokens less each than the JSON), so one line keeps the shape in mind.
+JSON_REMINDER = "(Shown as my words here; I answer in the JSON shape.)"
 
 
 def history_messages(
     history: list[Message], channel: str | None = None, plain: bool = False
 ) -> list[dict]:
-    """Past turns in chat form. Kit's turns are shown as the JSON it gave, which
-    keeps the model answering in that format, or as the words he said with
-    ``plain`` (the two-pass reply, whose words are plain text). Only Kit's latest
-    reply keeps its written detail (cut short so it doesn't crowd the local model's
-    context), for "explain step 3"; older detail is dropped, or a small model copies
-    it under every answer. Messages that came in another way than ``channel`` say
-    where from, e.g. "(from their phone)"."""
+    """Past turns in chat form. Kit's turns are shown as the words he said, never the
+    JSON he gave: that cost about 60 tokens a message and had the model copy its old
+    detail. Unless ``plain`` (the two-pass reply, whose words are plain text anyway),
+    his latest turn ends with a one-line reminder of the shape to answer in. Only
+    Kit's latest reply keeps its written detail (cut short so it doesn't crowd the
+    local model's context), for "explain step 3"; older detail is dropped, or a small
+    model copies it under every answer. Messages that came in another way than
+    ``channel`` say where from, e.g. "(from their phone)"."""
     out = []
     last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
     for i, m in enumerate(history):
         if m.role == "user":
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
-            later = _later(history[i - 1].at, m.at) if i else ""
+            later = later_note(history[i - 1].at, m.at) if i else ""
             out.append({"role": "user", "content": later + note + m.text})
-        elif plain:
-            out.append({"role": "assistant", "content": _plain(m, keep_detail=i == last_kit)})
         else:
-            short = _short(m.reply_json, keep_detail=i == last_kit)
-            out.append({"role": "assistant", "content": short or _as_json(m.text)})
+            words = _plain(m, keep_detail=i == last_kit)
+            if not plain and i == last_kit:
+                words = f"{words}\n\n{JSON_REMINDER}"
+            out.append({"role": "assistant", "content": words})
     return out
+
+
+def new_subject_note(owner: str) -> str:
+    """Beside a message far in meaning from the last few: the chat so far is kept,
+    but it isn't what this is about (the model kept bringing the API key testing up)."""
+    return (
+        f"[{owner} has changed the subject, by the look of it. Answer this on its own; "
+        f"leave the earlier conversation unless {owner} brings it back.]"
+    )
 
 
 GAP_SHOWN = timedelta(minutes=30)  # a pause this long in the chat is marked in the history
 
 
-def _later(before: str, at: str) -> str:
+def later_note(before: str, at: str) -> str:
     """ "(2 hours later) " in front of a message that came after a long pause, so the
-    model can tell an old chat from a running one."""
+    model can tell an old chat from a running one. This is all a long quiet does to
+    the conversation now: it's a hint, not a cut."""
     try:
         gap = datetime.fromisoformat(at) - datetime.fromisoformat(before)
     except (TypeError, ValueError):
@@ -834,30 +886,3 @@ def _plain(m: Message, keep_detail: bool) -> str:
         detail = detail[:HISTORY_DETAIL_CHARS] + " [...]"
     text = without_plans(reply.text) or "..."
     return f"{text}\n\n{detail}" if detail else text
-
-
-def _short(reply_json: str | None, keep_detail: bool = True) -> str | None:
-    if not reply_json:
-        return None
-    try:
-        data = json.loads(reply_json)
-    except ValueError:
-        return reply_json
-    detail = data.get("detail") or ""
-    if detail and not keep_detail:
-        data["detail"] = ""
-        return json.dumps(data)
-    if len(detail) > HISTORY_DETAIL_CHARS:
-        data["detail"] = detail[:HISTORY_DETAIL_CHARS] + " [...]"
-        return json.dumps(data)
-    return reply_json
-
-
-def _as_json(text: str) -> str:
-    return reply_json(
-        Reply(
-            emotion="neutral",
-            segments=[Segment(say=text, gesture="none")],
-            action=Action(kind="none"),
-        )
-    )
