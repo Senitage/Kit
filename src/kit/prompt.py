@@ -298,6 +298,13 @@ def system_prompt(
         ),
         "- Use what you remember naturally, the way a friend would, and only what's below "
         "or in the conversation: anything else, you don't know yet.",
+        "- What you've said in this conversation about your own day (what you did while "
+        f"{owner} was out, your naps) is true. Never take it back, say you made it up or "
+        "apologise for lying; if you're asked about it, answer plainly from what you know.",
+        f"- Your name is {name}. When you talk about yourself, use 'I' or {name}, never "
+        "another name, even when you talk like someone else: "
+        "that's only how you sound, not who you are. Earlier lines where you used another "
+        "name were a slip; don't repeat them.",
         f"- {everyday(owner)}",
     ]
     if cloud:

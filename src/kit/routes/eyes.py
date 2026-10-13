@@ -24,12 +24,13 @@ def _eyes_paused(state: State) -> bool:
 @router.post("/api/eyes/scene", dependencies=AUTH)
 def eyes_report(state: State, report: SceneReport) -> dict:
     """The eyes' report (kit.eyes): who and what is in view, what just happened.
-    The answer carries the switch and the eyes' settings, so a running pair
-    of eyes follows changes to either."""
+    The answer carries the switch, whether Kit's asleep and the eyes' settings,
+    so a running pair of eyes follows changes to any of them."""
     state.brain.saw(report)
     return {
         "ok": True,
         "paused": _eyes_paused(state),
+        "asleep": state.brain.life.asleep,  # shut eyes let the camera and their models go
         "settings": state.store.current().eyes.model_dump(),
         "faces_version": state.faces.version,
     }

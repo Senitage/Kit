@@ -111,7 +111,8 @@ def test_the_camera_seeing_someone_arrive_while_dan_types_is_no_hello():
     life.on_scene([Happening("arrived", "Someone sat down.", away_s=1200)])
     assert life.homecoming is None  # five minutes isn't worth a hello
     # Nothing from the keyboard for an hour: his eyes are right, and he says hello.
-    life, pc, clock = setup(eyes=True)
+    # (Awake still: asleep, his eyes never wake him or greet anyone.)
+    life, pc, clock = setup(eyes=True, sleep_after_minutes=240)
     clock.now += timedelta(hours=1)
     pc.update(snap(idle=3600))
     life.on_report()

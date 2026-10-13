@@ -11,6 +11,7 @@ from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
     EVERYDAY_KEY,
     FOR_LATER,
+    OWN_NAME_KEY,
     PLAIN_KEY,
     Notebook,
     as_aim,
@@ -286,3 +287,12 @@ def test_slang_is_dropped_once(memory):
     assert "no slang" in book.vetoes()[-1]  # his reflection takes it out of the sheet
     assert memory.self_value(PLAIN_KEY) is not None
     assert book.drop_slang("Dan") == [] and len(book.vetoes()) == 1  # only once
+
+
+def test_keeps_his_own_name_once(memory):
+    # A voice copying a character had Kit calling himself by the character's name.
+    book = Notebook(memory)
+    assert book.keep_own_name("Dan", "Kit")
+    assert "Your name is Kit" in book.vetoes()[-1]  # his reflection takes other names out
+    assert memory.self_value(OWN_NAME_KEY) is not None
+    assert not book.keep_own_name("Dan", "Kit") and len(book.vetoes()) == 1  # only once

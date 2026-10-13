@@ -123,6 +123,7 @@ AIMS = "ask|tell|remind|show|let|check in with|check with|chase"
 RETIRED_KEY = "quirks_retired"
 EVERYDAY_KEY = "quirks_everyday"  # the day his work quirks were swapped (once)
 PLAIN_KEY = "slang_dropped"  # the day he was told to drop Australian slang (once)
+OWN_NAME_KEY = "own_name"  # the day he was told to call himself only by his own name (once)
 VETOES_KEY = "vetoes"  # what Dan undid, so the next reflection doesn't do it again
 MAX_VETOES = 10
 
@@ -811,6 +812,21 @@ class Notebook:
         )
         self.memory.set_self_value(PLAIN_KEY, self._now().date().isoformat())
         return gone
+
+    def keep_own_name(self, owner: str, name: str) -> bool:
+        """Once: his next reflection is told to call himself only by his own name and
+        take any other out of his self-sheet and quirks. A speech style copying a
+        character ("speak like ...") had him calling himself by the character's name
+        (2026-10-12). True when the note was added."""
+        if self.memory.self_value(OWN_NAME_KEY) is not None:
+            return False
+        self.add_veto(
+            f"Your name is {name}. A voice {owner} picks for you is only how you sound, so "
+            f"never call yourself by any other name, and take any other name for yourself "
+            f"out of your self-sheet and quirks."
+        )
+        self.memory.set_self_value(OWN_NAME_KEY, self._now().date().isoformat())
+        return True
 
     def _picked(self) -> list[str]:
         """The quirks he has picked, without picking any if he hasn't yet."""

@@ -175,6 +175,11 @@ def test_dan_coming_back_ends_the_pastime_and_the_hello_says_what_he_did():
     # A restart remembers what he did today.
     again = Life(life.settings, pc, clock, random.Random(2), store)
     assert "watching the rain" in again.did_line("Dan")
+    # Every later reply knows it's true, so he never "owns up" to making it up.
+    for _ in range(3):
+        life.note_chat("so what else?")
+        when = life.voice("Dan", [], [], []).when
+        assert "watching the rain" in when and "never say you made it up" in when
 
 
 def test_pastimes_follow_his_strongest_drive_and_rest_between_goes():
@@ -652,7 +657,9 @@ def test_winning_the_bet_and_a_forecast_thats_down():
 
 
 def test_late_nights_tire_him_and_sleep_restores_him():
-    life, pc, clock = setup("2026-10-08T22:30:00", energy_need=True, quiet_from="23:59")
+    life, pc, clock = setup(
+        "2026-10-08T22:30:00", energy_need=True, quiet_from="23:59", turns_in=False
+    )
     pc.update(snap(idle=5))
     for _ in range(6 * 60 * 2):  # up till 04:30, chatting
         clock.now += timedelta(seconds=30)
@@ -669,7 +676,9 @@ def test_late_nights_tire_him_and_sleep_restores_him():
 
 def test_a_rested_kit_still_winds_down_by_bedtime():
     """Dan's Mood page at 23:20 said energy "fine": an evening nap had filled him."""
-    life, pc, clock = setup("2026-10-08T20:30:00", energy_need=True, quiet_from="23:59")
+    life, pc, clock = setup(
+        "2026-10-08T20:30:00", energy_need=True, quiet_from="23:59", turns_in=False
+    )
     for _ in range(3 * 60 * 2):  # awake and chatting till 23:30
         clock.now += timedelta(seconds=30)
         pc.update(snap(idle=5))

@@ -42,6 +42,10 @@ His starting character is set in the persona ([[Settings Reference#persona|perso
 - **He starts knowing nothing about you.** The built-in `persona.knows` says
   he's still getting to know you; who's at home and what you do go in your
   own `settings.toml`, and the rest he learns by asking and remembering.
+- **Always himself.** Give him any voice you like in `persona.speech` ("talk
+  like a character from a book") and he sounds like it, but he's still Kit:
+  if he talks about himself it's as "I" or his own name (`persona.name`),
+  never the character's.
 
 That's only where he starts. Each night he writes a **self-sheet**, who he
 thinks he is in his own words, and it slowly grows from what actually

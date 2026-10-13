@@ -65,3 +65,11 @@ def test_a_new_style_makes_his_self_sheet_out_of_date():
 def test_the_local_speaking_step_points_back_at_his_style_rather_than_repeating_it():
     note = speak_note(Action(kind="none"), "Dan", "sonnet", "opus", speech=STYLE)
     assert STYLE not in note and "your voice" in note  # one short reminder, no second copy
+
+
+def test_a_borrowed_voice_keeps_his_own_name():
+    """Speaking like a character had him calling himself by the character's name."""
+    prompt = chat_prompt(PersonaSettings(speech=STYLE))
+    assert "When you talk about yourself, use 'I' or Kit, never another name" in prompt
+    renamed = chat_prompt(PersonaSettings(name="Pip", speech=STYLE))
+    assert "use 'I' or Pip" in renamed

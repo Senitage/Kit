@@ -81,11 +81,13 @@ class SceneEvent(BaseModel):
 
 class SceneReport(BaseModel):
     """One report from the eyes. ``off`` means the eyes are running but paused
-    (the camera is released), so nothing is in view by choice."""
+    (the camera is released), so nothing is in view by choice; ``asleep`` that
+    they're shut because Kit is asleep (their models are unloaded too)."""
 
     camera: str = Field("desk", max_length=50)
     mirrored: bool = True
     off: bool = False
+    asleep: bool = False
     frame_size: list[int] = Field(default_factory=lambda: [0, 0], max_length=2)
     fps: float | None = None
     recognising: bool = False  # the eyes know some faces and are putting names to people
@@ -306,6 +308,8 @@ class SceneContext:
             return ""
         if not self.online():
             return f"Your eyes stopped working at {self.seen:%I:%M %p}, so you can't see right now."
+        if r.off and r.asleep:
+            return "Your eyes are still opening after your sleep, so you can't see the desk yet."
         if r.off:
             return f"{owner} has switched your eyes off, so you can't see the desk right now."
         now = self.clock()
@@ -353,7 +357,9 @@ class SceneContext:
             lines.append("The eyes have stopped reporting, so this is out of date.")
         if r.off:
             lines.append(
-                f"{owner} has switched your eyes off, so you can't see anything right now."
+                "Your eyes are still opening after your sleep, so you can't see anything yet."
+                if r.asleep
+                else f"{owner} has switched your eyes off, so you can't see anything right now."
             )
             return "\n".join(lines + self._today(now))
         since = self.since()

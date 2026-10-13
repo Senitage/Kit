@@ -726,6 +726,7 @@ class Brain:
         self.notebook = Notebook(memory)
         self.notebook.swap_work_quirks(settings().persona.owner)
         self.notebook.drop_slang(settings().persona.owner)
+        self.notebook.keep_own_name(settings().persona.owner, settings().persona.name)
         self.daily = Daily(memory, self.notebook, self.life, settings)
         self.reflector = Reflector(memory, self.notebook, model, cloud, settings)
         self.weather = weather
