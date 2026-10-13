@@ -164,7 +164,10 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log (each call with its `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (with each model's `cached_tokens`) |
 
 ## Under the hood
-- `src/kit/server.py`: every route.
+- `src/kit/server.py`: builds the app and runs the background loops.
+- `src/kit/routes/`: every route, one file per part of Kit (`chat.py`, `memory.py`,
+  `life.py`, `speech.py` and so on), sharing one `AppState` and the token checks
+  in `src/kit/routes/state.py`.
 - `src/kit/body_registry.py` and `src/kit/devices.py`: bodies saying hello, and paired devices.
 - `src/kit/desk/client.py`: the desk app's side.
 - `src/kit/eyes/link.py`: the eyes' side.

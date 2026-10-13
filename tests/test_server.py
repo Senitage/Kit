@@ -56,7 +56,7 @@ def test_chat_streams_ndjson(setup):
 
 def test_the_log_says_how_long_a_reply_took(setup, caplog):
     client, _, _ = setup
-    with caplog.at_level("INFO", logger="kit.server"):
+    with caplog.at_level("INFO", logger="kit"):
         client.post("/api/chat", json={"text": "hi"}, headers=AUTH)
     said = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn:")]
     assert any(m.startswith("turn: first words") for m in said)

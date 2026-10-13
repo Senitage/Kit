@@ -117,7 +117,7 @@ sequenceDiagram
 > The slow answer turns up when it's ready, marked with its question.
 
 > [!under-the-hood]- Under the hood: the code
-> - `src/kit/server.py`: `POST /api/chat` streams the events.
+> - `src/kit/routes/chat.py`: `POST /api/chat` streams the events.
 > - `src/kit/brain.py`: `Brain.chat` and `_run_turn`, the whole journey above
 >   in five steps: `_read`, `_recall`, `_route`, `_converse_turn`, `_afterwards`.
 >   `Reading` is the message as read, by the words and then the model.

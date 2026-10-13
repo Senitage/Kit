@@ -69,6 +69,6 @@ matters confirmed first.
 - [[Privacy]]: tokens, and what stays local.
 
 > [!under-the-hood]- Under the hood: the code
-> - `src/kit/server.py`: the API other apps call.
+> - `src/kit/routes/`: the API other apps call, one file per part of Kit.
 > - `src/kit/channels.py`: the `home` channel.
 > - `src/kit/settings.py`, `src/kit/settings_store.py`: the settings, their schema, and changes with undo.

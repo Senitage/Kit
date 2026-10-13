@@ -177,4 +177,5 @@ thoughts), the **nightly upkeep** (day summaries, reflection, backups) and the
 > - `src/kit/reply.py`: the reply shape, the plan and its reading fields, emotions and gestures, the streaming reader.
 > - `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.
 > - `src/kit/channels.py`: where you're talking from.
-> - `src/kit/server.py`: the pages, the API and the background loops.
+> - `src/kit/server.py`: the app and the background loops; the pages and the API are in
+>   `src/kit/routes/`, one file per part of Kit.

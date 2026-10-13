@@ -17,7 +17,7 @@ from a note into the code. A test checks every module is listed here.
 flowchart TB
     subgraph Server["The server (Linux or Windows)"]
         direction TB
-        Srv["server.py"] --> Brn["brain.py"]
+        Srv["server.py, routes/"] --> Brn["brain.py"]
         Brn --> Mods["local_model.py, cloud.py"]
         Brn --> Mem["memory.py, knowledge.py, recall.py, learning.py, things.py"]
         Brn --> Lf["life.py, thinking.py, notebook.py, reflection.py"]
@@ -36,7 +36,20 @@ flowchart TB
 
 | Module | What it does | Explained in |
 |---|---|---|
-| `src/kit/server.py` | The web server: pages, the API, and the background loops | [[API]], [[The Big Picture]] |
+| `src/kit/server.py` | The web server: builds the app around the routes, and runs the background loops | [[API]], [[The Big Picture]] |
+| `src/kit/routes/state.py` | What every route shares: the one `AppState`, the token checks, answer helpers | [[API]], [[Phone App]] |
+| `src/kit/routes/pages.py` | The chat, settings and memory pages | [[API]] |
+| `src/kit/routes/status.py` | `/api/health`, `/api/status` and cloud spend | [[API]] |
+| `src/kit/routes/chat.py` | `/api/chat` (streamed) and the conversation so far | [[API]], [[Life of a Message]] |
+| `src/kit/routes/settings.py` | Reading, changing and undoing settings | [[API]], [[Settings and Data]] |
+| `src/kit/routes/memory.py` | Facts, memory search and day summaries | [[API]], [[Memory]] |
+| `src/kit/routes/things.py` | The register of things over the API | [[API]], [[Register of Things]] |
+| `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
+| `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
+| `src/kit/routes/eyes.py` | The eyes' reports, known faces and the "Let Kit see me" switch | [[API]], [[Eyes]] |
+| `src/kit/routes/face.py` | The character sheet and the 3D face page's files | [[API]], [[Face]] |
+| `src/kit/routes/bodies.py` | A body's hello, pairing devices, and the list of both | [[API]], [[Phone App]] |
+| `src/kit/routes/speech.py` | Voice status and one sentence of speech, streamed or as a WAV | [[API]], [[Voice]] |
 | `src/kit/brain.py` | The conversation loop: one message in, a streamed reply out | [[Brain]], [[Life of a Message]] |
 | `src/kit/reply.py` | The shape of every reply, emotions, gestures and actions | [[Brain#One shape for every reply]] |
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 API_VERSION = 1  # bumped only if an old body could no longer talk to the brain
 ONLINE_FOR = timedelta(seconds=90)  # a body that polls events checks in every ~25 s
 FORGET_AFTER = timedelta(days=1)  # a body quiet this long is dropped from the list
-# The events bodies hear on /api/life/events (kit.life and kit.server).
+# The events bodies hear on /api/life/events (kit.life and kit.routes.life).
 LIFE_EVENTS = (
     "mood",
     "fidget",
