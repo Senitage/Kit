@@ -16,6 +16,7 @@ from kit.brain import Brain
 from kit.devices import Devices
 from kit.knowledge import Item
 from kit.known_faces import KnownFaces
+from kit.known_voices import KnownVoices
 from kit.memory import Memory
 from kit.settings import SettingsError
 from kit.settings_store import SettingsStore
@@ -46,6 +47,7 @@ class AppState:
     devices: Devices
     registry: BodyRegistry
     speech: SpeechService | None = None
+    voices: KnownVoices | None = None
     # When Dan's latest message came in, for the timing lines in the log.
     turn: Turn = field(default_factory=Turn)
     register: Register = field(init=False)
@@ -85,9 +87,9 @@ def shared_only(device: str | None, what: str = "pair or unpair devices") -> Non
 
 def require_shared_token(device: Device) -> None:
     """Kit's own token only. A paired device's (a phone that leaves the house)
-    can talk to Kit but not change his settings, read the faces he knows or
-    list his bodies and devices; see Privacy."""
-    shared_only(device, "change settings, read known faces or list devices")
+    can talk to Kit but not change his settings, read the faces or voices he
+    knows or list his bodies and devices; see Privacy."""
+    shared_only(device, "change settings, read known faces or voices or list devices")
 
 
 AUTH = [Depends(require_token)]

@@ -1,7 +1,7 @@
 ---
 tags: [reference, topic/api]
 aliases: [HTTP API, Endpoints, Kit's API, Routes]
-summary: Every web address the brain answers on - chat, settings, memory, the register, life events, the PC and eyes feeds, speech, spend and the 3D face - and how the token works.
+summary: Every web address the brain answers on - chat, settings, memory, the register, life events, the PC, eyes and ears feeds, speech, spend and the 3D face - and how the token works.
 ---
 
 # API
@@ -103,9 +103,11 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | `POST /api/life/snooze` | Keep him quiet for `minutes` (0 lets him talk again) |
 
 Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
-(asleep or awake), `look`, `doing`, `quiet`, `dials`, `pipe_up` and
-`remembered` (a fact learned once a reply was out: `fact`, `decision` of
-`new`, `same` or `update`, and `replaced`). See
+(asleep or awake, with `why` when there is one), `look`, `doing`, `quiet`,
+`dials`, `pipe_up`, `remembered` (a fact learned once a reply was out: `fact`,
+`decision` of `new`, `same` or `update`, and `replaced`), `heard` (someone
+talked to him out loud: read his reply from `/api/hearing/turns/{turn}`) and
+`hush` (someone talked over him: stop his voice). See
 [[Bodies]]. The last 200 are kept, and `look` events (every couple of
 seconds while someone's in view) the last few, apart, so they never push the
 others out. A `quiet` event says why he's keeping quiet (`because`) and, while
@@ -132,7 +134,7 @@ The hello's answer is what the brain can do:
  "features": {"chat": 2, "messages": 2, "life": 1, "life_events": 1, "bodies": 1,
               "pairing": 1, "voice_out": 1, ...},
  "events": ["mood", "fidget", "react", "state", "look", "doing", "quiet", "dials", "pipe_up",
-            "remembered"],
+            "remembered", "heard", "hush"],
  "face": {"character": "kit3d", "style": "model", "page": "/face/?app=phone"},
  "unknown_abilities": []}
 ```
@@ -149,17 +151,23 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
 | `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know. Kit's own token only |
+| `POST /api/hearing/report` | The ears checking in; the answer has the switch, `[hearing]`, the voices version and his voice engine |
+| `POST /api/hearing/heard` | Something the ears heard, in words, tone, sound and whose voice; talk meant for him starts a reply (`turn`) |
+| `GET /api/hearing/turns/{turn}` | His reply to something he heard, as it's made: the same events as `/api/chat` |
+| `POST /api/hearing/hush` | Someone is talking over him: his voice stops |
+| `GET /api/hearing`, `POST /api/hearing/pause` | Whether the ears are listening and what he last made of something (never the words); the switch |
+| `GET /api/hearing/voices`, `POST /api/hearing/voices`, `DELETE /api/hearing/voices/{name}` | The people his ears know, by voice print. Kit's own token only |
 
 ## Voice, face and status
 
 | Method and path | What it does |
 |---|---|
 | `GET /api/speech` | Voice engine status: the engine set, the one he's `using`, why if he `fell_back`, and whether Turbo runs as a `cuda_graph` |
-| `POST /api/speech/say` | One sentence in his voice and mood, **sent in pieces as it's made**: 16-bit mono samples (`Content-Type: audio/L16; rate=24000`, no header), with `X-Sample-Rate`, `X-Synth-Ms` (time to the first piece) and `X-Engine`. With `Accept: audio/wav` or `?wav=1` the whole sentence comes as one WAV file instead, with `X-Audio-Ms` (older desks, tools). `generation` (optional) numbers the reply: once a higher number has been seen, a sentence from a lower one gets `410` instead of being made, and one under way is cut short. `503` with `Retry-After: 1` while the engine is still loading (it loads in the background), `409` when speech is off. See [[Voice#How a sentence becomes sound]] |
+| `POST /api/speech/say` | One sentence in his voice and mood, **sent in pieces as it's made**: 16-bit mono samples (`Content-Type: audio/L16; rate=24000`, no header), with `X-Sample-Rate`, `X-Synth-Ms` (time to the first piece) and `X-Engine`. With `Accept: audio/wav` or `?wav=1` the whole sentence comes as one WAV file instead, with `X-Audio-Ms` (older desks, tools). `generation` (optional) numbers the reply: once a higher number has been seen, a sentence from a lower one gets `410` instead of being made, and one under way is cut short. `503` with `Retry-After: 1` while the engine is still loading (it loads in the background), `409` when speech is off. `aloud: false` for a clip that won't be played in the room (the ears learning his voice); otherwise his ears are told how long he'll be talking. See [[Voice#How a sentence becomes sound]] |
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend, memory size, what the PC and eyes last said |
+| `GET /api/status` | Version, models, spend, memory size, what the PC, eyes and ears last said |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend, as a log (each call with its `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (with each model's `cached_tokens`) |
 
@@ -171,3 +179,4 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 - `src/kit/body_registry.py` and `src/kit/devices.py`: bodies saying hello, and paired devices.
 - `src/kit/desk/client.py`: the desk app's side.
 - `src/kit/eyes/link.py`: the eyes' side.
+- `src/kit/hearing/run.py`: the ears' side.

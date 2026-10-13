@@ -245,6 +245,30 @@ The camera, read by `kit eyes` on the PC. See [[Eyes]].
 | `recognise` | on | Tell people apart by their faces, once they've been introduced with `kit eyes enrol NAME`. Kit keeps numbers worked out from a face, never pictures. |
 | `match` | `0.4` | How alike a face must be to someone Kit knows to count as them. Higher is stricter: fewer mix-ups, but more 'someone I don't know'. |
 
+## hearing
+
+The microphone, read by `kit hearing` on the PC. Sound never leaves that PC.
+See [[Hearing]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | on | Kit listens through a microphone when `kit hearing` is running on the PC with the mic. The tray's "Let Kit hear me" switch turns it off and on. |
+| `mic` | empty | Which microphone to use: part of its name, or its number from `kit hearing mics`. Empty uses the PC's default. |
+| `names` | `["Kit", "Kitt", "Ki", "Kid"]` | What Kit answers to. Said at the start or end of a sentence ("Kit, what's the weather?"), it means you're talking to him. After his name come the ways the ears sometimes write it; `kit hearing --words` shows what they hear, so add a word they often hear instead. |
+| `follow_up_s` | `8.0` | After Kit stops talking, this many seconds when you can answer him without saying his name. 0 means always say his name. |
+| `barge_in` | on | Talking over Kit stops him, as typing does. His own voice from the speakers doesn't count. |
+| `barge_in_ms` | `500` | How long you must talk over Kit before he stops (milliseconds). |
+| `laugh_s` | `10.0` | A laugh within this many seconds of Kit saying something makes him chuffed. 0 turns it off. |
+| `tone` | on | Kit notices how you sound (down, cross, cheerful). He may ask about it, never tells you how you feel. |
+| `match` | `0.45` | How alike a voice must be to someone Kit knows to count as them (`kit hearing enrol NAME`). Higher is stricter. |
+| `own_voice` | `0.5` | How alike a voice must be to Kit's own for him to know it's himself coming back from the speakers, while he's talking. It must also be more like him than like anyone he knows. Lower ignores more. |
+| `threshold` | `0.5` | How sure the voice detector must be that a sound is speech. Higher ignores more background noise, but may miss quiet speech. |
+| `pause_ms` | `600` | How long a pause ends what you're saying (milliseconds). Shorter answers sooner; too short cuts you off mid-thought. |
+| `min_speech_s` | `0.4` | Shorter sounds than this are ignored (a cough, a click). |
+| `max_speech_s` | `20.0` | Longest stretch of talking heard as one go. |
+| `language` | `en` | The language Kit's ears listen for: `en`, `zh`, `ja`, `ko`, `yue`, or `auto`, which works it out each time, a little less reliably. |
+| `threads` | `2` | Processor threads the speech models use on the mic's PC. Up to about half its cores makes the words come sooner. |
+
 ## speech
 
 His voice. See [[Voice]].

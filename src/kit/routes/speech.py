@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterator
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
@@ -28,6 +29,8 @@ class SpeakIn(BaseModel):
     # a higher number has been seen, lines from a lower one (a reply Dan interrupted)
     # are dropped with 410 instead of being made. Left out, every line is made.
     generation: int | None = Field(None, ge=0)
+    # False for a clip that won't be played in the room (the ears learning his voice).
+    aloud: bool = True
 
 
 @router.get("/api/speech", dependencies=AUTH)
@@ -71,12 +74,27 @@ async def speech_say(state: State, body: SpeakIn, request: Request, wav: bool = 
             state.turn.since(),
         )
     headers = {"X-Synth-Ms": f"{said.synth_ms:.0f}", "X-Engine": said.engine}
+    hearing = state.brain.hearing if body.aloud else None  # his voice, in the room
     if whole:
         headers["X-Audio-Ms"] = f"{said.audio_ms:.0f}"
+        if hearing is not None:
+            hearing.spoke(body.text, said.audio_ms / 1000)
         return Response(said.wav, media_type="audio/wav", headers=headers)
     headers["X-Sample-Rate"] = str(said.rate)
+    pieces = said.pieces
+    if hearing is not None:
+        pieces = _heard_as_it_goes(hearing, body.text, pieces, said.rate)
     return StreamingResponse(
-        iterate_in_threadpool(said.pieces),
+        iterate_in_threadpool(pieces),
         media_type=f"audio/L16; rate={said.rate}",
         headers=headers,
     )
+
+
+def _heard_as_it_goes(hearing, text: str, pieces: Iterator[bytes], rate: int) -> Iterator[bytes]:
+    """The pieces of a streamed sentence, telling his ears (kit.heard) how long he'll
+    be talking as each one goes out, so they know his own voice coming back."""
+    hearing.spoke(text, 0.0)
+    for piece in pieces:
+        hearing.spoke("", len(piece) / 2 / rate)  # 16-bit mono samples
+        yield piece

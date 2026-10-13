@@ -785,6 +785,175 @@ def cmd_eyes(
     return 0
 
 
+def _enrol_voice(client, args: argparse.Namespace, settings, parts=None) -> int:
+    """``kit hearing enrol``: someone reads a few lines; their voice prints go to the
+    brain. Stop ``kit hearing`` first if the mic can only be opened once."""
+    from kit.desk.client import BrainError
+    from kit.hearing import enrol
+
+    who = args.who
+    if who.casefold() == "me":
+        who = client.settings()["settings"].get("persona", {}).get("owner", "") or who
+    mic = None
+    try:
+        if parts is None:
+            from kit.hearing.engines import CamPlusPlus, SileroVad
+            from kit.hearing.link import models_dir
+            from kit.hearing.mic import SoundDeviceMic, input_devices, pick_device
+
+            folder = models_dir()
+            device = pick_device(settings.mic, input_devices()) if settings.mic else None
+            parts = (lambda: SoundDeviceMic(device), SileroVad(folder, settings, ahead=False))
+            parts += (CamPlusPlus(folder, settings),)
+        open_mic, vad, printer = parts
+        mic = open_mic()
+        print(f"{who}: read these out loud, at your normal pace and distance from the mic:\n")
+        for line in enrol.LINES:
+            print(f"  {line}")
+        print()
+        stretches = enrol.listen_for(mic.read, vad, args.seconds)
+        prints = enrol.voice_prints(stretches, printer)
+    except ImportError as e:
+        print(f'introducing a voice needs the hearing libraries: pip install "kit[hearing]" ({e})')
+        return 1
+    except ValueError as e:  # no such mic
+        print(e)
+        return 1
+    finally:
+        if mic is not None:
+            mic.close()
+    if len(prints) < 3:
+        print(f"only heard {len(prints)} good stretch(es) of {who} talking; try again, closer")
+        return 1
+    try:
+        done = client.enrol_voice(who, prints)
+    except BrainError as e:
+        print(f"Kit's brain didn't take them ({e})")
+        return 1
+    print(
+        f"Kit's ears know {done['name']}'s voice now ({done['count']} prints). Running ears "
+        "pick this up by themselves; `kit hearing forget` undoes it."
+    )
+    return 0
+
+
+def cmd_hearing(
+    paths: KitPaths,
+    args: argparse.Namespace,
+    transport: httpx.BaseTransport | None = None,
+    mics=None,
+    build=None,
+    parts=None,
+) -> int:
+    """Kit's ears (kit.hearing): run them beside the mic, list mics, save where the
+    brain is, switch them off and on, or introduce voices to them (enrol, voices,
+    forget)."""
+    from kit.desk.client import BrainClient, BrainError
+    from kit.hearing import link
+    from kit.settings import HearingSettings
+
+    action = args.hearing_action or "run"
+    if action == "mics":
+        try:
+            if mics is None:
+                from kit.hearing.mic import input_devices
+
+                mics = input_devices
+            found = mics()
+        except ImportError:
+            print('the sound libraries aren\'t installed here: pip install "kit[hearing]"')
+            return 1
+        if not found:
+            print("No microphones found.")
+            return 1
+        for index, name in found:
+            print(f"  {index}: {name}")
+        return 0
+    if action == "connect":
+        folder = link.save_connection(args.url, args.token)
+        print(f"saved the brain's address and token in {folder}")
+        return 0
+    conn = link.find_connection(args.brain, args.token, paths=paths)
+    if conn is None:
+        print(
+            "Kit's ears don't know where the brain is. Run `kit hearing connect URL TOKEN` "
+            "with the brain's address (as in the desk app's settings) and the token from "
+            "`kit token` on the server."
+        )
+        return 1
+    client = BrainClient(conn.url, conn.token, transport=transport)
+    try:
+        if action == "show":
+            ears = client.hearing()
+            state = "switched off" if ears.get("paused") else "on"
+            online = "listening" if ears.get("online") else "not running"
+            print(f"Kit's ears: {state}, {online}" + (f" ({ears['mic']})" if ears["mic"] else ""))
+            if ears.get("last"):
+                last = ears["last"]
+                print(f"last heard at {last['at']}: {last['action']} ({last['why']})")
+            return 0
+        if action == "voices":
+            names = client.known_voices().get("names", {})
+            if not names:
+                print("Kit's ears don't know anyone's voice yet: `kit hearing enrol NAME`.")
+            for name, count in names.items():
+                print(f"  {name}: {count} voice prints")
+            return 0
+        if action == "forget":
+            gone = client.forget_voice(args.who)["forgot"]
+            print(f"Kit's ears have forgotten {gone}'s voice; nothing of it is kept.")
+            return 0
+        if action in ("pause", "resume"):
+            state = client.set_hearing(action == "resume")
+            print(
+                "Kit's ears are off: the mic is let go until `kit hearing resume`."
+                if state["paused"]
+                else "Kit's ears are on."
+            )
+            return 0
+        client.check()  # proves the token before loading any model
+        settings = HearingSettings.model_validate(client.settings()["settings"].get("hearing", {}))
+    except BrainError as e:
+        print(f"can't reach Kit's brain at {conn.url} ({e})")
+        return 1
+    except (KeyError, ValueError) as e:
+        print(f"Kit's brain gave an answer the ears don't understand ({e}); update both sides")
+        return 1
+    if not settings.enabled:
+        print("hearing.enabled is false in Kit's settings; turn it on first (`kit config set`)")
+        return 1
+    if action == "enrol":
+        try:
+            return _enrol_voice(client, args, settings, parts)
+        finally:
+            client.close()
+    if build is None:
+        from kit.hearing.run import build_ears
+
+        build = build_ears
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    try:
+        ears = build(settings, client, mic_name=args.name, words=args.words)
+    except ImportError as e:
+        print(f'the ears need the sound and speech libraries: pip install "kit[hearing]" ({e})')
+        return 1
+    except ValueError as e:  # no such mic
+        print(e)
+        return 1
+    print(
+        f"Kit's ears are open: {settings.mic or 'the default mic'}, reporting to {conn.url} "
+        f"(found via {conn.source}). Sound stays on this PC. Ctrl+C closes them."
+    )
+    try:
+        ears.run(max_steps=args.steps)
+    except KeyboardInterrupt:
+        print("ears closed")
+    finally:
+        client.close()
+    return 0
+
+
 def tailscale_address(run: checks.Runner = checks.run_command) -> str | None:
     """This machine's Tailscale address, for a pairing code, if Tailscale is up."""
     try:
@@ -1217,6 +1386,35 @@ def main(argv: list[str] | None = None) -> int:
     forget_face.add_argument("who")
     esub.add_parser("pause", help="switch the eyes off (the camera is released)")
     esub.add_parser("resume", help="switch the eyes on again")
+    hearing = sub.add_parser(
+        "hearing",
+        help="Kit's ears: run them beside the mic (docs/4 Guides/Companion Stage 5.md)",
+    )
+    hearing.add_argument("--brain", help="the brain's address, e.g. http://kit-server:8600")
+    hearing.add_argument("--token", help="Kit's API token (`kit token` on the server)")
+    hearing.add_argument("--name", default="desk", help="what to call this mic (default: desk)")
+    hearing.add_argument(
+        "--words",
+        action="store_true",
+        help="show the words the ears heard, in this window only (for tuning hearing.names)",
+    )
+    hearing.add_argument("--steps", type=int, help="stop after this many 32 ms steps (testing)")
+    hsub = hearing.add_subparsers(dest="hearing_action")
+    hsub.add_parser("mics", help="list the microphones on this machine")
+    hconnect = hsub.add_parser(
+        "connect", help="save where the brain is, e.g. http://kit-server:8600 TOKEN"
+    )
+    hconnect.add_argument("url")
+    hconnect.add_argument("token")
+    hsub.add_parser("show", help="whether Kit's ears are listening, and what he last made of it")
+    henrol = hsub.add_parser("enrol", help="introduce someone's voice to Kit's ears")
+    henrol.add_argument("who", help="their name, or `me` for you (persona.owner)")
+    henrol.add_argument("--seconds", type=float, default=30, help="how long to listen")
+    hsub.add_parser("voices", help="whose voices Kit's ears know")
+    forget_voice = hsub.add_parser("forget", help="forget someone's voice completely")
+    forget_voice.add_argument("who")
+    hsub.add_parser("pause", help="switch the ears off (the mic is let go)")
+    hsub.add_parser("resume", help="switch the ears on again")
     things = sub.add_parser("things", help="the register of things and where they live")
     tsub = things.add_subparsers(dest="action", required=True)
     tsub.add_parser("list", help="list the register")
@@ -1314,6 +1512,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_notes(paths)
     if args.command == "eyes":
         return cmd_eyes(paths, args)
+    if args.command == "hearing":
+        return cmd_hearing(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
     if args.command == "docs":

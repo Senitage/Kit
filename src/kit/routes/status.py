@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 import kit
+from kit.routes.hearing import hearing_line
 from kit.routes.state import AUTH, State
 
 router = APIRouter()
@@ -41,6 +42,8 @@ def status(state: State) -> dict:
         "pc": brain.pc.now_line(s.persona.owner) or "the desk app hasn't reported yet",
         "eyes": brain.scene.now_line(s.persona.owner) or "the eyes haven't reported yet",
         "eyes_paused": brain.eyes_paused,
+        "hearing": hearing_line(state),
+        "hearing_paused": brain.hearing_paused,
     }
 
 

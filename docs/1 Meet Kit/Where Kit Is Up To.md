@@ -39,19 +39,18 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Desk and eyes reliability, privacy: hidden apps safe from reused process ids, a life feed that outlives bad answers, eyes that report from a thread and keep events, device tokens kept off settings and faces, quiet bodies dropped | Open, pull request #52 | [[Desk App]], [[Eyes]], [[Privacy#Tokens and secrets]] |
 | First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Open, pull request #53 | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Open, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
-| Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Open, pull request (number to come) | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
-| Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
+| Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Open, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
+| Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Open, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 
 ## What's next
 
-1. Companion stage 5: hearing, with tone.
+1. Companion stage 5 (hearing, #42) tested on the desk.
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
-3. Hearing: the microphone, wake word and speech to text.
-4. Stage 4: a tool loop, PC control, the Claude Code bridge, MCP, Home
+3. Stage 4: a tool loop, PC control, the Claude Code bridge, MCP, Home
    Assistant, and the home_app and MetTools connections.
-5. Stages 5 to 8, then the arm.
+4. Stages 5 to 8, then the arm.
 
 ## How we got here
 

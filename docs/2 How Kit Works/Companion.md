@@ -109,8 +109,9 @@ never an invented afternoon.
 | 2 | He follows your life | [[Companion Stage 2]] |
 | 3 | A life of his own, and feeling it | [[Companion Stage 3]] |
 | 4 | His voice and eyes carry it | [[Companion Stage 4]] |
+| 5 | He hears you: answers his name, stops when talked over, enjoys a laugh | [[Companion Stage 5]] |
 
-Stage 5, hearing, is next ([[Where Kit Is Up To]]). `kit eval companion` checks
+How he hears is in [[Hearing]]. `kit eval companion` checks
 goodbyes, hellos and honesty on any local model ([[Evals]]).
 
 ## Go deeper

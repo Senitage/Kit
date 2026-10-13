@@ -17,8 +17,8 @@ related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 > made**, so the first second plays while the rest is still being made. His
 > **mood** colours how he sounds, a joke can get a **chuckle** in the right
 > place, and his **mouth follows his voice**: it opens on his words and closes
-> on his pauses, from the sound itself. Hearing (a microphone, a wake word) is
-> the next part of the stage.
+> on his pauses, from the sound itself. He listens too: say his name and he
+> answers out loud, and talking over him stops him ([[Hearing]]).
 
 ## How a sentence becomes sound
 

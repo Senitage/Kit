@@ -35,6 +35,9 @@ desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 # don't install plain opencv-python beside it. For GPU detection install PyTorch's
 # CUDA build first (docs/4 Guides/Vision Stage 1.md).
 eyes = ["opencv-contrib-python>=4.10", "ultralytics>=8.3", "lap>=0.5.12", "mediapipe>=1.0"]
+# Kit's ears, on the PC with the mic: speech to text, voice detection and voice prints
+# on the processor through sherpa-onnx (no PyTorch, no graphics card).
+hearing = ["sherpa-onnx>=1.12", "sounddevice>=0.4.6"]
 
 [project.scripts]
 kit = "kit.cli:main"

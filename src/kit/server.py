@@ -20,6 +20,7 @@ from kit.body_registry import BodyRegistry
 from kit.brain import Brain
 from kit.devices import DEVICES_FILE, Devices
 from kit.known_faces import FACES_FILE, KnownFaces
+from kit.known_voices import VOICES_FILE, KnownVoices
 from kit.life import TICK_S
 from kit.memory import Memory
 from kit.paths import KitPaths
@@ -50,11 +51,14 @@ def create_app(
     speech: SpeechService | None = None,
     speech_check_s: float | None = SPEECH_CHECK_S,
     faces: KnownFaces | None = None,
+    voices: KnownVoices | None = None,
     devices: Devices | None = None,
     registry: BodyRegistry | None = None,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
+    if voices is None:
+        voices = KnownVoices(paths.state_dir / VOICES_FILE if paths is not None else None)
     if devices is None:
         devices = Devices(paths.secrets_dir / DEVICES_FILE if paths is not None else None)
     if registry is None:
@@ -83,7 +87,7 @@ def create_app(
     app = FastAPI(title="Kit", version=kit.__version__, lifespan=lifespan)
     if speech is not None:
         brain.voice_quiet = speech.quiet_s  # reading ahead waits for his voice to finish
-    app.state.kit = AppState(store, memory, brain, token, faces, devices, registry, speech)
+    app.state.kit = AppState(store, memory, brain, token, faces, devices, registry, speech, voices)
     for router in ROUTERS:
         app.include_router(router)
     return app

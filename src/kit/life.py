@@ -1581,6 +1581,20 @@ class Life:
             self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
         self.publish({"type": "state", "state": "awake", "why": why})
 
+    def called(self, why: str) -> None:
+        """Someone said his name out loud (kit.heard): that wakes him, where talk he
+        only overhears never does."""
+        if self.asleep:
+            self._wake(why)
+            self._show_face()
+            self.save()
+
+    def laughed(self, who: str, line: str) -> None:
+        """A laugh his ears heard just after he said something: he's chuffed."""
+        said = f': "{quoted(line)}"' if line else ""
+        if self.feel("chuffed", f"{who} laughed at what you said{said}", 0.6, show=False):
+            self.react("laugh", "you laughed")
+
     def sleep_diary(self, now: datetime | None = None) -> list[str]:
         """His sleeps over the last day, oldest first, in words: "13:05 to 13:47,
         a doze (woke by himself)"."""

@@ -20,7 +20,7 @@ related: ["[[The Pod]]", "[[Phone App]]", "[[Pod In Depth]]", "[[Building the Po
 ```mermaid
 flowchart LR
     Brain["Brain: decides moods, sleep, replies, pipe-ups"]
-    Brain -- "events: mood, fidget, react, sleep, wake, look, pipe_up, remembered" --> Desk["Desk app"]
+    Brain -- "events: mood, fidget, react, sleep, wake, look, pipe_up, remembered, heard, hush" --> Desk["Desk app"]
     Brain -- "the same events" --> Home["home_app's Kit page"]
     Brain -- "the same, as plain lines" --> Pod["The Pod"]
     Brain -- "later" --> Arm["The arm"]
@@ -30,8 +30,10 @@ flowchart LR
 
 - Bodies listen to `GET /api/life/events`: fidgets, reactions, sleeping and
   waking, mood changes, pipe-ups, what he remembered after a reply
-  (`remembered`), and `look` events saying where the person his
-  eyes see is. See [[API]].
+  (`remembered`), `look` events saying where the person his eyes see is,
+  `heard` when his ears heard someone talk to him (the body reads his reply as
+  it's made and says it) and `hush` when someone talks over him. See [[API]]
+  and [[Hearing]].
 - Each body draws his face from the same **character sheet**, picking the look
   its `use` table names (`desk`, `home_app`, `robot`). See [[Face]].
 - Each body plays the same **gestures** and **body moves** by name, scaled to

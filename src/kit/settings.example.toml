@@ -219,3 +219,23 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # poses = 1                # people to read body pose for; 0 turns it off
 # recognise = true         # tell people apart once introduced (`kit eyes enrol NAME`)
 # match = 0.4              # how alike a face must be to count; higher is stricter
+
+# Kit's ears: the microphone process (`kit hearing`, on the PC with the mic) reads
+# these from the brain. Sound never leaves that PC (docs/4 Guides/Companion Stage 5.md).
+# [hearing]
+# enabled = true
+# mic = ""                 # part of the mic's name, or its number; `kit hearing mics` lists them
+# names = ["Kit", "Kitt", "Ki", "Kid"]  # his name, and how the ears sometimes write it
+# follow_up_s = 8.0        # after he stops talking, answer him without his name for this long
+# barge_in = true          # talking over him stops him
+# barge_in_ms = 500
+# laugh_s = 10.0           # a laugh this soon after he says something makes him chuffed
+# tone = true              # he notices how you sound, and may ask; never tells you
+# match = 0.45             # how alike a voice must be to someone he knows
+# own_voice = 0.5          # how alike a voice must be to his own to be ignored as an echo
+# threshold = 0.5          # how sure the voice detector must be that a sound is speech
+# pause_ms = 600           # a pause this long ends what you're saying
+# min_speech_s = 0.4
+# max_speech_s = 20.0
+# language = "en"          # or auto
+# threads = 2

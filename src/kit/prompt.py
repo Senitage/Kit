@@ -4,6 +4,7 @@ conversation."""
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -626,7 +627,8 @@ ASIDE_RANKS = {
     "news": 4,
     "opener": 5,
     "interview": 6,
-    "new_subject": 7,
+    "tone": 7,
+    "new_subject": 8,
 }
 
 
@@ -878,7 +880,8 @@ def history_messages(
     Kit's latest reply keeps its written detail (cut short so it doesn't crowd the
     local model's context), for "explain step 3"; older detail is dropped, or a small
     model copies it under every answer. Messages that came in another way than
-    ``channel`` say where from, e.g. "(from their phone)", and ones someone else sent say who."""
+    ``channel`` say where from, e.g. "(from their phone)", and ones someone else sent say who
+    ("(Sam said)", or "(Sam, out loud)" when his ears heard it)."""
     out = []
     last_kit = max((i for i, m in enumerate(history) if m.role != "user"), default=-1)
     for i, m in enumerate(history):
@@ -886,7 +889,7 @@ def history_messages(
             where = SHORT.get(m.channel or "")
             note = f"(from {where}) " if where and m.channel != channel else ""
             if who := speaker_of(m.meta_json):
-                note += f"({who} said) "
+                note += f"({who}, out loud) " if _heard_aloud(m) else f"({who} said) "
             later = later_note(history[i - 1].at, m.at) if i else ""
             out.append({"role": "user", "content": later + note + m.text})
         else:
@@ -904,6 +907,14 @@ def new_subject_note(owner: str) -> str:
         f"[{owner} has changed the subject, by the look of it. Answer this on its own; "
         f"leave the earlier conversation unless {owner} brings it back.]"
     )
+
+
+def _heard_aloud(m: Message) -> bool:
+    """Whether a message came in through Kit's ears (kit.heard keeps how it sounded)."""
+    try:
+        return "heard" in (json.loads(m.meta_json or "{}") or {})
+    except (ValueError, TypeError):
+        return False
 
 
 GAP_SHOWN = timedelta(minutes=30)  # a pause this long in the chat is marked in the history
