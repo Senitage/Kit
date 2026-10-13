@@ -152,6 +152,15 @@ class When:
         return day
 
 
+def how_long(minutes: float) -> str:
+    """A length of time the way Kit says it: "under a minute", "25 min", "2.5 h"."""
+    if minutes < 1:
+        return "under a minute"
+    if minutes < 90:
+        return f"{round(minutes)} min"
+    return f"{minutes / 60:.1f} h"
+
+
 def _clock(t: datetime) -> str:
     return f"{t:%I:%M %p}".lstrip("0").lower()
 

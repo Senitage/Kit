@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
+from kit.when import how_long
+
 SEEN = "seen"  # knowledge source: arrivals and sightings worth remembering
 STALE_AFTER = timedelta(seconds=30)  # the eyes report every second or so
 KEEP_FOR = timedelta(hours=16)
@@ -114,14 +116,6 @@ class Happening:
     who: list[str] = field(default_factory=list)  # names recognised, if any
 
 
-def _mins(minutes: float) -> str:
-    if minutes < 1:
-        return "under a minute"
-    if minutes < 90:
-        return f"{round(minutes)} min"
-    return f"{minutes / 60:.1f} h"
-
-
 def join_names(names: list[str]) -> str:
     """ "Sam", "Dan and Sam", "Dan, Sam and Lou"."""
     if len(names) <= 1:
@@ -142,7 +136,7 @@ def _facing(looking: str) -> str:
 def _person_bits(p: SeenPerson, since: datetime | None, now: datetime) -> list[str]:
     bits = [p.position]
     if since is not None:
-        bits.append(f"here {_mins((now - since).total_seconds() / 60)}")
+        bits.append(f"here {how_long((now - since).total_seconds() / 60)}")
     if p.unknown and not p.name:
         bits.append("nobody you know")
     if p.face is not None:
@@ -231,7 +225,7 @@ class SceneContext:
             text = f"{name} {'are' if len(who) > 1 else 'is'} at the desk (the first your eyes "
             text += "have seen today)."
             return Happening("arrived", text, who=who)
-        gone = _mins(away_s / 60)
+        gone = how_long(away_s / 60)
         text = f"{name} just sat down at the desk after {gone} with nobody there."
         remember = away_s >= REMEMBER_AWAY_AFTER.total_seconds()
         return Happening("arrived", text, away_s=away_s, remember=remember, who=who)
@@ -244,7 +238,7 @@ class SceneContext:
         if self._arriving is not None:  # gone before anyone was told they'd come
             self._arriving = None
             return None
-        stayed = _mins((last.end - last.start).total_seconds() / 60)
+        stayed = how_long((last.end - last.start).total_seconds() / 60)
         who = join_names(last.names) or "whoever was there"
         return Happening(
             "left", f"The desk is empty: {who} left after {stayed}.", who=list(last.names)
@@ -319,7 +313,7 @@ class SceneContext:
             line = f"{SEE}: nobody at the desk"
             last = self.visits[-1] if self.visits else None
             if last and not last.open:
-                line += f"; someone left {_mins((now - last.end).total_seconds() / 60)} ago"
+                line += f"; someone left {how_long((now - last.end).total_seconds() / 60)} ago"
             line += "."
         else:
             since = self.since()
@@ -370,7 +364,7 @@ class SceneContext:
             who = (
                 f"{o.name} the {o.label} (#{o.id})" if o.name else f"{o.label.capitalize()} #{o.id}"
             )
-            lines.append(f"- {who}: {o.position}, in view {_mins(o.seen_for_s / 60)}.")
+            lines.append(f"- {who}: {o.position}, in view {how_long(o.seen_for_s / 60)}.")
         if not r.people and not r.objects:
             lines.append("Nothing in view: the desk is empty.")
         recent = [(t, e) for t, e in self.events if now - t <= timedelta(minutes=10)][-10:]

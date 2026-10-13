@@ -29,6 +29,8 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
+from kit.when import how_long
+
 STALE_AFTER = timedelta(minutes=3)  # the desk app reports every few seconds
 FORGET_AFTER = timedelta(days=1)  # a PC not heard from for this long is dropped
 AWAY_AFTER_S = 300  # no keyboard or mouse for this long counts as away
@@ -123,14 +125,6 @@ class Span:
         return (self.end - self.start).total_seconds() / 60
 
 
-def _mins(minutes: float) -> str:
-    if minutes < 1:
-        return "under a minute"
-    if minutes < 90:
-        return f"{round(minutes)} min"
-    return f"{minutes / 60:.1f} h"
-
-
 def _title(w: Window) -> str:
     text = f'{w.app}: "{w.title}"' if w.title else w.app
     return f"{text} ({w.site})" if w.site else text
@@ -194,7 +188,7 @@ def _state(snap: Snapshot) -> str:
     if not snap.watching:
         return "with watching paused"
     if snap.idle_seconds >= AWAY_AFTER_S:
-        return f"idle for {_mins(snap.idle_seconds / 60)}"
+        return f"idle for {how_long(snap.idle_seconds / 60)}"
     return f"in use ({snap.focus.app if snap.focus else 'the desktop'})"
 
 
@@ -291,12 +285,12 @@ class PcContext:
             line += _title(snap.focus)
             span = self.spans[-1] if self.spans else None
             if span and not span.away and span.minutes >= 1:
-                line += f", for {_mins(span.minutes)}"
+                line += f", for {how_long(span.minutes)}"
         else:
             line += "the desktop"
         line += "."
         if snap.idle_seconds >= 60:
-            line += f" No keyboard or mouse for {_mins(snap.idle_seconds / 60)}."
+            line += f" No keyboard or mouse for {how_long(snap.idle_seconds / 60)}."
         focus_app = snap.focus.app if snap.focus else None
         others = list(dict.fromkeys(w.app for w in snap.windows if w.app != focus_app))
         if others:
@@ -324,7 +318,7 @@ class PcContext:
         else:
             lines.append(f"In focus: {_title(snap.focus) if snap.focus else 'the desktop'}.")
             if snap.idle_seconds >= 60:
-                lines.append(f"No keyboard or mouse for {_mins(snap.idle_seconds / 60)}.")
+                lines.append(f"No keyboard or mouse for {how_long(snap.idle_seconds / 60)}.")
             if snap.windows:
                 lines.append(f"Open windows ({len(snap.windows)}):")
                 for w in snap.windows[:MAX_WINDOWS]:
@@ -377,15 +371,15 @@ class PcContext:
         for app, m in sorted(per_app.items(), key=lambda x: -x[1]):
             if m < 0.5:
                 continue
-            line = f"- {app}: {_mins(m)}"
+            line = f"- {app}: {how_long(m)}"
             if titles:
                 top = sorted(per_title[app].items(), key=lambda x: -x[1])[:3]
-                named = [f'"{t}" ({_mins(tm)})' for t, tm in top if t and tm >= 0.5]
+                named = [f'"{t}" ({how_long(tm)})' for t, tm in top if t and tm >= 0.5]
                 if named:
                     line += ", on " + ", ".join(named)
             lines.append(line)
         if away >= 1:
-            lines.append(f"- away or paused: {_mins(away)}")
+            lines.append(f"- away or paused: {how_long(away)}")
         return lines
 
     def _sites(self, since: datetime, until: datetime) -> list[str]:
@@ -395,7 +389,7 @@ class PcContext:
             if s.site and end > start:
                 per_site[s.site] += (end - start).total_seconds() / 60
         top = sorted(per_site.items(), key=lambda x: -x[1])[:MAX_SITES]
-        return [f"- {site}: {_mins(m)}" for site, m in top if m >= 0.5]
+        return [f"- {site}: {how_long(m)}" for site, m in top if m >= 0.5]
 
     def as_dict(self, owner: str) -> dict:
         now = self.clock()

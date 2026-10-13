@@ -458,19 +458,19 @@ class Speaker:
             self._emotion = emotion or "neutral"
 
     def say(self, turn: int, text: str) -> None:
-        if not self.begin(turn):
-            return
-        with self._lock:
-            self._open = True
-            self._queue(self._splitter.feed(text))
+        if self.begin(turn):
+            self._feed(text)
 
     def sound(self, turn: int, name: str) -> None:
         """A sound for his voice to make before the words that come next (a chuckle)."""
-        if not self.begin(turn) or not name:
-            return
+        if self.begin(turn) and name:
+            self._feed(f" [{name}] ")
+
+    def _feed(self, text: str) -> None:
+        """More of the reply under way, queued a sentence at a time as each one ends."""
         with self._lock:
             self._open = True
-            self._queue(self._splitter.feed(f" [{name}] "))
+            self._queue(self._splitter.feed(text))
 
     def end(self, turn: int) -> None:
         with self._lock:

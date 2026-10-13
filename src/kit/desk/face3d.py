@@ -26,7 +26,7 @@ import time
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
-from PySide6.QtGui import QCursor, QPainter, QPixmap
+from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from kit.face import Face
@@ -256,8 +256,8 @@ class Face3D:
         self._cover(bool(drawn) and self._ready)
 
     def _step(self) -> None:
-        if self.covering:
-            self._tick_face()
+        if self.covering:  # Glow's timer is stopped: the rig still ticks
+            self.widget.tick_face(time.monotonic())
         if not self._ready:
             return
         calls = self.mirror.calls()
@@ -266,18 +266,6 @@ class Face3D:
         self._steps += 1
         if self._steps % 30 == 1:  # twice a second: is Kit's model on screen?
             self.view.page().runJavaScript("!!(window.kit && window.kit.ready)", 0, self._drawn)
-
-    def _tick_face(self) -> None:
-        """What Glow's timer does while it's stopped: follow the mouse and tick the rig."""
-        now = time.monotonic()
-        w = self.widget
-        pos = QCursor.pos()
-        if getattr(w, "follow_mouse", True) and pos != getattr(w, "_cursor", None):
-            w._cursor = pos
-            centre = w.mapToGlobal(w.rect().center())
-            reach = max(w.width(), 300)
-            w.face.look_at((pos.x() - centre.x()) / reach, (pos.y() - centre.y()) / reach, now)
-        w.face.tick(now)
 
     def run(self, js: str) -> None:
         self.view.page().runJavaScript(f"window.kit && (function(){{{js}}})();")

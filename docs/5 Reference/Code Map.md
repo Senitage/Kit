@@ -82,7 +82,7 @@ flowchart TB
 | `src/kit/daily.py` | Once-a-day questions and nudges | [[Companion]] |
 | `src/kit/pastimes.py` | What he does while you're out | [[Companion#While you're out]] |
 | `src/kit/noticing.py` | The small moments his eyes catch that he feels: waves, thumbs, smiles, frowns, sleepy eyes | [[Eyes#Moments he feels]] |
-| `src/kit/when.py` | "Thursday arvo" and friends | [[Time and Weather]] |
+| `src/kit/when.py` | "Thursday arvo" and friends, and how long something took ("25 min") | [[Time and Weather]] |
 | `src/kit/holidays.py` | The shape of the week and public holidays | [[Time and Weather]] |
 | `src/kit/weather.py` | The forecast from Open-Meteo | [[Time and Weather]] |
 | `src/kit/shows.py` | The time, date and weather on his face | [[Face]] |
