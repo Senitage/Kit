@@ -61,12 +61,15 @@ in his voice, right before its words: a laugh is a **chuckle**, a sigh a
 **sigh**, a startle or double take a **gasp**. At most one every other
 sentence, since each adds about half a second and they're hit or miss. Only
 Chatterbox Turbo makes them; other engines quietly leave them out, and the
-words on screen never show them.
+words on screen never show them. Only those known sounds are taken out: a
+`[sic]` or `[x]` in something he quotes is words, and stays.
 
 ## A backup voice
 
 Set `speech.fallback` (say to `kokoro`) and if his usual engine can't start
-or runs out of graphics card memory, he switches to it and carries on talking.
+or runs out of graphics card memory (that message exactly, from PyTorch, the
+CUDA driver or cuBLAS; other CUDA trouble isn't mistaken for it), he switches
+to it and carries on talking.
 He stays on it until his speech settings change. `GET /api/speech` shows which
 one he's `using` and why. `kit speech bench` ends each engine's line with
 whether it fits the graphics card: at most about 7.5 of 8 GB used at the peak,

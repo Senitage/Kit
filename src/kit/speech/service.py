@@ -34,7 +34,12 @@ log = logging.getLogger(__name__)
 
 WORKER = Path(__file__).with_name("worker.py")
 RETRY_S = 60  # after an engine fails to start, wait this long before trying again
-OUT_OF_MEMORY = re.compile(r"out of memory|cuda", re.IGNORECASE)
+# What a GPU engine says when the card is full (PyTorch, the CUDA driver, cuBLAS). Not
+# just "cuda": "no CUDA device" or "cudart not found" is a different kind of trouble.
+OUT_OF_MEMORY = re.compile(
+    r"(?i:out of memory)|CUDA_ERROR_OUT_OF_MEMORY|cudaErrorMemoryAllocation|"
+    r"CUBLAS_STATUS_ALLOC_FAILED"
+)
 
 
 class SpeechError(Exception):

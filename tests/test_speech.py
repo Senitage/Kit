@@ -20,9 +20,10 @@ from kit.recall import Recall
 from kit.server import create_app
 from kit.settings import Settings, SettingsError, validate_settings
 from kit.settings_store import SettingsStore
+from kit.speech import worker
 from kit.speech.bench import gaps, run_bench
-from kit.speech.sentences import SentenceSplitter
-from kit.speech.service import SpeechError, SpeechService, Spoken
+from kit.speech.sentences import SOUNDS, SentenceSplitter, without_sounds
+from kit.speech.service import OUT_OF_MEMORY, SpeechError, SpeechService, Spoken
 
 TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -43,6 +44,28 @@ def stream(splitter: SentenceSplitter, text: str) -> list[str]:
 
 
 # Cutting words into speakable pieces
+
+
+def test_only_the_cards_being_full_counts_as_out_of_memory():
+    for why in (
+        "CUDA out of memory. Tried to allocate 20.00 MiB",
+        "RuntimeError: Out of memory",
+        "CUDA_ERROR_OUT_OF_MEMORY",
+        "cudaErrorMemoryAllocation",
+        "CUBLAS_STATUS_ALLOC_FAILED",
+    ):
+        assert OUT_OF_MEMORY.search(why), why
+    for why in ("no CUDA device", "cudart not found", "CUDA driver version is insufficient"):
+        assert not OUT_OF_MEMORY.search(why), why
+
+
+def test_only_known_sounds_are_taken_out_of_what_he_shows():
+    assert without_sounds("[chuckle] Yeah, that one.") == "Yeah, that one."
+    assert without_sounds("[clear throat] Right.") == "Right."
+    assert without_sounds("He wrote 'teh' [sic] and ticked [x] the box") == (
+        "He wrote 'teh' [sic] and ticked [x] the box"
+    )
+    assert SOUNDS == set(worker.SOUNDS.split("|"))  # the same list as the voice worker's
 
 
 def test_sentences_come_out_as_soon_as_they_end():
