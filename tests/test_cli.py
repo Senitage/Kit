@@ -451,3 +451,23 @@ def test_check_includes_the_eyes(paths, capsys):
     assert "] eyes" in out and "[FAIL] eyes" not in out  # no camera here is a warning at most
     main(["check", *OFFLINE, "--skip", "eyes"])
     assert "] eyes" not in capsys.readouterr().out
+
+
+def test_memory_scrub_shows_first_then_takes_out_after_a_backup(paths, capsys):
+    main(["init"])
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.add_message("user", "I can't cope tonight")
+    memory.add_message("kit", "I'm here.")
+    memory.add_message("user", "Is the pump fixed?")
+    memory.close()
+    assert main(["memory", "scrub", "can't cope"]) == 0
+    out = capsys.readouterr().out
+    assert "you: I can't cope tonight" in out and "Kit: I'm here." in out
+    assert "2 messages and 0 things kept from them would go" in out
+    assert main(["memory", "scrub", "can't cope", "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "backed up to" in out and "are gone" in out
+    memory = Memory(paths.state_dir / "memory.db")
+    assert [m.text for m in memory.recent(5)] == ["Is the pump fixed?"]
+    memory.close()
+    assert main(["memory", "scrub", "can't cope", "--since", "soon"]) == 2

@@ -108,6 +108,9 @@ recall, not in the nightly reflection. See [[Privacy]].
 - `kit memory ...` does the same from a terminal ([[Commands#Memory]]).
 - `kit memory tidy` sorts what he knows by today's rules, showing the plan
   first.
+- `kit memory scrub "can't cope"` takes out lines that should never have been
+  said (a test, a joke he took seriously): the messages, his answers, and
+  anything he kept of them, showing what would go first.
 - Memory is **backed up** daily to `backups/` in the data folder.
 - `kit eval memory` checks accuracy on a scratch memory, and `kit eval memory
   --replay` asks your own questions of a backup of the real one, to see the

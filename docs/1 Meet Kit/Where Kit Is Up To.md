@@ -40,6 +40,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Done, pull request #53 | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Done, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
 | Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Done, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
+| `kit memory scrub`: take out lines that should never have been said, and everything kept of them | Open, pull request (number to come) | [[Memory In Depth#You stay in charge]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

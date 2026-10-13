@@ -388,6 +388,16 @@ class Index:
             ).fetchall()
         return [self._row(r) for r in reversed(rows)]
 
+    def since(self, created: str) -> list[Item]:
+        """Current items of every source made at or after ``created``, oldest first."""
+        with self.lock:
+            rows = self.db.execute(
+                f"SELECT {self._COLS} FROM items WHERE superseded_by IS NULL AND created >= ?"
+                " ORDER BY id",
+                (created,),
+            ).fetchall()
+        return [self._row(r) for r in rows]
+
     def history(self, item_id: int) -> list[Item]:
         """The item and every earlier version it replaced, newest first."""
         chain, queue = [], [self.get(item_id)]

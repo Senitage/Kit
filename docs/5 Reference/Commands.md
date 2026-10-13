@@ -80,6 +80,7 @@ See [[Inner Life]].
 | `kit memory history ID` | A fact's earlier versions |
 | `kit memory days` | The day summaries |
 | `kit memory summarise` | Summarise finished days now |
+| `kit memory scrub WORDS... [--since DATE]` | Show every message since the date (today by default) that says any of the words, Kit's answers to them and what was kept of them; `--apply` takes them out after a backup. For lines that should never have been said, such as a test |
 | `kit memory tidy` | Plan sorting what he knows into the right kinds; `--apply` does it, after a backup |
 | `kit memory reindex` | Build any missing meaning vectors now |
 | `kit memory backup` | Back up memory now |
