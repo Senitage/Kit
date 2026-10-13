@@ -222,7 +222,11 @@ reflection and the weekly review too. What Kit keeps from it is marked private
 and stays home the same way: facts learned from it, the summary of a day with
 one in it, a reminder you asked for that way (and the line he said for it), a
 thought he had right after, and a journal or "what's going on with you" written
-at home from any of these. The local model still sees all of it.
+at home from any of these. The local model still sees all of it. The phrase is
+read once, when the message arrives, and kept as a flag on the message
+(`Message.private`) and on the indexed exchange; `Memory.shared` and
+`Recall.for_cloud` read the flag. Messages from before the flag were marked
+from their words by the migration that added it.
 
 ## The spend log
 

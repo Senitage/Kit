@@ -78,8 +78,12 @@ class Recalled:
 
 
 def private(item: Item) -> bool:
-    """Kept from something Dan kept local, or the exchange itself."""
-    return bool(item.meta.get("private")) or bool(KEEP_LOCAL.search(item.text))
+    """Kept from something Dan kept local, or the exchange itself. New exchanges carry
+    the flag in their meta (``Memory.index_exchange``); the words are only read for
+    exchanges indexed before it existed."""
+    return bool(item.meta.get("private")) or (
+        item.source == CONVERSATION and bool(KEEP_LOCAL.search(item.text))
+    )
 
 
 class Recall:

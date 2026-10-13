@@ -41,9 +41,27 @@ CHAT_FROM = "chat_from"  # kit_self key: the last message before the current cha
 # "Keep it local": that message, and Kit's answer to it, never go to a cloud model. Nor
 # does what Kit kept from it: facts, notes and summaries are marked private in their
 # meta, and his own lines from it (a reminder Dan asked for that way) are listed here.
+# The words are read once, as the message arrives (kit.brain), and the message is
+# stored with ``Message.private``; everything after reads the flag, not the words.
 KEEP_LOCAL = re.compile(
     r"\b(keep (it|this) local|answer (it )?locally|don'?t ask (claude|the cloud|anyone))\b",
     re.IGNORECASE,
+)
+# The same phrases as SQL, to mark the messages from before the flag existed.
+_KEEP_LOCAL_LIKE = " OR ".join(
+    "lower(text) LIKE '%" + phrase.replace("'", "''") + "%'"
+    for phrase in (
+        "keep it local",
+        "keep this local",
+        "answer locally",
+        "answer it locally",
+        "don't ask claude",
+        "dont ask claude",
+        "don't ask the cloud",
+        "dont ask the cloud",
+        "don't ask anyone",
+        "dont ask anyone",
+    )
 )
 PRIVATE_SAID = "private_said"  # kit_self key: ids of Kit's lines from what Dan kept local
 PRIVATE_KEPT = 200  # the newest this many are listed; older ones are long out of the history
@@ -126,7 +144,15 @@ MIGRATIONS = [
     ALTER TABLE spend ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE spend ADD COLUMN searches INTEGER NOT NULL DEFAULT 0;
     """,
+    # 7: whether Dan said to keep a message local (``Message.private``), read once as it
+    # arrives rather than from its words in six places. Earlier messages are marked
+    # from their words here, so what was kept local stays kept.
+    f"""
+    ALTER TABLE messages ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+    UPDATE messages SET private = 1 WHERE role = 'user' AND ({_KEEP_LOCAL_LIKE});
+    """,
 ]
+MESSAGE_COLS = "id, at, role, text, reply_json, source, channel, meta_json, private"
 
 
 @dataclass(frozen=True)
@@ -139,6 +165,11 @@ class Message:
     source: str | None = None
     channel: str | None = None
     meta_json: str | None = None
+    private: bool = False  # Dan said to keep it local: never shown to a cloud model
+
+    @classmethod
+    def from_row(cls, row: tuple) -> Message:
+        return cls(*row[:-1], private=bool(row[-1]))
 
 
 @dataclass(frozen=True)
@@ -221,12 +252,17 @@ class Memory:
         source: str | None = None,
         channel: str | None = None,
         meta_json: str | None = None,
+        private: bool | None = None,
     ) -> int:
+        """``private``: Dan said to keep it local. The brain reads that once as the
+        message arrives and passes it in; any other caller leaves it to the words here."""
+        if private is None:
+            private = role == "user" and bool(KEEP_LOCAL.search(text))
         now = self.clock()
         with self.db:
             cur = self.db.execute(
                 "INSERT INTO messages (at, day, role, text, reply_json, source, channel,"
-                " meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " meta_json, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     now.isoformat(timespec="seconds"),
                     now.date().isoformat(),
@@ -236,6 +272,7 @@ class Memory:
                     source,
                     channel,
                     meta_json,
+                    int(private),
                 ),
             )
         return int(cur.lastrowid)
@@ -246,11 +283,11 @@ class Memory:
         think...") is a working note, not a turn, so it's left out, and nothing
         from before the last new chat is."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             " WHERE id > ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
-        return [Message(*row) for row in reversed(rows)]
+        return [Message.from_row(row) for row in reversed(rows)]
 
     @_locked
     def page(
@@ -267,11 +304,11 @@ class Memory:
         else:
             where, args, order = "id < ?", [before], "DESC"
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             f" WHERE {where} AND (source IS NULL OR source != ?) ORDER BY id {order} LIMIT ?",
             (*args, RECALL_STEP, limit),
         ).fetchall()
-        found = [Message(*row) for row in rows]
+        found = [Message.from_row(row) for row in rows]
         return found if order == "ASC" else list(reversed(found))
 
     @_locked
@@ -286,11 +323,11 @@ class Memory:
         """The end of the conversation before the current one (``new_chat``), oldest
         first, recall steps left out: what a new chat picks one thing up from."""
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
+            f"SELECT {MESSAGE_COLS} FROM messages"
             " WHERE id <= ? AND (source IS NULL OR source != ?) ORDER BY id DESC LIMIT ?",
             (int(self.self_value(CHAT_FROM) or 0), RECALL_STEP, limit),
         ).fetchall()
-        return [Message(*row) for row in reversed(rows)]
+        return [Message.from_row(row) for row in reversed(rows)]
 
     def said_privately(self, message_id: int) -> None:
         """Kit's line ``message_id`` came from something Dan kept local."""
@@ -306,12 +343,12 @@ class Memory:
         return {i for i in said if isinstance(i, int)} if isinstance(said, list) else set()
 
     def shared(self, messages: list[Message]) -> list[Message]:
-        """The messages fit for a cloud model: whatever Dan said to keep local and
-        Kit's answer to it left out, and Kit's lines from it."""
+        """The messages fit for a cloud model: whatever Dan said to keep local
+        (``Message.private``) and Kit's answer to it left out, and Kit's lines from it."""
         out, held, private = [], False, self.private_said()
         for m in messages:
             if m.role == "user":
-                held = bool(KEEP_LOCAL.search(m.text))
+                held = m.private
             if not held and m.id not in private:
                 out.append(m)
         return out
@@ -324,21 +361,28 @@ class Memory:
     @_locked
     def messages_on(self, day: str) -> list[Message]:
         rows = self.db.execute(
-            "SELECT id, at, role, text, reply_json, source, channel, meta_json FROM messages"
-            " WHERE day = ? ORDER BY id",
+            f"SELECT {MESSAGE_COLS} FROM messages WHERE day = ? ORDER BY id",
             (day,),
         ).fetchall()
-        return [Message(*row) for row in rows]
+        return [Message.from_row(row) for row in rows]
 
     def index_exchange(
-        self, user_msg_id: int, owner: str, user_text: str, name: str, reply_text: str
+        self,
+        user_msg_id: int,
+        owner: str,
+        user_text: str,
+        name: str,
+        reply_text: str,
+        private: bool = False,
     ) -> int:
-        """Make one exchange findable later."""
+        """Make one exchange findable later. A ``private`` one (Dan kept it local) is
+        marked so, and recall keeps it from cloud models (kit.recall.private)."""
         return self.index.add(
             CONVERSATION,
             "exchange",
             f"{owner}: {user_text}\n{name}: {reply_text}",
             ref=str(user_msg_id),
+            meta={"private": True} if private else None,
         )
 
     # Facts

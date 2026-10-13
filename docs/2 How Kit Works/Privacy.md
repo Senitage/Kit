@@ -35,7 +35,11 @@ local model can't do.
 Say **"keep it local"** with a message and it's answered by the local model,
 and everything that comes from it is marked private: what he learns, the day's
 summary, a reminder, his thoughts about it, his journal. None of it ever goes
-to a cloud model, in recall, reflection or review. See
+to a cloud model, in recall, reflection or review. The words are read once, as
+the message arrives, and stored with it as a **private flag**; everything
+after (the history a cloud model sees, recall, the threads he follows, what
+he learns) reads the flag, not the words. Messages from before the flag
+existed were marked from their words when the memory file was updated. See
 [[Memory In Depth#What you keep local]].
 
 ## The switches
