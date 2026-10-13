@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
 STALE_AFTER = timedelta(minutes=3)  # the desk app reports every few seconds
+FORGET_AFTER = timedelta(days=1)  # a PC not heard from for this long is dropped
 AWAY_AFTER_S = 300  # no keyboard or mouse for this long counts as away
 KEEP_FOR = timedelta(hours=16)
 MAX_WINDOWS = 40
@@ -249,6 +250,8 @@ class PcContext:
         away = away_on(snap)
         used = old.used if old and away else (None if away else now)
         self.desks[snap.host] = Desk(snap, now, used)
+        for host in [h for h, d in self.desks.items() if now - d.seen > FORGET_AFTER]:
+            del self.desks[host]  # a PC gone a day (or a desk app sending made-up names)
         if self.current() is not self.desks[snap.host]:
             return  # another PC is the one Dan's on; its reports draw his day
         f = None if away else snap.focus

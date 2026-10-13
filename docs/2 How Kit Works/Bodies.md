@@ -38,8 +38,10 @@ flowchart LR
 - A body can **say hello** when it starts (`POST /api/bodies/hello`) with what
   it can do, and the brain answers with what *it* can do, so each side only
   uses what the other has. The brain keeps a list of the bodies it has heard
-  from and when Dan last used each one. Each PC running the desk app is a body
-  of its own. See [[Phone App#Saying hello]].
+  from and when Dan last used each one, and drops one it hasn't heard from
+  for a day (so a body sending a new id every hello can't grow the list
+  forever; the same goes for the PCs the desk app reports from). Each PC
+  running the desk app is a body of its own. See [[Phone App#Saying hello]].
 - **One voice at a time.** When he pipes up, one body says it out loud: the PC
   Dan's using; else the device he last talked through, like his phone while
   he's out; else the PC he was last on. The rest only show the words. See
