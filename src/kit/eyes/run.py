@@ -156,6 +156,7 @@ class Eyes:
         self._camera_failed_at: float | None = None
         self._load_failed_at: float | None = None
         self._error_at: float | None = None
+        self._looks = 0  # frames since the camera opened, for ``detect_every``
 
     # One pass of the loop
 
@@ -187,7 +188,11 @@ class Eyes:
         if self.settings.mirror:
             frame = np.ascontiguousarray(frame[:, ::-1])
         h, w = frame.shape[:2]
-        detections = self.detector.detect(frame)
+        # On a CPU the detector rests between looks (``detect_every``); a frame it
+        # didn't look at teaches the scene nothing, but faces and hands keep up.
+        resting = self._looks % self.settings.detect_every != 0
+        detections = None if resting else self.detector.detect(frame)
+        self._looks += 1
         faces, hands, poses = [], [], []
         if self.faces is not None or self.body is not None:
             rgb = np.ascontiguousarray(frame[:, :, ::-1])
@@ -211,7 +216,17 @@ class Eyes:
             self._send(report, now)
         if self.on_frame is not None and not self.on_frame(frame, self.scene, report):
             raise StopIteration
+        self._rest(now)
         return events
+
+    def _rest(self, started: float) -> None:
+        """Wait out the rest of this look's share of a second (``looks_per_second``),
+        so a CPU isn't kept busy looking at frames nobody needs."""
+        if self.settings.looks_per_second <= 0:
+            return
+        left = 1 / self.settings.looks_per_second - (self.clock() - started)
+        if left > 0:
+            self.sleep(left)
 
     def run(self, stop: threading.Event | None = None, max_steps: int | None = None) -> None:
         """Loop until ``stop`` is set, the preview is closed, or ``max_steps`` passes."""
@@ -292,6 +307,7 @@ class Eyes:
         return True
 
     def _release(self) -> None:
+        self._looks = 0  # the first frame after the camera is back gets a proper look
         if self.camera is not None:
             self.camera.release()
             self.camera = None
@@ -352,6 +368,9 @@ class Eyes:
                     "width",
                     "height",
                     "detector",
+                    "detector_format",
+                    "detector_size",
+                    "device",
                     "faces",
                     "hands",
                     "poses",
@@ -460,7 +479,14 @@ def build_eyes(
 
     def load() -> dict:
         """The models, loaded now and again each time Kit wakes up."""
-        detector = YoloDetector(settings.detector, models, settings.confidence)
+        detector = YoloDetector(
+            settings.detector,
+            models,
+            settings.confidence,
+            device="cpu" if settings.device == "cpu" else None,
+            fmt=settings.detector_format,
+            size=settings.detector_size,
+        )
         faces = body = None
         if settings.faces or settings.hands or settings.poses:
             from kit.eyes.body import model_path

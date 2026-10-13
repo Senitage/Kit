@@ -41,6 +41,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Done, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
 | Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Done, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
 | `kit memory scrub`: take out lines that should never have been said, and everything kept of them | Done, pull request #59 | [[Memory In Depth#You stay in charge]] |
+| Lite eyes: the eyes on a CPU, a few looks a second, the detector resting between looks | Done, pull request #45 | [[Eyes#Without a graphics card]] |
 | Models as your own list (`kit models add` and `remove`, no presets) and prices fetched daily in Australian dollars, the budget and every spend figure in A$ | Open, pull request #60 | [[Models and Routing#Your own list of models]], [[Models and Routing#Prices, fetched for you]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
