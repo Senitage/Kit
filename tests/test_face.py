@@ -89,6 +89,22 @@ def test_unknown_names_are_rejected():
         face.set_state("dancing")
 
 
+def test_names_from_a_newer_brain_fall_back_to_neutral_and_none(caplog):
+    """The desk asks the face first: an emotion or gesture it doesn't have (a newer
+    brain's) shows as a plain face, not an error part way through a reply."""
+    face = Face()
+    assert face.known_emotion("happy") == "happy" and face.known_gesture("nod") == "nod"
+    with caplog.at_level("WARNING", logger="kit.face.rig"):
+        assert face.known_emotion("smug") == "neutral"
+        assert face.known_emotion(None) == "neutral"
+        assert face.known_gesture("moonwalk") == "none"
+        assert face.known_gesture("moonwalk") == "none"
+    assert caplog.text.count("moonwalk") == 1  # said once, not every reply
+    face.set_emotion(face.known_emotion("smug"), 0)
+    face.play(face.known_gesture("moonwalk"), 0)
+    assert face.emotion == "neutral" and face.gesture is None
+
+
 def test_sleeping_closes_the_eyes_and_dims_and_waking_opens_them():
     face = Face(rng=random.Random(5))
     face.set_state("sleeping")

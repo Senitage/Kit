@@ -169,7 +169,9 @@ class Performer:
         voice. Whatever his voice has already said of it gets its gestures now."""
         face, now = self.widget.face, time.monotonic()
         estimate = plan_reply(reply)[-1].at
-        face.set_emotion(reply.get("emotion", "neutral"), now, hold_s=2 * estimate + 4)
+        face.set_emotion(
+            face.known_emotion(reply.get("emotion", "neutral")), now, hold_s=2 * estimate + 4
+        )
         self._reply, self._gestured = reply, set()
         # His voice may have got there first (a streamed answer): those sentences'
         # gestures play now. Otherwise the first one does, and his voice is awaited.
@@ -226,9 +228,10 @@ class Performer:
         if n in self._gestured or n >= len(segments):
             return
         self._gestured.add(n)
-        gesture = segments[n].get("gesture", "none")
+        face = self.widget.face
+        gesture = face.known_gesture(segments[n].get("gesture", "none"))
         if gesture != "none":
-            self.widget.face.play(gesture, time.monotonic())
+            face.play(gesture, time.monotonic())
 
     @staticmethod
     def linger(text: str) -> float:
@@ -238,9 +241,9 @@ class Performer:
     def _run(self, cue, hold: float) -> None:
         face, now = self.widget.face, time.monotonic()
         if cue.kind == "emotion":
-            face.set_emotion(cue.value, now, hold_s=hold)
+            face.set_emotion(face.known_emotion(cue.value), now, hold_s=hold)
         elif cue.kind == "gesture":
-            face.play(cue.value, now)
+            face.play(face.known_gesture(cue.value), now)
         elif cue.kind == "say":
             face.set_state("speaking")
             self._said.append(cue.value)

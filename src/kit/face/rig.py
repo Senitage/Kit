@@ -23,12 +23,15 @@ tests can drive it frame by frame.
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, fields
 
 from kit.face.character import Character, builtin, current
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,16 @@ CLIPS: dict[str, GestureClip] = {name: _clip(builtin(), name) for name in builti
 _POSE_KEYS = [f.name for f in fields(Pose)]
 
 
+_said_unknown: set[tuple[str, str]] = set()
+
+
+def _unknown(kind: str, name: object) -> None:
+    key = (kind, repr(name))
+    if key not in _said_unknown:
+        _said_unknown.add(key)
+        log.warning("the brain sent an %s this face doesn't know, %r; showing none", kind, name)
+
+
 @dataclass
 class Face:
     """Kit's face. Tell it what is happening; call ``tick`` once per frame."""
@@ -162,6 +175,24 @@ class Face:
         self._colour: list[float] | None = None  # the glow colour, eased between moods
 
     # ---- what the desk app (or the arm) tells the face ----
+
+    def known_emotion(self, name: object) -> str:
+        """``name`` if this character has that pose, else "neutral". For names that
+        come from the brain: a newer brain's new emotion reaches an app that hasn't
+        been updated yet, and a plain face is better than an error part way
+        through showing his reply. Said once per name in the log."""
+        if name in self._ch.emotions:
+            return str(name)
+        _unknown("emotion", name)
+        return "neutral"
+
+    def known_gesture(self, name: object) -> str:
+        """``name`` if this character has that gesture, else "none" (see
+        ``known_emotion``)."""
+        if name in self._ch.gestures:
+            return str(name)
+        _unknown("gesture", name)
+        return "none"
 
     def set_emotion(self, name: str, now: float, hold_s: float | None = None) -> None:
         """Ease toward an emotion's pose; after ``hold_s`` seconds drift back to neutral."""

@@ -8,10 +8,14 @@ the app makes them from worker threads, never the screen thread.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+import logging
+import threading
+from collections.abc import Callable, Iterator
 from urllib.parse import quote
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 # A cloud answer with web searches can take a minute or two to arrive.
 CHAT_TIMEOUT = httpx.Timeout(10.0, read=300.0)
@@ -192,6 +196,66 @@ class BrainClient:
                         yield json.loads(line)
         except httpx.HTTPError as e:
             raise BrainError(f"Lost touch with Kit ({type(e).__name__}).") from e
+
+
+LIFE_RETRY_S = 10.0  # the brain's life feed broke: wait this long, then twice as long...
+LIFE_RETRY_MAX_S = 120.0  # ...up to this, between tries
+
+
+def life_step(client: BrainClient, after: int | None, emit: Callable[[dict], None]) -> int:
+    """One turn of following Kit's inner life: hand each new event to ``emit`` and
+    return the id to ask after next. ``after`` None means start from now (the
+    desk just started, or the brain did): his current state is emitted first,
+    not old fidgets."""
+    if after is None:
+        state = client.life()
+        after = int(state["last_event"])
+        if state.get("mood") == "asleep":
+            emit({"type": "state", "state": "asleep"})
+        if state.get("face"):  # the face he wears between replies
+            emit({"type": "mood", "face": state["face"]})
+    got = client.life_events(after)
+    events = got["events"]
+    if not isinstance(events, list) or not all(isinstance(e, dict) for e in events):
+        raise TypeError("the life events aren't a list of events")
+    for event in events:
+        emit(event)
+    after = int(events[-1]["id"]) if events else max(after, 0)
+    if int(got["last"]) < after:  # the brain restarted: its event ids began again
+        raise BrainError("Kit's brain restarted")
+    return after
+
+
+def follow_life(
+    stop: threading.Event,
+    client_of: Callable[[], BrainClient | None],
+    emit: Callable[[dict], None],
+    retry_s: float = LIFE_RETRY_S,
+    retry_max_s: float = LIFE_RETRY_MAX_S,
+) -> None:
+    """Follow Kit's inner life until ``stop`` is set. Whatever goes wrong (the
+    brain away, a malformed answer, a settings change mid-call) is logged once and
+    tried again after a wait that doubles while the trouble lasts, so a bad
+    answer can't end the feed until the app restarts."""
+    after: int | None = None
+    delay = retry_s
+    trouble = ""
+    while not stop.is_set():
+        client = client_of()
+        if client is None:
+            stop.wait(5)
+            continue
+        try:
+            after = life_step(client, after, emit)
+            delay, trouble = retry_s, ""
+        except Exception as e:  # noqa: BLE001 (anything: the loop must outlive it)
+            what = f"{type(e).__name__}: {e}"
+            if what != trouble:
+                log.warning("can't follow Kit's life (%s); trying again in %.0f s", what, delay)
+                trouble = what
+            after = None
+            stop.wait(delay)
+            delay = min(delay * 2, retry_max_s)
 
 
 def _check(r: httpx.Response) -> None:

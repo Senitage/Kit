@@ -383,7 +383,7 @@ class MoodPage(QWidget):
 
         face, now = self.face.face, time.monotonic()
         face.set_state("sleeping" if mood == "asleep" else "idle")
-        face.set_emotion(emotion, now)
+        face.set_emotion(face.known_emotion(emotion), now)
         dials = life.get("dials")
         if dials:
             face.set_dials(float(dials.get("arousal", 0.5)), float(dials.get("valence", 0.0)))

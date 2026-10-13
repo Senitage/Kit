@@ -68,7 +68,7 @@ from kit.desk import face3d, startup, theme
 from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
-from kit.desk.client import BrainClient, BrainError, SpeechOff
+from kit.desk.client import BrainClient, BrainError, SpeechOff, follow_life
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
@@ -842,6 +842,9 @@ class DeskApp(QObject):
         self._stop.set()
         if self.listener:
             self.listener.stop()
+        self.chat.speaker.close()  # the speakers and the connection to the brain go too:
+        if self.client is not None:  # left open, Windows sometimes hangs on the way out
+            self.client.close()  # and the next start finds the sound device in use
         self.tray.hide()
         self.app.quit()
 
@@ -921,29 +924,7 @@ class DeskApp(QObject):
     # Kit's inner life (kit.life on the brain decides; this acts it out)
 
     def _life_loop(self) -> None:
-        after: int | None = None
-        while not self._stop.is_set():
-            client = self.client
-            if client is None:
-                self._stop.wait(5)
-                continue
-            try:
-                if after is None:  # start from now, not from old fidgets
-                    state = client.life()
-                    after = state["last_event"]
-                    if state.get("mood") == "asleep":
-                        self._signals.life.emit({"type": "state", "state": "asleep"})
-                    if state.get("face"):  # the face he wears between replies
-                        self._signals.life.emit({"type": "mood", "face": state["face"]})
-                got = client.life_events(after)
-                for event in got["events"]:
-                    self._signals.life.emit(event)
-                after = got["events"][-1]["id"] if got["events"] else max(after, 0)
-                if got["last"] < after:  # the brain restarted: its event ids began again
-                    after = None
-            except (BrainError, KeyError, TypeError):
-                after = None
-                self._stop.wait(10)
+        follow_life(self._stop, lambda: self.client, self._signals.life.emit)
 
     def _on_life(self, event: dict) -> None:
         face = self.face.face
@@ -954,13 +935,14 @@ class DeskApp(QObject):
                 self.alive.wake_up()
         elif event.get("type") == "fidget":
             if not self._busy() and not self.alive.asleep:
-                face.play(event.get("gesture", "look_away"), time.monotonic())
+                gesture = face.known_gesture(event.get("gesture", "look_away"))
+                face.play(gesture, time.monotonic())
         elif event.get("type") == "look":  # Kit's eyes saw where you are: Glow looks at you
             if not self.alive.asleep:
                 face.look_at(float(event.get("x", 0)), float(event.get("y", 0)), time.monotonic())
         elif event.get("type") == "react":  # a reaction plays even mid-conversation
             if not self.alive.asleep:
-                face.play(event.get("gesture", "perk_up"), time.monotonic())
+                face.play(face.known_gesture(event.get("gesture", "perk_up")), time.monotonic())
         elif event.get("type") == "doing":  # what he's up to while you're out
             self._doing = str(event.get("what") or "")
             self._show_doing()
