@@ -22,7 +22,7 @@ from kit.settings import Settings, SettingsError, validate_settings
 from kit.settings_store import SettingsStore
 from kit.speech.bench import gaps, run_bench
 from kit.speech.sentences import SentenceSplitter
-from kit.speech.service import Loading, SpeechError, SpeechService, Spoken, Stale
+from kit.speech.service import Loading, Speech, SpeechError, SpeechService, Spoken, Stale
 
 TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -114,7 +114,8 @@ def test_built_in_engines_stay_when_one_is_changed():
     assert s.speech.engines["kokoro"].kind == "kokoro"
     assert {"piper", "chatterbox", "chatterbox-turbo", "tone"} <= set(s.speech.engines)
     assert s.speech.profile.kind == "chatterbox-turbo"
-    assert s.speech.profile.mood_tags["tired"] == "[sigh]"
+    assert s.speech.profile.mood_tags["tired"] == ["[sigh]", "[groan]"]
+    assert s.speech.profile.mood_tag_chance == 0.6
 
 
 def test_a_second_voice_is_its_own_profile_and_unknown_engines_are_refused():
@@ -154,6 +155,15 @@ def test_the_tone_engine_runs_in_its_own_program_and_says_a_line(tone):
     assert service.status()["loaded"] == "tone"
 
 
+def test_a_line_comes_in_pieces_as_its_made(tone):
+    service, _ = tone
+    said = service.stream("Oh, nice one", "happy")
+    assert said.rate == 16000 and said.engine == "tone"
+    pcm = b"".join(said.pieces)
+    assert len(pcm) == int(0.36 * 16000) * 2  # the same sound, without a WAV header
+    assert service.quiet_s() == pytest.approx(0, abs=1)  # counted as made once taken
+
+
 def test_engines_without_sounds_leave_them_out(tone):
     service, _ = tone
     assert service.speak("[chuckle] Oh, nice one", "happy").audio_ms == pytest.approx(360)
@@ -168,7 +178,8 @@ def test_turbo_makes_the_sound_and_skips_the_moods_own_opener(monkeypatch):
 
     class Turbo(worker.ChatterboxTurboEngine):
         def __init__(self):
-            self.mood_tags, self.sample_rate = {"playful": "[chuckle]"}, 24000
+            self.openers = worker.Openers({"mood_tags": {"playful": "[chuckle]"}})
+            self.openers.chance, self.sample_rate = 1.0, 24000
             self.tts, self.turbo, self.graph = self, None, None
 
         def generate(self, text):
@@ -202,11 +213,13 @@ def test_turbo_uses_the_cuda_graph_loop_when_it_has_one():
             if len(line) > 20:
                 raise ValueError("line too long for the token store")
             made.append(("graph", line))
-            return worker.np.zeros(10)
+            yield worker.np.zeros(10)
+            yield worker.np.zeros(10)
 
     class Turbo(worker.ChatterboxTurboEngine):
         def __init__(self):
-            self.mood_tags, self.sample_rate = {"playful": "[chuckle]"}, 24000
+            self.openers = worker.Openers({"mood_tags": {"playful": "[chuckle]"}})
+            self.openers.chance, self.sample_rate = 1.0, 24000
             self.tts, self.turbo, self.graph = self, Fast, object()
 
         def generate(self, text):  # Chatterbox's own loop
@@ -223,28 +236,70 @@ def test_turbo_uses_the_cuda_graph_loop_when_it_has_one():
             return worker.np.zeros(10)
 
     turbo = Turbo()
-    turbo.speak("Fine.", "playful", first=True)
-    turbo.speak("That one went on for a while.", "playful")  # too long: its own loop
+    assert len(list(turbo.speak("Fine.", "playful", first=True))) == 2  # a window at a time
+    # too long: its own loop, as one piece
+    assert len(list(turbo.speak("That one went on for a while.", "playful"))) == 1
     assert made == [("graph", "[chuckle] Fine."), ("own", "That one went on for a while.")]
+
+
+def test_the_opening_sound_varies_and_sometimes_theres_none():
+    from kit.speech import worker
+
+    tags = {"playful": ["[chuckle]", "[laugh]"], "tired": "[sigh]"}
+    openers = worker.Openers({"mood_tags": tags, "mood_tag_chance": 0.5, "seed": 3})
+    picks = [openers.pick("playful", True, "Fine.") for _ in range(40)]
+    assert {"[chuckle]", "[laugh]", ""} == set(picks)  # both sounds, and some plain starts
+    assert openers.pick("tired", True, "Fine.") in ("[sigh]", "")  # one sound works too
+    assert openers.pick("playful", False, "Fine.") == ""  # only a reply's first line
+    assert openers.pick("playful", True, "[sigh] Fine.") == ""  # one with its own sound
+    assert openers.pick("neutral", True, "Fine.") == ""
+    always = worker.Openers({"mood_tags": tags, "mood_tag_chance": 1.0, "seed": 3})
+    assert all(always.pick("playful", True, "Fine.") for _ in range(20))
+    # Every sound in the default settings is one Turbo knows.
+    for sounds in Settings().speech.profile.mood_tags.values():
+        for tag in sounds:
+            assert worker.SOUND_TAG.fullmatch(tag), tag
+
+
+def test_windows_of_sound_are_cross_faded_where_they_meet():
+    import numpy as np
+
+    from kit.speech import turbo
+
+    joined = turbo.crossfade(np.ones(5, dtype=np.float32), np.zeros(5, dtype=np.float32))
+    assert joined.tolist() == pytest.approx([1.0, 0.75, 0.5, 0.25, 0.0])
+    # Lengths that differ: the shorter decides, from the tail's end and the head's start.
+    assert len(turbo.crossfade(np.ones(7), np.zeros(3))) == 3
+    assert len(turbo.crossfade(np.ones(0), np.zeros(3))) == 0
 
 
 def test_the_worker_drops_a_line_from_a_reply_thats_been_overtaken(tmp_path):
     from kit.speech import worker
 
     w = worker.Worker("tone", "tone", {}, tmp_path)
-    w.speak("One.", "neutral", generation=5)
-    w.speak("Older but never numbered.", "neutral")  # an older desk: always made
-    w.speak("Seven.", "neutral", generation=7)
+
+    def said(*args, **kwargs) -> bytes:
+        return b"".join(w.speak(*args, **kwargs))
+
+    assert len(said("One.", "neutral", generation=5)) == int(0.12 * 16000) * 2
+    said("Older but never numbered.", "neutral")  # an older desk: always made
+    said("Seven.", "neutral", generation=7)
     with pytest.raises(worker.Stale):  # from the reply Dan interrupted
-        w.speak("Six.", "neutral", generation=6)
-    w.speak("Seven again.", "neutral", generation=7)
+        said("Six.", "neutral", generation=6)
+    said("Seven again.", "neutral", generation=7)
+    # A line under way stops at its next piece once its reply is overtaken.
+    w.engine.speak = lambda text, mood, first=False: iter([worker.np.zeros(8)] * 3)
+    pieces = w.speak("Long one.", "neutral", generation=7)
+    assert next(pieces) == bytes(16)
+    w._newest(8)
+    assert list(pieces) == []
     # The check is made with the engine's lock held, so a line waiting its turn
     # behind one being made is dropped the moment that one is done.
     dropped = []
 
     def still_six():
         try:
-            w.speak("Still six.", "neutral", generation=6)
+            said("Still six.", "neutral", generation=6)
         except worker.Stale as e:
             dropped.append(str(e))
 
@@ -452,7 +507,37 @@ def engines_that(say):
 
 
 def spoke(engine):
-    return httpx.Response(200, content=b"RIFFwav", headers={"X-Audio-Ms": "900"})
+    return httpx.Response(200, content=bytes(1600), headers={"X-Sample-Rate": "8000"})
+
+
+class Pieces(httpx.SyncByteStream):
+    """A fake engine's answer in several pieces, as the real one sends it."""
+
+    def __init__(self, *pieces: bytes):
+        self.pieces = pieces
+
+    def __iter__(self):
+        yield from self.pieces
+
+
+def test_the_whole_line_is_gathered_from_its_pieces_and_a_stream_stops_when_overtaken(paths):
+    paths.ensure()
+    s = Settings.model_validate({"speech": {"engine": "kokoro"}})
+    headers = {"X-Sample-Rate": "8000", "X-Synth-Ms": "150"}
+    started, launcher, http = engines_that(
+        lambda engine: httpx.Response(200, stream=Pieces(bytes(800), bytes(800)), headers=headers)
+    )
+    service = SpeechService(lambda: s.speech, paths, launcher, http)
+    spoken = service.speak("Hi.", generation=1)
+    with wave.open(io.BytesIO(spoken.wav)) as w:
+        assert (w.getframerate(), w.getnframes()) == (8000, 800)
+    assert spoken.audio_ms == 100 and spoken.synth_ms >= 150 and spoken.engine == "kokoro"
+    said = service.stream("Next.", generation=2)
+    assert (said.rate, said.synth_ms) == (8000, 150)
+    assert next(said.pieces) == bytes(800)
+    service.stream("Newer.", generation=3)  # Dan moved on
+    assert list(said.pieces) == []  # the rest of the old line is dropped
+    assert service.quiet_s() == 0.0  # the newer line is still being made
 
 
 def test_out_of_graphics_memory_he_switches_to_the_fallback_and_stays(paths):
@@ -630,6 +715,14 @@ class FakeSpeech:
         self.loading = False  # set by a test: the next no-wait ask finds the engine loading
 
     def speak(self, text, mood="neutral", engine=None, first=False, generation=None, wait=True):
+        self._check(text, mood, first, generation, wait)
+        return Spoken(wav=b"RIFFwav", synth_ms=420, audio_ms=900, engine="tone")
+
+    def stream(self, text, mood="neutral", engine=None, first=False, generation=None, wait=True):
+        self._check(text, mood, first, generation, wait)
+        return Speech(rate=16000, synth_ms=420, engine="tone", pieces=iter([b"one", b"two"]))
+
+    def _check(self, text, mood, first, generation, wait):
         if not wait and self.loading:
             self.loading = False  # loading in the background: ready next time
             self.on = True
@@ -637,7 +730,6 @@ class FakeSpeech:
         if generation == 1:
             raise Stale("reply 1 was interrupted, so that line wasn't made")
         self.said.append((text, mood, first, generation))
-        return Spoken(wav=b"RIFFwav", synth_ms=420, audio_ms=900, engine="tone")
 
     def status(self):
         return {"engine": "tone", "running": self.on}
@@ -681,10 +773,21 @@ def test_the_server_says_a_sentence_only_when_speech_is_on(server):
     speech.on = True
     r = client.post("/api/speech/say", json=body, headers=AUTH)
     assert r.status_code == 200
-    assert r.headers["content-type"] == "audio/wav"
-    assert r.headers["x-synth-ms"] == "420"
-    assert r.content == b"RIFFwav"
+    # In pieces as it's made: plain 16-bit samples, with the rate alongside.
+    assert r.headers["content-type"] == "audio/L16; rate=16000"
+    assert r.headers["x-sample-rate"] == "16000" and r.headers["x-synth-ms"] == "420"
+    assert r.headers["x-engine"] == "tone" and "content-length" not in r.headers
+    assert r.content == b"onetwo"
     assert speech.said == [("Oh, nice!", "excited", True, None)]
+    # The whole sentence as a WAV file, for a desk or tool that asks for one.
+    for how in (
+        {"headers": {**AUTH, "Accept": "audio/wav"}},
+        {"headers": AUTH, "params": {"wav": 1}},
+    ):
+        r = client.post("/api/speech/say", json=body, **how)
+        assert r.status_code == 200 and r.headers["content-type"] == "audio/wav"
+        assert r.content == b"RIFFwav" and r.headers["x-audio-ms"] == "900"
+    assert len(speech.said) == 3
     assert client.get("/api/speech", headers=AUTH).json()["available"] is True
 
 
@@ -713,7 +816,7 @@ def test_his_voice_says_how_long_its_been_quiet_for_the_brain_to_wait_on(paths):
     def slow(text, mood, engine, first, generation, wait):
         inside.set()
         gate.wait(5)
-        return Spoken(wav=b"RIFF", synth_ms=1, audio_ms=1, engine="tone")
+        return Speech(rate=16000, synth_ms=1, engine="tone", pieces=iter([b"\0\0"]))
 
     service._speak = slow
     worker = threading.Thread(target=service.speak, args=("Hi.",))

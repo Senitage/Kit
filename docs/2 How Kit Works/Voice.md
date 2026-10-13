@@ -13,10 +13,12 @@ related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 > can be swapped (Chatterbox Turbo, Chatterbox, Kokoro, Piper). He speaks
 > **sentence by sentence** as the brain writes, so he starts talking a few
 > words in, not after the whole reply, and a cloud answer as soon as its
-> first words arrive. His **mood** colours how he sounds, a joke can get a
-> **chuckle** in the right place, and his face moves for exactly as long as
-> his voice does. Hearing (a microphone, a wake word) is the next part of the
-> stage.
+> first words arrive. Each sentence comes to the desk **in pieces as it's
+> made**, so the first second plays while the rest is still being made. His
+> **mood** colours how he sounds, a joke can get a **chuckle** in the right
+> place, and his **mouth follows his voice**: it opens on his words and closes
+> on his pauses, from the sound itself. Hearing (a microphone, a wake word) is
+> the next part of the stage.
 
 ## How a sentence becomes sound
 
@@ -29,10 +31,27 @@ sequenceDiagram
     Desk->>Desk: Cut the words into sentences
     Desk->>Brain: Say sentence 1 (in this mood)
     Brain->>Engine: Make it
-    Engine-->>Desk: Audio
-    Desk->>Desk: Play it, while sentence 2 is made
+    Engine-->>Desk: The first second of sound
+    Desk->>Desk: Play it, while the rest is made
+    Engine-->>Desk: The rest, piece by piece
+    Desk->>Desk: Sentence 2 is made while 1 plays
     Brain-->>Desk: spoken (his words are complete)
 ```
+
+- **A sentence comes in pieces as it's made.** Chatterbox Turbo picks his
+  speech sounds one at a time (25 a second of speech) and a decoder turns them
+  into sound. Rather than waiting for the whole sentence, every 25 sounds (a
+  second's worth) go through the decoder together with the last three of the
+  window before, whose sound is cross-faded into the join so it doesn't
+  click, and that piece is sent on at once: plain 16-bit samples, streamed
+  from the engine through the server (`audio/L16`, see [[API]]) to the desk,
+  which adds each piece to the sound output as it comes. So a long sentence
+  starts playing about a second into its making instead of at the end, and a
+  short sentence followed by a long one no longer leaves a hole while the long
+  one is made. Engines that make a sentence in one go (Kokoro, Piper) send it as
+  one piece through the same path, and `kit speech say` and the bench gather
+  the pieces into a whole clip. A sentence of a reply you've interrupted is cut
+  short at its next piece.
 
 - **The first sentence is cut short** where it can be, because an engine like
   Chatterbox makes a whole piece before any of it plays: at the first comma
@@ -48,9 +67,16 @@ sequenceDiagram
   between sentences, so the first sentence isn't held up opening one. See
   [[Desk App#Connections]].
 - **His words show as he says them**, and his face acts the reply out as his
-  voice starts (a Look page option). Each sentence tells the face how long it
-  plays, so his mouth stops when the sound does, and each gesture lands as its
-  words start.
+  voice starts (a Look page option). The chat hears each sentence as its first
+  piece starts playing and how long it was as its last piece ends, and each
+  gesture lands as its words start.
+- **His mouth follows his voice.** As the desk hands each bit of sound to the
+  speakers it measures how loud it is (smoothed: it opens in about 20 ms and
+  closes in about 80 ms) and passes that to his face, which sets how open his
+  mouth is: Kit 3D through `kit.setTalk`, Kit 2D's drawn mouth and Glow's
+  pulse the same way. So his mouth opens on his words, closes on the pauses
+  inside a sentence and stops exactly when the sound does, rather than
+  pulsing for a guessed length. See [[Face#The rig, in three layers]].
 - **You talking stops him**, straight away, mid-word, and the new reply
   isn't held behind the old one. Every sentence goes to the server with its
   reply's **generation** number (it goes up with each reply begun and each
@@ -81,6 +107,13 @@ in his voice, right before its words: a laugh is a **chuckle**, a sigh a
 sentence, since each adds about half a second and they're hit or miss. Only
 Chatterbox Turbo makes them; other engines quietly leave them out, and the
 words on screen never show them.
+
+Turbo can also open a reply with a sound for his mood (`mood_tags`): a sigh or
+a groan when he's tired, a chuckle or a laugh when he's playful. Each mood has a
+few to choose from and one is picked at random, and only six replies in ten
+(`mood_tag_chance`) get one at all, so he doesn't start every amused reply with
+the very same chuckle. A reply that opens with a sound of its own never gets
+the mood's one too.
 
 ## A backup voice
 
@@ -159,7 +192,8 @@ kit speech bench --engines chatterbox-turbo kokoro
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/speech/service.py`: runs the chosen engine and asks it for speech.
 > - `src/kit/speech/worker.py`: one engine behind a tiny local web server.
-> - `src/kit/speech/turbo.py`: Chatterbox Turbo's token loop as a CUDA graph.
+> - `src/kit/speech/turbo.py`: Chatterbox Turbo's token loop as a CUDA graph, and
+>   the sound decoded a window at a time.
 > - `src/kit/speech/sentences.py`: cutting words into speakable pieces.
 > - `src/kit/speech/bench.py`: `kit speech bench`.
 > - `src/kit/desk/voice.py`: playing it on the desk PC.

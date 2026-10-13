@@ -147,7 +147,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | Method and path | What it does |
 |---|---|
 | `GET /api/speech` | Voice engine status: the engine set, the one he's `using`, why if he `fell_back`, and whether Turbo runs as a `cuda_graph` |
-| `POST /api/speech/say` | One sentence as a WAV file, in his voice and mood. `generation` (optional) numbers the reply: once a higher number has been seen, a sentence from a lower one gets `410` instead of being made. `503` with `Retry-After: 1` while the engine is still loading (it loads in the background), `409` when speech is off |
+| `POST /api/speech/say` | One sentence in his voice and mood, **sent in pieces as it's made**: 16-bit mono samples (`Content-Type: audio/L16; rate=24000`, no header), with `X-Sample-Rate`, `X-Synth-Ms` (time to the first piece) and `X-Engine`. With `Accept: audio/wav` or `?wav=1` the whole sentence comes as one WAV file instead, with `X-Audio-Ms` (older desks, tools). `generation` (optional) numbers the reply: once a higher number has been seen, a sentence from a lower one gets `410` instead of being made, and one under way is cut short. `503` with `Retry-After: 1` while the engine is still loading (it loads in the background), `409` when speech is off. See [[Voice#How a sentence becomes sound]] |
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |

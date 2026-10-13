@@ -12,14 +12,24 @@ and replayed with a single call per token: about 2.4 times faster on Dan's RTX
 2070 Super (32 to 76-80 tokens a second). It does the same sums as Chatterbox's
 own loop, so Kit's voice doesn't change.
 
+``generate`` turns the tokens into sound as they come, a window at a time
+(``WINDOW`` tokens, about a second of speech), so the first second of a sentence
+is on its way to the desk while the rest is still being made. Each window is
+decoded with the last few tokens of the one before (``OVERLAP``) and the join
+cross-faded, since the decoder shapes each sound by its neighbours.
+
 Like ``worker.py`` this runs inside the voice's own Python, so it imports
 nothing from Kit, and torch only when it's used.
 """
 
 from __future__ import annotations
 
+import numpy as np
+
 SILENCE = 4299  # Chatterbox's S3GEN_SIL token: a short silence the decoder ends on
 OOV = 6561  # speech tokens at or above this aren't sounds
+WINDOW = 25  # tokens decoded into sound at a time: a second of speech
+OVERLAP = 3  # tokens each window shares with the one before, cross-faded
 
 
 def rules(logits, seen, temperature=0.8, top_k=1000, top_p=0.95, penalty=1.2):
@@ -220,17 +230,63 @@ class GraphTokens:
                 yield token
 
 
-def generate(tts, graph: GraphTokens, text: str):
-    """``ChatterboxTurboTTS.generate`` with the faster token loop: the same decoder
-    and settings, as a float numpy array. Without Chatterbox's watermark, which
-    cost 30 to 80 ms of processor time a clip and marked sound that never leaves
-    the house."""
+def crossfade(tail: np.ndarray, head: np.ndarray) -> np.ndarray:
+    """The sound where two windows meet: ``tail`` (the end of the last window) fading
+    out as ``head`` (the start of this one, the same tokens decoded again with what
+    follows them known) fades in. Lengths that differ are matched to the shorter."""
+    n = min(len(tail), len(head))
+    if n == 0:
+        return head[:0]
+    fade = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    return tail[-n:] * (1 - fade) + head[:n] * fade
+
+
+def decode(tts, tokens: list[int]) -> np.ndarray:
+    """Speech tokens through Chatterbox's decoder: sound as a float numpy array."""
     import torch
 
-    tokens = [t for t in graph(text) if t < OOV] + [SILENCE] * 3
     with torch.inference_mode():
         speech = torch.tensor(tokens, dtype=torch.long, device=tts.device)
         wav, _ = tts.s3gen.inference(
             speech_tokens=speech, ref_dict=tts.conds.gen, n_cfm_timesteps=2
         )
     return wav.squeeze(0).detach().float().cpu().numpy()
+
+
+def generate(tts, graph: GraphTokens, text: str, window: int = WINDOW, overlap: int = OVERLAP):
+    """``ChatterboxTurboTTS.generate`` with the faster token loop and the sound
+    yielded a window at a time (float numpy arrays), so it can be played while the
+    rest is made. The same decoder and settings; without Chatterbox's watermark,
+    which cost 30 to 80 ms of processor time a clip and marked sound that never
+    leaves the house.
+
+    Every ``window`` tokens the decoder runs over them plus the last ``overlap``
+    tokens of the window before, whose sound was held back; the two readings of
+    those tokens are cross-faded, so the join doesn't click. The last window gets
+    three silence tokens, as Chatterbox's own loop ends on."""
+    tokens: list[int] = []
+    voiced = 0  # tokens decoded so far (the last ``overlap`` of them held back)
+    held = np.zeros(0, dtype=np.float32)  # their sound, waiting to be cross-faded
+
+    def piece(end: int, last: bool):
+        nonlocal voiced, held
+        start = max(0, voiced - overlap)
+        chunk = tokens[start:end] + ([SILENCE] * 3 if last else [])
+        wav = decode(tts, chunk)
+        lap = min(len(held), len(wav))  # the held tokens' sound, read again
+        out = np.concatenate([crossfade(held, wav[:lap]), wav[lap:]])
+        if last:
+            held = held[:0]
+        else:
+            hold = int(round(len(wav) / max(1, len(chunk)) * overlap))  # samples a token
+            out, held = out[: len(out) - hold], out[len(out) - hold :]
+        voiced = end
+        return out
+
+    for token in graph(text):
+        if token >= OOV:
+            continue
+        tokens.append(token)
+        if len(tokens) - voiced >= window:
+            yield piece(len(tokens), last=False)
+    yield piece(len(tokens), last=True)

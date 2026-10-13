@@ -34,8 +34,9 @@ class SentenceSplitter:
     ``flush`` at the end for whatever is left.
 
     ``min_clause_words`` is the fewest words the first piece may have when it's cut
-    at a comma; the cut before an "and" needs ``long_sentence_words`` in the buffer
-    first, so a short sentence stays whole."""
+    short, at a comma or before an "and"; the cut before an "and" also needs
+    ``long_sentence_words`` in the buffer first, so a short sentence stays whole.
+    Every caller (the desk, ``kit speech say``, the bench) uses the defaults."""
 
     def __init__(self, min_clause_words: int = 4, long_sentence_words: int = 12) -> None:
         self.buffer = ""
@@ -75,7 +76,7 @@ class SentenceSplitter:
         while (end := self._sentence_end()) is not None:
             if piece := self._take(end):
                 return piece
-        if not self.started and self._words(self.buffer) >= self.min_clause_words:
+        if not self.started:
             for match in _CLAUSE.finditer(self.buffer):
                 if self._words(self.buffer[: match.end()]) >= self.min_clause_words:
                     return self._take(match.end())

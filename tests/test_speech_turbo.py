@@ -12,6 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("chatterbox")
 
+import numpy as np  # noqa: E402
 from transformers.generation.logits_process import (  # noqa: E402
     LogitsProcessorList,
     RepetitionPenaltyLogitsProcessor,
@@ -56,8 +57,10 @@ class FakeTTS:
         self.conds = type("Conds", (), {"t3": t3.cond, "gen": {}})()
         self.s3gen = self
         self.watermarker = self
+        self.decoded: list[int] = []  # tokens handed to the decoder each time
 
     def inference(self, speech_tokens, ref_dict, n_cfm_timesteps):
+        self.decoded.append(len(speech_tokens))
         return torch.ones(1, 2 * len(speech_tokens)), None
 
     def apply_watermark(self, wav, sample_rate=None):
@@ -193,5 +196,35 @@ def test_the_speaker_conditioning_is_worked_out_once_and_kept(t3):
 def test_generate_hands_back_the_sound_without_a_watermark(t3):
     tts = FakeTTS(t3)
     graph = turbo.GraphTokens(tts, max_len=500, max_new=8, check_every=4)
-    wav = turbo.generate(tts, graph, "Yeah.")
+    wav = np.concatenate(list(turbo.generate(tts, graph, "Yeah.")))
     assert wav.ndim == 1 and wav.dtype.name == "float32" and (wav == 1).all()
+    # A short line is one window, ending on three silence tokens.
+    assert len(tts.decoded) == 1 and len(wav) == 2 * tts.decoded[0] and tts.decoded[0] >= 3
+
+
+class _Tokens:
+    """Stands in for ``GraphTokens``: hands out tokens already chosen."""
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def __call__(self, text):
+        yield from self.tokens
+
+
+def test_the_sound_comes_a_window_at_a_time_with_the_joins_cross_faded():
+    tts = FakeTTS(None)
+    tokens = list(range(1, 24))  # 23 tokens: two whole windows and three left over
+    pieces = list(turbo.generate(tts, _Tokens(tokens), "ignored", window=10, overlap=3))
+    assert len(pieces) == 3
+    # Each window is decoded with the three tokens before it; the last with the silence.
+    assert tts.decoded == [10, 13, 3 + 3 + 3]
+    wav = np.concatenate(pieces)
+    # Every token's sound is there once (two samples a token here): the shared tokens
+    # are cross-faded into one reading, not doubled.
+    assert len(wav) == 2 * (23 + 3) and (wav == 1).all()
+    assert [len(p) for p in pieces] == [14, 20, 18]  # the last three tokens' sound held back
+    # Tokens that aren't sounds are left out, and a line with none is a breath of silence.
+    tts.decoded.clear()
+    wav = np.concatenate(list(turbo.generate(tts, _Tokens([turbo.OOV + 1]), "", window=10)))
+    assert tts.decoded == [3] and len(wav) == 6

@@ -43,6 +43,7 @@ Up: [[Home]] · Reference
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
 | **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
+| **Piece** | A bit of a sentence's sound (about a second), sent to the desk while the rest is still being made | [[Voice#How a sentence becomes sound]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
 | **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Register of things** | The list of people, vehicles, places, projects and equipment, and where each lives | [[Register of Things]] |

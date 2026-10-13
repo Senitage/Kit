@@ -251,7 +251,8 @@ His voice. See [[Voice]].
 | `mood_speed` | kokoro and piper: speed change per emotion. |
 | `exaggeration` | chatterbox: how strongly each emotion is acted out, 0 to 2. |
 | `cfg_weight` | chatterbox: lower is slower and more deliberate. |
-| `mood_tags` | chatterbox-turbo: a sound that opens a reply in that emotion, such as [sigh] or [chuckle]. |
+| `mood_tags` | chatterbox-turbo: sounds that may open a reply in that emotion, such as `[sigh]` or `[chuckle]`; one is picked at random each time (a single sound works too). See [[Voice#Sounds in his voice]]. |
+| `mood_tag_chance` | chatterbox-turbo: how often a reply in one of those emotions opens with a sound (0.6: six in ten); the rest just start. |
 | `cuda_graph` | chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop. On by default. See [[Voice#Faster on a graphics card]]. |
 
 ## face
