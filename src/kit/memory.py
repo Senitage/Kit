@@ -189,6 +189,20 @@ def local_now() -> datetime:
     return datetime.now().astimezone()
 
 
+@dataclass
+class Scrubbed:
+    """What ``Memory.scrub`` found, or took out."""
+
+    messages: list[tuple[int, str, str, str]]  # (id, at, role, text)
+    items: list[Item]  # recalled exchanges, facts, notebook lines, day summaries
+    days: list[str]  # days summarised again without them
+
+
+def _plain(text: str) -> str:
+    """Lower case, with curly apostrophes made straight, for matching words."""
+    return text.replace("\u2019", "'").replace("\u2018", "'").lower()
+
+
 def _locked(method):
     """The API serves requests on several threads; one connection, one at a time."""
 
@@ -455,6 +469,50 @@ class Memory:
         if item is None or item.source not in allowed:
             return False
         return self.index.delete(fact_id)
+
+    def scrub(self, words: list[str], since: datetime, apply: bool = False) -> Scrubbed:
+        """Everything since ``since`` that says any of ``words`` (case aside): chat
+        messages with Kit's answers to them, and anything kept from them, such as a
+        recalled exchange, a fact, a notebook line or a day summary. For lines that
+        should never have been said, like a test of the bad night. With ``apply`` they
+        go, and a day already summarised is summarised again without them."""
+        said = [_plain(w) for w in words if w.strip()]
+        start = since.isoformat(timespec="seconds")
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT id, at, day, role, text FROM messages WHERE at >= ? ORDER BY id", (start,)
+            ).fetchall()
+        found: list[tuple] = []
+        answering = False  # Kit's lines after a message that's going go too
+        for row in rows:
+            hit = any(w in _plain(row[4]) for w in said)
+            if row[3] == "user":
+                answering = hit
+            if hit or (row[3] == "kit" and answering):
+                found.append(row)
+        gone_ids = {str(r[0]) for r in found}
+        items = [
+            i
+            for i in self.index.since(start)
+            if any(w in _plain(f"{i.title} {i.text}") for w in said)
+            or (i.source == CONVERSATION and i.ref in gone_ids)
+        ]
+        with self._lock:
+            summarised = {r[0] for r in self.db.execute("SELECT day FROM summarised_days")}
+        days = sorted({r[2] for r in found} & summarised)
+        days_items = [i for i in self.index.items(DAYS) if i.ref in days]
+        items += [i for i in days_items if i.id not in {x.id for x in items}]
+        if apply:
+            for item in items:
+                self.index.delete(item.id)
+            ids = [r[0] for r in found]
+            with self._lock, self.db:
+                if ids:
+                    marks = ",".join("?" * len(ids))
+                    self.db.execute(f"DELETE FROM messages WHERE id IN ({marks})", ids)
+                for day in days:
+                    self.db.execute("DELETE FROM summarised_days WHERE day = ?", (day,))
+        return Scrubbed([(r[0], r[1], r[3], r[4]) for r in found], items, days)
 
     # Days
 

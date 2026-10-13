@@ -1067,6 +1067,8 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
         else:
             print(f"no fact or conversation {args.id}")
             code = 1
+    elif args.action == "scrub":
+        code = _scrub(paths, memory, args)
     elif args.action == "days":
         for item in memory.index.items("days"):
             print(f"{item.ref}  {item.text}\n")
@@ -1084,6 +1086,37 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
             )
     memory.close()
     return code
+
+
+def _scrub(paths: KitPaths, memory, args: argparse.Namespace) -> int:
+    """``kit memory scrub``: show what would go, then take it out with ``--apply``."""
+    from datetime import date, datetime
+
+    now = memory.clock()
+    try:
+        day = date.fromisoformat(args.since) if args.since else now.date()
+    except ValueError:
+        print(f"--since needs a date like {now:%Y-%m-%d}")
+        return 2
+    since = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
+    if args.apply:
+        keep = SettingsStore(paths).current().memory.backups_keep
+        print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
+    found = memory.scrub(args.words, since, apply=args.apply)
+    if not found.messages and not found.items:
+        print(f"nothing since {day} says that")
+        return 0
+    for _, at, role, text in found.messages:
+        print(f"{at[:16]}  {'you' if role == 'user' else 'Kit'}: {text[:100]}")
+    for item in found.items:
+        print(f"{item.created[:16]}  {item.source} #{item.id}: {item.text[:100]}")
+    told = f"{len(found.messages)} messages and {len(found.items)} things kept from them"
+    if not args.apply:
+        print(f"\n{told} would go. Run it again with --apply to take them out.")
+        return 0
+    again = f"; {', '.join(found.days)} will be summarised again" if found.days else ""
+    print(f"\n{told} are gone{again}. Restart Kit so nothing of them stays in mind.")
+    return 0
 
 
 async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -1353,6 +1386,12 @@ def main(argv: list[str] | None = None) -> int:
         "tidy", help="sort what Kit knows into the right kinds and drop logs of chats"
     )
     mtidy.add_argument("--apply", action="store_true", help="do it (after a backup)")
+    mscrub = msub.add_parser(
+        "scrub", help="take out lines that should never have been said, and all kept of them"
+    )
+    mscrub.add_argument("words", nargs="+", help="words or phrases to find, any of them")
+    mscrub.add_argument("--since", help="from this date (YYYY-MM-DD); default today")
+    mscrub.add_argument("--apply", action="store_true", help="do it (after a backup)")
     msub.add_parser("reindex", help="build any missing meaning vectors now")
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")

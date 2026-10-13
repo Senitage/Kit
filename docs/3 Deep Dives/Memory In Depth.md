@@ -250,6 +250,15 @@ See [[Models and Routing#Caching]] for why the figure should be high.
   tidy --apply` does it after a backup. A moved fact keeps its old version in
   its history, pinned facts are never dropped, and private facts are only
   ever read by the local model.
+- `kit memory scrub WORDS... [--since DATE]` is for lines that should never
+  have been said, such as testing his bad-night care on the real Kit. It finds
+  every message since the date that says any of the words (curly apostrophes
+  count), Kit's lines straight after each, and every current item made since
+  then that says them or was kept from those messages: recalled exchanges,
+  facts, notebook lines, day summaries. It shows them first; `--apply` backs
+  up, takes them out, and puts any day already summarised back in the queue so
+  it's summarised again without them. Feelings and a bad night aren't touched:
+  they fade on their own within hours.
 - The memory page and `kit things ...` show the register, with links,
   suggestions to confirm or reject, other names, history and forget.
 - The memory page's **Kit's notebook** tab (and `kit life notebook`) shows
