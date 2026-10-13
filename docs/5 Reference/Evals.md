@@ -58,4 +58,4 @@ Up: [[Home]] · Reference
 
 ## Under the hood
 - `src/kit/evals.py`: the prompts, scoring and reports.
-- `src/kit/cli.py`: `kit eval` and its scratch memories.
+- `src/kit/evals_cli.py`: `kit eval` and its scratch memories (`src/kit/cli.py` hands it the command).

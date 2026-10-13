@@ -107,6 +107,7 @@ flowchart TB
 | `src/kit/credentials.py` | API keys and the token | [[Settings and Data#Secrets]] |
 | `src/kit/checks.py` | `kit check` | [[Stage 0 - Server Setup]] |
 | `src/kit/evals.py` | The eval suites | [[Evals]] |
+| `src/kit/evals_cli.py` | `kit eval`: runs each eval against the real models and prints how it went | [[Evals]], [[Commands]] |
 | `src/kit/settings.example.toml` | An example settings file | [[Settings Reference]] |
 | `src/kit/docs_check.py` | `kit docs check`: the stale rows of Where Kit Is Up To | [[Commands#The docs]] |
 
