@@ -119,6 +119,13 @@ words alone count unless something in them says work, code or a game. The
 model's reading of your mood as "awful" (`life.read_mood`) still starts one
 on its own, as it did.
 
+He stays with it **once**. The answer to the message that started it is his
+check-in; after that, a message about something else ("what's the weather
+doing?") gets a gentle, cheek-free answer to what you asked, with no going
+back to how you said you felt. A message that says it again ("I still can't
+cope") gets him staying with you again. Before, every reply for the three
+hours restated it, even about the weather, which felt like a script.
+
 ## Energy
 
 His energy follows the clock by default. With `life.energy_need` it's a real
