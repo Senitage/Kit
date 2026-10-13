@@ -31,6 +31,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Review fixes: one cloud connection kept, the embedding model kept loaded, small bugs | Open, pull request #47 | [[Models and Routing]], [[Memory]] |
 | Fast path: note requests off the main line, forecast while recalling, one embed a turn, Haiku without thinking, connections kept warm | Open, pull request (number to come) | [[Life of a Message]], [[Notes on the NAS]], [[Models and Routing]], [[Voice]] |
 | Cache layout: the conversation served from Claude's cache too, cache use in the spend log, retries for GPT and Gemini | Open, pull request (number to come) | [[Models and Routing#Caching]], [[Memory In Depth#The spend log]] |
+| Memory that scales: vectors kept in step not rebuilt, one search a turn off the event loop, recency from telling not recalling, learning after the reply, the replay eval | Open, pull request (number to come) | [[Memory In Depth#Keeping it fast as memory grows]], [[Evals]] |
 | Hearing: microphone, wake word, speech to text (stage 3 part 2) | Not started | [[Roadmap]] |
 | Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
 

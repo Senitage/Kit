@@ -1068,8 +1068,11 @@ async def _eval_compare(paths: KitPaths, names: list[str], n: int) -> int:
     return 0 if all(r.ok for r in results) else 1
 
 
-async def _eval_memory(paths: KitPaths) -> int:
-    """Run the memory test in a scratch memory inside the data folder, then delete it."""
+async def _eval_memory(
+    paths: KitPaths, replay: str | None = None, questions: str | None = None
+) -> int:
+    """Run the memory test in a scratch memory inside the data folder, then delete it.
+    With ``replay``, ask your own questions of a copy of a memory snapshot instead."""
     from kit.embed import OllamaEmbedder
     from kit.evals import run_memory_eval
     from kit.learning import Learner
@@ -1078,6 +1081,8 @@ async def _eval_memory(paths: KitPaths) -> int:
     from kit.recall import Recall
 
     paths.ensure()
+    if replay is not None:
+        return await _eval_replay(paths, Path(replay), Path(questions) if questions else None)
     store = SettingsStore(paths)
     scratch = paths.state_dir / "memory-eval"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -1123,6 +1128,65 @@ async def _eval_memory(paths: KitPaths) -> int:
         elif abs(suggested - cutoff) >= 0.02:
             print(f"try: kit config set memory.min_similarity {suggested}")
     return 0 if report.passed else 1
+
+
+async def _eval_replay(paths: KitPaths, snapshot: Path, questions: Path | None) -> int:
+    """``kit eval memory --replay``: your questions (config/memory-questions.toml) against
+    a copy of a memory snapshot, usually a backup from ``backups/``. The snapshot itself
+    is never written to."""
+    from kit.embed import OllamaEmbedder
+    from kit.evals import load_replay_questions, run_replay_eval
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    questions = questions or paths.config_dir / REPLAY_QUESTIONS
+    if not snapshot.is_file():
+        print(f"no memory snapshot at {snapshot}")
+        return 2
+    if not questions.is_file():
+        print(f"no questions at {questions}: add some, e.g.\n{REPLAY_EXAMPLE}")
+        return 2
+    asked = load_replay_questions(questions)
+    if not asked:
+        print(f"{questions} has no questions, e.g.\n{REPLAY_EXAMPLE}")
+        return 2
+    store = SettingsStore(paths)
+    scratch = paths.state_dir / "memory-eval"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    copy = scratch / "replay.db"
+    shutil.copyfile(snapshot, copy)
+    memory = Memory(copy)
+    try:
+        async with httpx.AsyncClient() as client:
+            recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
+            print(f"replaying {len(asked)} questions against {snapshot.name}...")
+            report = await run_replay_eval(memory, recall, asked)
+    finally:
+        memory.close()
+        shutil.rmtree(scratch, ignore_errors=True)
+    if recall.embed_problem:
+        print(f"warning: searching by words only: {recall.embed_problem}")
+    if report.embedded:
+        print(f"embedded {report.embedded} items the snapshot had no vectors for")
+    for r in report.results:
+        mark = "ok  " if r.wins else ("LOW " if r.found else "MISS")
+        where = "" if r.wins else (f" (came {r.rank}th)" if r.found else " (not recalled)")
+        print(f"{mark} {r.question}{where}")
+        if not r.wins:
+            for t in r.recalled[:3] or ["(nothing recalled)"]:
+                print(f"       recalled: {t}")
+    print()
+    print(f"facts in the snapshot:      {report.facts}")
+    print(f"the right fact came first:  {report.wins}/{len(report.results)}")
+    print(f"the right fact was recalled: {report.found}/{len(report.results)}")
+    return 0 if report.passed else 1
+
+
+REPLAY_QUESTIONS = "memory-questions.toml"
+REPLAY_EXAMPLE = '''[[question]]
+ask = "What do I drive?"
+expect = "Ranger"'''
 
 
 async def _eval_routing(paths: KitPaths) -> int:
@@ -1677,6 +1741,15 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument(
         "--one-pass", action="store_true", help="voice: answer in one JSON pass, as in stage 1"
     )
+    ev.add_argument(
+        "--replay",
+        metavar="SNAPSHOT",
+        help="memory: ask your own questions (config/memory-questions.toml) of a copy of "
+        "this memory snapshot, e.g. a backup from backups/, to see the right fact still wins",
+    )
+    ev.add_argument(
+        "--questions", metavar="FILE", help="memory --replay: a different questions file"
+    )
 
     args = parser.parse_args(argv)
     paths = KitPaths.default()
@@ -1718,7 +1791,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.which == "routing":
             return asyncio.run(_eval_routing(paths))
         if args.which == "memory":
-            return asyncio.run(_eval_memory(paths))
+            return asyncio.run(_eval_memory(paths, args.replay, args.questions))
         if args.which == "voice":
             return asyncio.run(_eval_voice(paths, args.models, args.one_pass, args.n))
         if args.which == "companion":

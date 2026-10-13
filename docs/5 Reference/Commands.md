@@ -143,6 +143,7 @@ See [[Eyes]].
 |---|---|
 | `kit eval replies` | Whether local replies come back in shape, and how fast the first words arrive |
 | `kit eval memory` | Memory recall, and a suggested `memory.min_similarity` |
+| `kit eval memory --replay SNAPSHOT [--questions FILE]` | Your own questions against a copy of a memory snapshot (a backup): does the right fact still come first? |
 | `kit eval routing` | Whether Kit knows where things live, from the register |
 | `kit eval compare --models A B` | Compare cloud models on the same questions |
 | `kit eval voice --models A B` | Which local model sounds most alive |

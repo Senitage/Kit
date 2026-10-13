@@ -20,6 +20,7 @@ Up: [[Home]] · Reference
 |---|---|---|---|
 | `kit eval` (`replies`) | 50 prompts: every local reply comes back in Kit's shape, and how fast the first words arrive | the local model | 50/50 valid; median first words under a second, warm |
 | `kit eval memory` | Teaches a scratch memory 13 facts (some repeated or changed), then asks 10 questions in other words and 3 about things never told | the embedding model | 10/10 recalled, 3/3 nothing, a tidy memory; suggests `memory.min_similarity` |
+| `kit eval memory --replay SNAPSHOT` | Your own questions (`memory-questions.toml`) against a copy of a real memory snapshot, usually a backup: does the right fact still come first after months of recalls and changes? `--questions FILE` for another file | the embedding model, your memory (a copy) | every expected fact first; `LOW` says where it came, `MISS` that it wasn't recalled |
 | `kit eval routing` | A scratch register of 8 things and 12 questions: does the right thing and place come back? Then your own questions against your real register | the embedding model | 12/12, plus yours |
 | `kit eval compare --models A B` | The same questions to several cloud models, side by side in a file | the cloud (costs a little) | for reading |
 | `kit eval voice --models A B` | Greetings, pipe-ups and private thoughts through each local model, with echo, canned-phrase and variety counts | local models | no echoes or canned lines; then read the file |
@@ -29,7 +30,13 @@ Up: [[Home]] · Reference
 - Reports that are for reading go into `state/evals/` in the data folder;
   the path is printed at the end.
 - Your own questions and lines live in the **config folder**, never the repo:
-  `routing-questions.toml` for `routing`, `companion-lines.toml` for `mood`.
+  `routing-questions.toml` for `routing`, `memory-questions.toml` for `memory
+  --replay`, `companion-lines.toml` for `mood`.
+- `memory --replay` copies the snapshot into a scratch folder and asks there,
+  so neither the backup nor the live memory is written to. Items the snapshot
+  has no vectors for (another embedding model) are embedded first. Each
+  question is `ask = "..."` and `expect = "..."`, words the right fact
+  contains; `tests/replay/memory-questions.toml` is an example.
 - `compare` is the only eval that spends: each call is logged with the rest of
   the cloud spend.
 
@@ -39,6 +46,8 @@ Up: [[Home]] · Reference
   `--models` to read it next to the current one.
 - **A new embedding model or `memory.min_similarity`**: `memory`, then
   `routing`.
+- **A change to recall or its weighting, or now and then**: `memory
+  --replay` on last night's backup, to catch ranking drift.
 - **A new cloud model**: `compare`.
 - **A change to how he reads you**: `mood`.
 

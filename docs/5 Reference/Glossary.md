@@ -45,6 +45,7 @@ Up: [[Home]] · Reference
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
 | **Pod** | Kit's first robot: a small desk Pod with a screen face and a turning head | [[The Pod]] |
 | **Register of things** | The list of people, vehicles, places, projects and equipment, and where each lives | [[Register of Things]] |
+| **Replay eval** | `kit eval memory --replay`: your own questions asked of a copy of a real memory backup, to see the right fact still comes first | [[Evals]] |
 | **Retro** | The default character: Glow's pill eyes | [[Face]] |
 | **Rig** | What turns emotions and gestures into face numbers | [[Face#The rig, in three layers]] |
 | **Role** | A job a model does: chat, work, expert | [[Models and Routing]] |

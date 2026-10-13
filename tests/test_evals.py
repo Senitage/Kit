@@ -148,3 +148,89 @@ def test_a_pipe_up_he_kept_quiet_on_counts_against_the_model():
     ticks = count()
     line = asyncio.run(_spoken("pipe_up", "bored", kept_quiet(), lambda: next(ticks)))
     assert not line.ok and line.error == 'kept quiet: every go repeated "Still picking a dinner?"'
+
+
+# Replay: your questions against a snapshot of the real memory
+
+
+def _snapshot(paths, months_of_recalls=True):
+    """A small memory as a month of use leaves it: a fact superseded, a near miss
+    recalled over and over, a pinned one, a plain one."""
+    from datetime import timedelta
+
+    from fakes import Clock, FakeEmbedder
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    clock = Clock("2026-09-05T09:00:00")
+    memory = Memory(paths.state_dir / "snapshot.db", clock)
+    recall = Recall(memory, FakeEmbedder(), lambda: Settings(memory={"min_similarity": 0.3}))
+    old = memory.add_fact("Dan's car is a Hilux.", "about")
+    memory.add_fact("Tax paperwork is in Documents/Finance/Tax.", "place")
+    memory.add_fact("Emma's birthday is 14 March.", "person")
+    memory.add_fact("Sarah is Dan's partner.", "person", pinned=True)
+    near_miss = memory.add_fact(
+        "Dan spent days car shopping and test drove a Hilux at the dealer.", "other"
+    )
+    clock.now += timedelta(days=20)
+    memory.replace_fact(old, "Dan's car these days is a Ford Ranger.")
+    asyncio.run(recall.index_pending())
+    if months_of_recalls:  # the near miss kept being recalled: that must not make it win
+        for _ in range(30):
+            asyncio.run(recall.for_turn("Which car do I drive these days?", set()))
+        assert memory.index.get(near_miss).meta["last_recalled"]
+    clock.now += timedelta(days=10)
+    memory.close()
+    return paths.state_dir / "snapshot.db"
+
+
+def _replay(paths, snapshot, questions):
+    from fakes import Clock, FakeEmbedder
+    from kit.evals import run_replay_eval
+    from kit.memory import Memory
+    from kit.recall import Recall
+
+    memory = Memory(snapshot, Clock("2026-10-05T09:00:00"))
+    recall = Recall(memory, FakeEmbedder(), lambda: Settings(memory={"min_similarity": 0.3}))
+    try:
+        return asyncio.run(run_replay_eval(memory, recall, questions))
+    finally:
+        memory.close()
+
+
+def test_replay_reports_whether_the_expected_fact_wins(paths):
+    from pathlib import Path
+
+    from kit.evals import load_replay_questions
+
+    questions = load_replay_questions(Path(__file__).parent / "replay" / "memory-questions.toml")
+    assert questions[0] == ("Which car do I drive these days?", "Ranger")
+    report = _replay(paths, _snapshot(paths), questions)
+    assert report.embedded == 0 and report.facts == 5
+    assert [(r.question[:12], r.rank) for r in report.results] == [
+        ("Which car do", 1),
+        ("Where do I k", 1),
+        ("When is Emma", 1),
+        ("Who is Sarah", 1),  # pinned: always first
+    ]
+    assert report.wins == 4 and report.found == 4 and report.passed
+
+
+def test_replay_shows_a_fact_that_lost_or_went_missing(paths):
+    from fakes import Clock
+    from kit.memory import Memory
+
+    snapshot = _snapshot(paths, months_of_recalls=False)
+    memory = Memory(snapshot, Clock("2026-10-05T09:00:00"))
+    memory.add_fact("Dan drinks his coffee black.", "preference")  # no vector yet
+    memory.close()
+    report = _replay(
+        paths,
+        snapshot,
+        [("Which car do I drive these days?", "dealer"), ("What's my cat called?", "Milo")],
+    )
+    assert report.embedded == 1  # the new fact was embedded before asking
+    lost, missing = report.results
+    assert lost.found and lost.rank == 2 and "Ranger" in lost.recalled[1]  # after the pinned one
+    assert not missing.found and missing.rank is None
+    assert not report.passed and report.found == 1
