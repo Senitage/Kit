@@ -79,6 +79,9 @@ Then print the rest:
 > 3 walls, 4 top and bottom layers, 15-20% gyroid infill, a brim on the head
 > and body. Everything fits the 220 x 220 bed.
 
+The body's three screw bosses for the base are joined to its wall by a web,
+so they print as part of the body rather than as loose towers.
+
 ## 3. Wire it and test on the bench
 
 Wire the screen and servos to the ESP32 before anything goes in the body, so

@@ -127,6 +127,7 @@ OUTER_PTS = [(26.6, LIP_Z), (29.6, 2.0), (31.2, -2.0), (31.8, -6.0), (32.9, -14.
              (34.6, -48.0), (33.6, B_Z0)]
 INNER_PTS = [(LIP_R_IN, LIP_Z + 1.0), (LIP_R_IN, LIP_Z - 1.6), (27.6, 0.0), (29.1, -3.0), (29.7, -7.0), (30.7, -14.0),
              (32.1, -26.0), (32.8, -38.0), (32.4, -48.0), (31.4, B_Z0 - 1)]
+BOSS_WEB = 7.0                          # width of the web joining each base screw boss to the wall
 ESP_Y0 = 9.0                            # front (pin) face of the ESP32 board
 ESP_Z0 = B_Z0                           # it stands on the base
 ESP_CZ = ESP_Z0 + esp_w / 2
@@ -450,9 +451,14 @@ def body():
         b = b.union(pad.intersect(outer))
         b = b.cut(cyl(clear3, 20, (x, y, TURN_TAB_Z - 15)))
         b = b.cut(cyl(6.2, 10, (x, y, TURN_TAB_Z - 20)))     # room for the screw head under the pad
-    # bosses for the base screws
+    # bosses for the base screws, each joined to the wall by a web as wide as the boss with a 45 degree gusset
+    # on top, so it prints as part of the shell (on its own it stood just clear of the wall and snapped off)
     for x, y in base_screws():
-        boss = cyl(7, 10, (x, y, B_Z0)).union(cone(7, 0.4, 3.5, (x, y, B_Z0 + 10)))
+        r = math.hypot(x, y)
+        web = (cq.Workplane(cq.Plane(origin=(0, 0, B_Z0), xDir=(x / r, y / r, 0), normal=(y / r, -x / r, 0)))
+               .polyline([(r, 0), (r + 8, 0), (r + 8, 18), (r, 10)]).close()
+               .extrude(BOSS_WEB / 2, both=True))
+        boss = cyl(7, 10, (x, y, B_Z0)).union(cone(7, 0.4, 3.5, (x, y, B_Z0 + 10))).union(web)
         b = b.union(boss.intersect(outer))
         b = b.cut(cyl(pilot, 8, (x, y, B_Z0 - 0.01)))
     # USB hole by the ESP32's USB end

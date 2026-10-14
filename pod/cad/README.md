@@ -95,3 +95,5 @@ Dan's measurements (2026-10-10) are in the model:
 The neck arms reach a little past the round base (the cap's opening limits its size), so they stand on a collar: a 54 mm wide bar across the top of the base, with a 45 degree underside that clears the cap's lip. It's a bar, not a ring, because the head's floor swings down to that height at the front and back on a full tilt (2026-10-13).
 
 The pin's bracket in the head is 4 mm thick, with 7 mm of wall below the pin's channel and 6.7 mm above its seat, so it survives having its supports pulled off (2026-10-13).
+
+The body's three base screw bosses are joined to its wall by a 7 mm web with a 45 degree gusset on top. On their own they stood 0.1 to 0.9 mm clear of the wall, so they printed as loose towers and snapped off (2026-10-14).
