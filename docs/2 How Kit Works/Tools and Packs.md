@@ -85,8 +85,10 @@ A **pack** is a named set of tools with one **card**, the line that goes in
 the prompt. The first is `core`: `recall`, `look_at_pc`, `look_around`,
 `weather` and `read_note`, the looks he's always been able to do. Each tool
 says what it does for the model, which arguments it takes, an **effect**
-(`read`, `write` or `act`: a write or an act will be confirmed with you
-before it runs, in a later stage) and an example of its arguments. The
+(`read` looks something up; `act` does something easily undone, like
+turning a lamp on; `change` alters something of yours, like a note, and
+will be confirmed with you before it runs, in a later stage) and an example
+of its arguments. The
 packs to come (your files, the PC, the house, the notes vault, your apps)
 plug in the same way: another card in the prompt, their definitions with
 the request, their own evals.

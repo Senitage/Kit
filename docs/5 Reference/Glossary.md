@@ -28,7 +28,7 @@ Up: [[Home]] · Reference
 | **Day summary** | What Kit writes after midnight about each finished day | [[Memory]] |
 | **Device token** | A token just for one paired device, like a phone, so it can be unpaired alone (`kit pair`) | [[Phone App#Pairing]] |
 | **Drives** | What rises and falls in him: boredom, curiosity, wanting a chat, something to say, energy | [[Inner Life#Drives and mood]] |
-| **Effect** | What a tool does to the world: `read`, `write` or `act`; a write or an act will be confirmed with you first | [[Tools and Packs#Packs]] |
+| **Effect** | What a tool does to the world: `read` (looks something up), `act` (easily undone, like a lamp) or `change` (alters something of yours, so it asks first) | [[Tools and Packs#Packs]] |
 | **Embedding** | A meaning vector: numbers that let him find things by what they mean | [[Memory#Finding things]] |
 | **Emotion** | One of 17 feelings a reply is acted out in | [[Face#Emotions and gestures]] |
 | **Eval** | A repeatable check of how the real models behave | [[Evals]] |
