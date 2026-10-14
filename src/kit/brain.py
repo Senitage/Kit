@@ -216,8 +216,9 @@ from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, 
 from kit.tools import Context, Pack, Registry, Tool, ToolCall, ToolResult, definitions
 from kit.tools.confirm import Held, ask_first, needs_yes, one_at_a_time, said_yes
 from kit.tools.core import ACTION_ARGS, core_pack
+from kit.tools.files import files_pack
 from kit.tools.match import match
-from kit.tools.private import for_cloud
+from kit.tools.private import for_cloud, lifted
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
 
@@ -789,6 +790,8 @@ class Brain:
         self.tool_context = Context()
         self.tools = Registry()
         self.tools.add(core_pack(self))
+        self.tools.add(files_pack(self))
+        self.current_text = ""  # the message being answered, for tools that read it
         # The packs this turn loaded (kit.tools.match), and a call waiting for a yes.
         self.loaded_packs: list[str] = [p.name for p in self.tools.packs.values() if p.always]
         self.pending_tool: Held | None = None
@@ -2769,7 +2772,10 @@ class Brain:
             forecast=bool(forecast),
             notes=bool(settings.nas.vault),
             note_done=bool(NOTE_DONE.get()),
+            files=self.files is not None and bool(settings.files.roots),
         )
+        self.current_text = text
+        lift = lifted(text)  # "send it to Claude": private results go whole, this once
         # The packs this message needs, chosen before any model is asked (kit.tools.match).
         self.loaded_packs = await match(text, self.tools, self.recall, self.register, settings)
         loaded_tools = self.tools.tool_names(self.loaded_packs)
@@ -2854,7 +2860,7 @@ class Brain:
                         result.ok,
                         role,
                     )
-                    if role != LOCAL and result.private:
+                    if role != LOCAL and result.private and not lift:
                         result = replace(
                             result, text=await for_cloud(result, text, self.model), private=False
                         )

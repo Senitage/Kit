@@ -88,8 +88,11 @@ says what it does for the model, which arguments it takes, an **effect**
 (`read` looks something up; `act` does something easily undone, like
 turning a lamp on; `change` alters something of yours, like a note, and
 always asks you first: see [[#Asking first]]) and an example of its
-arguments. The packs to come (your files, the PC, the house, the notes
-vault, your apps) plug in the same way: another card in the prompt, their
+arguments. The second is `files` ([[Your Files#Asking about them]]):
+`find_documents`, `read_document`, `list_folder` and `files_status`, loaded
+by words like "invoice", "notice" or "folder", or a register thing with a NAS
+folder. The packs to come (the PC, the house, the notes vault, your apps)
+plug in the same way: another card in the prompt, their
 definitions with the request, their own evals. A pack also carries how a
 message finds it (its **match words**, example questions and register
 systems) and its own questions for `kit eval tools`.
@@ -150,7 +153,9 @@ A tool can mark what it found **private** (a private folder, your
 finances). A cloud model never reads that text: the local model reads it
 and answers the question from it in a few words, and only that summary
 (marked as summarised locally) goes to the cloud. With the local model off,
-the cloud model is told the answer is in a private source. See [[Privacy]].
+the cloud model is told the answer is in a private source. Saying "send it
+to Claude" (or "you can use the cloud for this") in a message lets the cloud
+read that message's private results whole, that once. See [[Privacy]].
 
 ### What it costs
 
@@ -188,9 +193,10 @@ kit eval tools               # does each question reach the right tool?
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/tools/__init__.py`: `Tool`, `Pack`, `Registry` and the `Context` (what's been looked at this turn), `ToolCall` and `ToolResult`, and the provider-neutral definitions.
 > - `src/kit/tools/core.py`: the core pack, its eval questions, and the table of which reply action becomes which tool.
+> - `src/kit/tools/files.py`: the files pack: finding, reading and listing your documents from the index.
 > - `src/kit/tools/match.py`: `match`, which packs a message loads.
 > - `src/kit/tools/confirm.py`: `needs_yes`, the `Held` call and the words the model gets while it waits.
-> - `src/kit/tools/private.py`: `for_cloud`, the local summary of a private result.
+> - `src/kit/tools/private.py`: `for_cloud`, the local summary of a private result, and `lifted`, the "send it to Claude" phrases.
 > - `src/kit/routes/tools.py`: `/api/tools` and `/api/tools/run` (`kit tools`).
 > - `src/kit/brain.py`: the loop in `_converse` (`tools.hops` goes round), `_offered` (which tools this turn, none for the local model), `_action_calls` (the local model's action as a call), `_hold` and `_answer_tool_offer` (asking first).
 > - `src/kit/cloud.py`: tool definitions and tool turns in each provider's shape; Claude's own content blocks are kept whole for the next request so a thinking model's blocks survive.

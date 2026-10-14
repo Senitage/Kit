@@ -127,10 +127,11 @@ See [[Hearing]].
   on the server. He starts with no folders. Removing one takes what he read
   from it out of his memory.
 - **A folder can be ticked private.** The tick is kept on every piece read
-  from it. Your files are searched on the memory page and with `kit memory
-  search` for now and don't come into conversation; when the file tools
-  arrive (part B2 of [[Stage 4 - Tools]]) a private folder's text reaches only
-  the local model, as below.
+  from it, and anything the file tools find there reaches a cloud model only
+  as the local model's short answer, as below. "Send it to Claude" in a
+  message lifts that for the one message. Recall in conversation never
+  searches your files; only the file tools do. See
+  [[Your Files#Private folders]].
 - **A tool can mark what it found private** (a private folder, your
   finances). A cloud model never reads that text: the local model answers
   the question from it in a few words, and only that summary goes out,

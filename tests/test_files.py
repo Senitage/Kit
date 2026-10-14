@@ -384,11 +384,11 @@ def test_status_per_root(memory, paths, finance):
     }
 
 
-def test_files_dont_reach_the_chat_recall_until_the_file_tools():
+def test_files_come_into_chat_only_through_the_files_pack():
     from kit.tools import core
 
     source = Path(core.__file__).read_text(encoding="utf-8")
-    assert "FILES" not in source  # private roots need B2's rule first
+    assert "FILES" not in source  # the files pack marks private roots; recall doesn't
 
 
 # Roots as settings
