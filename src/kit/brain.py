@@ -73,7 +73,7 @@ from datetime import datetime, timedelta
 from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
 from kit.body_registry import BodyRegistry
 from kit.channels import Arrival, channel_line, known
-from kit.cloud import Cloud, CloudAnswer, CloudError
+from kit.cloud import Cloud, CloudAnswer, CloudError, tool_turns
 from kit.daily import Daily
 from kit.heard import (
     TONE_FEELINGS,
@@ -127,12 +127,8 @@ from kit.life import (
 )
 from kit.local_model import LocalModel, LocalModelError, lively
 from kit.memory import (
-    CONVERSATION,
-    DAYS,
-    FACTS,
     KEEP_LOCAL,
     RECALL_STEP,
-    SELF,
     Memory,
     Message,
 )
@@ -151,7 +147,6 @@ from kit.notebook import (
 )
 from kit.notes import (
     ALL,
-    NOTES,
     NoteError,
     Notes,
     Request,
@@ -176,11 +171,9 @@ from kit.prompt import (
     not_again,
     opener_aside,
     picked_up,
-    recall_results,
     speak_note,
     split_turn,
     system_prompt,
-    weather_results,
     with_mind,
     with_now,
     with_pc_look,
@@ -217,8 +210,10 @@ from kit.reply import (
 from kit.scene_context import SEEN, Happening, SceneContext, SceneReport
 from kit.settings import ModelProfile, Settings, cloud_background, local_stands_in
 from kit.shows import show_for
-from kit.things import THINGS, Register, named_in
+from kit.things import Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
+from kit.tools import Context, Registry, Tool, ToolCall, ToolResult, definitions
+from kit.tools.core import ACTION_ARGS, core_pack
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
 
@@ -783,6 +778,11 @@ class Brain:
         self._local_freed = False  # the local model was taken off the GPU for the voice
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
+        # The tools a model may call mid-answer (kit.tools) and what there is to look
+        # at this turn, set at the start of every turn.
+        self.tool_context = Context()
+        self.tools = Registry()
+        self.tools.add(core_pack(self))
         self.pending_thing: int | None = None
         self.pending_note: tuple[str, str] | None = None  # (title, text) Kit offered to note
         self.pending_expert = ""  # the question Kit asked to hand to the expert model
@@ -2454,6 +2454,35 @@ class Brain:
             [{"type": "notice", "message": f"{verb} {saved.shown} in your notes."}],
         )
 
+    def forecast_fetched(self) -> None:
+        """A forecast was just looked at (the weather tool), so a follow-up about the
+        weather is answered from it rather than fetched again."""
+        self._weather_at = self.memory.clock()
+
+    def _offered(self, role: str, settings: Settings) -> list[Tool]:
+        """The tools a cloud model gets as native tool calls this turn. The local model
+        (and a cloud profile that is really Ollama) keeps its one action in the reply
+        JSON, which the loop turns into the same calls."""
+        if role == LOCAL or settings.profile(role).provider == "ollama":
+            return []
+        return self.tools.offered()
+
+    def _action_calls(self, reply: Reply, role: str) -> list[ToolCall]:
+        """A look-up asked for the old way, as the reply's action, as a tool call.
+        What has already been looked at this turn (``tool_context``) isn't looked at
+        again for the reading's sake."""
+        ctx = self.tool_context
+        kind = self._look_wanted(reply.action.kind, role, ctx.pc_detail, ctx.scene_detail)
+        if kind not in ACTION_ARGS or self.tools.get(kind) is None:
+            return []
+        if kind == "read_note" and NOTE_DONE.get():
+            return []
+        arg = ACTION_ARGS[kind]
+        text = reply.action.text.strip() or reply.action.title.strip()
+        if kind == "recall" and (not text or SPOKEN_NOT_SEARCH.search(text)):
+            text = ""  # the brain fills in Dan's message below
+        return [ToolCall(kind, kind, {arg: text} if arg else {})]
+
     def _read_note(self, name: str, settings: Settings) -> str:
         owner = settings.persona.owner
         try:
@@ -2560,6 +2589,8 @@ class Brain:
             two_pass=role == LOCAL and settings.ollama.speak_pass,
             dan=self._about_dan(role),
             read_mood=READ_ON.get(),
+            tools=self.tools.cards(),
+            tool_names=[t.name for t in self._offered(role, settings)],
         )
 
     def _about_dan(self, role: str) -> str:
@@ -2656,6 +2687,17 @@ class Brain:
         seen, shown = history, recalled
         if role != LOCAL:  # what Dan kept local, and what Kit kept from it, stays home
             seen, shown = self.memory.shared(history), recalled.for_cloud()
+        self.tool_context = Context(
+            pc=self.pc.latest is not None,
+            pc_detail=bool(pc_detail),
+            scene=self.scene.latest is not None,
+            scene_detail=bool(scene_detail),
+            weather=self.weather is not None,
+            forecast=bool(forecast),
+            notes=bool(settings.nas.vault),
+            note_done=bool(NOTE_DONE.get()),
+        )
+        offered = self._offered(role, settings)
         system = self._system(
             settings, shown, role, hand_off, forecast, pc_detail, seen, scene_detail
         )
@@ -2671,67 +2713,101 @@ class Brain:
             job = Job(next(self._job_ids), question or text, settings.profile(role).name)
             self.jobs[job.id] = job
         try:
-            reply, message_id = None, None
-            async for event in self._reply(messages, role, settings, text, job):
-                if event["type"] == "reply":
+            reply, message_id, calls, content = None, None, [], None
+            async for event in self._reply(messages, role, settings, text, job, offered):
+                if event["type"] in ("reply", "tool_calls"):
                     reply = Reply.model_validate(event["reply"])
                     message_id = event["message_id"]
+                    calls = [ToolCall(**c) for c in event.get("calls", [])]
+                    content = event.get("content")
                 yield event
             if reply is None:
                 return
 
-            look_up = None
-            owner = settings.persona.owner
-            kind = self._look_wanted(reply.action.kind, role, pc_detail, scene_detail)
-            if kind == "recall":
-                query = reply.action.text.strip()
-                if not query or SPOKEN_NOT_SEARCH.search(query):
-                    query = text
-                hits = await self.recall.search(
-                    query, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES, SEEN], DEEP_RECALL
-                )
-                yield {"type": "recalled", "query": query, "found": len(hits)}
-                if job:
-                    job.steps.append(f"looked through your memory for '{query}'")
-                look_up = recall_results(query, hits, owner)
-            elif kind == "look_at_pc":
-                yield {"type": "looked_at_pc", "online": self.pc.online()}
-                if job:
-                    job.steps.append("looked at what's open on your PC")
-                look_up = f"What you can see on {owner}'s PC:\n{self.pc.detail(owner)}"
-            elif kind == "look_around":
-                yield {"type": "looked_around", "in_view": self.scene.in_view()}
-                if job:
-                    job.steps.append("had a look around")
-                look_up = f"What you can see:\n{self.scene.detail(owner)}"
-            elif kind == "weather" and self.weather is not None:
-                place = reply.action.text.strip() or settings.persona.location
-                try:
-                    forecast = await self.weather.forecast(place, settings.persona.country)
-                except WeatherError as e:
-                    forecast = f"The forecast lookup failed: {e}"
-                self._weather_at = self.memory.clock()
-                yield {"type": "weather", "place": place}
-                if job:
-                    job.steps.append(f"checked the forecast for {place}")
-                look_up = weather_results(place, forecast, owner)
-            elif kind == "read_note" and not NOTE_DONE.get():
-                name = reply.action.text.strip() or reply.action.title.strip()
-                yield {"type": "reading_note", "note": name}
-                look_up = await asyncio.to_thread(self._read_note, name, settings)
-                if job:
-                    job.steps.append(f"read your note '{name}'")
-            if look_up is not None:
-                said = reply.full_text if plain else reply_json(reply)
-                messages += [
-                    {"role": "assistant", "content": said},
-                    {"role": "user", "content": look_up},
-                ]
+            # The tool loop: what the model asked for (its native calls, or the one
+            # look-up in its action) is run and handed back, until it answers in words.
+            done_calls: set[tuple[str, str]] = set()
+            for _ in range(settings.tools.hops):
+                native = bool(calls)
+                if not native:
+                    calls = self._action_calls(reply, role)
+                if not calls:
+                    break
+                results: list[tuple[ToolCall, ToolResult]] = []
+                for call in calls:
+                    if call.name == "recall" and not call.arguments.get("query"):
+                        call.arguments["query"] = text
+                    key = (call.name, json.dumps(call.arguments, sort_keys=True))
+                    yield {"type": "tool", "tool": call.name, "line": call.line()}
+                    if key in done_calls:  # the same look twice: answer from the first
+                        result = ToolResult(
+                            f"You already ran {call.line()} this turn; use what it gave you "
+                            "and answer now.",
+                            ok=False,
+                        )
+                    else:
+                        done_calls.add(key)
+                        result = await self.tools.run(call)
+                        self.tool_context.looked(call.name)
+                    if result.event:
+                        yield result.event
+                    if job and result.step:
+                        job.steps.append(result.step)
+                    tool = self.tools.get(call.name)
+                    self.memory.log_tool_call(
+                        message_id,
+                        call.name,
+                        call.arguments,
+                        tool.effect if tool else "read",
+                        result.text,
+                        result.ok,
+                        role,
+                    )
+                    results.append((call, result))
+                if native:
+                    messages += tool_turns(
+                        reply.full_text if reply.text else "",
+                        [c for c, _ in results],
+                        [(c.id, r.text) for c, r in results],
+                        content,
+                    )
+                else:
+                    said = reply.full_text if plain else reply_json(reply)
+                    messages += [
+                        {"role": "assistant", "content": said},
+                        {"role": "user", "content": results[0][1].text},
+                    ]
                 # The "Let me think..." turn is kept as a working note (RECALL_STEP), so
                 # later history shows one answer per message, not a recall habit.
-                self.memory.set_message_source(message_id, RECALL_STEP)
+                if message_id is not None:
+                    self.memory.set_message_source(message_id, RECALL_STEP)
+                reply, message_id, calls, content = None, None, [], None
+                offered = self._offered(role, settings)
+                async for event in self._reply(messages, role, settings, text, job, offered):
+                    if event["type"] in ("reply", "tool_calls"):
+                        reply = Reply.model_validate(event["reply"])
+                        message_id = event["message_id"]
+                        calls = [ToolCall(**c) for c in event.get("calls", [])]
+                        content = event.get("content")
+                    yield event
+                if reply is None:
+                    return
+            if calls and not reply.text.strip():
+                # Out of hops with the model still asking and nothing said: one last
+                # answer, with no tools on offer, so the turn ends in words.
+                messages += tool_turns(
+                    "",
+                    calls,
+                    [
+                        (c.id, "No more tools this turn; answer now from what you have.")
+                        for c in calls
+                    ],
+                    content,
+                )
+                if message_id is not None:
+                    self.memory.set_message_source(message_id, RECALL_STEP)
                 reply = None
-                async for event in self._reply(messages, role, settings, text, job):
+                async for event in self._reply(messages, role, settings, text, job, []):
                     if event["type"] == "reply":
                         reply = Reply.model_validate(event["reply"])
                     yield event
@@ -2798,7 +2874,7 @@ class Brain:
             ):
                 yield event
 
-    def _look_wanted(self, kind: str, role: str, pc_detail: str, scene_detail: str) -> str:
+    def _look_wanted(self, kind: str, role: str, pc_detail: bool, scene_detail: bool) -> str:
         """The action, or the look the model's reading asked for (``wants_pc_look``,
         ``wants_camera_look``) when it set none: the words missed it ("the build died
         and so did my weekend" isn't a PC question, "what am I even running" is), and
@@ -2857,7 +2933,11 @@ class Brain:
         settings: Settings,
         question: str,
         job: Job | None = None,
+        tools: list[Tool] | None = None,
     ) -> AsyncIterator[Event]:
+        """``tools`` are offered to a cloud model as native tool calls; what it asks for
+        comes back on the ``reply`` event (``calls``), or on a ``tool_calls`` event when
+        it asked without a word to say, so no empty line reaches the chat."""
         if role == LOCAL:
             async for event in self._local_reply(messages, LOCAL, heard=question):
                 yield event
@@ -2870,6 +2950,7 @@ class Brain:
         on_step = job.steps.append if job else None
         lint, sounds = LINT.get(), settings.speech.sounds
         words = None  # the answer read as it streams in (cloud.stream)
+        offered = definitions(tools or [])
         if lint is not None:  # a goodbye: checked whole before a word of it is said
             answer, reply = await self._cloud_checked(
                 profile, messages, settings, question, on_step, lint
@@ -2877,7 +2958,7 @@ class Brain:
         elif settings.cloud.stream:
             words = StreamedReply("cloud", sounds)
             async for event in self._cloud_stream(
-                profile, messages, settings, question, on_step, words
+                profile, messages, settings, question, on_step, words, offered
             ):
                 if isinstance(event, CloudAnswer):
                     answer = event
@@ -2886,9 +2967,27 @@ class Brain:
             reply = parse_cloud_reply(answer.text)
         else:
             answer = await self.cloud.answer(
-                profile, messages, settings, question, on_step, priority=PRIORITY.get()
+                profile,
+                messages,
+                settings,
+                question,
+                on_step,
+                priority=PRIORITY.get(),
+                tools=offered,
             )
             reply = parse_cloud_reply(answer.text)
+        if answer.calls and not reply.text.strip():
+            # It asked for tools without a word to say: nothing reaches the chat yet.
+            message_id = self._remember_reply(reply, "cloud", {"role": role, "working": True})
+            yield {
+                "type": "tool_calls",
+                "source": "cloud",
+                "reply": reply.model_dump(),
+                "message_id": message_id,
+                "calls": [c.__dict__ for c in answer.calls],
+                "content": answer.content,
+            }
+            return
         if words is None or not words.said:
             self.life.react("perk_up", "the answer came back")
         if role != CHAT:  # a real job tires him; an everyday answer doesn't
@@ -2916,6 +3015,8 @@ class Brain:
             "reply": reply.model_dump(),
             "message_id": message_id,
             "month_aud": round(self.memory.month_spend(), 4),
+            **({"calls": [c.__dict__ for c in answer.calls]} if answer.calls else {}),
+            **({"content": answer.content} if answer.calls else {}),
         }
 
     async def _cloud_stream(
@@ -2926,6 +3027,7 @@ class Brain:
         question: str,
         on_step: Callable[[str], None] | None,
         words: StreamedReply,
+        tools: list[dict] | None = None,
     ) -> AsyncIterator[Event | CloudAnswer]:
         """A cloud answer as it's written (``cloud.stream``): his mood, sounds and words
         as chat events the moment they're in, then the whole answer (a ``CloudAnswer``,
@@ -2941,6 +3043,7 @@ class Brain:
                 on_step,
                 priority=PRIORITY.get(),
                 on_text=pieces.put_nowait,
+                tools=tools,
             )
         )
         call.add_done_callback(lambda _: pieces.put_nowait(None))

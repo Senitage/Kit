@@ -161,6 +161,22 @@ MIGRATIONS = [
     ALTER TABLE spend ADD COLUMN aud_per_usd REAL NOT NULL DEFAULT 0;
     UPDATE spend SET cost_aud = cost_usd * {BUILT_IN_RATE}, aud_per_usd = {BUILT_IN_RATE};
     """,
+    # 9: every tool Kit ran while answering (kit.tools), so the status page and
+    # `kit tools log` can say why he did something.
+    """
+    CREATE TABLE IF NOT EXISTS tool_calls (
+        id INTEGER PRIMARY KEY,
+        at TEXT NOT NULL,
+        message_id INTEGER,
+        tool TEXT NOT NULL,
+        arguments TEXT NOT NULL,
+        effect TEXT NOT NULL,
+        result TEXT NOT NULL,
+        ok INTEGER NOT NULL DEFAULT 1,
+        role TEXT
+    );
+    CREATE INDEX IF NOT EXISTS tool_calls_at ON tool_calls(at);
+    """,
 ]
 MESSAGE_COLS = "id, at, role, text, reply_json, source, channel, meta_json, private"
 
@@ -560,6 +576,60 @@ class Memory:
     # Spend
 
     @_locked
+    @_locked
+    def log_tool_call(
+        self,
+        message_id: int | None,
+        tool: str,
+        arguments: dict,
+        effect: str,
+        result: str,
+        ok: bool = True,
+        role: str = "",
+    ) -> int:
+        """One tool Kit ran while answering. ``result`` is kept short: enough to see
+        what came back, not the whole text."""
+        now = self.clock()
+        with self.db:
+            cur = self.db.execute(
+                "INSERT INTO tool_calls (at, message_id, tool, arguments, effect, result, ok,"
+                " role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    now.isoformat(timespec="seconds"),
+                    message_id,
+                    tool,
+                    json.dumps(arguments, ensure_ascii=False)[:1000],
+                    effect,
+                    " ".join(result.split())[:300],
+                    int(ok),
+                    role,
+                ),
+            )
+        return int(cur.lastrowid)
+
+    @_locked
+    def tool_calls(self, limit: int = 20) -> list[dict]:
+        """The latest tool calls, newest first."""
+        rows = self.db.execute(
+            "SELECT id, at, message_id, tool, arguments, effect, result, ok, role"
+            " FROM tool_calls ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "at": r[1],
+                "message_id": r[2],
+                "tool": r[3],
+                "arguments": json.loads(r[4]),
+                "effect": r[5],
+                "result": r[6],
+                "ok": bool(r[7]),
+                "role": r[8],
+            }
+            for r in rows
+        ]
+
     def record_spend(
         self,
         model: str,

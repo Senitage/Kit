@@ -10,7 +10,7 @@ Up: [[Home]] · Reference
 
 | Word | Means | See |
 |---|---|---|
-| **Action** | Something Kit does mid-answer: remember, recall, take a note, look at the PC, look around | [[Brain#What he can do mid-answer]] |
+| **Action** | Something a reply asks for once the words are out: remember, take a note, a thing for the register, hand off to a bigger model. The looks became tools | [[Brain#What he can do mid-answer]] |
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
@@ -18,6 +18,7 @@ Up: [[Home]] · Reference
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
+| **Capability pack** | A named set of tools with one card (the line in his prompt): `core` first, then files, the PC, the house, the notes vault, your apps | [[Tools and Packs#Packs]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
 | **Check-in** | The one gentle pipe-up he allows himself on a bad night, asking if you're okay | [[Inner Life In Depth#A bad night]] |
@@ -27,6 +28,7 @@ Up: [[Home]] · Reference
 | **Day summary** | What Kit writes after midnight about each finished day | [[Memory]] |
 | **Device token** | A token just for one paired device, like a phone, so it can be unpaired alone (`kit pair`) | [[Phone App#Pairing]] |
 | **Drives** | What rises and falls in him: boredom, curiosity, wanting a chat, something to say, energy | [[Inner Life#Drives and mood]] |
+| **Effect** | What a tool does to the world: `read` (looks something up), `act` (easily undone, like a lamp) or `change` (alters something of yours, so it asks first) | [[Tools and Packs#Packs]] |
 | **Embedding** | A meaning vector: numbers that let him find things by what they mean | [[Memory#Finding things]] |
 | **Emotion** | One of 17 feelings a reply is acted out in | [[Face#Emotions and gestures]] |
 | **Eval** | A repeatable check of how the real models behave | [[Evals]] |
@@ -47,7 +49,8 @@ Up: [[Home]] · Reference
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Lite eyes** | The eyes set up to run on a CPU: a small detector a few times a second, faces read in between | [[Eyes#Without a graphics card]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
-| **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`) | [[Face In Depth]] |
+| **Hop** | One go round the tool loop: the model asks for a tool, the brain runs it, the result goes back (`tools.hops` a turn) | [[Tools and Packs]] |
+| **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`); for a set of tools, see capability pack | [[Face In Depth]] |
 | **Pairing** | Giving a device its own token: from the app with Kit's address and token, or a QR code from `kit pair` | [[Phone App#Pairing]] |
 | **Piece** | A bit of a sentence's sound (about a second), sent to the desk while the rest is still being made | [[Voice#How a sentence becomes sound]] |
 | **Pipe-up** | Kit saying something without being asked | [[Inner Life#Piping up, with manners]] |
@@ -70,6 +73,8 @@ Up: [[Home]] · Reference
 | **Talking over him** | Starting to talk while Kit speaks; he stops, as he does when you type (`hearing.barge_in`) | [[Hearing#Talking over him]] |
 | **Thread** | Something coming up in your life that he'll ask about after | [[Companion#He follows your life]] |
 | **Token** | The password every app uses to talk to the brain (`kit token`) | [[Privacy#Tokens and secrets]] |
+| **Tool** | Something a model can call mid-answer and get a result back from: search memory, look at the PC, the forecast, a note | [[Tools and Packs]] |
+| **Tool loop** | The model asks, the brain runs the tool, the model answers from the result, a few times a turn if need be | [[Tools and Packs#How it works]] |
 | **Tone** | How a voice sounded (cheerful, down, cross), read from the sound; he may ask, never tells | [[Hearing#Tone and laughs]] |
 | **Two passes** | Deciding what to do in one model call, then saying it in a second | [[Brain#Two passes when the local model talks]] |
 | **Voice print** | 512 numbers worked out from a few seconds of someone talking; no sound can be rebuilt from them | [[Hearing#Whose voice]] |
