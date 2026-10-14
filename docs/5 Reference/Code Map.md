@@ -46,6 +46,7 @@ flowchart TB
 | `src/kit/routes/settings.py` | Reading, changing and undoing settings | [[API]], [[Settings and Data]] |
 | `src/kit/routes/memory.py` | Facts, memory search and day summaries | [[API]], [[Memory]] |
 | `src/kit/routes/things.py` | The register of things over the API | [[API]], [[Register of Things]] |
+| `src/kit/routes/files.py` | The settings page's "Your files": roots, their status, syncing now | [[API]], [[Your Files]] |
 | `src/kit/routes/tools.py` | The packs and tools over the API, and running one by hand | [[API]], [[Tools and Packs]] |
 | `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
 | `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
@@ -80,6 +81,11 @@ flowchart TB
 | `src/kit/learning.py` | Adding facts tidily, and each day's summary | [[Memory#Learning without a mess]] |
 | `src/kit/things.py` | The register of things | [[Register of Things]] |
 | `src/kit/notes.py` | The notes vault on the NAS | [[Notes on the NAS]] |
+| `src/kit/files/__init__.py` | Your folders (roots) and adding, changing and removing them in the settings | [[Your Files]] |
+| `src/kit/files/walk.py` | Finding the files under each root, and what's new, changed and gone | [[Your Files#How it works]] |
+| `src/kit/files/extract.py` | A PDF, Word file, sheet, slide deck or text file as pages of text | [[Your Files#How it works]] |
+| `src/kit/files/fields.py` | Years, amounts, dates, ABNs, references and names in a piece of a file | [[Your Files#How it works]] |
+| `src/kit/files/index.py` | Keeping the `files` source in step with the folders | [[Your Files]], [[Memory In Depth]] |
 
 ## Inner life and companionship
 

@@ -31,7 +31,7 @@ from kit.settings import (
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud", "eyes"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "cloud", "eyes"]
 
 
 def cmd_paths(paths: KitPaths) -> int:
@@ -73,6 +73,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.append(checks.check_tailscale())
     if "nas" not in skip:
         results.extend(checks.check_nas(settings))
+    if "files" not in skip:
+        results.extend(checks.check_files(settings))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
     if "prices" not in skip:
@@ -1202,7 +1204,15 @@ def _scrub(paths: KitPaths, memory, args: argparse.Namespace) -> int:
     return 0
 
 
+def file_place(item) -> str:
+    """Where a ``files`` hit came from: its root, path and page."""
+    m = item.meta
+    page = f", page {m['page']}" if m.get("page", 1) > 1 else ""
+    return f"{m.get('root')}: {m.get('rel')}{page}"
+
+
 async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.files import FILES
     from kit.memory import CONVERSATION, DAYS, FACTS
     from kit.notes import NOTES
 
@@ -1223,7 +1233,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                 else:
                     print(f"remembered: {learned.text}")
             elif args.action == "search":
-                hits = await brain.recall.search(args.query, [FACTS, DAYS, CONVERSATION, NOTES], 10)
+                sources = [FACTS, DAYS, CONVERSATION, NOTES, FILES]
+                hits = await brain.recall.search(args.query, sources, 10)
                 if brain.recall.embed_problem:
                     print(f"(words only: {brain.recall.embed_problem})")
                 if not hits:
@@ -1236,6 +1247,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                     )
                     text = " / ".join(h.item.text.splitlines())[:110]
                     print(f"{h.item.id:>5}  {h.item.day}  {h.item.source:<12} {how:<14} {text}")
+                    if h.item.source == FILES:
+                        print(f"{'':>19}{file_place(h.item)}")
             elif args.action == "tidy":
                 return await _tidy(paths, store, memory, brain, args.apply)
             elif args.action == "reindex":
@@ -1320,6 +1333,97 @@ def cmd_notes(paths: KitPaths) -> int:
             print(f"  ... and {len(names) - 15} more")
     finally:
         memory.close()
+    return 0
+
+
+def cmd_files(paths: KitPaths, args: argparse.Namespace) -> int:
+    """``kit files``: the folders Kit indexes, what's in each, and indexing them now."""
+    from kit.files import RootError, add_root, change_root, remove_root
+    from kit.files.index import Files
+    from kit.memory import Memory
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    if args.action in ("index", "search"):
+        return asyncio.run(_files_async(paths, args))
+    memory = Memory(paths.state_dir / "memory.db")
+    files = Files(memory.index, store.current, paths.state_dir)
+    try:
+        if args.action == "add":
+            add_root(store, args.name, args.path, args.private, args.ocr)
+            private = " (private)" if args.private else ""
+            print(f"added {args.name}{private}: {args.path}; `kit files index` reads it now")
+        elif args.action == "remove":
+            remove_root(store, args.name)
+            print(f"removed {args.name}; {files.drop_root(args.name)} pieces left the index")
+        elif args.action == "private":
+            on = args.state == "on"
+            change_root(store, args.name, private=on)
+            n = files.set_private(args.name, on)
+            print(f"{args.name} is {'private' if on else 'not private'} ({n} pieces changed)")
+        elif args.action == "status":
+            roots = files.status()
+            if not roots:
+                print("no folders yet; add one with `kit files add NAME PATH`")
+            for name, r in roots.items():
+                flags = "".join([", private" if r["private"] else "", ", OCR" if r["ocr"] else ""])
+                there = "" if r["reachable"] else "  (can't be reached just now)"
+                print(f"{name}: {r['path']}{flags}{there}")
+                print(f"  {r['files']} files, {r['pieces']} pieces")
+                if r["last_run"]:
+                    print(f"  last run {r['last_run']['at']}: {r['last_run']['result']}")
+                for ref in r["unreadable"][:10]:
+                    print(f"  couldn't read {ref}")
+                if len(r["unreadable"]) > 10:
+                    print(f"  ... and {len(r['unreadable']) - 10} more it couldn't read")
+    except (RootError, SettingsError) as e:
+        print(e)
+        return 1
+    finally:
+        memory.close()
+    return 0
+
+
+async def _files_async(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.files import FILES
+    from kit.files.index import Files
+
+    async with httpx.AsyncClient() as client:
+        store, memory, brain = _runtime(paths, client)
+        try:
+            if args.action == "index":
+                if args.root and args.root not in store.current().files.roots:
+                    print(f"no root called {args.root}")
+                    return 1
+                files = Files(
+                    memory.index,
+                    store.current,
+                    paths.state_dir,
+                    names=lambda: [n for t in brain.register.all() for n in t.names],
+                )
+                report = await asyncio.to_thread(
+                    files.sync, args.full, args.root, lambda ref: print(f"  {ref}", flush=True)
+                )
+                print(report.line())
+                for ref, why in report.failed[:20]:
+                    print(f"  couldn't read {ref}: {why}")
+                done = await brain.recall.index_pending(limit=1_000_000)
+                problem = brain.recall.embed_problem
+                print(
+                    f"{done} pieces searchable by meaning"
+                    + (f"; stopped: {problem}" if problem else "")
+                )
+                return 0
+            hits = await brain.recall.search(args.query, [FILES], 10)
+            if brain.recall.embed_problem:
+                print(f"(words only: {brain.recall.embed_problem})")
+            if not hits:
+                print("nothing found")
+            for h in hits:
+                text = " / ".join(h.item.text.splitlines())[:100]
+                print(f"{file_place(h.item)}\n    {text}")
+        finally:
+            memory.close()
     return 0
 
 
@@ -1682,6 +1786,29 @@ def main(argv: list[str] | None = None) -> int:
         help="memory --replay or tools: a different questions file",
     )
 
+    files = sub.add_parser("files", help="the folders Kit indexes: add, remove, status, index")
+    fsub = files.add_subparsers(dest="action", required=True)
+    fadd = fsub.add_parser(
+        "add", help="add a folder for Kit to read, e.g. finance /mnt/nas/Finance"
+    )
+    fadd.add_argument("name")
+    fadd.add_argument("path")
+    fadd.add_argument(
+        "--private", action="store_true", help="its contents stay with the local model"
+    )
+    fadd.add_argument("--ocr", action="store_true", help="read scanned PDFs too (slow)")
+    fsub.add_parser(
+        "remove", help="stop indexing a folder; its pieces leave the index"
+    ).add_argument("name")
+    fpriv = fsub.add_parser("private", help="mark a folder private or not")
+    fpriv.add_argument("name")
+    fpriv.add_argument("state", choices=["on", "off"])
+    fsub.add_parser("status", help="each folder: files and pieces indexed, last run, unreadable")
+    findex = fsub.add_parser("index", help="read new and changed files now, showing each")
+    findex.add_argument("--root", help="only this folder")
+    findex.add_argument("--full", action="store_true", help="read every file again")
+    fsub.add_parser("search", help="search the indexed files only").add_argument("query")
+
     tools = sub.add_parser("tools", help="Kit's tools: the packs, each tool, trying one by hand")
     tosub = tools.add_subparsers(dest="action", required=True)
     tosub.add_parser("list", help="every tool with its pack and effect")
@@ -1733,6 +1860,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_things(paths, args)
     if args.command == "tools":
         return cmd_tools(paths, args)
+    if args.command == "files":
+        return cmd_files(paths, args)
     if args.command == "docs":
         return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":

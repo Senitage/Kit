@@ -456,6 +456,66 @@ class CloudSettings(_Section):
     )
 
 
+DEFAULT_SKIP = [
+    ".obsidian",
+    ".git",
+    "node_modules",
+    "@eaDir",
+    "#recycle",
+    "#snapshot",
+    "*.tmp",
+    "~$*",
+]
+
+
+class FileRoot(_Section):
+    path: str = Field(
+        description="The folder on the server: a NAS share's mount point or a folder on "
+        "this machine. Kit only reads it."
+    )
+    private: bool = Field(
+        False,
+        description="What's in this folder never reaches a cloud model as it is; only the "
+        "local model reads it.",
+    )
+    ocr: bool = Field(
+        False,
+        description="Read scanned PDFs (no text in them) by recognising the text, which is "
+        "slow and needs the ocr extras.",
+    )
+    max_mb: int = Field(50, ge=1, le=2000, description="Files bigger than this are skipped.")
+
+
+class FilesSettings(_Section):
+    roots: dict[str, FileRoot] = Field(
+        default_factory=dict,
+        description="The folders Kit indexes, by a short name you choose. None to start "
+        "with: add them on the settings page or with `kit files add`.",
+    )
+    skip: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_SKIP),
+        description="Folder or file names (with * wildcards) never indexed, anywhere under a root.",
+    )
+    chunk_words: int = Field(
+        400, ge=50, le=4000, description="About how many words each indexed piece of a file holds."
+    )
+    max_rows: int = Field(
+        2000, ge=10, le=100_000, description="Most rows read from each sheet of a spreadsheet."
+    )
+    sync_every_minutes: int = Field(
+        30,
+        ge=0,
+        le=1440,
+        description="How often Kit looks for new and changed files. 0 means once a day.",
+    )
+    read_words: int = Field(
+        1500,
+        ge=100,
+        le=20_000,
+        description="Most words of one file Kit reads into an answer at once.",
+    )
+
+
 class NasSettings(_Section):
     read_only_shares: dict[str, str] = Field(
         default_factory=dict,
@@ -1421,6 +1481,7 @@ class Settings(_Section):
     cloud: CloudSettings = Field(default_factory=CloudSettings)
     tools: ToolsSettings = Field(default_factory=ToolsSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
+    files: FilesSettings = Field(default_factory=FilesSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

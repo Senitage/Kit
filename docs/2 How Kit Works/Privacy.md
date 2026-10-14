@@ -122,6 +122,15 @@ See [[Hearing]].
   writes only when you ask. Every other share is read-only, and `kit check`
   fails one he could write to. See [[Notes on the NAS]].
 - **Everything Kit owns stays in his data folder.** See [[Settings and Data]].
+- **Your documents are read only from the folders you choose** (roots, see
+  [[Your Files]]), never changed, and what he reads stays in his memory file
+  on the server. He starts with no folders. Removing one takes what he read
+  from it out of his memory.
+- **A folder can be ticked private.** The tick is kept on every piece read
+  from it. Your files are searched on the memory page and with `kit memory
+  search` for now and don't come into conversation; when the file tools
+  arrive (part B2 of [[Stage 4 - Tools]]) a private folder's text reaches only
+  the local model, as below.
 - **A tool can mark what it found private** (a private folder, your
   finances). A cloud model never reads that text: the local model answers
   the question from it in a few words, and only that summary goes out,

@@ -38,12 +38,39 @@
              margin-bottom: 16px; white-space: pre-wrap; }
   .ok { color: var(--ok); }
   #history li { color: var(--muted); font-size: 13px; }
+  .root { border-top: 1px solid var(--line); padding: 10px 0; }
+  .root:first-of-type { border-top: 0; }
+  .root .path { color: var(--muted); font-size: 13px; word-break: break-all; }
+  .root .ticks { display: flex; gap: 16px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .root .ticks label, .inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+  .addrow { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
+  .chips button { font-size: 13px; padding: 4px 10px; margin: 0 6px 6px 0; }
+  @media (max-width: 520px) { .addrow { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <main>
   <header><h1>Kit settings</h1><a href="/">Chat</a><a href="/memory">Memory</a></header>
   <div id="problem" class="problem" hidden></div>
+  <fieldset id="files">
+    <legend>Your files</legend>
+    <span class="help">Folders Kit reads and indexes so he can find what's in your documents. He only reads them. A private folder's contents stay with the local model.</span>
+    <div id="roots"></div>
+    <div class="root">
+      <div class="addrow">
+        <input type="text" id="rootName" placeholder="Short name, e.g. finance">
+        <input type="text" id="rootPath" placeholder="Folder on the server, e.g. /mnt/nas/Finance">
+      </div>
+      <div class="chips" id="shares"></div>
+      <div class="ticks">
+        <label><input type="checkbox" id="rootPrivate"> Private</label>
+        <label><input type="checkbox" id="rootOcr"> Read scans (OCR)</label>
+        <button type="button" id="addRoot">Add folder</button>
+        <button type="button" id="syncNow">Look for changes now</button>
+        <span id="filesMsg"></span>
+      </div>
+    </div>
+  </fieldset>
   <form id="form"></form>
   <div class="bar">
     <button class="primary" id="save">Save</button>
@@ -128,6 +155,7 @@ function render(settings) {
     const fs = document.createElement("fieldset");
     const lg = document.createElement("legend"); lg.textContent = section; fs.appendChild(lg);
     for (const [key, raw] of Object.entries(sec.properties)) {
+      if (section === "files" && key === "roots") continue;  // in "Your files" above
       const prop = resolve(raw);
       const kind = kindOf(prop);
       const label = document.createElement("label");
@@ -204,7 +232,65 @@ document.getElementById("undo").addEventListener("click", async () => {
     render(data.settings); showProblem(data.problem); say("Went back to the previous version.", true); await loadHistory();
   } catch (e) { say(e.message); }
 });
-load().catch(e => say("Can't reach Kit: " + e.message));
+const filesMsg = document.getElementById("filesMsg");
+function sayFiles(text, ok) { filesMsg.textContent = text; filesMsg.style.color = ok ? "var(--ok)" : "var(--error)"; }
+function tick(text, checked, onChange) {
+  const l = document.createElement("label");
+  const c = document.createElement("input"); c.type = "checkbox"; c.checked = checked;
+  c.addEventListener("change", () => onChange(c.checked));
+  l.append(c, document.createTextNode(" " + text)); return l;
+}
+async function changeRoot(name, change) {
+  try { renderFiles(await api("/api/files/roots/" + encodeURIComponent(name), { method: "PATCH", body: JSON.stringify(change) })); sayFiles("Saved.", true); }
+  catch (e) { sayFiles(e.message); }
+}
+const n = (count, word) => count + " " + word + (count === 1 ? "" : "s");
+function renderFiles(data) {
+  const box = document.getElementById("roots"); box.innerHTML = "";
+  for (const [name, r] of Object.entries(data.roots)) {
+    const div = document.createElement("div"); div.className = "root";
+    const top = document.createElement("div"); top.className = "name"; top.textContent = name;
+    const path = document.createElement("div"); path.className = "path";
+    const run = r.last_run ? "last looked " + r.last_run.at.replace("T", " ") + ": " + r.last_run.result : "not read yet";
+    path.textContent = r.path + (r.reachable ? "" : " (can't be reached just now)") + " · " + n(r.files, "file") + ", " + n(r.pieces, "piece") + " · " + run
+      + (r.unreadable.length ? " · " + r.unreadable.length + " couldn't be read" : "");
+    const ticks = document.createElement("div"); ticks.className = "ticks";
+    ticks.append(tick("Private", r.private, v => changeRoot(name, { private: v })),
+                 tick("Read scans (OCR)", r.ocr, v => changeRoot(name, { ocr: v })));
+    const rm = document.createElement("button"); rm.type = "button"; rm.textContent = "Remove";
+    rm.addEventListener("click", async () => {
+      if (!confirm("Stop indexing " + name + "? What Kit read from it leaves his memory. The folder itself isn't touched.")) return;
+      try { renderFiles(await api("/api/files/roots/" + encodeURIComponent(name), { method: "DELETE" })); sayFiles("Removed " + name + ".", true); }
+      catch (e) { sayFiles(e.message); }
+    });
+    ticks.append(rm);
+    div.append(top, path, ticks); box.appendChild(div);
+  }
+  const chips = document.getElementById("shares"); chips.innerHTML = "";
+  for (const [share, where] of Object.entries(data.shares || {})) {
+    if (Object.values(data.roots).some(r => r.path === where)) continue;
+    const b = document.createElement("button"); b.type = "button"; b.textContent = share;
+    b.title = where;
+    b.addEventListener("click", () => { document.getElementById("rootName").value = share.toLowerCase().replace(/[^a-z0-9_-]/g, "-"); document.getElementById("rootPath").value = where; });
+    chips.appendChild(b);
+  }
+  if (data.running) sayFiles("Reading files…", true);
+}
+async function loadFiles() { renderFiles(await api("/api/files")); }
+document.getElementById("addRoot").addEventListener("click", async () => {
+  const body = { name: document.getElementById("rootName").value.trim(), path: document.getElementById("rootPath").value.trim(),
+                 private: document.getElementById("rootPrivate").checked, ocr: document.getElementById("rootOcr").checked };
+  try {
+    renderFiles(await api("/api/files/roots", { method: "POST", body: JSON.stringify(body) }));
+    for (const id of ["rootName", "rootPath"]) document.getElementById(id).value = "";
+    sayFiles("Added. Kit's reading it now.", true);
+  } catch (e) { sayFiles(e.message); }
+});
+document.getElementById("syncNow").addEventListener("click", async () => {
+  try { const d = await api("/api/files/sync", { method: "POST", body: "{}" }); renderFiles(d); sayFiles(d.started ? "Looking for changes." : "Already reading.", true); }
+  catch (e) { sayFiles(e.message); }
+});
+load().then(loadFiles).catch(e => say("Can't reach Kit: " + e.message));
 </script>
 </body>
 </html>

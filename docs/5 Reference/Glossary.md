@@ -23,6 +23,7 @@ Up: [[Home]] · Reference
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
 | **Check-in** | The one gentle pipe-up he allows himself on a bad night, asking if you're okay | [[Inner Life In Depth#A bad night]] |
 | **Cheek** | How cheeky he is, 0 to 1 (`life.cheek`) | [[Inner Life]] |
+| **Chunk** | One indexed bit of a file, about 400 words cut at paragraphs, from one page, sheet or slide; `kit files status` counts them as pieces | [[Your Files#How it works]] |
 | **CUDA graph** | GPU work recorded once and replayed in one go; it makes Chatterbox Turbo's voice about 2.4 times faster | [[Voice#Faster on a graphics card]] |
 | **Data folder** | The one folder holding everything Kit owns | [[Settings and Data]] |
 | **Day summary** | What Kit writes after midnight about each finished day | [[Memory]] |
@@ -63,6 +64,7 @@ Up: [[Home]] · Reference
 | **Retro** | The default character: Glow's pill eyes | [[Face]] |
 | **Rig** | What turns emotions and gestures into face numbers | [[Face#The rig, in three layers]] |
 | **Role** | A job a model does: chat, work, expert | [[Models and Routing]] |
+| **Root** | A folder you chose for Kit to read into his memory, by a short name (`files.roots`) | [[Your Files#Choosing folders]] |
 | **Routing** | Deciding which model answers a message | [[Models and Routing]] |
 | **Scene** | What the eyes see right now, in words and numbers | [[Eyes]] |
 | **Price list** | What every model costs, fetched daily from LiteLLM's list with the day's exchange rate, shown in Australian dollars | [[Models and Routing#Prices, fetched for you]] |

@@ -29,7 +29,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+# The files libraries are in dev too, so the tests read real PDFs, Word files and sheets.
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "pypdf>=4",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6.23",
+]
+# Reading Dan's documents into Kit's memory (docs/2 How Kit Works/Your Files.md).
+files = ["pypdf>=4", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6.23"]
+# Reading scanned PDFs as well: needs the tesseract and poppler programs installed.
+ocr = ["pytesseract>=0.3.10", "pdf2image>=1.17"]
 desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 # Kit's eyes, on the PC with the camera. opencv-contrib is the build MediaPipe wants;
 # don't install plain opencv-python beside it. For GPU detection install PyTorch's

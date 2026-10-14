@@ -28,7 +28,7 @@ a reference back to where it came from.
 | `self` | Kit's own notebook: his thoughts, opinions, wants, moments and daily journal ([[Inner Life In Depth]]) | Inner life |
 | `self-sheet` | Who Kit thinks he is, in his own words, every version, and the weekly reviews of it. Always in his prompt, so never recalled | Inner life |
 | `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
-| `files` | NAS documents and folders (names, paths, text) | Stage 5 |
+| `files` | Your documents in the folders you chose: a piece of about 400 words per item, its `root:path` as the ref, page, folder, time, size, private flag and the years, amounts, dates and references in it ([[Your Files]]). Searched on the memory page and by `kit memory search`; the file tools bring it into conversation | Stage 4 (B1) |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([[Notes Setup|your notes]]) | Now |
 | `seen` | What Kit's eyes saw that's worth remembering: someone arriving after the desk was empty a while, the cat wandering in ([[Vision Stage 1|his eyes]]) | Vision 1 |
