@@ -144,7 +144,7 @@
 			"x": -660,
 			"y": 40,
 			"width": 760,
-			"height": 800,
+			"height": 990,
 			"color": "4"
 		},
 		{
@@ -403,6 +403,15 @@
 			"y": 1542,
 			"width": 320,
 			"height": 150
+		},
+		{
+			"id": "tools",
+			"type": "text",
+			"text": "### [[Tools and Packs]]\nThe tool loop: the model asks, the brain runs it, he answers from the result. New abilities come as packs.",
+			"x": -620,
+			"y": 840,
+			"width": 680,
+			"height": 150
 		}
 	],
 	"edges": [
@@ -528,6 +537,14 @@
 			"toNode": "brain",
 			"toSide": "left",
 			"label": "chat and hello, over Tailscale"
+		},
+		{
+			"id": "brain-tools",
+			"fromNode": "brain",
+			"fromSide": "bottom",
+			"toNode": "tools",
+			"toSide": "top",
+			"label": "a tool call, a result"
 		}
 	]
 }

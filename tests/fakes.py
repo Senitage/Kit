@@ -173,16 +173,21 @@ class FakeMessages:
         n = len(owner.calls) - 1
         stop = owner.stop_reason[min(n, len(owner.stop_reason) - 1)]
         answer = owner.answers[min(n, len(owner.answers) - 1)]
+        calls = owner.tool_calls[n] if n < len(owner.tool_calls) else []
         return SimpleNamespace(
             model=kwargs["model"],
-            stop_reason=stop,
+            stop_reason="tool_use" if calls else stop,
             content=[
                 SimpleNamespace(type="thinking", thinking="hmm"),
                 *(
                     SimpleNamespace(type="server_tool_use", name="web_search", input={"query": q})
                     for q in owner.queries
                 ),
-                SimpleNamespace(type="text", text=answer),
+                *([SimpleNamespace(type="text", text=answer)] if answer else []),
+                *(
+                    SimpleNamespace(type="tool_use", id=f"call_{n}_{i}", name=name, input=args)
+                    for i, (name, args) in enumerate(calls)
+                ),
             ],
             usage=SimpleNamespace(
                 input_tokens=1000,
@@ -206,8 +211,13 @@ class FakeAnthropic:
         cache_creation_input_tokens=0,
         searches=0,
         queries=(),
+        tool_calls=(),
     ):
+        """``tool_calls``: per call, the tools the model asks for as (name, arguments)
+        pairs; a call with any becomes a tool_use turn (its answer, if any, is the
+        words said first)."""
         self.queries = list(queries)
+        self.tool_calls = [list(calls) for calls in tool_calls]
         self.gate = None  # set to an asyncio.Event to hold answers back
         self.answers = answer if isinstance(answer, list) else [answer]
         self.error = error

@@ -53,7 +53,9 @@ A chat streams events like these, one per line:
 | `say` | Words as they're written (a cloud answer's too, as it streams in) |
 | `sound` | A sound for his voice before the words that come next (`chuckle`, `sigh`, `gasp`), with `speech.sounds`. Never shown |
 | `show` | Something for his face: the time, the date, the weather |
-| `recalled`, `remembered`, `reading_note`, `looked_at_pc`, `looked_around` | What he did mid-answer |
+| `tool` | He's running a tool: `tool` (its name) and `line` (the call, like `recall(query='tax returns')`) |
+| `tool_calls` | A cloud model asked for tools without a word to say: the calls, with no words for the chat yet (the `reply` comes after the results) |
+| `recalled`, `remembered`, `reading_note`, `looked_at_pc`, `looked_around` | What a tool or action did mid-answer |
 | `handing_off` | A bigger model is taking over ("Let me think...") |
 | `notice` | A line for the chat, like a budget warning |
 | `reply` | The whole reply: words, emotion, gestures, actions |
@@ -167,7 +169,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said |
+| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said, and `tools` (the `packs` he has, `hops` allowed, the ten most `recent` calls) |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend in Australian dollars (`month_aud`, `cap_aud`, `aud_per_usd`), as a log (each call with its `cost_usd` as billed, `cost_aud` at the day's rate, `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (`cost_aud`, `total_aud`, with each model's `cached_tokens`) |
 

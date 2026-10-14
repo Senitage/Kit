@@ -46,6 +46,11 @@ def status(state: State) -> dict:
         "eyes_paused": brain.eyes_paused,
         "hearing": hearing_line(state),
         "hearing_paused": brain.hearing_paused,
+        "tools": {
+            "packs": sorted(brain.tools.packs),
+            "hops": s.tools.hops,
+            "recent": memory.tool_calls(10),
+        },
     }
 
 

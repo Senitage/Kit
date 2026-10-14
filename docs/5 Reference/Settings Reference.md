@@ -159,6 +159,15 @@ The brain's address and how conversations start and end. See [[Brain]].
 | `new_topic_below` | `0.45` | A message this far in meaning from your last few (similarity below this, 0 to 1) is noted as a change of subject beside it; the conversation is kept. 0 never does. Short or 'that/it' messages never count as a new topic. |
 | `history_messages` | `20` | Recent messages Kit sees each turn. |
 
+## tools
+
+The tool loop: how many times a turn the model may ask for a tool. See
+[[Tools and Packs]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `hops` | `6` | Most tool calls in one turn (1 to 20). After this many the model is answered with what it has. |
+
 ## memory
 
 How memories are found and kept. See [[Memory]].

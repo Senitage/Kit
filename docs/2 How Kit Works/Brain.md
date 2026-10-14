@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/brain]
 aliases: [The brain, Conversation loop, kit.brain]
 summary: The brain is Kit's conversation loop on the server - every message, pipe-up and thought goes through it, and it answers in one shape whichever model speaks.
-related: ["[[Models and Routing]]", "[[Memory]]", "[[Inner Life]]", "[[API]]"]
+related: ["[[Tools and Packs]]", "[[Models and Routing]]", "[[Memory]]", "[[Inner Life]]", "[[API]]"]
 ---
 
 # The brain
@@ -67,17 +67,29 @@ room for it), the words decide as before.
 
 ## What he can do mid-answer
 
-| Action | What happens |
+Looking things up is a **tool loop** ([[Tools and Packs]]): the model asks
+for a tool, the brain runs it and hands back the result, and the model
+answers from it, up to `tools.hops` times in one turn. A cloud model asks
+with its own native tool calls; the local model asks with the `action` field
+of its plan, and the brain turns that into the same call. The `core` pack
+holds the looks:
+
+| Tool | What happens |
 |---|---|
 | `recall` | He searches memory for something specific, then answers again |
 | `look_at_pc` | He reads the full picture from the desk app: every window, what had focus this hour and today, PC health |
 | `look_around` | He reads everything his eyes see: who's at the desk, what they're doing |
 | `weather` | He gets the forecast, then answers from the numbers |
+| `read_note` | He opens one of your notes and answers from it |
+
+The rest stay **actions** in the reply itself, done once the words are out:
+
+| Action | What happens |
+|---|---|
 | `remember` | A fact is learned, merging with or updating what he knew |
 | `note` | A note you asked for goes into your notes vault |
 | `offer_note` | Something sounds worth keeping but you didn't ask, so he offers: "want me to note that?" |
 | `thing` | A name goes into the register of things (a suggestion you confirm) |
-| `read_note` | He opens one of your notes and answers from it |
 | `ask_cloud`, `ask_expert` | The question goes up to the work or expert model. With `routing.confirm_expert` he asks before calling the expert |
 
 If a cloud model can't answer (offline, no key, budget used up), the local
@@ -166,13 +178,15 @@ thoughts), the **nightly upkeep** (day summaries, reflection, backups) and the
 **notes sync**. See [[The Big Picture#How the brain keeps time]].
 
 ## Go deeper
+- [[Tools and Packs]]: the loop behind the looks, and how packs plug in.
 - [[Models and Routing]]: who answers.
 - [[Memory]]: what gets recalled.
 - [[Inner Life]]: what colours the answer.
 - [[API]]: the routes the bodies and pages call.
 
 > [!under-the-hood]- Under the hood: the code
-> - `src/kit/brain.py`: the conversation loop, actions, pipe-ups, thoughts.
+> - `src/kit/brain.py`: the conversation loop, the tool loop, actions, pipe-ups, thoughts.
+> - `src/kit/tools/`: the tools he can call and the packs they come in.
 > - `src/kit/prompt.py`: what the model sees each turn.
 > - `src/kit/reply.py`: the reply shape, the plan and its reading fields, emotions and gestures, the streaming reader.
 > - `src/kit/local_model.py`, `src/kit/cloud.py`: talking to the models.

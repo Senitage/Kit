@@ -56,6 +56,8 @@ flowchart TB
 | `src/kit/brain.py` | The conversation loop: one message in, a streamed reply out | [[Brain]], [[Life of a Message]] |
 | `src/kit/reply.py` | The shape of every reply, emotions, gestures and actions | [[Brain#One shape for every reply]] |
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |
+| `src/kit/tools/__init__.py` | Tools, packs and the registry: what a model can call mid-answer, offered only where there's something to look at | [[Tools and Packs]] |
+| `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
 | `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |

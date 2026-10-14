@@ -390,6 +390,16 @@ class RoutingSettings(_Section):
     )
 
 
+class ToolsSettings(_Section):
+    hops: int = Field(
+        6,
+        ge=1,
+        le=20,
+        description="How many rounds of tool calls (search memory, look at the PC, read a "
+        "note...) one message may take before Kit has to answer in words.",
+    )
+
+
 class CloudSettings(_Section):
     monthly_cap_aud: float = Field(
         60.0,
@@ -1378,6 +1388,7 @@ class Settings(_Section):
         "(`kit models`), never set here.",
     )
     cloud: CloudSettings = Field(default_factory=CloudSettings)
+    tools: ToolsSettings = Field(default_factory=ToolsSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
