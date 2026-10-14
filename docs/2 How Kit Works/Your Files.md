@@ -12,8 +12,10 @@ related: ["[[Memory]]", "[[Notes on the NAS]]", "[[Privacy]]", "[[Tools and Pack
 > **reads every PDF, Word file, spreadsheet, slide deck and text file** in
 > them into his memory as the `files` source, a page or sheet at a time, in
 > pieces of about 400 words. He keeps up with new and changed files every half
-> hour and never changes a thing in those folders. A folder you tick
-> **private** stays with the local model once the file tools arrive.
+> hour and never changes a thing in those folders. Ask about them in plain
+> words ("what did I pay for the rates last year?") and he finds the
+> document, reads the part that answers, and names it. A folder you tick
+> **private** is read only by the local model.
 
 ## What it does
 
@@ -24,9 +26,11 @@ related: ["[[Memory]]", "[[Notes on the NAS]]", "[[Privacy]]", "[[Tools and Pack
 - `kit memory search "rates notice 2025"` and the memory page find the right
   piece of the right file and show where it is: the root, the path and the
   page.
-- In this first part he doesn't yet open files mid-chat. That's the file
-  tools (part B2 of [[Stage 4 - Tools]]), which also bring the private rule.
-  Until then your files stay out of what he recalls in conversation.
+- "What's in the Finance folder?" lists its folders and newest files;
+  "have you got my documents?" says which folders he's read and when.
+- "Bring up everything on Riverbend", with Riverbend in the register linked
+  to its NAS folder, looks in that folder first. See [[Register of Things]].
+- He can't open a file on your PC yet; that comes with the PC pack.
 
 ## How it works
 
@@ -82,6 +86,32 @@ Removing a root takes what was read from it out of his memory (the folder
 itself isn't touched). Ticking or unticking Private changes what's already
 indexed straight away, without reading anything again.
 
+## Asking about them
+
+When a message is about your documents (words like "invoice", "notice",
+"statement", "manual", "folder", or a register thing with a NAS folder), the
+`files` pack loads and he has four tools ([[Tools and Packs]]):
+
+| Tool | What it does |
+|---|---|
+| `find_documents` | Searches what's in your files by words and meaning, narrowed by a `year`, a `folder` or a `kind` (pdf, docx, xlsx, pptx). One line per file: its name, place, date, a snippet, and any amounts and references in it |
+| `read_document` | Reads one of those files: the parts that answer a question, or one page, up to `files.read_words` words |
+| `list_folder` | A folder's sub-folders and newest files, from the index |
+| `files_status` | Which folders he's read, how many files each, and when |
+
+They all read his index, never the folders themselves, so they're quick and
+work while the NAS sleeps.
+
+### Private folders
+
+A file from a folder ticked **private** reaches a cloud model only as the
+local model's short answer from it: "$1,842.60, on the 2025 rates notice",
+never the text. With the local model off, the cloud model is only told the
+answer is in a private folder. To let the cloud read it whole for one
+message, say so in it: "send it to Claude: what does the lease say about
+pets?" (also "you can use the cloud for this"). See [[Privacy]] and
+[[Tools and Packs#Private results]].
+
 ## Try it
 
 ```
@@ -89,7 +119,10 @@ kit files add finance /mnt/nas/Finance
 kit files index
 kit files status
 kit files search "rates notice 2025"
+kit eval tools --pack files
 ```
+
+Then ask him: "What did I pay for the rates last year?"
 
 ## Go deeper
 - [[Memory In Depth]]: the knowledge index and how a source is added.
@@ -104,6 +137,7 @@ kit files search "rates notice 2025"
 > - `src/kit/files/extract.py`: each kind of file as pages of text.
 > - `src/kit/files/fields.py`: years, amounts, dates, ABNs, references, names.
 > - `src/kit/files/index.py`: `Files.sync`, `status`, `set_private`, `drop_root`.
+> - `src/kit/tools/files.py`: the files pack and its four tools.
 > - `src/kit/routes/files.py`: the settings page's "Your files" (`/api/files`).
 > - `src/kit/server.py`: the files loop (`files.sync_every_minutes`).
 > - Install the readers with `pip install -e ".[files]"` (and `".[ocr]"` for

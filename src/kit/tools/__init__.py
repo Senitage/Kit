@@ -52,6 +52,7 @@ class Context:
     forecast: bool = False  # the forecast is already in the prompt
     notes: bool = False  # there's a notes vault
     note_done: bool = False  # a note request was carried out this turn already
+    files: bool = False  # there's a folder of Dan's in the files index (kit.files)
 
     def looked(self, tool: str) -> None:
         """A look was taken this turn, so it isn't offered again."""
