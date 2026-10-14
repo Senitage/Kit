@@ -212,8 +212,11 @@ from kit.settings import ModelProfile, Settings, cloud_background, local_stands_
 from kit.shows import show_for
 from kit.things import Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
-from kit.tools import Context, Registry, Tool, ToolCall, ToolResult, definitions
+from kit.tools import Context, Pack, Registry, Tool, ToolCall, ToolResult, definitions
+from kit.tools.confirm import Held, ask_first, needs_yes, one_at_a_time, said_yes
 from kit.tools.core import ACTION_ARGS, core_pack
+from kit.tools.match import match
+from kit.tools.private import for_cloud
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
 
@@ -783,6 +786,10 @@ class Brain:
         self.tool_context = Context()
         self.tools = Registry()
         self.tools.add(core_pack(self))
+        # The packs this turn loaded (kit.tools.match), and a call waiting for a yes.
+        self.loaded_packs: list[str] = [p.name for p in self.tools.packs.values() if p.always]
+        self.pending_tool: Held | None = None
+        self._ran_held: tuple[str, str] | None = None  # the call a yes just ran
         self.pending_thing: int | None = None
         self.pending_note: tuple[str, str] | None = None  # (title, text) Kit offered to note
         self.pending_expert = ""  # the question Kit asked to hand to the expert model
@@ -906,7 +913,10 @@ class Brain:
         (the model's plan and words, streamed out), and afterwards (what the reading
         changed: feelings, a bad night the model confirmed, what was said and learned)."""
         turn = await self._read(text, emit)
-        if (answered := self._quick_answer(turn)) is not None:
+        answered = await self._answer_tool_offer(turn, emit)
+        if answered is None:
+            answered = self._quick_answer(turn)
+        if answered is not None:
             for event in self._say_locally(answered):
                 emit(event)
             self.memory.index_exchange(
@@ -1681,6 +1691,46 @@ class Brain:
             return Reply.plain(f"Done, it's in {saved.shown}.", "happy", "nod")
         if NO.fullmatch(text):
             return Reply.plain("Okay, I'll leave it.", "neutral", "nod")
+        return None
+
+    async def _answer_tool_offer(self, turn: Turn, emit: Callable[[Event], None]) -> Reply | None:
+        """Kit asked whether to do something (a held ``change`` call, kit.tools.confirm):
+        a yes runs it and he says what happened, in his own words, from its result; a
+        no leaves it; anything else, or a long wait, lets it lapse."""
+        held, self.pending_tool = self.pending_tool, None
+        self._ran_held = None
+        if held is None:
+            return None
+        settings, text = turn.settings, turn.text
+        if held.lapsed(self.memory.clock(), settings.tools.confirm_lapse_minutes):
+            return None
+        if NO.fullmatch(text):
+            return Reply.plain("Okay, I'll leave it.", "neutral", "nod")
+        if not YES.fullmatch(text):
+            return None
+        call = held.call
+        emit({"type": "tool", "tool": call.name, "line": call.line()})
+        result = await self.tools.run(call)
+        tool = self.tools.get(call.name)
+        self.memory.log_tool_call(
+            turn.user_id,
+            call.name,
+            call.arguments,
+            tool.effect if tool else "change",
+            result.text,
+            result.ok,
+            held.role,
+        )
+        if result.event:
+            emit(result.event)
+        if not result.ok:
+            reason = result.text.rstrip(".")
+            return Reply.plain(f"I couldn't: {reason}.", "concerned", "droop")
+        self._ran_held = (call.name, json.dumps(call.arguments, sort_keys=True))
+        text = result.text if not result.private else ""
+        turn.asides.append(f"{said_yes(turn.owner, call.line())}\n{text}".rstrip())
+        turn.kinds.append(None)
+        MIND.set(turn.mind())
         return None
 
     def _answer_expert_offer(self, text: str) -> tuple[str, Reply | None]:
@@ -2465,7 +2515,27 @@ class Brain:
         JSON, which the loop turns into the same calls."""
         if role == LOCAL or settings.profile(role).provider == "ollama":
             return []
-        return self.tools.offered()
+        return self.tools.offered(self.loaded_packs)
+
+    def _hold(
+        self,
+        call: ToolCall,
+        pack: Pack | None,
+        said: str,
+        role: str,
+        message_id: int | None,
+        owner: str,
+    ) -> ToolResult:
+        """A call that waits for Dan's yes (kit.tools.confirm): kept on
+        ``pending_tool``, and the model is told to ask. One waits at a time."""
+        tool = self.tools.get(call.name)
+        asking = tool.asking(call) if tool else call.line()
+        if self.pending_tool is not None:
+            return ToolResult(one_at_a_time(self.pending_tool.asking), ok=False)
+        self.pending_tool = Held(
+            call, pack.name if pack else "", said, role, message_id, self.memory.clock(), asking
+        )
+        return ToolResult(ask_first(owner, asking))
 
     def _action_calls(self, reply: Reply, role: str) -> list[ToolCall]:
         """A look-up asked for the old way, as the reply's action, as a tool call.
@@ -2589,7 +2659,7 @@ class Brain:
             two_pass=role == LOCAL and settings.ollama.speak_pass,
             dan=self._about_dan(role),
             read_mood=READ_ON.get(),
-            tools=self.tools.cards(),
+            tools=self.tools.cards(self.loaded_packs),
             tool_names=[t.name for t in self._offered(role, settings)],
         )
 
@@ -2697,6 +2767,10 @@ class Brain:
             notes=bool(settings.nas.vault),
             note_done=bool(NOTE_DONE.get()),
         )
+        # The packs this message needs, chosen before any model is asked (kit.tools.match).
+        self.loaded_packs = await match(text, self.tools, self.recall, self.register, settings)
+        loaded_tools = self.tools.tool_names(self.loaded_packs)
+        owner = settings.persona.owner
         offered = self._offered(role, settings)
         system = self._system(
             settings, shown, role, hand_off, forecast, pc_detail, seen, scene_detail
@@ -2739,12 +2813,27 @@ class Brain:
                         call.arguments["query"] = text
                     key = (call.name, json.dumps(call.arguments, sort_keys=True))
                     yield {"type": "tool", "tool": call.name, "line": call.line()}
-                    if key in done_calls:  # the same look twice: answer from the first
+                    tool = self.tools.get(call.name)
+                    pack = self.tools.packs.get(self.tools.pack_of(call.name))
+                    if tool is None or call.name not in loaded_tools:
+                        result = ToolResult(f"There is no tool called {call.name}.", ok=False)
+                    elif key in done_calls or key == self._ran_held:
+                        # The same call twice: answer from the first.
                         result = ToolResult(
                             f"You already ran {call.line()} this turn; use what it gave you "
                             "and answer now.",
                             ok=False,
                         )
+                    elif needs_yes(tool, pack, settings):
+                        done_calls.add(key)
+                        result = self._hold(call, pack, text, role, message_id, owner)
+                        if result.ok:
+                            yield {
+                                "type": "confirm",
+                                "tool": call.name,
+                                "line": call.line(),
+                                "ask": tool.asking(call),
+                            }
                     else:
                         done_calls.add(key)
                         result = await self.tools.run(call)
@@ -2753,7 +2842,6 @@ class Brain:
                         yield result.event
                     if job and result.step:
                         job.steps.append(result.step)
-                    tool = self.tools.get(call.name)
                     self.memory.log_tool_call(
                         message_id,
                         call.name,
@@ -2763,6 +2851,10 @@ class Brain:
                         result.ok,
                         role,
                     )
+                    if role != LOCAL and result.private:
+                        result = replace(
+                            result, text=await for_cloud(result, text, self.model), private=False
+                        )
                     results.append((call, result))
                 if native:
                     messages += tool_turns(

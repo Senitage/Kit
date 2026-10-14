@@ -39,6 +39,7 @@ Up: [[Home]] · Reference
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |
 | **Generation (voice)** | The number a reply's sentences carry to the voice engine; a sentence from a lower number than one already seen is dropped, so interrupting him doesn't leave the engine finishing the old reply | [[Voice#How a sentence becomes sound]] |
+| **Held call** | A tool call that changes something of yours, waiting for your yes before it runs | [[Tools and Packs#Asking first]] |
 | **Held pipe-up** | Something he wanted to say while you were busy, saved till you're free | [[Inner Life In Depth#Busy and held pipe-ups]] |
 | **Gesture** | One of 20 short face clips: a nod, a wink, a shrug | [[Face#Emotions and gestures]] |
 | **Glow** | The original 2D painter: two glowing pill eyes | [[Face]] |
@@ -48,6 +49,7 @@ Up: [[Home]] · Reference
 | **Kit 2D** | The 3D face drawn flat, for small screens like the Pod's | [[Face]] |
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Lite eyes** | The eyes set up to run on a CPU: a small detector a few times a second, faces read in between | [[Eyes#Without a graphics card]] |
+| **Match words** | A pack's words that load it when one is in your message as a whole word | [[Tools and Packs#Which packs load]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Hop** | One go round the tool loop: the model asks for a tool, the brain runs it, the result goes back (`tools.hops` a turn) | [[Tools and Packs]] |
 | **Pack** | The 3D face's model and tuning (`face.json` and a `.glb`); for a set of tools, see capability pack | [[Face In Depth]] |

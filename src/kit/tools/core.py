@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF
 from kit.prompt import recall_results, weather_results
-from kit.tools import Pack, Tool, ToolResult
+from kit.tools import EvalCase, Pack, Tool, ToolResult
 from kit.weather import WeatherError
 
 if TYPE_CHECKING:
@@ -95,7 +95,18 @@ def core_pack(brain: Brain) -> Pack:
     return Pack(
         "core",
         "your memory, the PC, the room, the forecast, one of the owner's notes",
-        [
+        always=True,
+        cases=[
+            EvalCase("Morning!", None, note="small talk needs no tool"),
+            EvalCase("What's the weather doing tomorrow?", "weather"),
+            EvalCase("Will it rain in Richmond on Saturday?", "weather", {"place": "Richmond"}),
+            EvalCase(
+                "What did I tell you about the Pod's neck servo last week?",
+                "recall",
+                {"query": "servo"},
+            ),
+        ],
+        tools=[
             Tool(
                 "recall",
                 "Search your memory: past conversations, facts you were told, the owner's "

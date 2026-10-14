@@ -102,6 +102,10 @@ See [[Memory]].
 | `kit things confirm ID` / `reject ID` | Add a suggestion, or drop it |
 | `kit things forget ID` | Delete a thing |
 | `kit things history ID` | A thing's earlier versions |
+| `kit tools` | Kit's tools, from the running server: |
+| `kit tools packs` | Each pack, its card, and whether it may load (`always`, `on`, `off`) |
+| `kit tools list` | Every tool with its pack, its effect and whether it asks first |
+| `kit tools run TOOL --args '{...}'` | Run one tool on the running Kit to try it, e.g. `kit tools run recall --args '{"query": "tax"}'`. One that changes something of yours needs `--yes` |
 
 See [[Register of Things]].
 
@@ -166,6 +170,7 @@ See [[Hearing]].
 | `kit eval memory` | Memory recall, and a suggested `memory.min_similarity` |
 | `kit eval memory --replay SNAPSHOT [--questions FILE]` | Your own questions against a copy of a memory snapshot (a backup): does the right fact still come first? |
 | `kit eval routing` | Whether Kit knows where things live, from the register |
+| `kit eval tools` | Whether each question loads the right pack and reaches the right tool; `--live` asks the real chat model (tools stubbed, costs a little), `--pack NAME` for one pack, `--questions FILE` for another file |
 | `kit eval compare --models A B` | Compare cloud models on the same questions |
 | `kit eval voice --models A B` | Which local model sounds most alive |
 | `kit eval companion` | How good a companion he is |

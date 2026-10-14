@@ -1,6 +1,6 @@
 """The ``kit eval`` runners: each eval in kit.evals run against the real models
 and Kit's real settings, with what it found printed (``kit eval``, ``kit eval
-memory``, ``voice``, ``companion``, ``mood``, ``routing`` and ``compare``).
+memory``, ``voice``, ``companion``, ``mood``, ``routing``, ``tools`` and ``compare``).
 Most run in a scratch memory inside the data folder that's deleted after."""
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ def cmd_eval(paths: KitPaths, args: argparse.Namespace) -> int:
     """``kit eval [WHICH]``: run one eval and say how it went (0 when it passed)."""
     if args.which == "routing":
         return asyncio.run(_eval_routing(paths))
+    if args.which == "tools":
+        return asyncio.run(_eval_tools(paths, args.pack, args.live, args.questions))
     if args.which == "memory":
         return asyncio.run(_eval_memory(paths, args.replay, args.questions))
     if args.which == "voice":
@@ -285,6 +287,86 @@ async def _eval_routing(paths: KitPaths) -> int:
     if len(reports) == 1:
         print(f"add your own questions in {own} to test your real register")
     return 0 if passed else 1
+
+
+async def _eval_tools(paths: KitPaths, pack: str | None, live: bool, questions) -> int:
+    """Does each question load the right pack and reach the right tool? Offline it
+    checks matching and what's offered; ``--live`` asks the real chat model, with
+    every tool stubbed, in a scratch memory (its spend is added to the real log)."""
+    from kit.brain import Brain
+    from kit.embed import OllamaEmbedder
+    from kit.evals import load_tool_cases, run_tool_eval, tool_cases
+    from kit.local_model import OllamaModel
+    from kit.memory import Memory
+    from kit.recall import Recall
+    from kit.weather import Weather
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    settings = store.current()
+    scratch = paths.state_dir / "tools-eval"
+    shutil.rmtree(scratch, ignore_errors=True)
+    own = Path(questions) if questions else paths.config_dir / "tool-questions.toml"
+
+    def show(r):
+        mark = "ok  " if r.passed else "MISS"
+        want = r.case.tool or "nothing"
+        got = r.called or "nothing"
+        cost = f"  A${r.cost_aud:.4f}" if live else ""
+        print(f"{mark} {r.case.question[:52]:<52}  wanted {want:<12} got {got:<12}{cost}")
+        if not r.passed:
+            print(f"       {r.why}")
+
+    async with httpx.AsyncClient() as client:
+        memory = Memory(scratch / "memory.db")
+        try:
+            model = OllamaModel(lambda: local_settings(settings), client)
+            cloud = make_cloud(paths, memory, client)
+            recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
+            brain = Brain(store.current, memory, model, cloud, recall, Weather(client))
+            if pack and pack not in brain.tools.packs:
+                print(f"there's no pack called {pack}; see `kit tools packs`")
+                return 2
+            cases = tool_cases(brain.tools, pack)
+            if own.exists():
+                cases += [c for c in load_tool_cases(own) if not pack or c.pack == pack]
+            if live:
+                print(
+                    f"asking {settings.profile('chat').name} {len(cases)} questions; "
+                    "this spends real money"
+                )
+            report = await run_tool_eval(brain, cases, live, on_result=show)
+            spends = memory.spend_log(1000)
+        finally:
+            memory.close()
+            shutil.rmtree(scratch, ignore_errors=True)
+    if spends:  # the eval's cloud calls count toward the month's cap
+        real = Memory(paths.state_dir / "memory.db")
+        try:
+            for sp in reversed(spends):
+                real.record_spend(
+                    sp.model,
+                    sp.input_tokens,
+                    sp.output_tokens,
+                    sp.cost_usd,
+                    f"kit eval tools: {sp.question}",
+                    sp.cached_tokens,
+                    sp.cache_write_tokens,
+                    sp.searches,
+                    sp.cost_aud,
+                    sp.aud_per_usd,
+                )
+        finally:
+            real.close()
+    if recall.embed_problem:
+        print(f"warning: matching by words only: {recall.embed_problem}")
+    print(
+        f"\nright tool: {report.score}/{len(report.results)}"
+        + (f", A${report.cost_aud:.4f} spent" if live else "")
+    )
+    if not own.exists():
+        print(f"add your own questions in {own} to test them too")
+    return 0 if report.passed else 1
 
 
 async def _voice_run(paths: KitPaths, client: httpx.AsyncClient, settings: Settings, prompts, show):

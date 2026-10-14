@@ -17,6 +17,7 @@ from kit.routes import (
     speech,
     status,
     things,
+    tools,
 )
 
 ROUTERS = (
@@ -33,4 +34,5 @@ ROUTERS = (
     life.router,
     bodies.router,
     speech.router,
+    tools.router,
 )
