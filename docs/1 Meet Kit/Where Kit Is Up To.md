@@ -91,7 +91,6 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 13 Oct | Body feed and knowing who can hear him; naps and sleep; hearing (companion stage 5) | #36, #37, #42 |
 | 13 Oct | The whole-codebase review: faster first words, Claude's cache, one voice, memory that scales, inner life and desk fixes, streaming voice, judgement over keywords, settings as changes only, routes tidied | #47 to #58 |
 | 13 Oct | `kit memory scrub` | #59 |
-| 14 Oct | Stage 4 begins: the tool loop and the core pack | #61 |
 
 ## Keeping this note true
 
