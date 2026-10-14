@@ -88,6 +88,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 10 Oct | Eyes stage 1: Kit sees you | #22 |
 | 10 Oct | Eyes stage 2: who's who | #35 |
 | 11 Oct | These docs as an Obsidian vault; the Pod's program, printed parts and build guide in the repo | #38 |
+| 11 Oct | Companion stage 4: his voice and eyes carry it | #40 |
 | 13 Oct | Body feed and knowing who can hear him; naps and sleep; hearing (companion stage 5) | #36, #37, #42 |
 | 13 Oct | The whole-codebase review: faster first words, Claude's cache, one voice, memory that scales, inner life and desk fixes, streaming voice, judgement over keywords, settings as changes only, routes tidied | #47 to #58 |
 | 13 Oct | `kit memory scrub` | #59 |
