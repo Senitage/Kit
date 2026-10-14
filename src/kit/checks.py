@@ -184,6 +184,39 @@ def check_nas(settings: Settings, write: Writer = try_write) -> list[CheckResult
     return results
 
 
+def check_files(
+    settings: Settings,
+    libraries: Callable[[], dict[str, bool]] | None = None,
+    write: Writer = try_write,
+) -> list[CheckResult]:
+    """The file libraries Kit reads with, and each root in ``files.roots``: there,
+    readable, and (as Kit only reads them) best made read-only for him."""
+    from kit.files.extract import available
+
+    roots = settings.files.roots
+    if not roots:
+        return [CheckResult("files", Status.SKIP, "no folders yet (kit files add NAME PATH)")]
+    libs = (libraries or available)()
+    missing = [pkg for pkg, ok in libs.items() if not ok]
+    if missing:
+        detail = f'missing {", ".join(missing)}: pip install -e ".[files]"'
+        results = [CheckResult("files", Status.WARN, detail)]
+    else:
+        results = [CheckResult("files", Status.PASS, "PDF, Word, Excel and slides can be read")]
+    for name, root in roots.items():
+        label, folder = f"files: {name}", Path(root.path).expanduser()
+        if not folder.is_dir():
+            results.append(CheckResult(label, Status.FAIL, f"can't open {root.path}"))
+        elif write(folder) is None:
+            detail = f"{root.path} is readable; Kit could write to it too (he won't)"
+            results.append(CheckResult(label, Status.WARN, detail))
+        else:
+            private = ", private" if root.private else ""
+            detail = f"{root.path} is readable and read-only{private}"
+            results.append(CheckResult(label, Status.PASS, detail))
+    return results
+
+
 CameraLister = Callable[[], list[dict]]
 
 

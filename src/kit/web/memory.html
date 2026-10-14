@@ -271,7 +271,9 @@ async function search() {
   for (const h of r.hits) {
     const c = el("div", "item");
     const how = [h.word_match ? "words" : "", h.similarity != null ? "meaning " + h.similarity.toFixed(2) : ""].filter(Boolean).join(" + ");
-    c.append(el("div", "text", h.text), el("div", "meta", `${h.day} · ${h.source} · ${how}`));
+    const m = h.meta || {};
+    const where = h.source === "files" ? `${m.root}: ${m.rel}${m.page > 1 ? ", page " + m.page : ""}` : h.source;
+    c.append(el("div", "text", h.text), el("div", "meta", `${h.day} · ${where} · ${how}`));
     box.appendChild(c);
   }
 }

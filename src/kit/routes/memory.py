@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from kit.files import FILES
 from kit.memory import CONVERSATION, DAYS, FACTS, SELF
 from kit.notes import NOTES
 from kit.routes.state import AUTH, State, item
@@ -82,7 +83,8 @@ def forget(state: State, fact_id: int) -> dict:
 @router.get("/api/memory/search", dependencies=AUTH)
 async def search(state: State, q: str, k: Annotated[int, Query(ge=1, le=100)] = 10) -> dict:
     recall = state.brain.recall
-    hits = await recall.search(q, [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES], min(k, 50))
+    sources = [FACTS, DAYS, CONVERSATION, THINGS, SELF, NOTES, FILES]
+    hits = await recall.search(q, sources, min(k, 50))
     return {
         "words_only": recall.embed_problem is not None,
         "hits": [

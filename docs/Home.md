@@ -63,6 +63,7 @@ flowchart LR
     end
     subgraph World["What he can look at"]
         Notes["Notes on the NAS"]
+        Files["Your Files"]
         Weather["Time and Weather"]
     end
     DeskApp <--> Brain
@@ -80,8 +81,9 @@ flowchart LR
     Life --- Companion
     Brain --> Face
     Notes --> Memory
+    Files --> Memory
     Weather --> Brain
-    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Tools,Face,Notes,Weather internal-link
+    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Tools,Face,Notes,Files,Weather internal-link
 ```
 
 ## Everything in these docs
@@ -112,6 +114,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
 - [[Phone App]]: Kit on Android, the body that leaves the house with you.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
+- [[Your Files]]: the folders you choose, read into his memory so he can find what's in your documents.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
 - [[Settings and Data]]: one data folder, one settings file, secrets and undo.

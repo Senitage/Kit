@@ -75,6 +75,7 @@ from kit.body_registry import BodyRegistry
 from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError, tool_turns
 from kit.daily import Daily
+from kit.files.index import Files
 from kit.heard import (
     TONE_FEELINGS,
     HeardTurns,
@@ -781,6 +782,8 @@ class Brain:
         self._local_freed = False  # the local model was taken off the GPU for the voice
         self.register = Register(memory)
         self.notes = Notes(memory.index, memory.clock)
+        # Dan's folders in the index (kit.files); the server sets it up with the data folder.
+        self.files: Files | None = None
         # The tools a model may call mid-answer (kit.tools) and what there is to look
         # at this turn, set at the start of every turn.
         self.tool_context = Context()

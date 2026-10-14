@@ -144,7 +144,7 @@
 			"x": -660,
 			"y": 40,
 			"width": 760,
-			"height": 990,
+			"height": 1180,
 			"color": "4"
 		},
 		{
@@ -194,6 +194,15 @@
 			"height": 150
 		},
 		{
+			"id": "files",
+			"type": "text",
+			"text": "### [[Your Files]]\nThe folders you choose: PDFs, Word, sheets and slides read into memory, never changed.",
+			"x": -260,
+			"y": 1030,
+			"width": 320,
+			"height": 150
+		},
+		{
 			"id": "time",
 			"type": "text",
 			"text": "### [[Time and Weather]]\nThe clock, \"Thursday arvo\", and a real forecast.",
@@ -216,7 +225,7 @@
 			"type": "group",
 			"label": "His inner life",
 			"x": -660,
-			"y": 880,
+			"y": 1260,
 			"width": 760,
 			"height": 230,
 			"color": "2"
@@ -226,7 +235,7 @@
 			"type": "text",
 			"text": "### [[Inner Life]]\nDrives, moods, feelings with reasons, thoughts, his notebook, sleep.",
 			"x": -620,
-			"y": 920,
+			"y": 1300,
 			"width": 320,
 			"height": 150
 		},
@@ -235,7 +244,7 @@
 			"type": "text",
 			"text": "### [[Companion]]\nHellos, goodbyes, following your life, caring on a bad night.",
 			"x": -260,
-			"y": 920,
+			"y": 1300,
 			"width": 320,
 			"height": 150
 		},
@@ -309,7 +318,7 @@
 			"type": "group",
 			"label": "Running Kit, and the reference shelf",
 			"x": -1120,
-			"y": 1312,
+			"y": 1552,
 			"width": 1840,
 			"height": 420,
 			"color": "1"
@@ -319,7 +328,7 @@
 			"type": "text",
 			"text": "### [[Running Kit]]\nStart, stop, restart and check Kit, his eyes and the Pod.",
 			"x": -1080,
-			"y": 1352,
+			"y": 1592,
 			"width": 320,
 			"height": 150
 		},
@@ -328,7 +337,7 @@
 			"type": "text",
 			"text": "### [[Building the Pod]]\nPrint, wire, upload and link the Pod.",
 			"x": -720,
-			"y": 1352,
+			"y": 1592,
 			"width": 320,
 			"height": 150
 		},
@@ -337,7 +346,7 @@
 			"type": "text",
 			"text": "### [[Privacy]]\nWhat he sees, what stays home, the switches.",
 			"x": -360,
-			"y": 1352,
+			"y": 1592,
 			"width": 320,
 			"height": 150
 		},
@@ -346,7 +355,7 @@
 			"type": "text",
 			"text": "### [[Updating Kit]]\nPull, install, restart; trying a pull request.",
 			"x": 0,
-			"y": 1352,
+			"y": 1592,
 			"width": 320,
 			"height": 150
 		},
@@ -355,7 +364,7 @@
 			"type": "text",
 			"text": "### [[Commands]]\nEvery kit command.",
 			"x": 360,
-			"y": 1352,
+			"y": 1592,
 			"width": 320,
 			"height": 150
 		},
@@ -364,7 +373,7 @@
 			"type": "text",
 			"text": "### [[Settings Reference]]\nEvery setting and its default.",
 			"x": -1080,
-			"y": 1542,
+			"y": 1782,
 			"width": 320,
 			"height": 150
 		},
@@ -373,7 +382,7 @@
 			"type": "text",
 			"text": "### [[API]]\nEvery route and event the brain answers.",
 			"x": -720,
-			"y": 1542,
+			"y": 1782,
 			"width": 320,
 			"height": 150
 		},
@@ -382,7 +391,7 @@
 			"type": "text",
 			"text": "### [[Evals]]\nChecking how the real models behave.",
 			"x": -360,
-			"y": 1542,
+			"y": 1782,
 			"width": 320,
 			"height": 150
 		},
@@ -391,7 +400,7 @@
 			"type": "text",
 			"text": "### [[Code Map]]\nEvery module, and the note that explains it.",
 			"x": 0,
-			"y": 1542,
+			"y": 1782,
 			"width": 320,
 			"height": 150
 		},
@@ -400,7 +409,7 @@
 			"type": "text",
 			"text": "### [[How These Docs Work]]\nThe vault, and keeping it up to date.",
 			"x": 360,
-			"y": 1542,
+			"y": 1782,
 			"width": 320,
 			"height": 150
 		},
@@ -498,6 +507,14 @@
 			"fromSide": "top",
 			"toNode": "memory",
 			"toSide": "bottom",
+			"label": "read into memory"
+		},
+		{
+			"id": "files-memory",
+			"fromNode": "files",
+			"fromSide": "left",
+			"toNode": "memory",
+			"toSide": "left",
 			"label": "read into memory"
 		},
 		{

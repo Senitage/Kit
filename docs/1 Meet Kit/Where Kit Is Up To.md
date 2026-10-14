@@ -45,8 +45,9 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Models as your own list (`kit models add` and `remove`, no presets) and prices fetched daily in Australian dollars, the budget and every spend figure in A$ | Done, pull request #60 | [[Models and Routing#Your own list of models]], [[Models and Routing#Prices, fetched for you]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | Stage 4, part A1: the tool loop. Cloud models call tools natively, the local model's action joins the same loop, the core pack (recall, the PC, the room, the forecast, a note), every call logged | Done, pull request #61 | [[Tools and Packs]], [[Stage 4 - Tools]] |
-| Stage 4, part A2: each message loads only the packs it needs, a yes before any change, private results summarised locally, `kit tools` and `kit eval tools` | Open, pull request #62 | [[Tools and Packs#Which packs load]], [[Stage 4 - Tools]] |
-| Stage 4, the rest: files, PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
+| Stage 4, part A2: each message loads only the packs it needs, a yes before any change, private results summarised locally, `kit tools` and `kit eval tools` | Done, pull request #62 | [[Tools and Packs#Which packs load]], [[Stage 4 - Tools]] |
+| Stage 4, part B1: your files indexed. The folders you choose (settings page, `kit files`), PDFs, Word, sheets and slides read a page at a time, years, amounts and references picked out, kept up every half hour | Open, pull request #63 | [[Your Files]], [[Stage 4 - Tools]] |
+| Stage 4, the rest: asking about files and private folders, PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
 
@@ -54,7 +55,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
 3. Stage 4: the tool loop (#61, done), then pack matching and asking
-   first (#62), then your files, PC control, the Claude Code
+   first (#62, done), then your files (#63, then the file tools), PC control, the Claude Code
    bridge, MCP, Home Assistant, and the home_app and MetTools connections
    ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
@@ -96,6 +97,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 13 Oct | `kit memory scrub` | #59 |
 | 13 Oct | Lite eyes on a CPU; models as your own list, prices in Australian dollars | #45, #60 |
 | 14 Oct | Stage 4 part A1: the tool loop | #61 |
+| 14 Oct | Stage 4 part A2: which packs load, asking first, tool evals | #62 |
 
 ## Keeping this note true
 

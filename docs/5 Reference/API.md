@@ -84,10 +84,15 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | `PATCH /api/memory/facts/{id}` | Edit or pin a fact |
 | `GET /api/memory/facts/{id}/history` | A fact's earlier versions |
 | `DELETE /api/memory/facts/{id}` | Forget a fact |
-| `GET /api/memory/search?q=...` | Search the way Kit does |
+| `GET /api/memory/search?q=...` | Search the way Kit does, your files included (a file hit's `meta` has its `root`, `rel` path and `page`) |
 | `GET /api/memory/days` | Day summaries |
 | `GET /api/tools` | Every pack (`name`, `card`, `enabled`, `always`, `words`) and its tools (`name`, `effect`, `asks_first`, `description`) |
 | `POST /api/tools/run` | Run one tool by hand: `{"tool", "arguments", "yes"}`. `409` for a tool that changes something of yours unless `yes` is true; `404` for one Kit doesn't have. Answers `{"ok", "text", "private"}` (`kit tools run`) |
+| `GET /api/files` | Your folders: each root's `path`, `reachable`, `private`, `ocr`, `max_mb`, `files`, `pieces`, `last_run` and `unreadable`; whether a sync is `running`; and the NAS `shares` offered as choices ([[Your Files]]) |
+| `POST /api/files/roots` | Add a folder: `{"name", "path", "private", "ocr"}`. `400` if the path isn't a folder the server can read. Starts reading it |
+| `PATCH /api/files/roots/{name}` | Change `private`, `ocr` or `max_mb`; a private change applies to what's indexed at once |
+| `DELETE /api/files/roots/{name}` | Remove a folder; what was read from it leaves memory (`dropped` says how many pieces) |
+| `POST /api/files/sync` | Look for new and changed files now: `{"root", "full"}` (both optional). `started` is false if a sync is already running |
 | `GET /api/things` | The register of things |
 | `GET /api/things/suggestions` | Names he suggested adding |
 | `POST /api/things`, `PATCH /api/things/{id}` | Add or change a thing |

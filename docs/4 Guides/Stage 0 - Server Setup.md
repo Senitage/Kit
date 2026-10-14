@@ -227,6 +227,7 @@ cd Kit
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+pip install -e ".[files]"   # reading your PDFs, Word files and sheets (Your Files)
 sudo mkdir -p /var/lib/kit && sudo chown "$USER": /var/lib/kit
 kit init
 ```

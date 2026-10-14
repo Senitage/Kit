@@ -129,6 +129,19 @@ The NAS: the notes vault (the one place Kit may write) and shares he may only re
 | `vault` | empty | The Obsidian vault folder, the only place on the NAS Kit may write. |
 | `notes_folder` | empty | Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. Empty for the vault's top level. |
 
+## files
+
+The folders Kit reads into his memory, and how. See [[Your Files]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `roots` | none | The folders Kit indexes, by a short name you choose, each with `path` (the folder on the server; he only reads it), `private` (its contents stay with the local model), `ocr` (read scanned PDFs too; slow, needs the ocr extras) and `max_mb` (files bigger than this are skipped, default 50). Add them on the settings page ("Your files") or with `kit files add`. |
+| `skip` | `.obsidian`, `.git`, `node_modules`, `@eaDir`, `#recycle`, `#snapshot`, `*.tmp`, `~$*` | Folder or file names (with `*` wildcards) never indexed, anywhere under a root. |
+| `chunk_words` | `400` | About how many words each indexed piece of a file holds. |
+| `max_rows` | `2000` | Most rows read from each sheet of a spreadsheet. |
+| `sync_every_minutes` | `30` | How often Kit looks for new and changed files. 0 means once a day. |
+| `read_words` | `1500` | Most words of one file Kit reads into an answer at once (used by the file tools). |
+
 ## persona
 
 Who Kit is and who he's with. See [[Who Kit Is]].

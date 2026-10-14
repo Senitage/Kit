@@ -96,12 +96,66 @@ defaults are fine.
 
 Asking first can't be tried in a chat yet, because no installed tool
 changes anything. It gets its own checklist line with the first pack that
-has one (your notes, part E, or your files, part B).
+has one (your notes, part E, or your files, part B2).
+
+## Part B1: your files, indexed
+
+Kit reads the folders you choose into his memory: every PDF, Word file,
+spreadsheet, slide deck and text file, a page or sheet at a time, with the
+years, amounts and references in each piece picked out. They're searchable on
+the memory page and with `kit memory search`; asking about them mid-chat
+comes with the file tools in part B2. See [[Your Files]].
+
+### 1. Update, install the readers and choose folders
+
+Update as in [[Updating Kit]], then install the file readers in Kit's venv:
+
+```
+pip install -e ".[files]"
+```
+
+For scanned PDFs, also `pip install -e ".[ocr]"` and the programs it needs
+(`sudo apt install tesseract-ocr poppler-utils`). Then add a folder, on the
+settings page under "Your files" or here (a made-up path; use your mount):
+
+```
+kit files add finance /mnt/nas/Finance
+kit files index
+```
+
+The first `kit files index` shows each file as it reads it. The new settings
+are in [[Settings Reference#files]]; the defaults are fine.
+
+### 2. Test before moving on
+
+- [ ] **`kit check`** has a `files` line saying PDF, Word, Excel and slides
+  can be read, and a `files: finance` line saying the folder is readable and
+  read-only.
+- [ ] **The first run** finishes; `kit files status` shows files and pieces
+  for each folder, the last run, and any files it couldn't read.
+- [ ] **Finding a document:** `kit memory search "rates notice 2025"` finds
+  the notice, with its folder, path and page under the hit. The memory page's
+  search shows the same.
+- [ ] **Only the files:** `kit files search "insurance renewal"` lists file
+  hits only.
+- [ ] **Keeping up:** copy a new PDF into the folder; within
+  `files.sync_every_minutes` (or after "Look for changes now" on the settings
+  page) it's found, with no restart.
+- [ ] **Skipped:** a file bigger than the folder's size cap (50 MB), anything
+  under `@eaDir` or `#recycle`, and Office's `~$` lock files aren't indexed.
+- [ ] **Settings page:** "Your files" lists the folder with its counts. Adding
+  a path that doesn't exist says so and saves nothing. Ticking Private sticks
+  after a reload. Remove asks first, and the folder's pieces leave memory
+  (the folder itself is untouched).
+- [ ] **NAS asleep:** with the share unmounted, a sync changes nothing and
+  `kit files status` says the folder can't be reached; nothing is forgotten.
+- [ ] **Chat untouched:** Kit doesn't bring up your files in conversation yet.
+- [ ] **Tests:** `pytest -q tests/test_files.py` passes on the server.
 
 ## Parts to come
 
-In order, each with its own section here when it lands: your
-files indexed and found (B); opening files and apps on the PC (C); the house
+In order, each with its own section here when it lands: asking about
+your files, and private folders (B2); opening files and apps on the PC (C); the house
 through Home Assistant (D); your notes vault, properly (E); your own apps and
 MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 

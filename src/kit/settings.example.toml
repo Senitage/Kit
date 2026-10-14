@@ -143,6 +143,13 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # photos = '\\NAS\photo'
 # documents = '\\NAS\home\Documents'
 
+# The folders Kit reads into his memory (PDFs, Word, sheets, slides, text), by a
+# short name. He only reads them. Easier on the settings page ("Your files") or
+# with `kit files add`. See docs/2 How Kit Works/Your Files.md.
+# [files.roots.finance]
+# path = '/mnt/nas/Finance'
+# private = true
+
 # Kit's character. Leave this out to use the built-in persona, or copy it from
 # `kit config show` and change it. Changes apply from the next message.
 # [persona]

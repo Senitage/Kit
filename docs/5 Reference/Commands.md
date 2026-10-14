@@ -18,7 +18,7 @@ the options for any of them.
 |---|---|
 | `kit paths` | Show where Kit keeps his files. See [[Settings and Data]] |
 | `kit init` | Create the data folder and a starter settings file |
-| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one) |
+| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
 | `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
@@ -109,11 +109,18 @@ See [[Memory]].
 
 See [[Register of Things]].
 
-## Notes and weather
+## Notes, files and weather
 
 | Command | What it does |
 |---|---|
 | `kit notes` | Read the notes vault now and list what Kit sees. See [[Notes on the NAS]] |
+| `kit files` | The folders Kit reads into his memory. See [[Your Files]]: |
+| `kit files add NAME PATH` | Add a folder, e.g. `kit files add finance /mnt/nas/Finance` (`--private`, `--ocr` for scans). The path is checked first |
+| `kit files remove NAME` | Stop indexing a folder; what was read from it leaves his memory |
+| `kit files private NAME on` / `off` | Mark a folder private or not, straight away |
+| `kit files status` | Each folder: files and pieces indexed, the last run, files it couldn't read |
+| `kit files index` | Read new and changed files now, showing each (`--root NAME`, `--full` to read everything again) |
+| `kit files search "..."` | Search the indexed files only, with each hit's folder, path and page |
 | `kit weather [PLACE]` | The forecast Kit sees, for `persona.location` or PLACE. See [[Time and Weather]] |
 
 ## Voice
