@@ -1,6 +1,8 @@
 import json
+import re
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from fakes import Clock, FakeEmbedder, FakeModel, make_cloud, reply
@@ -44,6 +46,52 @@ def test_api_needs_the_token(setup, headers):
     assert client.post("/api/chat", json={"text": "hi"}, headers=headers).status_code == 401
 
 
+# The /api routes anyone may call without Kit's token, each with why.
+OPEN_API = {
+    ("GET", "/api/health"): "is he up: apps check it before they've been given a token",
+}
+# Routes outside /api: pages that ask for the token themselves, and his cartoon face,
+# which the desk app, home_app and robots open as a plain page. None holds anything
+# private, so a new route belongs under /api (with the token) or on this list.
+PAGES = {
+    "/",
+    "/settings",
+    "/memory",
+    "/face/",
+    "/face/{name}",
+    "/face/vendor/{name}",
+    "/face/api/info",
+    "/face/api/version",
+    "/face/model/{character}/{file}",
+}
+
+
+def _routes(routes):
+    """Every route on the app, however this FastAPI holds the routers it includes."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+        elif hasattr(route, "original_router"):  # newer FastAPI keeps them whole
+            yield from _routes(route.original_router.routes)
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_every_api_route_needs_the_token(setup, headers):
+    """A sweep of every route, so a new one can't ship without the token check."""
+    client, _, _ = setup
+    routes = [(m, r.path) for r in _routes(client.app.routes) for m in r.methods]
+    assert {path for _, path in routes} >= set(client.app.openapi()["paths"])  # none missed
+    assert {path for _, path in routes if not path.startswith("/api/")} == PAGES
+    assert set(OPEN_API) <= set(routes)
+    for method, path in OPEN_API:
+        assert client.request(method, path, headers=headers).status_code == 200
+    swept = [(m, p) for m, p in routes if p.startswith("/api/") and (m, p) not in OPEN_API]
+    for method, path in swept:
+        r = client.request(method, re.sub(r"\{[^}]+\}", "1", path), headers=headers)
+        assert r.status_code == 401, f"{method} {path} answered {r.status_code} without the token"
+    assert len(swept) > 50
+
+
 def test_chat_streams_ndjson(setup):
     client, _, _ = setup
     r = client.post("/api/chat", json={"text": "hi"}, headers=AUTH)
@@ -56,7 +104,7 @@ def test_chat_streams_ndjson(setup):
 
 def test_the_log_says_how_long_a_reply_took(setup, caplog):
     client, _, _ = setup
-    with caplog.at_level("INFO", logger="kit.server"):
+    with caplog.at_level("INFO", logger="kit"):
         client.post("/api/chat", json={"text": "hi"}, headers=AUTH)
     said = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn:")]
     assert any(m.startswith("turn: first words") for m in said)
@@ -118,10 +166,14 @@ def test_facts_and_spend(setup):
     client, _, _ = setup
     client.post("/api/chat", json={"text": "ask claude why"}, headers=AUTH)
     spend = client.get("/api/spend", headers=AUTH).json()
-    assert spend["month_usd"] > 0 and spend["log"][0]["question"] == "ask claude why"
+    assert spend["month_aud"] > 0 and spend["log"][0]["question"] == "ask claude why"
+    assert spend["aud_per_usd"] == 1.5 and "prices from" in spend["prices"]
+    assert spend["log"][0]["cost_aud"] == pytest.approx(spend["log"][0]["cost_usd"] * 1.5)
     summary = client.get("/api/spend/summary?days=7", headers=AUTH).json()
-    assert len(summary["days"]) == 7 and summary["total_usd"] == spend["month_usd"]
-    assert summary["models"][0]["calls"] >= 1 and "cap_usd" in summary
+    assert len(summary["days"]) == 7 and summary["total_aud"] == spend["month_aud"]
+    assert summary["models"][0]["calls"] >= 1 and "cap_aud" in summary
+    status = client.get("/api/status", headers=AUTH).json()
+    assert status["cloud_month_aud"] == spend["month_aud"] and status["cloud_cap_aud"] == 60.0
     assert client.get("/api/spend?limit=1", headers=AUTH).json()["log"][0]["question"]
     assert client.get("/api/memory/facts", headers=AUTH).json() == []
     assert client.delete("/api/memory/facts/1", headers=AUTH).status_code == 404

@@ -1,7 +1,12 @@
 # Kit's settings. Lives in Kit's data folder (run `kit paths` to see where).
 # Secrets such as API keys never go in this file; see docs/4 Guides/Stage 0 - Server Setup.md.
+#
+# Every value here is the default, shown so you can see what there is. When Kit
+# saves the file he keeps only what you changed, so a default that moves in a
+# Kit update (a line of his character, a voice engine's field) reaches you by
+# itself. `kit config show` prints everything in force.
 
-schema_version = 1
+schema_version = 3
 
 [ollama]
 # Ollama on this machine, and the local model for everyday chat.
@@ -71,19 +76,28 @@ key_moment_strength = 0.7
 key_moment_hellos = ["overnight", "days", "long"]
 
 [cloud]
-# Kit stops using cloud models once this month's spend reaches the cap.
-monthly_cap_usd = 40.0
+# Kit stops using cloud models once this month's spend reaches the cap, in
+# Australian dollars. Every call is costed at the day's prices and exchange rate
+# (`kit models` shows them; they're fetched daily, never set here).
+monthly_cap_aud = 60.0
 # As it runs low, calls give way in order, each this much sooner: evals, then
 # fact checks and key moments, then chat. His nightly reflection gets the last.
-reserve_usd = 3.0
+reserve_aud = 5.0
 # A Claude answer is read as it's written, so he starts talking at once.
 # stream = true
 
-# Built-in model profiles: sonnet, opus, haiku, gpt-sol and gemini-flash. Change any
-# field here (prices change), or add your own and point a role at it.
-# Each needs its provider's API key in the secrets folder; see docs/4 Guides/Stage 0 - Server Setup.md.
+# The models Kit can use: your own list. A new Kit starts with haiku, sonnet and
+# opus (Claude); `kit models add` and `kit models remove` change the list, and
+# from then on the file holds it whole. Each needs its provider's API key in the
+# secrets folder; see docs/4 Guides/Stage 0 - Server Setup.md. Prices aren't here.
 # [models.sonnet]
-# effort = "medium"
+# label = "Sonnet"
+# provider = "anthropic"
+# model = "claude-sonnet-5-5"
+# effort = "low"          # how hard it thinks: low, medium, high, xhigh, max
+# max_tokens = 16000      # longest answer, thinking included
+# thinking = true         # only Haiku takes false; Sonnet and Opus always think
+# web_search = true
 #
 # [models.big-local]
 # provider = "ollama"
@@ -96,11 +110,17 @@ host = "127.0.0.1"
 port = 8600
 history_messages = 20
 
+[tools]
+# How many rounds of tool calls (search memory, look at the PC, read a note...)
+# one message may take before Kit has to answer in words.
+hops = 6
+
 [memory]
 # Kit finds memories by words and by meaning. The meaning part needs this
 # embedding model in Ollama (`ollama pull nomic-embed-text`). Without it Kit
 # still remembers, but only finds things by matching words.
 embed_model = "nomic-embed-text"
+embed_keep_alive = "24h"      # keep it loaded: recall needs it before every reply
 relevant_memories = 8
 relevant_things = 5          # register entries (people, vehicles, places...) per turn
 conversation_snippets = 4
@@ -132,6 +152,11 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # country = "AU"
 # timezone = "Australia/Sydney"
 # traits = ["curious", "dry sense of humour", "loyal and practical"]
+# What Kit knows about you, in your own words: who's at home, your work, what
+# you're into. Built in, he only knows what you tell him.
+# knows = "Lives in Richmond with a partner and a dog called Biscuit. Teaches maths; into trail running and old motorbikes."
+# speech = "Plain, neutral English, warm and friendly: short sentences and everyday words, with no slang or regional expressions. One or two sentences unless asked for detail. Matter-of-fact rather than gushing, and never 'as an AI'."
+#                           # his register, decided here and nowhere else
 #
 # [[persona.examples]]
 # user = "Morning."
@@ -203,3 +228,23 @@ day_pass = "work"            # who sorts each day's memories after midnight: wor
 # poses = 1                # people to read body pose for; 0 turns it off
 # recognise = true         # tell people apart once introduced (`kit eyes enrol NAME`)
 # match = 0.4              # how alike a face must be to count; higher is stricter
+
+# Kit's ears: the microphone process (`kit hearing`, on the PC with the mic) reads
+# these from the brain. Sound never leaves that PC (docs/4 Guides/Companion Stage 5.md).
+# [hearing]
+# enabled = true
+# mic = ""                 # part of the mic's name, or its number; `kit hearing mics` lists them
+# names = ["Kit", "Kitt", "Ki", "Kid"]  # his name, and how the ears sometimes write it
+# follow_up_s = 8.0        # after he stops talking, answer him without his name for this long
+# barge_in = true          # talking over him stops him
+# barge_in_ms = 500
+# laugh_s = 10.0           # a laugh this soon after he says something makes him chuffed
+# tone = true              # he notices how you sound, and may ask; never tells you
+# match = 0.45             # how alike a voice must be to someone he knows
+# own_voice = 0.5          # how alike a voice must be to his own to be ignored as an echo
+# threshold = 0.5          # how sure the voice detector must be that a sound is speech
+# pause_ms = 600           # a pause this long ends what you're saying
+# min_speech_s = 0.4
+# max_speech_s = 20.0
+# language = "en"          # or auto
+# threads = 2

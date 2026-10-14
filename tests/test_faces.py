@@ -140,6 +140,7 @@ def test_running_eyes_fetch_who_they_know_when_it_changes():
         clock=tick,
         wall=clock,
         sleep=lambda s: None,
+        threaded=False,
     )
     for _ in range(6):
         eyes.step()

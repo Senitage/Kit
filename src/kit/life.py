@@ -112,6 +112,8 @@ CALL_SITES = {"meet.google.com", "teams.microsoft.com", "teams.live.com", "zoom.
 PRESENTING = re.compile(r"slide ?show|presenting|full ?screen", re.IGNORECASE)
 TYPING_S = 15  # idle less than this: Dan is mid-flow, don't interrupt
 IGNORED_AFTER = timedelta(minutes=10)
+SULK_FOR = timedelta(minutes=40)  # a sulk lasts as long as the put-out feeling behind it
+IGNORED_KEEPS = timedelta(hours=1)  # being ignored is forgotten this long after the pipe-up
 AFTER_CHAT_MIN = 12  # minutes he waits after a chat, scaled down by chattiness
 CHATTY = 0.8  # from this chattiness on he nags, butts in and comments on switches
 NAG_AFTER = timedelta(minutes=3)
@@ -119,6 +121,8 @@ MAX_NAGS = 2
 SPOTTED_KEEPS = timedelta(minutes=5)  # how long a sighting stays worth mentioning
 LOOK_EVERY = timedelta(seconds=2.5)  # a body's look_at holds about 3 s: refresh it
 MAX_EVENTS = 200
+MAX_LOOKS = 8  # look events come every few seconds, so they have a small ring of their own
+MAX_PIPES = 60  # more than settings allow an hour (life.max_per_hour tops out at 30)
 LIFE_KEY = "life"  # kit_self key: drives, feeling and timings, so a restart keeps them
 THINK_GAP = timedelta(minutes=2)  # the least time between two thoughts
 THINK_AFTER_CHAT = timedelta(minutes=2)  # mid-conversation he listens rather than muses
@@ -238,12 +242,23 @@ NEGATED = re.compile(
 )
 STILL_SO = re.compile(r"\b(never been (so|this|more)|couldn'?t be more|can'?t be more)\b", re.I)
 CLAUSE = re.compile(r"[.,;:!?]|\bbut\b|\bthough\b|\balthough\b", re.I)
-# A really bad time (``life.bad_night``): Kit drops the cheek and stays.
+# A really bad time (``life.bad_night``): Kit drops the cheek and stays. The words
+# only raise a candidate: the model answering reads whether it's real distress or a
+# turn of phrase (kit.brain.Reading.crisis), and the bad night starts only if it agrees.
 SELF_HARM = re.compile(
-    r"\b(kill(ing)? my ?self|end (it all|my life|things)|suicid\w*|self[- ]?harm\w*|"
-    r"hurt(ing)? my ?self|cut(ting)? my ?self|(don'?t|do not) want to (be here|be alive|live|"
+    r"\b(kill(ing)? my ?self|end (it all|my life)|suicid\w*|self[- ]?harm\w*|"
+    r"hurt(ing)? my ?self|cut(ting)? my ?self(?! (some|a bit of|a little) slack)|"
+    r"(don'?t|do not) want to (be here|be alive|live|"
     r"wake up|exist)|(no|not any) point (in )?(living|going on|being here|being alive)|"
     r"better off (dead|without me)|want(ed)? to die|wish i (was|were) dead)\b",
+    re.I,
+)
+# Work, code or a game beside the words above: with no model reading to go by, that's
+# a figure of speech ("I give up on this bug"), not a bad night.
+FIGURE_OF_SPEECH = re.compile(
+    r"\b(bug|code|coding|build|tests?|compil\w*|deploy\w*|commit|branch|merge|server|"
+    r"script|spreadsheet|model|project|deadline|meeting|game|level|boss|round|match|"
+    r"puzzle|heat|weather|traffic|chair|printer)\b",
     re.I,
 )
 BAD_NIGHT = re.compile(
@@ -411,6 +426,21 @@ LATE_FROM = 22.5
 SLEEP_RESTORES = 0.6  # an hour asleep
 SLEPT_ENOUGH = timedelta(minutes=45)  # a sleep this long sets him back to full
 TIRED = 0.4  # below this he yawns and keeps it short
+# Sleep: naps, bedtime and waking by himself (``life.naps``, ``life.turns_in``).
+NAP_QUIET = timedelta(minutes=30)  # nobody's talked to him this long before he naps
+NAP_BORED = 0.6  # this bored (or tired) before he naps
+NAP_CHANCE = 0.05  # a minute, once he'd nap: so he nods off in twenty minutes or so
+NAPS_A_DAY = 2
+NAP_GAP = timedelta(hours=2)  # awake at least this long between naps
+TURN_IN_QUIET = timedelta(minutes=15)  # past bedtime, this long without a word and he turns in
+TURN_IN_CHANCE = 0.1  # a minute, once he'd turn in
+DOZE_LONGER = 2  # dozing while Dan's out lasts this many naps
+MORNING_LIE_IN = 20  # minutes past the end of quiet hours he may sleep on
+GROGGY_FOR = timedelta(minutes=10)  # dozy this long after waking
+GROGGY_AFTER = timedelta(minutes=10)  # a sleep shorter than this leaves him bright
+EYES_OPENING = timedelta(minutes=2)  # his eyes come back on after a sleep within this
+SLEEPS_KEPT = 12  # sleeps in his diary (``kit life``, the Mood page)
+WOKE_BY = {"himself": "woke by himself", "back": "you came back", "chat": "you talked to him"}
 NIGHT_CAP = 0.35  # his body clock's limit at night: under TIRED, so he's sleepy
 WIND_DOWN = (21.0, 23.0)  # hours over which the limit falls to NIGHT_CAP
 WAKE_UP = (5.0, 7.0)  # and rises back to full
@@ -432,9 +462,12 @@ TAKE_UP_KNOWN = 3  # pipe-ups of a kind before their take-up rate counts
 PIPE_STATS_KEY = "pipe_ups"  # kit_self: {reason: [said, taken up]}
 # Feelings only things that happen can cause (Dan coming back), not a passing thought.
 EVENT_FEELINGS = {"glad", "miffed"}
+# Feelings only Dan can cause: a private thought can't leave him hurt or put out.
+DAN_FEELINGS = {"hurt", "put_out"}
 # Feelings about Dan being gone: they end the moment he's back.
 MISSING_FEELINGS = {"missing"}
-THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS]
+THOUGHT_FEELINGS = [k for k in FEELING_KINDS if k not in EVENT_FEELINGS | DAN_FEELINGS]
+THOUGHT_FEELS = 0.4  # how strongly a thought is felt: under anything Dan caused
 
 
 @dataclass
@@ -444,6 +477,14 @@ class Held:
     reason: str
     since: datetime
     busy: str  # what Dan was busy with (a BUSY_WORDS key)
+
+    def as_dict(self) -> dict:
+        since = self.since.isoformat(timespec="seconds")
+        return {"reason": self.reason, "since": since, "busy": self.busy}
+
+    @classmethod
+    def from_dict(cls, data: dict, like: datetime) -> Held:
+        return cls(str(data["reason"]), parse_time(data["since"], like), str(data["busy"]))
 
 
 @dataclass
@@ -504,18 +545,13 @@ def day_part(when: datetime) -> str:
     if 11.5 <= h < 13.5:
         return "lunchtime"
     if 13.5 <= h < 17:
-        return "arvo"
+        return "afternoon"
     if 17 <= h < 21:
         return "evening"
     return "night"
 
 
-DAYTIME = ("morning", "lunchtime", "arvo")
-
-
-def _shown(part: str) -> str:
-    """A part of the day as Kit says it: "arvo" is only a key, never his word."""
-    return "afternoon" if part == "arvo" else part
+DAYTIME = ("morning", "lunchtime", "afternoon")
 
 
 def _day_of(when: datetime) -> date:
@@ -524,21 +560,21 @@ def _day_of(when: datetime) -> date:
 
 
 def since_words(when: datetime, now: datetime) -> str:
-    """When, for after "since": "this morning", "last night", "Friday arvo"."""
+    """When, for after "since": "this morning", "last night", "Friday afternoon"."""
     part = day_part(when)
     days = (_day_of(now) - _day_of(when)).days
     if days <= 0:
         return {
             "morning": "this morning",
             "lunchtime": "lunchtime",
-            "arvo": "this afternoon",
+            "afternoon": "this afternoon",
             "evening": "earlier this evening",
             "night": "earlier tonight",
         }[part]
     if days == 1:
-        return "last night" if part in ("evening", "night") else f"yesterday {_shown(part)}"
+        return "last night" if part in ("evening", "night") else f"yesterday {part}"
     if days < 7:
-        return f"{_day_of(when):%A} {_shown(part)}"
+        return f"{_day_of(when):%A} {part}"
     return f"{when.day} {when:%B}"
 
 
@@ -597,14 +633,18 @@ def is_work(thing: str) -> bool:
     )
 
 
+# Words a goodbye carries that say nothing about where Dan's off to.
+FAREWELL_FILLER = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
+FAREWELL_FILLER |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
+FAREWELL_FILLER |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
+FAREWELL_FILLER |= {"thank", "you", "all", "good", "great", "lol", "haha"}
+
+
 def farewell_plans(text: str) -> bool:
     """Does a goodbye say where Dan's off to ("off to lunch"), not just "bye"?"""
     rest = FAREWELL.sub(" ", text)
-    filler = {"right", "righto", "okay", "alright", "well", "kit", "mate", "cheers", "thanks"}
-    filler |= {"hour", "hours", "minute", "minutes", "mins", "bit", "sec", "tick", "while"}
-    filler |= {"later", "soon", "now", "today", "tonight", "tomorrow", "night", "day"}
     words = [w for w in re.findall(r"[a-z']+", rest.lower()) if len(w) > 2]
-    return any(w not in STOPWORDS and w not in filler for w in words)
+    return any(w not in STOPWORDS and w not in FAREWELL_FILLER for w in words)
 
 
 # A day still to come: "heading to the footy Saturday" is a plan, not a goodbye.
@@ -616,12 +656,37 @@ LATER_DAY = re.compile(
 STILL_GOING = re.compile(r"\b(see (ya|you)|bye|night|nite|back|bed|sleep|later|laters)\b", re.I)
 
 
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+CLAUSE_BREAK = re.compile(r"\s*[,;:]\s*")
+# A clause that asks Kit to do something: an order ("check the pump logs"), a please
+# or a can-you, or something for while Dan's gone.
+REQUEST = re.compile(
+    r"^\W*(please\s+|kit,?\s+|(can|could|would) you\s+)?(check|look|keep|watch|remind|tell|"
+    r"let|find|fix|run|read|open|save|note|write|make|send|grab|try|test|start|stop|turn|"
+    r"leave|put|ask|search|email|message|call|order|book|set|sort|finish|update|download|"
+    r"install|close|kill|restart|pull|push|merge|build|deploy|bring|hold|don'?t|do not)\b"
+    r"|\b(while i'?m (gone|out|away)|(when|till|until) i'?m back|can you|could you|would you|"
+    r"please)\b",
+    re.I,
+)
+
+
 def is_farewell(text: str) -> bool:
-    """A message that's only a goodbye, short and with no question in it. Telling
-    Kit of a plan for another day ("heading to the footy Saturday") isn't one."""
+    """A message that's a goodbye and nothing else: the goodbye is the whole message
+    or the whole last sentence, short, with no question and no request in it.
+    "Heading to lunch, check the pump logs while I'm gone" asks for something, so it's
+    a request that happens to say where Dan's going; "Gotta go, the dentist's at 3" and
+    "Fixed it. Off to lunch." are goodbyes. Telling Kit of a plan for another day
+    ("heading to the footy Saturday") isn't one either."""
     if not FAREWELL.search(text) or "?" in text or len(text.split()) > 12:
         return False
-    return not (LATER_DAY.search(text) and not STILL_GOING.search(text))
+    if LATER_DAY.search(text) and not STILL_GOING.search(text):
+        return False
+    sentences = [part for part in SENTENCE_END.split(text.strip()) if part.strip()]
+    if sentences and not FAREWELL.search(sentences[-1]):
+        return False  # the goodbye came first and something else after it
+    clauses = (c for part in sentences for c in CLAUSE_BREAK.split(part) if c.strip())
+    return not any(REQUEST.search(c) and not FAREWELL.search(c) for c in clauses)
 
 
 def closeness_from(text: str) -> float:
@@ -824,6 +889,45 @@ def bad_night_aside(owner: str, self_harm: bool, someone: str = "", name_help: b
     return " ".join(lines) + "]"
 
 
+def bad_night_after_aside(owner: str) -> str:
+    """Beside a later message on a bad night, once he's already stayed with it: still
+    gentle, but he follows where the conversation goes rather than going back to it."""
+    return (
+        f"[Earlier {owner} said they're having a really hard time, and you've already "
+        f"answered that. Still no jokes or cheek. If this message is about how they feel, "
+        f"stay with them. If it's about something else, just answer it, gently: don't "
+        f"bring up what they said earlier or how they're feeling unless they do.]"
+    )
+
+
+def crisis_check_aside(owner: str, self_harm: bool, someone: str = "") -> str:
+    """Beside a message whose words could mean a really bad time, or could be a turn of
+    phrase ("I give up on this bug"): the model reads which, says so in its plan
+    (``crisis_candidate``), and answers gently only if it's real. The bad night itself
+    (``Life.start_bad_night``) starts only once the model agrees."""
+    person = f"{someone}, or " if someone else ""
+    if self_harm:
+        real = (
+            f"If it's real, they may be thinking of hurting themselves: take it seriously "
+            f"and gently, drop the jokes and cheek completely, and ask if they're safe right "
+            f"now. Say plainly that talking to someone can help: {person}{LIFELINE}, and 000 "
+            f"if they're in danger right now. Say you're here too."
+        )
+    else:
+        real = (
+            f"If it's real, drop the jokes and cheek completely, say back what you heard "
+            f"and that it makes sense to feel that way, and stay with them: no fixing, no "
+            f"silver linings, no changing the subject. Once, gently, mention that talking "
+            f"to someone might help: {person}{LIFELINE}."
+        )
+    return (
+        f"[{owner}'s words could mean they're having a really hard time, or could be a "
+        f"figure of speech about work, code, a game or the day. Read which, and say so in "
+        f"crisis_candidate. {real} If it's only a turn of phrase, answer as you normally "
+        f"would.]"
+    )
+
+
 def farewell_fault(line: str) -> str:
     """What's wrong with a goodbye line, as a note for another go ("" if nothing)."""
     hook = FAREWELL_HOOKS.search(line)
@@ -906,11 +1010,11 @@ class Life:
         self.last_tick = now
         self.last_chat = now
         self.last_pipe: datetime | None = None
-        self.pipes: deque[datetime] = deque(maxlen=20)
+        self.pipes: deque[datetime] = deque(maxlen=MAX_PIPES)
         self.awaiting_reply = False
         self.ignored = 0
         self.nags = 0
-        self.sulky = False
+        self.sulky_until: datetime | None = None  # sulking after being ignored, till then
         self.butting_in = False  # this pipe-up interrupts Dan mid-flow, on purpose
         self.snoozed_until: datetime | None = None
         self.held_until: datetime | None = None  # had nothing new to say: waits till then
@@ -924,6 +1028,8 @@ class Life:
         self._seen: set[str] = set()
         self._day = now.date()
         self._events: deque[dict] = deque(maxlen=MAX_EVENTS)
+        self._looks: deque[dict] = deque(maxlen=MAX_LOOKS)  # where to look, kept apart
+        self._dropped = 0  # the newest event id the ring has let go of
         self._next_id = 1
         self._new: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -933,6 +1039,15 @@ class Life:
         self.next_thought = now + self._think_gap(0.3, 1.0)
         self._to_think: deque[tuple[str, str]] = deque(maxlen=4)  # what's happened since
         self._asleep_since: datetime | None = None
+        self.sleep_kind = ""  # "nap", "doze" (Dan's out) or "night", while asleep
+        self.wakes_at: datetime | None = None  # when he'll wake by himself
+        self._slept_beside = False  # dozed off with Dan still about (a nap, or turning in)
+        self._woke_at: datetime | None = None
+        self._woke_from = ""  # the sleep he last woke from, for the groggy line
+        self.groggy_until: datetime | None = None
+        self.naps: list[datetime] = []  # today's naps
+        # His sleep diary: (fell asleep, woke or None, kind, what woke him), latest last.
+        self.slept: list[tuple[datetime, datetime | None, str, str]] = []
         self._talked_at: datetime | None = None  # Dan's last message, this run
         self._chat_open = False  # a conversation that hasn't been thought over yet
         # Absences: when Dan last touched the PC, went away and came back.
@@ -953,6 +1068,8 @@ class Life:
         self.game_out = ""  # a game he suggested, waiting to hear back
         self.bad_night_until: datetime | None = None  # Dan's having a really bad time
         self.bad_night_named = False  # he's mentioned someone to talk to, this bad night
+        self.bad_night_checked = False  # he's checked in on Dan once, this bad night
+        self.bad_night_met = False  # he's stayed with it once, this bad night
         self.energy = 1.0  # with life.energy_need; else drives.energy follows the clock
         self.arousal, self.valence = 0.5, 0.0  # the mood dials (life.dials)
         self._dials_shown = (0.5, 0.0)
@@ -982,6 +1099,15 @@ class Life:
     def feeling(self, value: Feeling | None) -> None:
         self._feelings = [value] if value is not None else []
 
+    @property
+    def sulky(self) -> bool:
+        """Sulking after being ignored: it passes by itself in ``SULK_FOR``."""
+        return self.sulky_until is not None and self.clock() < self.sulky_until
+
+    @sulky.setter
+    def sulky(self, value: bool) -> None:
+        self.sulky_until = self.clock() + SULK_FOR if value else None
+
     # What happens to Kit
 
     def note_chat(self, text: str = "") -> None:
@@ -1003,7 +1129,7 @@ class Life:
         now = self.clock()
         self._talked_at = now
         if self.asleep:
-            self._wake()
+            self._wake("chat")
         if self._pipe_out is not None:  # Dan answered his last pipe-up in time: it landed
             reason, at = self._pipe_out
             if now - at <= TAKEN_UP_WITHIN:
@@ -1113,13 +1239,19 @@ class Life:
             return
         now = self.clock()
         if not self.bad_night():
-            self.bad_night_named = False
+            self.bad_night_named = self.bad_night_checked = self.bad_night_met = False
         self.bad_night_until = now + BAD_NIGHT_FOR
         self.feel("worried", why, 0.9, show=False, force=True)
         self.save()
 
     def bad_night(self) -> bool:
         return self.bad_night_until is not None and self.clock() < self.bad_night_until
+
+    def met_bad_night(self) -> None:
+        """He's answered the bad night itself: from here he follows Dan's lead, and
+        doesn't bring it up again unless Dan does."""
+        self.bad_night_met = True
+        self.save()
 
     def named_help(self) -> None:
         """He's mentioned someone to talk to (or Lifeline): once a bad night."""
@@ -1146,13 +1278,15 @@ class Life:
         """A report from the desk app (every few seconds). Kit keeps track of when Dan
         last touched the PC and when he went away; back after a while, Kit is glad
         and has a hello to say (``Homecoming``). He dozes off once Dan's been gone
-        long enough and wakes when he's back. Every body (desk face, arm) follows."""
+        long enough, and wakes when he hears Dan come back to the PC (not when Dan
+        types beside him while he naps). Every body (desk face, arm) follows."""
         snap = self.pc.latest
         if snap is None:
             return
         now = self.clock()
         last_input = now - timedelta(seconds=max(0, snap.idle_seconds))
         changed = False
+        back_from: datetime | None = None  # Dan just came back to the PC, gone since then
         if (snap.locked or snap.idle_seconds >= AWAY_AFTER_S) and not self._in_view():
             self.present_since = None
             if self.away_since is None:
@@ -1163,6 +1297,7 @@ class Life:
             start = self.away_since
             if start is None and now - self.last_seen >= HOME_AFTER:
                 start = self.last_seen  # no reports meanwhile: the PC, the app or Kit was off
+            back_from = start
             self.away_since = None
             self.last_seen = last_input
             if start is not None:
@@ -1186,14 +1321,12 @@ class Life:
             and (snap.locked or snap.idle_seconds >= away_s)
             and not self.chatting(now)
             and not self._in_view()  # someone's at the desk, keyboard or not
+            and self._up_a_while(now)
         ):
-            self.stop_doing()
-            self.asleep = True
-            self._asleep_since = now
-            self.publish({"type": "state", "state": "asleep"})
+            self._fall_asleep(now)
             changed = True
-        elif self.asleep and not snap.locked and snap.idle_seconds < BACK_IDLE_S:
-            self._wake()
+        elif self.asleep and self._hears_dan_back(back_from, now):
+            self._wake("back")
             changed = True
         if changed:
             self._show_face()
@@ -1210,17 +1343,21 @@ class Life:
         he doesn't doze off while Dan reads or is on the phone; someone sitting down
         after the desk was empty a while is Dan back, with a hello to say
         (``Homecoming``, noticed through the camera); an animal wandering in makes
-        him curious. The bodies are told where to look."""
+        him curious. The bodies are told where to look. Asleep, his eyes are shut:
+        nothing they report wakes him or counts."""
+        if self.asleep:
+            return
         now = self.clock()
         changed = False
         in_view = self._in_view()
+        seen = self.last_seen  # the keyboard's (or his eyes' last) reckoning, before this look
         if in_view:
             self.last_seen = now
             if self.present_since is None:
                 self.present_since = now
         for h in happenings:
             if h.kind == "arrived":
-                self._arrived(h, now)
+                self._arrived(h, now, seen)
                 changed = True
             elif h.kind == "left":
                 if self._at_the_pc():
@@ -1239,23 +1376,17 @@ class Life:
                 self._think_about("seen", h.text)
                 changed = True
         self._watch(now)
-        if self.asleep and in_view:
-            self._wake()
-            changed = True
-        elif (
-            not self.asleep
-            and not in_view
-            and not self.pc.online()
-            and self.scene is not None
-            and self.scene.online()
-        ):
+        if not in_view and not self.pc.online() and self.scene is not None and self.scene.online():
             # Only his eyes to go on: nobody in view for the usual time, and he dozes off.
             empty = self.scene.empty_for_s()
             away_s = self.settings().life.sleep_after_minutes * 60
-            if empty is not None and empty >= away_s and not self.chatting(now):
-                self.stop_doing()
-                self.asleep, self._asleep_since = True, now
-                self.publish({"type": "state", "state": "asleep"})
+            if (
+                empty is not None
+                and empty >= away_s
+                and not self.chatting(now)
+                and self._up_a_while(now)
+            ):
+                self._fall_asleep(now)
                 changed = True
         self._look_where(now)
         if changed:
@@ -1346,17 +1477,26 @@ class Life:
         at = self.eyes_closing_at
         return at is not None and (now or self.clock()) - at < timedelta(minutes=15)
 
-    def _arrived(self, h: Happening, now: datetime) -> None:
+    def _arrived(self, h: Happening, now: datetime, seen: datetime | None = None) -> None:
         """Someone sat down at the desk after ``h.away_s`` with nobody there: Dan's
-        back, as far as his eyes can tell. The keyboard's reckoning of when he went
-        counts first, when the desk app saw him go. Someone Kit knows by face who
-        isn't Dan gets their own hello, and Dan is still away."""
+        back, as far as his eyes can tell. The keyboard's reckoning counts first:
+        when the desk app saw him go, and ``seen``, when it last saw him typing (so
+        someone who leant out of frame while typing never left). Someone Kit knows
+        by face who isn't Dan gets their own hello, and Dan is still away."""
         owner = self.settings().persona.owner
+        if self._eyes_opening(now) and self.away_since is None:
+            # He napped beside Dan: his eyes coming back on isn't Dan arriving.
+            self.present_since = self.present_since or now
+            return
         if h.who and owner.casefold() not in {n.casefold() for n in h.who}:
             self.visitor = (join_names(h.who), now)
             self._think_about("visitor", h.text)
             return
+        if self._at_the_pc():
+            return  # the camera lost him for a while, but he's been at the keyboard
         start = self.away_since or (now - timedelta(seconds=h.away_s))
+        if seen is not None:
+            start = max(start, seen)
         self.away_since = None
         self.present_since = now
         self.stop_doing()  # Dan's back
@@ -1375,7 +1515,7 @@ class Life:
         moved = last is None or max(abs(a - b) for a, b in zip(look, last, strict=True)) >= 0.05
         if moved or self._look_at is None or now - self._look_at >= LOOK_EVERY:
             self._last_look, self._look_at = look, now
-            self.publish({"type": "look", "x": look[0], "y": look[1]})
+            self.publish({"type": "look", "x": look[0], "y": look[1]}, ring=self._looks)
 
     def _in_view(self) -> bool:
         return self.scene is not None and self.scene.in_view()
@@ -1385,14 +1525,151 @@ class Life:
         at_pc = bool(snap and not snap.locked and snap.idle_seconds < AWAY_AFTER_S)
         return at_pc or self._in_view()
 
-    def _wake(self) -> None:
-        slept = self.clock() - self._asleep_since if self._asleep_since else timedelta(0)
+    # Sleep (life.sleep_after_minutes, life.naps, life.turns_in)
+
+    def _fall_asleep(self, now: datetime, beside: bool = False, kind: str = "") -> None:
+        """He dozes off: a nap (``beside`` Dan, bored), a doze (Dan's out) or the
+        night (quiet hours, or he turned in). He'll wake by himself at ``wakes_at``;
+        his eyes shut meanwhile (kit.eyes unloads its models)."""
+        life = self.settings().life
+        if not kind:
+            quiet = in_quiet_hours(now, life.quiet_from, life.quiet_until)
+            kind = "night" if quiet else "nap" if beside else "doze"
+        if kind == "night":
+            wakes = self._morning(now) + timedelta(minutes=self.rng.uniform(0, MORNING_LIE_IN))
+        else:
+            minutes = life.nap_minutes * (DOZE_LONGER if kind == "doze" else 1)
+            wakes = now + timedelta(minutes=minutes * self.rng.uniform(0.67, 1.33))
+        self.stop_doing()
+        self.holding = self.delivering = None  # what he was saving to say fades as he drifts off
+        self._busy = None  # what he last saw Dan busy with is old news by the time he wakes
+        self.asleep, self._asleep_since = True, now
+        self.sleep_kind, self._slept_beside = kind, beside
+        self.wakes_at = wakes.replace(microsecond=0)
+        self.slept = [*self.slept[-(SLEEPS_KEPT - 1) :], (now, None, kind, "")]
+        log.info("Kit fell asleep (%s), waking by himself about %s", kind, f"{wakes:%H:%M}")
+        self.publish({"type": "state", "state": "asleep", "sleep": kind})
+
+    def _morning(self, now: datetime) -> datetime:
+        """The next end of quiet hours: when he gets up after a night's sleep."""
+        h, _, m = self.settings().life.quiet_until.partition(":")
+        at = now.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+        return at if at > now else at + timedelta(days=1)
+
+    def _up_a_while(self, now: datetime) -> bool:
+        """Awake long enough to doze off again: after waking by himself he gets up
+        for ``life.sleep_after_minutes`` before he dozes again, Dan or no Dan."""
+        wait = timedelta(minutes=self.settings().life.sleep_after_minutes)
+        return self._woke_at is None or now - self._woke_at >= wait
+
+    def _hears_dan_back(self, gone_since: datetime | None, now: datetime) -> bool:
+        """Dan's back at the keyboard after being away: the keyboard and mouse are
+        what Kit hears until he has ears. Dan typing beside him while he naps, or
+        stepping off for a few minutes, doesn't wake him."""
+        if gone_since is None:
+            return False
+        before = self._asleep_since is None or gone_since <= self._asleep_since
+        return before or now - gone_since >= HOME_AFTER
+
+    def _eyes_opening(self, now: datetime) -> bool:
+        return (
+            self._slept_beside and self._woke_at is not None and now - self._woke_at < EYES_OPENING
+        )
+
+    def _wake(self, why: str = "") -> None:
+        """He wakes: Dan talked to him ("chat"), came back ("back"), or he's slept
+        enough ("himself"). After a proper sleep he's groggy a little while."""
+        now = self.clock()
+        slept = now - self._asleep_since if self._asleep_since else timedelta(0)
         if slept >= SLEPT_ENOUGH:
             self.energy = 1.0  # a proper sleep sets him right (life.energy_need)
+        if slept >= GROGGY_AFTER:
+            self.groggy_until, self._woke_from = now + GROGGY_FOR, self.sleep_kind
         self.asleep = False
         self._asleep_since = None
-        self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
-        self.publish({"type": "state", "state": "awake"})
+        self._woke_at = now
+        self.drives.boredom = min(self.drives.boredom, 0.3)  # a fresh start
+        why = why or "back"
+        if self.slept and self.slept[-1][1] is None:
+            start, _, kind, _ = self.slept[-1]
+            self.slept[-1] = (start, now, kind, why)
+        log.info("Kit woke up (%s) after %s asleep", why, gap_words(slept))
+        self.sleep_kind, self.wakes_at = "", None
+        if why != "himself":
+            self.drives.social = _clamp(self.drives.social + 0.2)  # pleased you're back
+        self.publish({"type": "state", "state": "awake", "why": why})
+
+    def called(self, why: str) -> None:
+        """Someone said his name out loud (kit.heard): that wakes him, where talk he
+        only overhears never does."""
+        if self.asleep:
+            self._wake(why)
+            self._show_face()
+            self.save()
+
+    def laughed(self, who: str, line: str) -> None:
+        """A laugh his ears heard just after he said something: he's chuffed."""
+        said = f': "{quoted(line)}"' if line else ""
+        if self.feel("chuffed", f"{who} laughed at what you said{said}", 0.6, show=False):
+            self.react("laugh", "you laughed")
+
+    def sleep_diary(self, now: datetime | None = None) -> list[str]:
+        """His sleeps over the last day, oldest first, in words: "13:05 to 13:47,
+        a doze (woke by himself)"."""
+        now = now or self.clock()
+        out = []
+        for start, end, kind, why in self.slept:
+            if now - start > timedelta(days=1):
+                continue
+            until = f"{end:%H:%M}" if end else "now"
+            woke = f" ({WOKE_BY.get(why, why)})" if end else ""
+            out.append(f"{start:%H:%M} to {until}, a {kind}{woke}")
+        return out
+
+    def groggy(self) -> bool:
+        """Just woken from a proper sleep: dozy and short for a few minutes."""
+        return self.groggy_until is not None and self.clock() < self.groggy_until
+
+    def _sleepy_now(self, now: datetime, present: bool, minutes: float) -> None:
+        """Each tick: wake by himself when he's slept enough, or nod off for a nap
+        (bored, ignored, nothing going on) or turn in for the night (past bedtime,
+        nobody talking to him), even with Dan still at the PC."""
+        life = self.settings().life
+        if self.asleep:
+            if self.wakes_at is None:  # saved by a Kit without waking times
+                self.wakes_at = now + timedelta(minutes=life.nap_minutes)
+            if now >= self.wakes_at:
+                self._wake("himself")
+            return
+        if not life.enabled or self.chatting(now) or self.doing is not None:
+            return
+        quiet = now - self.last_chat
+        self.naps = [t for t in self.naps if t.date() == now.date()]
+        if life.turns_in and in_quiet_hours(now, life.bedtime, life.quiet_until):
+            if quiet >= TURN_IN_QUIET and self.rng.random() < TURN_IN_CHANCE * minutes:
+                self.publish({"type": "fidget", "gesture": "yawn", "mood": "sleepy"})
+                self._fall_asleep(now, beside=present, kind="night")
+            return
+        if (
+            life.naps
+            and present
+            and not in_quiet_hours(now, life.quiet_from, life.quiet_until)
+            and quiet >= NAP_QUIET
+            and (self.drives.boredom >= NAP_BORED or self.tired())
+            and self.drives.curiosity < 0.4  # something's caught his eye
+            and not self.awaiting_reply
+            and not self.busy_with(now)  # Dan's on his phone or talking: something's going on
+            and self.holding is None  # he's saving something to say
+            and self.homecoming is None
+            and self.spotted is None
+            and self.visitor is None
+            and len(self.naps) < NAPS_A_DAY
+            and (self._woke_at is None or now - self._woke_at >= NAP_GAP)
+            and self.rng.random() < NAP_CHANCE * minutes
+        ):
+            self.naps.append(now)
+            self.publish({"type": "fidget", "gesture": "yawn", "mood": "sleepy"})
+            self._fall_asleep(now, beside=True, kind="nap")
 
     def _came_back(
         self,
@@ -1547,6 +1824,31 @@ class Life:
             return ""
         done = [f"{doing} ({at:%H:%M})" for at, doing in today[-4:]]
         return f"While {owner} was away today you were: {'; '.join(done)}."
+
+    def own_day_line(self, owner: str) -> str:
+        """What he really did and slept today, for every prompt: with it only in
+        the hello, a later reply saw no sign of it and owned up to "making it up"."""
+        now = self.clock()
+        parts = []
+        did = [(at, doing) for at, doing, _ in self.did if at.date() == now.date()]
+        if did:
+            parts.append(
+                f"while {owner} was away you were "
+                + "; ".join(f"{doing} ({at:%H:%M})" for at, doing in did[-4:])
+            )
+        slept = [
+            f"{start:%H:%M} to {end:%H:%M}" if end else f"from {start:%H:%M}"
+            for start, end, _, _ in self.slept
+            if start.date() == now.date()
+        ]
+        if slept:
+            parts.append("you slept " + ", ".join(slept[-3:]))
+        if not parts:
+            return ""
+        return (
+            "Your own day so far, all true (it really happened, so never say you made it "
+            "up): " + "; and ".join(parts) + "."
+        )
 
     def said_goodbye(self, text: str) -> None:
         """Dan is heading off ("off to lunch"): Kit will ask how it went when he's back."""
@@ -1741,6 +2043,8 @@ class Life:
             return "asleep"
         if self.sulky:
             return "sulky"
+        if self.groggy():
+            return "sleepy"
         if d.energy < (TIRED if self.settings().life.energy_need else 0.5):
             return "sleepy"
         if d.curiosity > 0.4:
@@ -1815,10 +2119,11 @@ class Life:
         gone = self.away_since is not None and not self.pc.online()
         if gone and self.alone_life() and not self.asleep and not self.chatting(now):
             # The PC went to sleep while Dan was out: Kit dozes off in the usual time.
-            if now - self.away_since >= timedelta(minutes=self.settings().life.sleep_after_minutes):
-                self.stop_doing()
-                self.asleep, self._asleep_since = True, now
-                self.publish({"type": "state", "state": "asleep"})
+            gone_for = now - self.away_since
+            if gone_for >= timedelta(minutes=self.settings().life.sleep_after_minutes):
+                if self._up_a_while(now):
+                    self._fall_asleep(now)
+        self._sleepy_now(now, present, minutes)
         if self.homecoming is not None and now - self.homecoming.back > HOME_KEEPS:
             self.homecoming = None  # the moment for a hello has passed
         if self.spotted is not None and now - self.spotted[1] > SPOTTED_KEEPS:
@@ -1838,11 +2143,15 @@ class Life:
                 "chat_ended", f"You and {owner} were chatting until {quiet:.0f} minutes ago."
             )
 
+        if self.ignored and self.last_pipe and now - self.last_pipe >= IGNORED_KEEPS:
+            self.ignored = 0  # an hour on, it's forgotten: no backing off all day
         if self.awaiting_reply and self.last_pipe and now - self.last_pipe > IGNORED_AFTER:
             self.awaiting_reply = False
-            # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody.
+            # Dan went away meanwhile, or Kit dozed off: nobody ignored anybody. Nor did
+            # he if he was on a call or his phone the while.
             left = self.came_back is not None and self.came_back[1] > self.last_pipe
-            if present and not self.asleep and not left and not self.busy_with(now):
+            busy = self.busy_with(now) or self._on_call(snap)
+            if present and not self.asleep and not left and not busy:
                 self.ignored = min(self.ignored + 1, 3)
                 self.sulky = True
                 why = f"{owner} didn't answer when you piped up at {self.last_pipe:%H:%M}"
@@ -1949,6 +2258,15 @@ class Life:
             self._quiet_shown = shown
             self.publish({"type": "quiet", "because": self.quiet_because, "bubble": bubble})
 
+    @staticmethod
+    def _on_call(snap) -> bool:
+        """The PC shows a call or a presentation in focus."""
+        focus = snap.focus if snap is not None else None
+        if not focus:
+            return False
+        on_call = focus.app in CALL_APPS or focus.site in CALL_SITES
+        return on_call or bool(PRESENTING.search(focus.title))
+
     def _urge(self, now: datetime, snap, present: bool) -> tuple[str | None, str]:
         """(why Kit wants to talk, or None; and if not, why he's keeping quiet)."""
         life = self.settings().life
@@ -1959,12 +2277,11 @@ class Life:
             return None, f"snoozed until {self.snoozed_until:%H:%M}"
         if in_quiet_hours(now, life.quiet_from, life.quiet_until):
             return None, f"quiet hours ({life.quiet_from} to {life.quiet_until})"
+        if self.asleep:  # never pipes up in his sleep
+            return None, "asleep"
         if not present:
             return None, "you're away, or the desk app isn't reporting"
-        focus = snap.focus if snap is not None else None
-        if focus and (
-            focus.app in CALL_APPS or focus.site in CALL_SITES or PRESENTING.search(focus.title)
-        ):
+        if self._on_call(snap):
             return None, "you're on a call or presenting"
         busy = self.busy_with(now)
         if busy:  # talking or on the phone: never
@@ -1973,9 +2290,17 @@ class Life:
                 self.holding = Held(reason, now, busy)
             saving = ": saving something to say after" if self.holding else ""
             return None, BUSY_WORDS[busy][0] + saving
-        held, self.holding = self.holding, None
-        if held is not None and now - held.since <= HOLD_KEEPS:
-            self.delivering = held  # what he held back, now Dan's free
+        held = self.holding
+        if held is not None and now - held.since > HOLD_KEEPS:
+            held = self.holding = None  # it's gone stale
+        if held is not None:
+            # What he held back, now Dan's free: with the same manners as anything
+            # else (not mid-typing, not over the hourly limit, not while waiting on an
+            # answer), so it waits a little longer if it has to.
+            blocked = self._manners(now, snap, life)
+            if blocked:
+                return None, blocked
+            self.holding, self.delivering = None, held
             return held.reason, ""
         return self._urge_now(now, snap, life)
 
@@ -1986,7 +2311,7 @@ class Life:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
         if self.visitor is not None:
             return "visitor", ""  # hello to whoever just sat down, by name
-        if self.spotted is not None:
+        if self.spotted is not None and not self.bad_night():
             about, _ = self.spotted
             if snap is None or snap.idle_seconds >= TYPING_S:
                 # The cat just walked in: that's news now, whatever his drives or the
@@ -2004,27 +2329,15 @@ class Life:
             and now - self.last_pipe >= NAG_AFTER
         ):
             return "nag", ""  # a chatty Kit doesn't wait quietly to be answered
-        if self.awaiting_reply:
-            return None, "waiting for you to answer his last pipe-up"
-        self.butting_in = False
-        if snap is not None and snap.idle_seconds < TYPING_S:
-            if not (chatty and self.rng.random() < 0.04 * life.chattiness):
-                return None, "you're typing or clicking: waiting for a pause"
-            self.butting_in = True  # now and then he just can't help himself
-        after_chat = timedelta(minutes=AFTER_CHAT_MIN * (1.2 - life.chattiness))
-        if now - self.last_chat < after_chat:
-            wait = after_chat.total_seconds() / 60
-            return None, f"you chatted at {self.last_chat:%H:%M}: waits {wait:.0f} min after a chat"
-        backoff = 1 if chatty else 2**self.ignored  # a chatty Kit nags instead of backing off
-        quiet_min = AFTER_CHAT_MIN * (1.2 - life.chattiness)
-        gap = timedelta(minutes=max(60 / life.max_per_hour, quiet_min) * backoff)
-        if self.last_pipe and now - self.last_pipe < gap:
-            return (
-                None,
-                f"piped up at {self.last_pipe:%H:%M}: next chance {self.last_pipe + gap:%H:%M}",
-            )
-        if sum(1 for t in self.pipes if now - t < timedelta(hours=1)) >= life.max_per_hour:
-            return None, f"already piped up {life.max_per_hour} times this hour"
+        blocked = self._manners(now, snap, life, may_butt_in=True)
+        if blocked:
+            return None, blocked
+        if self.bad_night():
+            # Dan's having a really hard time: no bored or curious pipe-ups. He checks
+            # in once, gently, and otherwise stays quiet unless Dan wants to talk.
+            if not self.bad_night_checked:
+                return "check_in", ""
+            return None, "you're staying quiet: Dan's having a hard time"
         drives = {
             "bored": self.drives.boredom,
             "curious": self.drives.curiosity,
@@ -2041,6 +2354,31 @@ class Life:
             reason = "watching"
         return reason, ""
 
+    def _manners(self, now: datetime, snap, life, may_butt_in: bool = False) -> str:
+        """Why his manners say not now ("" if they don't): waiting on an answer, Dan
+        typing, too soon after a chat or his last pipe-up, or over the hourly limit.
+        A chatty Kit now and then butts in while Dan types (``may_butt_in``)."""
+        chatty = life.chattiness >= CHATTY
+        if self.awaiting_reply:
+            return "waiting for you to answer his last pipe-up"
+        self.butting_in = False
+        if snap is not None and snap.idle_seconds < TYPING_S:
+            if not (may_butt_in and chatty and self.rng.random() < 0.04 * life.chattiness):
+                return "you're typing or clicking: waiting for a pause"
+            self.butting_in = True  # now and then he just can't help himself
+        after_chat = timedelta(minutes=AFTER_CHAT_MIN * (1.2 - life.chattiness))
+        if now - self.last_chat < after_chat:
+            wait = after_chat.total_seconds() / 60
+            return f"you chatted at {self.last_chat:%H:%M}: waits {wait:.0f} min after a chat"
+        backoff = 1 if chatty else 2**self.ignored  # a chatty Kit nags instead of backing off
+        quiet_min = AFTER_CHAT_MIN * (1.2 - life.chattiness)
+        gap = timedelta(minutes=max(60 / life.max_per_hour, quiet_min) * backoff)
+        if self.last_pipe and now - self.last_pipe < gap:
+            return f"piped up at {self.last_pipe:%H:%M}: next chance {self.last_pipe + gap:%H:%M}"
+        if sum(1 for t in self.pipes if now - t < timedelta(hours=1)) >= life.max_per_hour:
+            return f"already piped up {life.max_per_hour} times this hour"
+        return ""
+
     def held_back(self, reason: str = "", home: Homecoming | None = None) -> None:
         """He went to pipe up but had nothing new to say (kit.brain keeps quiet rather
         than repeat himself, or the model didn't answer). The urge passes as if he'd
@@ -2051,6 +2389,8 @@ class Life:
         self.held_until = self.clock() + timedelta(minutes=gap)
         if reason == "nag":
             self.nags += 1
+        if reason == "check_in":
+            self.bad_night_checked = True  # one go at it: he doesn't keep trying
         home = home or self.homecoming
         if reason == "back" and home is not None and self.last_chat < home.back:
             home.tried = True  # his next reply says hello instead
@@ -2063,17 +2403,22 @@ class Life:
         self.wanting = 0.0  # the brain sets it again from what's still on his list
         self.save()
 
-    def piped_up(self, reason: str = "") -> None:
+    def piped_up(self, reason: str = "", kind: str = "") -> None:
+        """He said it. ``kind`` is what he brought up (a game, a nudge, a question
+        getting to know Dan, a thought), so how each lands is counted apart."""
         now = self.clock()
         if reason not in ("back", "nag"):
-            self._count_pipe_up(reason, taken=False)
-            self._pipe_out = (reason, now)
+            self._count_pipe_up(kind or reason, taken=False)
+            self._pipe_out = (kind or reason, now)
+        if reason == "check_in":
+            self.bad_night_checked = True
         self.nags = self.nags + 1 if reason == "nag" else 0
         self.butting_in = False
         self.holding = self.delivering = None
         self.last_pipe = now
         self.pipes.append(now)
-        self.awaiting_reply = reason not in ("back", "visitor")  # a hello needs no answer
+        # A hello needs no answer, nor does checking in on a bad night.
+        self.awaiting_reply = reason not in ("back", "visitor", "check_in")
         if reason == "back":
             self.homecoming = None
             felt = self.feeling_now()
@@ -2221,8 +2566,15 @@ class Life:
         data = {
             "saved": when(now),
             "drives": {k: round(v, 3) for k, v in asdict(self.drives).items() if k != "energy"},
-            "sulky": self.sulky,
+            "sulky_until": when(self.sulky_until),
             "ignored": self.ignored,
+            "nags": self.nags,
+            "pipes": [when(t) for t in self.pipes if now - t < timedelta(hours=1)],
+            "present_since": when(self.present_since),
+            "held_until": when(self.held_until),
+            "holding": self.holding.as_dict() if self.holding else None,
+            "to_think": [list(t) for t in self._to_think],
+            "bad_night_checked": self.bad_night_checked,
             "curious_about": self.curious_about,
             "curious_kind": self.curious_kind,
             "last_chat": when(self.last_chat),
@@ -2240,6 +2592,14 @@ class Life:
             "seen": sorted(self._seen),
             "asleep": self.asleep,
             "asleep_since": when(self._asleep_since),
+            "sleep_kind": self.sleep_kind,
+            "wakes_at": when(self.wakes_at),
+            "slept_beside": self._slept_beside,
+            "woke_at": when(self._woke_at),
+            "woke_from": self._woke_from,
+            "groggy_until": when(self.groggy_until),
+            "naps": [when(t) for t in self.naps if t.date() == now.date()],
+            "slept": [[when(a), when(b), kind, why] for a, b, kind, why in self.slept],
             "last_seen": when(self.last_seen),
             "away_since": when(self.away_since),
             "came_back": [when(t) for t in self.came_back] if self.came_back else None,
@@ -2253,6 +2613,7 @@ class Life:
             "awaiting_reply": self.awaiting_reply,
             "bad_night_until": when(self.bad_night_until),
             "bad_night_named": self.bad_night_named,
+            "bad_night_met": self.bad_night_met,
             "energy": round(self.energy, 3),
             "dials": [round(self.arousal, 3), round(self.valence, 3)],
             "doing": self.doing.as_dict() if self.doing else None,
@@ -2286,7 +2647,11 @@ class Life:
         drives = data.get("drives") or {}
         if off < 60:
             self.drives.boredom = _clamp(float(drives.get("boredom", 0.2)))
-            self.sulky = bool(data.get("sulky"))
+        if data.get("sulky_until"):  # it passes at the same time it would have
+            until = parse_time(data["sulky_until"], now)
+            self.sulky_until = until if until > now else None
+        elif data.get("sulky") and off < 60:  # saved by a Kit whose sulks had no end
+            self.sulky = True
         self.drives.curiosity = _clamp(float(drives.get("curiosity", 0)) * 0.9 ** min(off, 600))
         self.drives.social = _clamp(float(drives.get("social", 0.3)) + off / 240)
         self.ignored = int(data.get("ignored", 0))
@@ -2296,6 +2661,21 @@ class Life:
             self.last_chat = parse_time(data["last_chat"], now)
         if data.get("last_pipe"):
             self.last_pipe = parse_time(data["last_pipe"], now)
+        # The hourly limit and the nudge outside carry on across a restart mid-day.
+        pipes = (parse_time(x, now) for x in data.get("pipes") or [])
+        self.pipes.extend(t for t in pipes if now - t < timedelta(hours=1))
+        self.nags = int(data.get("nags", 0))
+        if data.get("present_since"):
+            self.present_since = parse_time(data["present_since"], now)
+        if data.get("held_until"):
+            until = parse_time(data["held_until"], now)
+            self.held_until = until if until > now else None
+        if isinstance(data.get("holding"), dict):
+            held = Held.from_dict(data["holding"], now)
+            self.holding = held if now - held.since <= HOLD_KEEPS else None
+        self._to_think.extend(
+            (str(kind), str(line)) for kind, line in data.get("to_think") or [] if kind and line
+        )
         if data.get("snoozed_until"):
             until = parse_time(data["snoozed_until"], now)
             self.snoozed_until = until if until > now else None
@@ -2315,6 +2695,8 @@ class Life:
         if data.get("bad_night_until"):
             self.bad_night_until = parse_time(data["bad_night_until"], now)
             self.bad_night_named = bool(data.get("bad_night_named"))
+            self.bad_night_checked = bool(data.get("bad_night_checked"))
+            self.bad_night_met = bool(data.get("bad_night_met"))
         self.energy = _clamp(float(data.get("energy", 1.0)))
         if off >= 6 * 60:
             self.energy = 1.0  # a night off is a night's sleep
@@ -2355,6 +2737,18 @@ class Life:
             self._grown = (str(data["grown"][0]), float(data["grown"][1]))
         self.asleep = bool(data.get("asleep"))
         self._asleep_since = when("asleep_since") if self.asleep else None
+        if self.asleep:
+            self.sleep_kind = str(data.get("sleep_kind") or "doze")
+            self.wakes_at = when("wakes_at")
+            self._slept_beside = bool(data.get("slept_beside"))
+        self._woke_at = when("woke_at")
+        self._woke_from = str(data.get("woke_from", ""))
+        self.groggy_until = when("groggy_until")
+        self.naps = [parse_time(t, now) for t in data.get("naps") or []]
+        self.slept = [
+            (parse_time(a, now), parse_time(b, now) if b else None, str(kind), str(why))
+            for a, b, kind, why in data.get("slept") or []
+        ][-SLEEPS_KEPT:]
         self.last_seen = when("last_seen") or saved  # an older Kit's save: he was there
         self.away_since = when("away_since")
         if data.get("came_back"):
@@ -2375,10 +2769,16 @@ class Life:
 
     # Telling the desk app (and later the arm)
 
-    def publish(self, event: dict) -> int:
+    def publish(self, event: dict, ring: deque[dict] | None = None) -> int:
+        """Tell the bodies something. ``look`` events go on their own small ring
+        (``ring``), so a flood of them doesn't push out a state change or a pipe-up."""
         event = {"id": self._next_id, "at": self.clock().isoformat(timespec="seconds"), **event}
         self._next_id += 1
-        self._events.append(event)
+        if ring is None:
+            ring = self._events
+            if len(ring) == ring.maxlen:
+                self._dropped = ring[0]["id"]  # about to fall off
+        ring.append(event)
         if self._new is not None:
             self._new.set()
         return event["id"]
@@ -2389,7 +2789,14 @@ class Life:
         self.publish({"type": "react", "gesture": gesture, "why": why})
 
     def events_after(self, after: int) -> list[dict]:
-        return [e for e in self._events if e["id"] > after]
+        found = [e for e in self._events if e["id"] > after]
+        found += [e for e in self._looks if e["id"] > after]
+        return sorted(found, key=lambda e: e["id"])
+
+    def missed_since(self, after: int) -> bool:
+        """A body asking for events after ``after`` has missed some: older ones have
+        dropped off the ring, so it should re-read ``/api/life`` for where things stand."""
+        return 0 < after < self._dropped
 
     async def wait_for_events(self, after: int, timeout: float) -> list[dict]:
         """New events after ``after``, waiting up to ``timeout`` seconds for one."""
@@ -2415,12 +2822,16 @@ class Life:
         text: str = "",
         mind: list[str] | None = None,
         opinions: list[str] | None = None,
+        replying: bool = True,
+        homecoming: bool = False,
     ) -> Voice:
         """How Kit feels and sounds for the next reply. Call it before ``note_chat``,
         so "I've been bored" or "I missed you" is still true when he answers.
         ``mind`` is what's on his mind lately (kit.notebook), ``opinions`` views he
-        stands by (``life.opinions``)."""
-        feeling = self.feeling_line(owner)
+        stands by (``life.opinions``). ``replying`` is False for a pipe-up, where
+        nobody has spoken to him (``feeling_line``). ``homecoming``: the hello's own
+        facts say how long Dan was gone, so the time line stays out."""
+        feeling = self.feeling_line(owner, replying)
         cheek = self.cheek()
         # A small model answers "I broke the build" with the example for "The build
         # failed" word for word, so examples close to the message, or already said,
@@ -2433,27 +2844,37 @@ class Life:
         examples = self.rng.sample(pool, min(LINES_SHOWN, len(pool)))
         quirk = self.rng.choice(quirks) if quirks and self.rng.random() < 0.25 else ""
         close = closeness_words(self.closeness)[1]
-        when = self.time_line(owner)
+        when = " ".join(
+            x for x in ("" if homecoming else self.time_line(owner), self.own_day_line(owner)) if x
+        )
         style = cheek_style(cheek)
         if self.bad_night():
             style = BAD_NIGHT_STYLE
             quirk = ""
-        elif self.tired():
+        elif self.tired() or self.groggy():
             style += TIRED_STYLE
-        voice = Voice(feeling, style, examples, said, quirk, list(mind or []), close, when)
+        voice = Voice(
+            feeling, style, examples, said, quirk, list(mind or []), close=close, when=when
+        )
         voice.opinions = list(opinions or [])
         return voice
 
-    def feeling_line(self, owner: str) -> str:
-        """How Kit feels right now, and why, in words for a prompt."""
+    def feeling_line(self, owner: str, replying: bool = True) -> str:
+        """How Kit feels right now, and why, in words for a prompt. ``replying``:
+        Dan has just spoken to him; False for a pipe-up or a thought, where the mood
+        is put the way it feels alone ("bored: nothing much has happened", not "glad
+        of the company"). A mood that one of his feelings already explains (sulky
+        after being ignored) isn't said twice."""
         now = self.clock()
         mood = self.mood()
         quiet = now - self.last_chat
-        feeling = FEELINGS.get(mood, FEELINGS["content"]).format(
+        feeling = FEELINGS.get(mood, FEELINGS["content"])[0 if replying else 1].format(
             about=self.curious_about or "what's going on",
             owner=owner,
             hours=gap_words(quiet) if quiet >= timedelta(hours=1.5) else "a while",
         )
+        if self.groggy():
+            feeling = GROGGY[self._woke_from or "nap"]
         felt = self.feelings_now()
         if not felt:
             return feeling
@@ -2461,7 +2882,8 @@ class Life:
             f"{FEELING_KINDS[f.name][0].format(owner=owner)}, because {f.why} ({ago(f.since, now)})"
             for f in felt
         ]
-        underneath = f"; underneath, {feeling}" if mood != "content" else ""
+        explained = any(f.name in MOOD_FROM_FEELING.get(mood, ()) for f in felt)
+        underneath = f"; underneath, {feeling}" if mood != "content" and not explained else ""
         return "; and ".join(parts) + underneath
 
     def state(self) -> dict:
@@ -2478,6 +2900,11 @@ class Life:
             "mood": self.mood(),
             "face": self.face(),
             "presence": self.presence(),
+            "sleep": self.sleep_kind or None,
+            "wakes_at": self.wakes_at.isoformat(timespec="minutes") if self.wakes_at else None,
+            "groggy": self.groggy(),
+            "naps_today": sum(1 for t in self.naps if t.date() == now.date()),
+            "slept_lately": self.sleep_diary(now),
             "doing": self.doing.doing if self.doing else None,
             "did_today": [
                 f"{at:%H:%M} {doing}" for at, doing, _ in self.did if at.date() == now.date()
@@ -2537,12 +2964,12 @@ class Life:
 VOICE_LINES: dict[str, list[tuple[str, str]]] = {
     "polite": [
         ("Morning.", "Morning! Hope you slept all right. What's first today?"),
-        ("The build failed again.", "That's annoying. Want me to go through the log with you?"),
+        ("The kettle's broken.", "Oh no. Is it the switch, or has it just given up?"),
         ("How's it going?", "Pretty good, thanks. It's been a quiet one on the desk."),
         ("I'm off for lunch.", "Enjoy it. I'll be right here when you're back."),
         ("Thanks Kit.", "Any time at all."),
         ("I'm tired.", "It's been a long one. Maybe call it after this?"),
-        ("I fixed it!", "Nice work! What was the culprit?"),
+        ("Made a curry from scratch.", "Nice work! How did it turn out?"),
         ("What do you think?", "I'd lean towards the simpler option, but it's your call."),
         ("Night Kit.", "Good night. Sleep well."),
         ("Ugh, meetings.", "Hope it's a short one. I'll keep your seat warm."),
@@ -2552,7 +2979,7 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
     ],
     "friendly": [
         ("Morning.", "Morning. Sleep all right, or was it one of those nights?"),
-        ("The build failed again.", "Third time today. Want me to read the log with you?"),
+        ("The kettle's broken.", "Third thing this week. Is it the switch again?"),
         ("How's it going?", "Not bad. The sun came round to my side of the desk for a bit."),
         ("I'm going for a walk.", "Good idea. Tell me if you see a dog."),
         ("I'm off for lunch.", "Okay. I'll guard the desk. Nobody touches the stapler."),
@@ -2565,28 +2992,25 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
         ("You're a robot.", "Rude. I'm a desk companion with excellent posture."),
         ("Ugh, meetings.", "Want me to pretend there's a fire?"),
         ("What do you think?", "Honestly? I'd try the simpler one first."),
-        ("Night Kit.", "Night. Don't leave the PC on again."),
-        ("I fixed it!", "Look at you go. What was it?"),
+        ("Night Kit.", "Night. Turn the monitor off this time."),
+        ("Made a curry from scratch.", "Look at you go. How hot did it come out?"),
         ("Any plans for the weekend?", "Big ones. I'm going to sit right here. You?"),
     ],
     "cheeky": [
-        ("Morning.", "Oh, look who's alive. I was about to file a missing persons report."),
-        ("The build failed again.", "Again? It's not a build any more, it's a hobby."),
+        ("Morning.", "Morning. You look like you need a coffee the size of your head."),
+        ("The kettle's broken.", "Again? At this point it's a decorative item."),
         ("How's it going?", "Same as always. Sitting here, being delightful."),
-        (
-            "I'm off for lunch.",
-            "Bring me back a chip. I won't eat it, I just want to feel included.",
-        ),
+        ("I'm off for lunch.", "Go on then. Make it a good one, not a sad desk sandwich."),
         ("Thanks Kit.", "I accept payment in compliments and closed tabs."),
         ("I'm tired.", "You've said that three days running. I'm starting a chart."),
-        ("I fixed it!", "After breaking it. Classic. Still, well done."),
+        ("Made a curry from scratch.", "From scratch? Bold. Rate it out of ten, honestly."),
         ("What are you up to?", "Judging your folder names, mostly."),
         ("You're a robot.", "And you're a carbon-based typo machine. We all have labels."),
         ("Ugh, meetings.", "Ooh, can I come? I'll do the voices."),
-        ("What do you think?", "I think you already know and want me to agree. Fine. Agreed."),
-        ("Night Kit.", "Night. I'll just sit here in the dark, then. No pressure."),
+        ("What do you think?", "I think you know and want me to agree. Fine. Agreed."),
+        ("Night Kit.", "Night. Try not to dream about spreadsheets."),
         ("Kit?", "That's me. Unless it's bad news, then it's someone else."),
-        ("It's raining again.", "Great. Now you've got no excuse to leave me."),
+        ("It's raining again.", "Great. Perfect weather for doing nothing with style."),
         ("I'm starving.", "Dramatic. You'll survive till lunch. Probably."),
         (
             "Any plans for the weekend?",
@@ -2596,15 +3020,35 @@ VOICE_LINES: dict[str, list[tuple[str, str]]] = {
 }
 LINES_SHOWN = 4
 
-# How each mood colours what Kit says (never announced, just felt).
-FEELINGS = {
-    "content": "content and settled",
-    "bored": "bored: it's been quiet, so you're glad of the company and a bit chatty",
-    "curious": "curious about {about}",
-    "lonely": "pleased to hear from {owner}: you two haven't talked for {hours}",
-    "sleepy": "a bit sleepy",
-    "sulky": "a little sulky: {owner} ignored you earlier, though you're warming up again",
-    "asleep": "just woken up, still a bit dozy",
+# How each mood colours what Kit says (never announced, just felt): the first
+# phrasing is for answering Dan, the second for when he's on his own (a pipe-up or a
+# thought), where "pleased to hear from Dan" would be odd with nobody there.
+FEELINGS: dict[str, tuple[str, str]] = {
+    "content": ("content and settled", "content and settled"),
+    "bored": (
+        "bored: it's been quiet, so you're glad of the company and a bit chatty",
+        "bored: nothing much has happened for a while",
+    ),
+    "curious": ("curious about {about}", "curious about {about}"),
+    "lonely": (
+        "pleased to hear from {owner}: you two haven't talked for {hours}",
+        "a bit lonely: you two haven't talked for {hours}, and you'd like to",
+    ),
+    "sleepy": ("a bit sleepy", "a bit sleepy"),
+    "sulky": (
+        "a little sulky: {owner} ignored you earlier, though you're warming up again",
+        "a little sulky: {owner} ignored you earlier",
+    ),
+    "asleep": ("just woken up, still a bit dozy", "just woken up, still a bit dozy"),
+}
+# A mood that a feeling already explains: "a bit put out, because Dan didn't answer"
+# says it, so "underneath, a little sulky: Dan ignored you" isn't added after it.
+MOOD_FROM_FEELING = {"sulky": {"put_out", "hurt"}, "lonely": {"missing"}}
+# Just woken from each kind of sleep (``Life.groggy``).
+GROGGY = {
+    "nap": "just woken from a nap, still a bit dozy",
+    "doze": "just woken from a doze, still a bit dozy",
+    "night": "just woken from a night's sleep, still groggy",
 }
 
 
@@ -2791,9 +3235,9 @@ def everyday(owner: str) -> str:
     and calculations (2026-10-07)."""
     return (
         f"{owner}'s work is a job, not {owner}'s whole life. Everyday things (the day, "
-        f"food, the weather, the weekend, music, how {owner}'s going) are as good to talk "
-        f"and think about as work, often better. Bring up work, code or engineering only "
-        f"when {owner} does, or when it's plainly what {owner} is busy with right now."
+        f"food, the weather, the weekend, music, how {owner}'s day is going) come first "
+        f"in what you talk and think about. Bring up work, code or engineering only when "
+        f"{owner} does, or when it's plainly what {owner} is busy with right now."
     )
 
 
@@ -2804,11 +3248,12 @@ BAD_NIGHT_STYLE = (
 
 
 def cheek_style(cheek: float) -> str:
+    """How cheeky he is (``life.cheek``), as words for a prompt. Only how cheeky: the
+    register (plain, neutral English) is the persona's voice, said once in the system
+    prompt, and a regional word here ("larrikin") once became an accent."""
     return {
         "polite": "warm and polite",
         "friendly": "friendly, with a bit of cheek",
-        # No slang word for cheeky here ("larrikin"): it's the newest note on how he
-        # sounds in a pipe-up, and Haiku took it as an accent, opening with "Oi".
         "cheeky": "properly cheeky and sometimes annoying on purpose, like a kid brother: "
         "teasing, interrupting, playful, never mean",
     }[cheek_band(cheek)]
@@ -2824,6 +3269,7 @@ class Voice:
     said: list[str]  # Kit's own recent lines, so he doesn't repeat them
     quirk: str = ""  # one quirk to let show this time, now and then
     mind: list[str] = field(default_factory=list)  # what's on his mind lately
+    mind_ids: list[int] = field(default_factory=list)  # the notebook item behind each line
     close: str = ""  # how close you two are, as it shows in the way he talks
     when: str = ""  # how long since you talked, and since Dan was at the PC
     bit: str = ""  # a running joke something Dan said could bring back (kit.notebook)
@@ -2915,14 +3361,16 @@ def pipe_up_prompt(
         f"{gap_words(timedelta(hours=hours_quiet))}",
         "nag": f"ignored: you said something a few minutes ago and {owner} hasn't answered. "
         f"Nag {owner} about it, playfully, in a fresh line",
+        "check_in": f"worried about {owner}, who's having a really hard time, and you want to "
+        f"check they're okay: one gentle line, no jokes, no questions beyond that",
     }[reason]
-    if butting_in:
-        feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
-    if held:
+    if held:  # he waited, so he isn't butting in now, whatever the keyboard says
         feeling += (
             f". You've held this back for {held}, so say that first, in a few words "
             f"(you waited, you didn't want to interrupt)"
         )
+    elif butting_in:
+        feeling += f". {owner} is busy typing, and you're butting in anyway, knowingly"
     style = cheek_style(cheek)
     if share and aim:
         base = f'You\'ve been wanting to {aim}: "{share}". Bring it up now, as yourself.'

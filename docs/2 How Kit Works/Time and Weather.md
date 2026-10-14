@@ -70,6 +70,8 @@ playing around him.*
   doesn't use it for this.
 - **Where**: `persona.location` ("city, state", for example Richmond, NSW) and
   `persona.country`.
+- The forecast is fetched while he recalls memories for the message, not
+  after, so a weather answer doesn't wait twice.
 - A follow-up like "and tomorrow?" soon after counts as a weather question
   too.
 - Weather questions are answered by the local model when routing allows,

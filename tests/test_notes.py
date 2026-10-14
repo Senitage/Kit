@@ -1,11 +1,12 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from fakes import Clock, FakeEmbedder, FakeModel, collect, make_cloud, reply
 from kit.brain import Brain
 from kit.memory import Memory
-from kit.notes import NOTES, NoteError, Notes, Request, file_name, request
+from kit.notes import NOTES, NoteError, Notes, Request, candidates, file_name, request
 from kit.recall import Recall
 from kit.settings import NasSettings, Settings
 
@@ -207,6 +208,71 @@ def test_kit_opens_a_note_before_answering(memory, vault):
     assert "- read_note:" in system and "Dan's notes (newest first): Holiday Planner." in system
     assert next(e for e in events if e["type"] == "reading_note")["note"] == "Holiday Planner"
     assert "Budget $4000" in model.calls[1][-1]["content"]
+
+
+def test_the_notes_names_are_read_once_until_a_note_changes(memory, vault):
+    write(vault / "Holiday Planner.md", "Broome in July.")
+    notes = Notes(memory.index, memory.clock)
+    nas = NasSettings(vault=str(vault))
+    notes.sync(nas)
+    assert notes.names() == ["Holiday Planner"]
+    calls = 0
+    real_items = memory.index.items
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_items(*args, **kwargs)
+
+    memory.index.items = counted
+    assert notes.names() == ["Holiday Planner"] and notes.names(limit=1) == ["Holiday Planner"]
+    memory.index.add("conversation", "exchange", "Dan: hi")  # not a note: still cached
+    assert notes.names() == ["Holiday Planner"] and calls == 0
+    notes.take(nas, "Shopping list", "milk")  # a new note: read again
+    assert notes.names() == ["Shopping list", "Holiday Planner"] and calls == 1
+    write(vault / "Projects" / "Kit.md", "Desk robot arm.")
+    notes.sync(nas)
+    assert "Projects/Kit" in notes.names()
+
+
+def test_only_notes_sharing_a_word_with_the_message_are_compared(memory):
+    """A vault of thousands of notes: the careful comparison only runs on the few
+    whose name shares a word with the message, typos allowed."""
+    names = [f"Projects/Thing {n}" for n in range(1500)] + [
+        "Holiday Planner",
+        "Inbox/Shopping list",
+        "Garden",
+    ]
+    assert candidates("Whats in my holday planner?", names) == ["Holiday Planner"]
+    assert candidates("put milk on the shoping list", names) == ["Inbox/Shopping list"]
+    assert candidates("how's the gardn looking", names) == ["Garden"]
+    assert candidates("whats up kit", names) == []
+    assert request("Whats in my holday planner?", names) == Request("read", "Holiday Planner")
+
+
+def test_a_note_gone_from_the_nas_is_not_looked_for_on_it(memory, vault, monkeypatch):
+    """Finding a note by name goes by the index, not a stat of every note on the NAS
+    (thousands of network calls on a big vault); a note gone since the last sync is
+    simply reported as unreadable."""
+    write(vault / "Holiday Planner.md", "Broome in July.")
+    write(vault / "Projects" / "Kit.md", "Desk robot arm.")
+    notes = Notes(memory.index, memory.clock)
+    nas = NasSettings(vault=str(vault))
+    notes.sync(nas)
+    stats = []
+    real_stat = Path.stat
+
+    def counted(self, *args, **kwargs):
+        if self.suffix == ".md":
+            stats.append(self.name)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", counted)
+    assert notes.find(nas, "kit") == vault / "Projects" / "Kit.md"
+    assert stats == []
+    (vault / "Holiday Planner.md").unlink()
+    with pytest.raises(NoteError, match="couldn't open Holiday Planner.md"):
+        notes.read(nas, "holiday planner")
 
 
 def test_note_requests_are_spotted_in_dans_words():

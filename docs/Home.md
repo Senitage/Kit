@@ -34,7 +34,8 @@ ones around it, and the deeper notes are always one click further.
 ## The map
 
 One brain on the server does all the thinking. Everything else is a way in
-or out: a body that shows his face, a pair of eyes, a voice, a page. Click
+or out: a body that shows his face, a pair of eyes, a pair of ears, a voice,
+a page. Click
 any box to open its note.
 
 ```mermaid
@@ -42,6 +43,7 @@ flowchart LR
     subgraph Ways["Ways in and out"]
         DeskApp["Desk App"]
         Eyes["Eyes"]
+        Hearing["Hearing"]
         Voice["Voice"]
         Bodies["Bodies"]
         Pod["The Pod"]
@@ -54,6 +56,7 @@ flowchart LR
         Things["Register of Things"]
         Life["Inner Life"]
         Companion["Companion"]
+        Tools["Tools and Packs"]
     end
     subgraph Show["How he shows it"]
         Face["Face"]
@@ -64,11 +67,13 @@ flowchart LR
     end
     DeskApp <--> Brain
     Eyes --> Brain
+    Hearing --> Brain
     Brain --> Voice
     OtherApps <--> Brain
     Bodies <--> Brain
     Bodies --- Pod
     Brain <--> Routing
+    Brain <--> Tools
     Brain <--> Memory
     Memory --- Things
     Brain <--> Life
@@ -76,7 +81,7 @@ flowchart LR
     Brain --> Face
     Notes --> Memory
     Weather --> Brain
-    class DeskApp,Eyes,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
+    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Tools,Face,Notes,Weather internal-link
 ```
 
 ## Everything in these docs
@@ -92,6 +97,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[The Big Picture]]: the brain, the bodies, the data folder and the models.
 - [[Life of a Message]]: one message from your keyboard to his face and voice.
 - [[Brain]]: the conversation loop and the things he can do mid-answer.
+- [[Tools and Packs]]: how he looks things up mid-answer, and how new abilities plug in.
 - [[Models and Routing]]: which model answers what, and what it costs.
 - [[Memory]]: how he remembers, finds things and keeps his facts tidy.
 - [[Register of Things]]: where each person, pet, car and project lives.
@@ -100,9 +106,11 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[Face]]: character sheets, Retro, Kit 2D and Kit 3D, shows and body moves.
 - [[Voice]]: how he talks out loud, sentence by sentence.
 - [[Eyes]]: the camera process that tells him, in words, who's there.
+- [[Hearing]]: the microphone process: he answers his name, stops when talked over, knows voices.
 - [[Desk App]]: his home on the Windows PC: tray, face, chat and window.
 - [[Bodies]]: one brain, many bodies: the desk, the Pod, the arm.
 - [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
+- [[Phone App]]: Kit on Android, the body that leaves the house with you.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
@@ -118,12 +126,13 @@ The full detail behind the plain-words notes.
 - [[Pod In Depth]]
 
 ### 4. Guides: set up and test
-- [[Running Kit]]: start, stop, restart and check Kit, his eyes and the Pod.
+- [[Running Kit]]: start, stop, restart and check Kit, his eyes, his ears and the Pod.
 - [[Updating Kit]]: pull, install, restart. The same every time.
 - [[Building the Pod]]: print, wire, upload and link the Pod, step by step.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
-- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]]
+- [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]], [[Companion Stage 5]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
+- [[Phone Stage 0 - Pairing]], [[Stage 4 - Tools]]
 
 ### 5. Reference
 - [[Commands]]: every `kit` command.

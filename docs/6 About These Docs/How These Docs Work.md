@@ -121,7 +121,7 @@ updates the matching notes **in the same pull request**:
 | An eval | [[Evals]] |
 | A new part of Kit | A new How Kit Works note from the template, linked from [[Home]], [[Kit Map.canvas\|Kit Map]] and its neighbours |
 | How he looks | Fresh pictures in `Assets/` |
-| A pull request opened or merged | [[Where Kit Is Up To]], and [[Roadmap]] when a stage moves |
+| A pull request opened or merged | [[Where Kit Is Up To]] (`kit docs check` spots a row left open after it landed), and [[Roadmap]] when a stage moves |
 | A new word | [[Glossary]] |
 | The Pod's program, printed parts or wiring (`pod/`) | [[The Pod]], [[Pod In Depth]], [[Building the Pod]] |
 | How to start, stop or restart something | [[Running Kit]] |

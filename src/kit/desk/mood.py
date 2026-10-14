@@ -313,6 +313,10 @@ class MoodPage(QWidget):
         self.mind.setWordWrap(True)
         self.mind.setObjectName("muted")
         layout.addWidget(self.mind)
+        self.slept = QLabel("")  # his sleep diary, so you can tell he slept while you were out
+        self.slept.setWordWrap(True)
+        self.slept.setObjectName("muted")
+        layout.addWidget(self.slept)
         self.note = QLabel("")
         self.note.setObjectName("muted")
         layout.addWidget(self.note)
@@ -369,7 +373,11 @@ class MoodPage(QWidget):
         line = PRESENCE.get(presence, presence)
         if life.get("doing"):
             line += f": {life['doing']}"
+        if presence == "asleep" and life.get("wakes_at"):
+            line += f", waking about {str(life['wakes_at'])[11:16]}"
         self.presence.setText(line)
+        slept = life.get("slept_lately") or []
+        self.slept.setText("Slept: " + "; ".join(slept[-4:]) if slept else "")
         felt = life.get("feeling")
         if felt:
             name = str(felt.get("name", "")).replace("_", " ")
@@ -383,7 +391,7 @@ class MoodPage(QWidget):
 
         face, now = self.face.face, time.monotonic()
         face.set_state("sleeping" if mood == "asleep" else "idle")
-        face.set_emotion(emotion, now)
+        face.set_emotion(face.known_emotion(emotion), now)
         dials = life.get("dials")
         if dials:
             face.set_dials(float(dials.get("arousal", 0.5)), float(dials.get("valence", 0.0)))

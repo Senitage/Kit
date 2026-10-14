@@ -36,9 +36,23 @@ word, speech to text) is the next part of stage 3.
 - **Sentence by sentence.** The brain now sends Kit's mood before his words. The
   desk app cuts the words into sentences as they stream in, asks the server for
   each one, and plays it while the next is being made. The first sentence is cut
-  short where it can be, at its first comma ("Yeah, ...") or before an "and" or
-  "but", because Chatterbox makes a whole piece before any of it plays. So Kit
-  starts talking a few words after the brain does, not after the whole reply.
+  short where it can be, at its first comma after at least four words ("Yeah, I
+  had a look at that,") or before an "and" or "but", because Chatterbox makes a
+  whole piece before any of it plays. So Kit starts talking a few words after the
+  brain does, not after the whole reply. A one-word "Yeah," is never cut off on
+  its own: it sounded like a stammer.
+- **Each sentence comes in pieces.** On the graph path Turbo's sounds are turned
+  into audio a second at a time and each piece streams through the server to
+  the desk (`audio/L16`), which plays it while the rest is still being made. A
+  long sentence starts a second into its making, and a short sentence followed
+  by a long one leaves no hole. His mouth follows the sound itself, measured on
+  the desk as it plays. See [[Voice#How a sentence becomes sound]].
+- **Interrupting him starts the new reply at once.** Each sentence carries its
+  reply's generation number, so the server drops leftovers of the reply you cut
+  off instead of making them, and the desk doesn't wait for a sentence still
+  being fetched. While the engine is loading, the server says "not yet" (503)
+  straight away instead of holding the request for minutes. See
+  [[Voice#How a sentence becomes sound]].
 - **Timing in the log.** Each reply leaves three lines in the server log
   (`journalctl -u kit`): when his first words came, when the reply was done, and
   how long his first sound took to make, all counted from Dan's message.
@@ -93,7 +107,9 @@ word, speech to text) is the next part of stage 3.
 
    A fresh one: `uv venv -p 3.11 ~/kit-voice/.venv`, then
    `uv pip install -p ~/kit-voice/.venv/bin/python chatterbox-tts "setuptools<81"`
-   (setuptools still carries `pkg_resources`, which Chatterbox's watermarker needs).
+   (setuptools still carries `pkg_resources`, which the Perth watermarker
+   Chatterbox imports on start-up needs; Kit doesn't run the watermark, see
+   [[Voice#Faster on a graphics card]]).
 4. **Kit's voice clip.** Copy Heart's reference clip into the data folder (`kit paths`
    shows where it is), as `<data>/state/speech/kit_voice.wav`, or set
    `speech.engines.chatterbox-turbo.reference` to the clip's full path.
@@ -175,6 +191,9 @@ The engine's own messages go to `<data>/logs/speech.log`.
       line takes about a second.
 - [ ] `kit speech bench --engines chatterbox-turbo kokoro` writes the compare page;
       Turbo "keeps up".
+- [ ] With Turbo on the graphics card, `GET /api/speech` shows `cuda_graph: true`,
+      and `<data>/logs/speech.log` has no "no CUDA graph" line. Turbo is well
+      over twice as fast as real time in the bench.
 - [ ] `kit speech use chatterbox-turbo` and `kit speech on`, then in the desk app's
       chat, ask something. Kit starts speaking after his first sentence and the
       rest follows without gaps.
@@ -182,7 +201,20 @@ The engine's own messages go to `<data>/logs/speech.log`.
 - [ ] A one-sentence reply starts speaking about a second after its words would
       have shown, and the words appear as he says them.
 - [ ] Ask something, then send a new message while he's talking: he stops at
-      once, and the rest of what he was saying shows above your message.
+      once, and the rest of what he was saying shows above your message. His
+      new reply's first sound comes within about half a second of its first
+      words, not after the old sentence the engine was on.
+- [ ] A reply opening "Yeah, I had a look at that yesterday" is spoken as one
+      piece up to the next comma, not "Yeah," on its own.
+- [ ] `kit speech use chatterbox-turbo` while speech is on and Chatterbox is
+      not loaded: ask something at once. The words show unvoiced within a few
+      seconds (the server log shows `503`), a later reply is voiced, and nothing
+      waits for minutes.
+- [ ] With "Boop when Kit talks" on and his voice on, replies have no boop over
+      his first word; with his voice off, the boop is back.
+- [ ] In `<data>/logs/kit.log`, "first sound made in" for a short first sentence
+      is under what it was before (about 0.8 s on an RTX 2070 Super): no
+      watermark, and the speaker conditioning worked out once.
 - [ ] When Kit pipes up by himself, he says it out loud.
 - [ ] Untick "Show Kit's words as he says them" on the Look page: words appear as
       they stream in again, and he still speaks.
@@ -190,7 +222,22 @@ The engine's own messages go to `<data>/logs/speech.log`.
       then chat for a few turns. In `<data>/logs/kit.log`, each message's first
       `local model: read N tokens` line drops from thousands of tokens to a few
       hundred from the second message on, and replies start sooner.
-- [ ] Ask something that makes him grumpy or tired: Turbo opens with a groan or sigh.
+- [ ] Ask something that makes him grumpy or tired: some replies open with a
+      groan or a sigh, not all, and not always the same one.
+- [ ] Ask for something long (a paragraph): his first sound comes well before
+      the first sentence would have finished being made, and in
+      `<data>/logs/speech.log` nothing waits. In the server log, "first sound
+      made in" for a long first sentence is well under a second.
+- [ ] A short reply then a long one ("Yeah. The duty point sits high because...")
+      plays with no hole between the sentences.
+- [ ] Watch his mouth as he talks: it opens on his words and closes on the
+      pauses inside a sentence, and shuts as the sound ends, in Kit 3D and Kit
+      2D. With his voice off it pulses as before.
+- [ ] `curl -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"text":"Hi there."}' "http://<server>:8600/api/speech/say?wav=1" -o hi.wav`
+      saves a playable WAV (the whole-clip option for older desks and tools).
+- [ ] Send a new message while a long sentence is still being made: the server
+      log shows the old line cut short and the new reply's sound comes within
+      about half a second.
 - [ ] `kit speech off`: within a few seconds `nvidia-smi` shows the memory freed,
       and replies are silent.
 - [ ] `kit speech use kokoro` while speech is on: the next reply is in Kokoro's

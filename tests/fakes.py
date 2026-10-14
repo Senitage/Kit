@@ -10,22 +10,40 @@ from types import SimpleNamespace
 from kit.local_model import LocalModelError
 
 
-def reply(*says, emotion="happy", gesture="nod", action="none", text="", detail=""):
+def reply(
+    *says, emotion="happy", gesture="nod", action="none", text="", detail="", brought_up=(), **read
+):
+    """A canned reply. ``brought_up`` numbers the things on his mind it brings up; the
+    two-pass fake carries them into its plan (kit.reply.Plan). ``read`` is the model's
+    reading of Dan's message (intent, about_kit, said_it, crisis_candidate...;
+    kit.reply.READING_FIELDS), which goes in the reply JSON and into the plan a
+    two-pass reply makes from it."""
     return json.dumps(
         {
             "emotion": emotion,
             "segments": [{"say": s, "gesture": gesture} for s in says],
+            **read,
             "action": {"kind": action, "text": text},
             **({"detail": detail} if detail else {}),
+            **({"brought_up": list(brought_up)} if brought_up else {}),
         }
     )
 
 
-def plan(emotion="happy", gesture="nod", action="none", text=""):
+def plan(emotion="happy", gesture="nod", action="none", text="", brought_up=(), **read):
     """The first pass of a two-pass reply (kit.reply.Plan)."""
     return json.dumps(
-        {"emotion": emotion, "gesture": gesture, "action": {"kind": action, "text": text}}
+        {
+            "emotion": emotion,
+            "gesture": gesture,
+            **read,
+            "brought_up": list(brought_up),
+            "action": {"kind": action, "text": text},
+        }
     )
+
+
+REPLY_KEYS = {"emotion", "segments", "action", "detail"}
 
 
 class FakeModel:
@@ -88,6 +106,8 @@ class FakeModel:
             {
                 "emotion": data.get("emotion", "neutral"),
                 "gesture": segments[0].get("gesture", "none"),
+                **{k: v for k, v in data.items() if k not in REPLY_KEYS},  # its reading
+                "brought_up": data.get("brought_up", []),
                 "action": data.get("action", {"kind": "none"}),
             }
         )
@@ -153,21 +173,26 @@ class FakeMessages:
         n = len(owner.calls) - 1
         stop = owner.stop_reason[min(n, len(owner.stop_reason) - 1)]
         answer = owner.answers[min(n, len(owner.answers) - 1)]
+        calls = owner.tool_calls[n] if n < len(owner.tool_calls) else []
         return SimpleNamespace(
             model=kwargs["model"],
-            stop_reason=stop,
+            stop_reason="tool_use" if calls else stop,
             content=[
                 SimpleNamespace(type="thinking", thinking="hmm"),
                 *(
                     SimpleNamespace(type="server_tool_use", name="web_search", input={"query": q})
                     for q in owner.queries
                 ),
-                SimpleNamespace(type="text", text=answer),
+                *([SimpleNamespace(type="text", text=answer)] if answer else []),
+                *(
+                    SimpleNamespace(type="tool_use", id=f"call_{n}_{i}", name=name, input=args)
+                    for i, (name, args) in enumerate(calls)
+                ),
             ],
             usage=SimpleNamespace(
                 input_tokens=1000,
                 output_tokens=2000,
-                cache_creation_input_tokens=None,
+                cache_creation_input_tokens=owner.cache_creation_input_tokens or None,
                 cache_read_input_tokens=owner.cache_read_input_tokens,
                 server_tool_use=SimpleNamespace(web_search_requests=owner.searches),
             ),
@@ -183,15 +208,22 @@ class FakeAnthropic:
         error=None,
         stop_reason="end_turn",
         cache_read_input_tokens=0,
+        cache_creation_input_tokens=0,
         searches=0,
         queries=(),
+        tool_calls=(),
     ):
+        """``tool_calls``: per call, the tools the model asks for as (name, arguments)
+        pairs; a call with any becomes a tool_use turn (its answer, if any, is the
+        words said first)."""
         self.queries = list(queries)
+        self.tool_calls = [list(calls) for calls in tool_calls]
         self.gate = None  # set to an asyncio.Event to hold answers back
         self.answers = answer if isinstance(answer, list) else [answer]
         self.error = error
         self.stop_reason = stop_reason if isinstance(stop_reason, list) else [stop_reason]
         self.cache_read_input_tokens = cache_read_input_tokens
+        self.cache_creation_input_tokens = cache_creation_input_tokens
         self.searches = searches
         self.calls: list[dict] = []
         self.streamed = 0  # calls that streamed their answer
@@ -206,20 +238,51 @@ class FakeAnthropic:
         pass
 
 
+TEST_RATE = 1.5  # Australian dollars to one US dollar in tests: easy sums
+GPT = {"label": "GPT", "provider": "openai", "model": "gpt-6.1-sol", "effort": "low"}
+GEMINI = {"label": "Gemini", "provider": "google", "model": "gemini-3.8-flash", "effort": "low"}
+
+
+def models_with(changes: dict | None = None, **added) -> dict:
+    """The three starter models with GPT and Gemini beside them (a real Kit adds those
+    with `kit models add`), ``changes`` to any of them by name, and ``added`` ones."""
+    from kit.settings import STARTER_MODELS
+
+    models = {**STARTER_MODELS, "gpt-sol": GPT, "gemini-flash": GEMINI, **added}
+    for name, fields in (changes or {}).items():
+        models[name] = {**models[name], **fields}
+    return models
+
+
+def test_prices():
+    """The built-in price list at a round exchange rate, nothing fetched."""
+    from dataclasses import replace
+
+    from kit.prices import Prices
+
+    prices = Prices(None)
+    prices.table = replace(prices.table, aud_per_usd=TEST_RATE)
+    return prices
+
+
 def make_cloud(memory, claude=None, key="sk-test", **providers):
-    """A Cloud with a fake Claude (and any other providers given)."""
+    """A Cloud with a fake Claude (and any other providers given), costing calls at
+    the built-in prices and ``TEST_RATE``."""
     from kit.cloud import AnthropicProvider, Cloud
 
     claude = claude or FakeAnthropic()
     all_providers = {"anthropic": AnthropicProvider(claude.factory), **providers}
-    return Cloud(memory, lambda provider: key, all_providers)
+    return Cloud(memory, lambda provider: key, all_providers, test_prices())
 
 
 class Clock:
-    """A clock tests can move."""
+    """A clock tests can move. ``tz`` makes it zone-aware, as production's clock is
+    (``memory.local_now`` is ``datetime.now().astimezone()``, a fixed offset)."""
 
-    def __init__(self, when="2026-10-05T09:00:00"):
+    def __init__(self, when="2026-10-05T09:00:00", tz=None):
         self.now = datetime.fromisoformat(when)
+        if tz is not None and self.now.tzinfo is None:
+            self.now = self.now.replace(tzinfo=tz)
 
     def __call__(self):
         return self.now
@@ -228,6 +291,21 @@ class Clock:
 def collect(agen):
     async def run():
         return [e async for e in agen]
+
+    return asyncio.run(run())
+
+
+def chat_and_learn(brain, text, **kwargs):
+    """The turn's events, then the ``remembered`` events Kit published for the bodies
+    once the learning that follows a reply had settled. One event loop for both, since
+    learning runs as a background task of the brain's loop."""
+
+    async def run():
+        since = brain.life.state()["last_event"]
+        events = [e async for e in brain.chat(text, **kwargs)]
+        await brain.settle()
+        learned = [e for e in brain.life.events_after(since) if e["type"] == "remembered"]
+        return events, learned
 
     return asyncio.run(run())
 

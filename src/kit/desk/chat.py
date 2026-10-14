@@ -122,12 +122,14 @@ def details(meta: dict | None, source: str | None, at: str | None = None) -> lis
     rows.append(("As", ROLE_NAMES[tier_of(m)]))
     if source == "pipe_up":
         rows.append(("Said", "on his own"))
-    if "cost_usd" in m:
-        rows.append(("Cost", f"${m['cost_usd']:.3f}"))
+    if "cost_aud" in m:
+        rows.append(("Cost", f"A${m['cost_aud']:.3f}"))
+    elif "cost_usd" in m:  # a reply from before costs were kept in Australian dollars
+        rows.append(("Cost", f"US${m['cost_usd']:.3f}"))
     if m.get("searches"):
         rows.append(("Web searches", str(m["searches"])))
-    if "month_usd" in m:
-        rows.append(("This month", f"${m['month_usd']:.2f}"))
+    if "month_aud" in m:
+        rows.append(("This month", f"A${m['month_aud']:.2f}"))
     if stamp := when(at):
         rows.append(("Time", stamp))
     return rows
@@ -633,6 +635,25 @@ class ChatWindow(QWidget):
 
     def send(self, text: str) -> int:
         """Ask Kit something. Kit can be asked again before he answers."""
+        client = self.client
+        return self._ask(text, (lambda: client.chat(text)) if client is not None else None)
+
+    def listened(self, heard_turn: int, text: str) -> int:
+        """Kit's ears heard Dan talk to him (kit.heard): shown as Dan's line, and
+        Kit's reply streams in and is said aloud just like a typed one."""
+        client = self.client
+        if client is None or not heard_turn:
+            return 0
+        return self._ask(text, lambda: client.heard_turn(heard_turn))
+
+    def hush(self) -> None:
+        """Someone talked over Kit: his voice stops, and his words show in full."""
+        if self.speaker is not None:
+            self.speaker.stop()
+        for held in list(self._held):
+            self._show_said(held)
+
+    def _ask(self, text: str, stream) -> int:
         turn = next(self._turns)
         if self.speaker is not None:
             self.speaker.stop(turn)  # Dan's talking: Kit stops, and listens for his answer
@@ -643,8 +664,7 @@ class ChatWindow(QWidget):
         self._in_flight += 1
         self.state.emit("heard")  # a nod as it goes, then he thinks
         self._set_state("thinking")
-        client = self.client
-        if client is None:
+        if stream is None:
             self.on_event(
                 turn, {"type": "error", "message": "Kit isn't set up yet: open Settings."}
             )
@@ -653,7 +673,7 @@ class ChatWindow(QWidget):
 
         def work() -> None:
             try:
-                for event in client.chat(text):
+                for event in stream():
                     self._signals.event.emit(turn, event)
             except BrainError as e:
                 self._signals.event.emit(turn, {"type": "error", "message": str(e)})

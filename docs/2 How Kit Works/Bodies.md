@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/bodies]
 aliases: [Robot bodies, The arm, One brain many bodies]
 summary: One brain, many bodies - how the desk app, home_app, the Pod and later the arm all act out the same Kit, and what each body is.
-related: ["[[The Pod]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Life In Depth]]", "[[Face In Depth]]", "[[Roadmap]]"]
+related: ["[[The Pod]]", "[[Phone App]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Life In Depth]]", "[[Face In Depth]]", "[[Roadmap]]"]
 ---
 
 # Bodies
@@ -20,7 +20,7 @@ related: ["[[The Pod]]", "[[Pod In Depth]]", "[[Building the Pod]]", "[[Inner Li
 ```mermaid
 flowchart LR
     Brain["Brain: decides moods, sleep, replies, pipe-ups"]
-    Brain -- "events: mood, fidget, react, sleep, wake, look, pipe_up" --> Desk["Desk app"]
+    Brain -- "events: mood, fidget, react, sleep, wake, look, pipe_up, remembered, heard, hush" --> Desk["Desk app"]
     Brain -- "the same events" --> Home["home_app's Kit page"]
     Brain -- "the same, as plain lines" --> Pod["The Pod"]
     Brain -- "later" --> Arm["The arm"]
@@ -29,12 +29,26 @@ flowchart LR
 ```
 
 - Bodies listen to `GET /api/life/events`: fidgets, reactions, sleeping and
-  waking, mood changes, pipe-ups, and `look` events saying where the person his
-  eyes see is. See [[API]].
+  waking, mood changes, pipe-ups, what he remembered after a reply
+  (`remembered`), `look` events saying where the person his eyes see is,
+  `heard` when his ears heard someone talk to him (the body reads his reply as
+  it's made and says it) and `hush` when someone talks over him. See [[API]]
+  and [[Hearing]].
 - Each body draws his face from the same **character sheet**, picking the look
   its `use` table names (`desk`, `home_app`, `robot`). See [[Face]].
 - Each body plays the same **gestures** and **body moves** by name, scaled to
   what it can do.
+- A body can **say hello** when it starts (`POST /api/bodies/hello`) with what
+  it can do, and the brain answers with what *it* can do, so each side only
+  uses what the other has. The brain keeps a list of the bodies it has heard
+  from and when Dan last used each one, and drops one it hasn't heard from
+  for a day (so a body sending a new id every hello can't grow the list
+  forever; the same goes for the PCs the desk app reports from). Each PC
+  running the desk app is a body of its own. See [[Phone App#Saying hello]].
+- **One voice at a time.** When he pipes up, one body says it out loud: the PC
+  Dan's using; else the device he last talked through, like his phone while
+  he's out; else the PC he was last on. The rest only show the words. See
+  [[Desk App#What Kit learns from the PC]].
 
 ## The desk app
 
@@ -71,6 +85,28 @@ or his mood's posture. Fidgets stay on the screen.
 > room can hear him) is pull request #36. Next: a speaker and microphone in
 > the Pod, so he can talk and listen in the room, one voice at a time.
 
+## The phone
+
+Kit on Android: the body that goes out of the house with you, with his face
+at the top of the chat, his voice, and notifications for his pipe-ups. It
+pairs with a token of its own. See [[Phone App]].
+## Who can hear him
+
+Kit is one mind wherever you reach him, but how he talks depends on who can
+hear. **Out loud** (his voice at the desk, or the Pod) anyone in the room hears
+him, so he's told who his eyes see there, people and pets, and talks to them
+directly: "Hi Sam!", or "Milo, you'd better not eat me." **On a screen** only
+Dan reads him, so a hello for someone else goes through Dan: "tell Sam I said
+hi."
+
+- A message can say **who sent it**, so a visitor can talk to him themselves.
+  Out loud, if nobody says, it's the one person his eyes know in the room (when
+  that isn't Dan). The history keeps it: "(Sam said) hello Kit".
+- A pet gets its name when it's in the [[Register of Things]] as a pet with its
+  kind (like "cat") in its description, and it's the only pet of that kind.
+- When his first words are for someone in the room, bodies get a `turn_to`
+  line and face them while he talks. See [[Pod In Depth#The body feed]].
+
 ## The arm
 
 The last stage: Kit in a desk robot arm, with his face on a small screen in
@@ -98,6 +134,8 @@ little noise, so no two look the same.
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/life.py`: the events every body hears.
+> - `src/kit/body.py`: the plain-text body feed, chat moments and pats.
+> - `src/kit/audience.py`: who can hear him, and who his words are for.
 > - `src/kit/face/body.py`: body moves by name.
 > - `src/kit/face/characters/kit2d.json`: the `kit2d_screen` look the Pod draws.
 > - `src/kit/desk/alive.py`: how the desk acts out sleep, waking and glances.

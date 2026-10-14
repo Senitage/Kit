@@ -1,7 +1,7 @@
 ---
 tags: [guide, topic/running]
 aliases: [Cheat sheet, Start Kit, Stop Kit, Restart Kit, Run Kit, Everyday commands]
-summary: The everyday cheat sheet - what runs where, and the few commands to start, stop, restart, check and update Kit, his voice, his eyes, the desk app and the Pod.
+summary: The everyday cheat sheet - what runs where, and the few commands to start, stop, restart, check and update Kit, his voice, his eyes, his ears, the desk app and the Pod.
 related: ["[[Updating Kit]]", "[[Commands]]", "[[Settings and Data]]", "[[The Big Picture]]"]
 ---
 
@@ -12,7 +12,8 @@ Up: [[Home]] · Guides
 > [!ABSTRACT] In short
 > Kit's **brain** is a service on the server: `sudo systemctl restart kit`
 > restarts him and `kit check` says if anything's wrong. His **eyes** are
-> `kit eyes` on the PC with the webcam. The **desk app** and the **Pod** look
+> `kit eyes` on the PC with the webcam, and his **ears** `kit hearing` on the
+> PC with the mic. The **desk app** and the **Pod** look
 > after themselves: they reconnect on their own whenever the brain comes back.
 
 ## What runs where
@@ -23,12 +24,14 @@ Up: [[Home]] · Guides
 | **Local model** (Ollama) | Same server | Yes, as the `ollama` service | `sudo systemctl restart ollama` |
 | **Desk app** (tray face, chat) | The Windows desk PC | Yes, at logon | Tray menu > **Quit Kit**, then **Kit** from the Start menu |
 | **Eyes** (webcam) | The PC with the webcam | Only if you set up a logon task | Ctrl+C, then `kit eyes` again |
+| **Ears** (microphone) | The PC with the mic | Only if you set up a logon task | Ctrl+C, then `kit hearing` again |
 | **The Pod** | On the desk, on Wi-Fi | Yes, when it has power | Unplug and plug in the USB |
 
 ```mermaid
 flowchart LR
     Brain["Brain: the kit service"] --- Desk["Desk app"]
     Brain --- Eyes["kit eyes"]
+    Brain --- Ears["kit hearing"]
     Brain --- Pod["The Pod"]
     Brain --- Ollama["Ollama"]
 ```
@@ -131,6 +134,25 @@ kit eyes              # run them, headless; Ctrl+C stops them
 Only one program can use the webcam at a time, so stop `kit eyes` before
 `kit eyes enrol`. To start them with Windows, see
 [[Vision Stage 1#4. Open them]]. More in [[Eyes]].
+
+## His ears, on the PC with the mic
+
+In the same copy of Kit as the eyes:
+
+```powershell
+kit hearing           # run them; Ctrl+C stops them
+```
+
+| To... | Run |
+|---|---|
+| See whether they're listening | `kit hearing show` |
+| Switch them off (mic let go) / on | `kit hearing pause` / `kit hearing resume`, or **Let Kit hear me** in the tray menu |
+| List the microphones | `kit hearing mics` |
+| Introduce yourself / someone | `kit hearing enrol me` / `kit hearing enrol NAME` |
+| Whose voices they know | `kit hearing voices` |
+| Update them | `git pull`, then restart them |
+
+More in [[Hearing]] and [[Companion Stage 5]].
 
 ## The Pod
 

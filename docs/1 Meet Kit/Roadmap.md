@@ -32,11 +32,11 @@ flowchart LR
 | 0 Setup | Ubuntu on the GPU PC under WSL, Ollama, Tailscale, NAS mounts, API key, `kit check` | Done: [[Stage 0 - Server Setup]] |
 | 1 Text brain | Chat in a browser or terminal, memory, the register of things, local and cloud models, settings with undo | Done: [[Stage 1 - Text Brain]] |
 | 2 Desk app | Tray icon, floating face, chat, Kit's window, what's on the PC, the Chrome extension | Done: [[Stage 2 - Desk App]] |
-| 3 Voice and hearing | Part 1, his voice: done ([[Stage 3 - Voice]]). Part 2, hearing: microphone, wake word, speech to text | Part 1 done |
-| 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools | Next big stage |
+| 3 Voice and hearing | Part 1, his voice: done ([[Stage 3 - Voice]]). Part 2, hearing: microphone, his name as the wake word, speech to text, built as companion stage 5 ([[Companion Stage 5]]) | Done (#24, #42) |
+| 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools ([[Stage 4 - Tools]]) | Started: the tool loop is part A1 |
 | 5 NAS files and photos | NAS documents and photos as new memory sources | Planned |
 | 6 Notes, email, calendar | Gmail, Google Calendar, a daily brief (notes are already in) | Planned |
-| 7 Remote access | The phone as a first-class way in, notifications | Planned |
+| 7 Remote access | The phone as a first-class way in, notifications: the [[Phone App]] | Phase 0 (pairing, hello) open |
 | 8 Deeper smarts | Computer use and bigger jobs | Planned |
 | 9 The arm | Kit in a desk robot arm | Planned |
 
@@ -46,9 +46,9 @@ Some work runs beside the main line because it makes Kit feel alive sooner:
 
 - **Inner life**: feelings, thoughts, a notebook, nightly reflection. Done:
   [[Side Stage - Inner Life]].
-- **Companion**: stages 1 to 4 done ([[Companion Stage 1]],
-  [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]]);
-  stage 5, hearing, next.
+- **Companion**: stages 1 to 5 done ([[Companion Stage 1]],
+  [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]],
+  [[Companion Stage 5]]).
 - **Eyes**: stages 1 and 2 done ([[Vision Stage 1]], [[Vision Stage 2]]).
   Still to come: gestures and moods, a proper look at a still frame with a
   vision model, and eyes on a Raspberry Pi at the arm.

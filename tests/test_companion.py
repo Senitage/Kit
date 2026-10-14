@@ -41,7 +41,7 @@ from kit.pc_context import PcContext, Snapshot
 from kit.prompt import history_messages
 from kit.recall import Recall
 from kit.server import life_tick
-from kit.settings import OLD_PERSONA, Settings
+from kit.settings import Settings
 from kit.thinking import THOUGHT_SCHEMA
 
 # Life on its own
@@ -560,13 +560,10 @@ def test_his_state_after_a_restart():
     assert state["closeness"] == "at home" and state["goodbye"] == "off to the shops"
 
 
-def test_old_default_rules_and_knows_read_as_the_new_ones():
-    old = Settings.model_validate(
-        {"persona": {"rules": OLD_PERSONA["rules"][0], "knows": OLD_PERSONA["knows"][1]}}
-    )
-    new = Settings()
-    assert old.persona.rules == new.persona.rules and len(new.persona.rules) == 7
-    assert "partner and a cat" in old.persona.knows
+def test_the_default_persona_is_an_honest_friend_who_knows_only_what_hes_told():
+    persona = Settings().persona
+    assert len(persona.rules) == 7 and any("honest friend" in rule for rule in persona.rules)
+    assert "getting to know" in persona.knows  # no real biography in the public default
     mine = Settings.model_validate({"persona": {"rules": ["Be brief."]}})
     assert mine.persona.rules == ["Be brief."]
 
@@ -665,8 +662,10 @@ def test_back_at_the_desk_he_says_hello_without_guilt(memory):
     event = brain.life.events_after(0)[-1]
     assert event["type"] == "pipe_up" and event["reason"] == "back"
     assert brain.life.homecoming is None and not brain.life.awaiting_reply
+    # The hello's own facts say how long Dan was gone, so the time line stays out
+    # rather than saying it twice.
     system = model.calls[0][0]["content"]
-    assert "Dan came back to the PC at 10:51 am, after 51 minutes away." in system
+    assert "came back to the PC" not in system
 
 
 def test_a_hello_is_not_judged_for_saying_the_same_thing_as_last_time(memory):
@@ -717,7 +716,8 @@ def test_the_cloud_gets_his_mood_and_time_but_not_the_local_coaching(memory):
     brain, model, _ = make(memory, claude=claude, routing={"mode": "cloud-first"})
     collect(brain.chat("What's 17 times 23?"))
     system = " ".join(block["text"] for block in claude.calls[0]["system"])
-    assert "How you feel right now:" in system and "You and Dan:" in system
+    asked = claude.calls[0]["messages"][-1]["content"]  # this turn's part rides with the message
+    assert "How you feel right now:" in asked and "You and Dan:" in asked
     assert "The kind of thing you'd say" not in system and "Your last few lines" not in system
     assert "Examples of how you talk" in system
     assert "perk_up" in reactions(brain)  # the answer came back
@@ -920,28 +920,45 @@ def test_the_companion_eval_runs_at_five_in_the_afternoon():
     assert eval_clock() == datetime(2026, 10, 6, 17, 2)
 
 
-def test_what_is_true_about_him_reaches_his_spoken_words(memory):
+def test_what_is_true_about_him_is_beside_his_question(memory):
     brain, model, _ = make(memory, reply("Nope, no camera yet."))
     brain.pc.update(snap(idle=5))
     collect(brain.chat("Can you see me?"))
+    asked = model.calls[0][-1]["content"]
+    assert "About yourself" in asked and "your eyes aren't open" in asked
+    # The speaking step points back at the notes rather than saying them again.
     note = model.speak_calls[0][-1]["content"]
-    assert "Keep in mind: About yourself" in note and "your eyes aren't open" in note
+    assert "Keep to the notes above" in note and "About yourself" not in note
 
 
-def test_a_goodbye_reaches_his_spoken_words_too(memory):
+def test_the_speaking_step_says_the_asides_once_not_twice(memory):
     brain, model, _ = make(memory, reply("Enjoy it."))
     collect(brain.chat("Right, I'm off to lunch."))
-    assert "No question" in model.speak_calls[0][-1]["content"]
+    assert "No question" in model.calls[0][-1]["content"]
+    note = model.speak_calls[0][-1]["content"]
+    assert "No question" not in note and "You feel" not in note and "Your voice" not in note
 
 
-def test_a_hello_reaches_his_spoken_words(memory):
+def test_a_hello_reaches_his_spoken_words_through_the_prompt(memory):
     brain, model, _ = make(memory, reply("There you are. How was lunch?"))
     brain.pc.update(snap(idle=5))
     brain.life.said_goodbye("Off to lunch")
     brain.life.last_seen = brain.life.last_chat = memory.clock() - timedelta(minutes=50)
     brain.life.on_report()
     collect(brain.pipe_up("back"))
-    assert "lunch" in model.speak_calls[0][-1]["content"].split("Keep in mind:")[1]
+    assert "lunch" in model.calls[0][-1]["content"]
+    assert "lunch" not in model.speak_calls[0][-1]["content"]
+
+
+def test_when_the_plan_reads_a_question_as_about_him_the_speaking_step_gets_the_facts(memory):
+    """The words didn't catch it; the plan did, so what's true about him goes beside
+    the speaking step, the one new thing it carries."""
+    brain, model, _ = make(memory, reply("Still here, just quiet.", about_kit=True))
+    brain.pc.update(snap(idle=5))
+    collect(brain.chat("You've gone very quiet on me"))
+    assert "About yourself" not in model.calls[0][-1]["content"]
+    note = model.speak_calls[0][-1]["content"]
+    assert "About yourself" in note and "Also:" in note
 
 
 @pytest.mark.parametrize(
@@ -984,7 +1001,7 @@ def test_a_wrong_fact_and_news_get_an_honest_friend_aside(memory):
     collect(brain.chat("Had a big one at the shops today. Took forever to find a park."))
     assert "say so kindly and give the right answer" in model.calls[0][-1]["content"]
     assert "Show in a few words that you got it" in model.calls[1][-1]["content"]
-    assert "about this and nothing else" in model.speak_calls[1][-1]["content"]
+    assert "about this and nothing else" in model.calls[1][-1]["content"]
 
 
 def test_the_companion_eval_wants_a_huff_when_miffed_and_a_fresh_chat_each_time(memory):
@@ -1016,7 +1033,6 @@ def test_a_claim_to_agree_with_is_checked_by_the_cloud_and_he_says_it(memory):
     asked = claude.calls[0]
     assert "everyday claim" in asked["system"][0]["text"] and "tools" not in asked
     assert "You checked, and it's this: True." in model.calls[0][-1]["content"]
-    assert "it's this: True." in model.speak_calls[0][-1]["content"]
 
 
 def test_without_a_check_he_still_gets_the_honest_aside(memory):

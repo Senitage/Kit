@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from fakes import Clock, FakeAnthropic, FakeEmbedder, FakeModel, collect, make_cloud, reply
 from kit.brain import Brain
 from kit.memory import Memory
-from kit.pc_context import PcContext, Snapshot
+from kit.pc_context import FORGET_AFTER, PcContext, Snapshot
 from kit.recall import Recall
 from kit.server import create_app
 from kit.settings_store import SettingsStore
@@ -92,6 +92,17 @@ def test_a_gap_in_reports_is_not_counted_as_focus():
     assert sum(s.minutes for s in pc.spans) < 1
 
 
+def test_a_pc_not_heard_from_for_a_day_is_dropped():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap())
+    pc.update(snap(host="LAPTOP"))
+    assert set(pc.desks) == {"DESK", "LAPTOP"}
+    clock.now += FORGET_AFTER + timedelta(seconds=1)
+    pc.update(snap())
+    assert set(pc.desks) == {"DESK"}  # the laptop hasn't reported for a day
+
+
 def test_paused_and_locked_hide_the_screen():
     pc = PcContext(Clock())
     pc.update(snap(watching=False, windows=[], focus=None))
@@ -160,6 +171,24 @@ def test_other_questions_dont_look_at_the_pc(paths, question):
     memory.close()
 
 
+def test_in_cloud_only_mode_the_chat_model_sees_the_full_pc_picture(paths):
+    """What docs/2 How Kit Works/Privacy.md says: in cloud-only mode a question about
+    the PC goes to the chat model with every window title and tab, and look_at_pc is
+    offered to it. "Keep it local" still keeps the look on the local model."""
+    SettingsStore(paths).update({"routing": {"mode": "cloud-only"}}, "test")
+    brain, memory, claude = make_brain(paths, reply("Kept local."))
+    brain.pc.update(snap())
+    collect(brain.chat("what have I got open?"))
+    assert [c["model"] for c in claude.calls] == ["claude-haiku-5-5"]
+    asked = claude.calls[0]["messages"][-1]["content"]
+    assert "Open windows (3):" in asked and "pump.py - METTOOLS" in asked
+    collect(brain.chat("Morning"))
+    assert "look_at_pc" in [t["name"] for t in claude.calls[1]["tools"]]
+    collect(brain.chat("keep it local: what have I got open?"))
+    assert len(claude.calls) == 2 and "Open windows (3):" in brain.model.calls[0][-1]["content"]
+    memory.close()
+
+
 def test_look_at_pc_action_shows_the_detail_then_answers(paths):
     memory = Memory(paths.state_dir / "memory.db", Clock())
     model = FakeModel(
@@ -221,3 +250,60 @@ def test_check_again_after_a_pc_question_looks_again(paths):
     collect(brain.chat("how's the thickener?"))
     assert "fresh look" not in brain.model.calls[2][-1]["content"]
     memory.close()
+
+
+# Several PCs
+
+
+def test_a_locked_laptop_doesnt_hide_the_pc_dan_is_on():
+    clock = Clock()
+    pc = PcContext(clock)
+    for _ in range(4):
+        clock.now += timedelta(seconds=15)
+        pc.update(snap(host="DESK"))
+        pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "DESK" and pc.latest.host == "DESK"
+    assert pc.now_line("Dan").startswith("On Dan's PC right now: Visual Studio Code")
+    assert all(not s.away for s in pc.spans)  # the laptop's reports don't chop his day up
+    assert "other PC LAPTOP, locked" in pc.detail("Dan")
+    listed = {p["host"]: p["in_use"] for p in pc.as_dict("Dan")["pcs"]}
+    assert listed == {"DESK": True, "LAPTOP": False}
+
+
+def test_dan_moves_to_the_other_pc():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP", app="Excel", title="Budget.xlsx", idle=400))
+    assert pc.host() == "DESK"  # the laptop's idle
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="DESK", idle=20))
+    pc.update(snap(host="LAPTOP", app="Excel", title="Budget.xlsx", idle=1))
+    assert pc.host() == "LAPTOP" and pc.spans[-1].app == "Excel"
+
+
+def test_away_only_once_every_pc_is_idle():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP"))
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "DESK" and not pc.latest.locked
+    clock.now += timedelta(seconds=10)
+    pc.update(snap(host="DESK", locked=True))
+    assert pc.latest.locked  # both locked: he's away, and the PC he used last counts
+    assert pc.host() == "LAPTOP"  # the one he was on last
+    assert pc.now_line("Dan").endswith("PC is locked.")
+
+
+def test_a_pc_that_stops_reporting_drops_out():
+    clock = Clock()
+    pc = PcContext(clock)
+    pc.update(snap(host="DESK"))
+    pc.update(snap(host="LAPTOP", locked=True))
+    clock.now += timedelta(minutes=4)
+    pc.update(snap(host="LAPTOP", locked=True))
+    assert pc.host() == "LAPTOP" and pc.online() and pc.others() == []

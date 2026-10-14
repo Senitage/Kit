@@ -80,7 +80,7 @@
 			"x": -1120,
 			"y": 40,
 			"width": 400,
-			"height": 800,
+			"height": 1180,
 			"color": "5"
 		},
 		{
@@ -120,13 +120,31 @@
 			"height": 150
 		},
 		{
+			"id": "hearing",
+			"type": "text",
+			"text": "### [[Hearing]]\nThe microphone program: answers his name, stops when talked over, words never sound.",
+			"x": -1080,
+			"y": 840,
+			"width": 320,
+			"height": 150
+		},
+		{
+			"id": "phone",
+			"type": "text",
+			"text": "### [[Phone App]]\nKit on Android: the body that leaves the house with you.",
+			"x": -1080,
+			"y": 1030,
+			"width": 320,
+			"height": 150
+		},
+		{
 			"id": "g-brain",
 			"type": "group",
 			"label": "The brain, on the server",
 			"x": -660,
 			"y": 40,
 			"width": 760,
-			"height": 800,
+			"height": 990,
 			"color": "4"
 		},
 		{
@@ -385,6 +403,15 @@
 			"y": 1542,
 			"width": 320,
 			"height": 150
+		},
+		{
+			"id": "tools",
+			"type": "text",
+			"text": "### [[Tools and Packs]]\nThe tool loop: the model asks, the brain runs it, he answers from the result. New abilities come as packs.",
+			"x": -620,
+			"y": 840,
+			"width": 680,
+			"height": 150
 		}
 	],
 	"edges": [
@@ -403,6 +430,14 @@
 			"toNode": "brain",
 			"toSide": "left",
 			"label": "the scene, in words"
+		},
+		{
+			"id": "hearing-brain",
+			"fromNode": "hearing",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "what was said, in words"
 		},
 		{
 			"id": "apps-brain",
@@ -494,6 +529,22 @@
 			"fromSide": "bottom",
 			"toNode": "pod",
 			"toSide": "top"
+		},
+		{
+			"id": "phone-brain",
+			"fromNode": "phone",
+			"fromSide": "right",
+			"toNode": "brain",
+			"toSide": "left",
+			"label": "chat and hello, over Tailscale"
+		},
+		{
+			"id": "brain-tools",
+			"fromNode": "brain",
+			"fromSide": "bottom",
+			"toNode": "tools",
+			"toSide": "top",
+			"label": "a tool call, a result"
 		}
 	]
 }

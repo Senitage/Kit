@@ -2,10 +2,14 @@
 
 The desk app (Windows) sends a snapshot every few seconds: which window has
 focus, what else is open, how long since he touched the keyboard or mouse, and
-the PC's health. With Kit's Chrome extension installed it also carries the
-browser's tabs, and the focused browser window names the site Dan is on. No
-screenshots, only window titles, app names and tab addresses; titles from
-hidden apps or with hidden words are blanked on the PC before they're sent.
+the PC's health. Dan may have the desk app on several PCs: Kit keeps each PC's
+latest report, and "Dan's PC" is the one he's using now (or used last), so a
+locked laptop in the other room doesn't make Kit think he's gone. He counts as
+away only once every PC is locked, idle or quiet. With Kit's Chrome extension
+installed a report also carries the browser's tabs, and the focused browser
+window names the site Dan is on. No screenshots, only window titles, app names
+and tab addresses; titles from hidden apps or with hidden words are blanked on
+the PC before they're sent.
 
 Kit sees a one-line "right now" in every prompt, and the ``look_at_pc`` action
 gives him the full picture: every open window, what has had focus over the
@@ -25,7 +29,10 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
+from kit.when import how_long
+
 STALE_AFTER = timedelta(minutes=3)  # the desk app reports every few seconds
+FORGET_AFTER = timedelta(days=1)  # a PC not heard from for this long is dropped
 AWAY_AFTER_S = 300  # no keyboard or mouse for this long counts as away
 KEEP_FOR = timedelta(hours=16)
 MAX_WINDOWS = 40
@@ -118,14 +125,6 @@ class Span:
         return (self.end - self.start).total_seconds() / 60
 
 
-def _mins(minutes: float) -> str:
-    if minutes < 1:
-        return "under a minute"
-    if minutes < 90:
-        return f"{round(minutes)} min"
-    return f"{minutes / 60:.1f} h"
-
-
 def _title(w: Window) -> str:
     text = f'{w.app}: "{w.title}"' if w.title else w.app
     return f"{text} ({w.site})" if w.site else text
@@ -169,19 +168,86 @@ def health_line(s: System, apps: bool = True) -> str:
     return line
 
 
+def away_on(snap: Snapshot) -> bool:
+    """Dan isn't using this PC: it's locked, idle, or he's paused watching."""
+    return snap.locked or snap.idle_seconds >= AWAY_AFTER_S or not snap.watching
+
+
+@dataclass
+class Desk:
+    """One PC's latest report, and when Dan was last using it."""
+
+    snap: Snapshot
+    seen: datetime
+    used: datetime | None  # the last report that found him using it
+
+
+def _state(snap: Snapshot) -> str:
+    if snap.locked:
+        return "locked"
+    if not snap.watching:
+        return "with watching paused"
+    if snap.idle_seconds >= AWAY_AFTER_S:
+        return f"idle for {how_long(snap.idle_seconds / 60)}"
+    return f"in use ({snap.focus.app if snap.focus else 'the desktop'})"
+
+
 class PcContext:
-    """The latest snapshot from Dan's PC, and today's focus history built from them."""
+    """The latest snapshot from each of Dan's PCs, which one he's on, and today's
+    focus history built from that one."""
 
     def __init__(self, clock: Callable[[], datetime] = datetime.now) -> None:
         self.clock = clock
-        self.latest: Snapshot | None = None
-        self.seen: datetime | None = None
+        self.desks: dict[str, Desk] = {}  # by the PC's name (Snapshot.host)
         self.spans: list[Span] = []
+
+    def _pick(self, now: datetime) -> Desk | None:
+        """The PC that counts as "Dan's PC" right now: of those still reporting, the
+        one he's using (the most recently touched, if several), else the one he
+        used last; if none is reporting, whichever reported last."""
+        if not self.desks:
+            return None
+        live = [d for d in self.desks.values() if now - d.seen <= STALE_AFTER]
+        if not live:
+            return max(self.desks.values(), key=lambda d: d.seen)
+        in_use = [d for d in live if not away_on(d.snap)]
+        if in_use:
+            return min(in_use, key=lambda d: (d.snap.idle_seconds, -d.seen.timestamp()))
+        return max(live, key=lambda d: (d.used is not None, d.used or d.seen, d.seen))
+
+    def current(self) -> Desk | None:
+        return self._pick(self.clock())
+
+    @property
+    def latest(self) -> Snapshot | None:
+        desk = self.current()
+        return desk.snap if desk else None
+
+    @property
+    def seen(self) -> datetime | None:
+        desk = self.current()
+        return desk.seen if desk else None
+
+    def host(self) -> str | None:
+        """The name of the PC Dan is on (or was last on), if any PC has reported."""
+        desk = self.current()
+        return desk.snap.host if desk else None
+
+    def others(self) -> list[Desk]:
+        """The PCs still reporting besides Dan's current one."""
+        now, chosen = self.clock(), self.current()
+        return [d for d in self.desks.values() if d is not chosen and now - d.seen <= STALE_AFTER]
 
     def update(self, snap: Snapshot) -> None:
         now = self.clock()
-        self.latest, self.seen = snap, now
-        away = snap.locked or snap.idle_seconds >= AWAY_AFTER_S or not snap.watching
+        old = self.desks.get(snap.host)
+        away = away_on(snap)
+        used = old.used if old and away else (None if away else now)
+        self.desks[snap.host] = Desk(snap, now, used)
+        for host in [h for h, d in self.desks.items() if now - d.seen > FORGET_AFTER]:
+            del self.desks[host]  # a PC gone a day (or a desk app sending made-up names)
+        if self.current() is not self.desks[snap.host]:
+            return  # another PC is the one Dan's on; its reports draw his day
         f = None if away else snap.focus
         app, title, site = (f.app, f.title, f.site) if f else ("", "", "")
         last = self.spans[-1] if self.spans else None
@@ -198,7 +264,9 @@ class PcContext:
         self.spans = [s for s in self.spans if s.end >= cutoff]
 
     def online(self) -> bool:
-        return self.seen is not None and self.clock() - self.seen <= STALE_AFTER
+        """Some PC's desk app is reporting."""
+        now = self.clock()
+        return any(now - d.seen <= STALE_AFTER for d in self.desks.values())
 
     def now_line(self, owner: str) -> str:
         """One line for every prompt; empty if the desk app has never reported."""
@@ -217,12 +285,12 @@ class PcContext:
             line += _title(snap.focus)
             span = self.spans[-1] if self.spans else None
             if span and not span.away and span.minutes >= 1:
-                line += f", for {_mins(span.minutes)}"
+                line += f", for {how_long(span.minutes)}"
         else:
             line += "the desktop"
         line += "."
         if snap.idle_seconds >= 60:
-            line += f" No keyboard or mouse for {_mins(snap.idle_seconds / 60)}."
+            line += f" No keyboard or mouse for {how_long(snap.idle_seconds / 60)}."
         focus_app = snap.focus.app if snap.focus else None
         others = list(dict.fromkeys(w.app for w in snap.windows if w.app != focus_app))
         if others:
@@ -250,7 +318,7 @@ class PcContext:
         else:
             lines.append(f"In focus: {_title(snap.focus) if snap.focus else 'the desktop'}.")
             if snap.idle_seconds >= 60:
-                lines.append(f"No keyboard or mouse for {_mins(snap.idle_seconds / 60)}.")
+                lines.append(f"No keyboard or mouse for {how_long(snap.idle_seconds / 60)}.")
             if snap.windows:
                 lines.append(f"Open windows ({len(snap.windows)}):")
                 for w in snap.windows[:MAX_WINDOWS]:
@@ -277,6 +345,11 @@ class PcContext:
         if snap.system:
             health = health_line(snap.system, apps=snap.watching)
             lines.append(f"PC health: {health}.")
+        for other in self.others():
+            lines.append(
+                f"Also reporting: {owner}'s other PC {other.snap.host or '(unnamed)'}, "
+                f"{_state(other.snap)}."
+            )
         return "\n".join(lines)
 
     def _summary(self, since: datetime, until: datetime, titles: bool) -> list[str]:
@@ -298,15 +371,15 @@ class PcContext:
         for app, m in sorted(per_app.items(), key=lambda x: -x[1]):
             if m < 0.5:
                 continue
-            line = f"- {app}: {_mins(m)}"
+            line = f"- {app}: {how_long(m)}"
             if titles:
                 top = sorted(per_title[app].items(), key=lambda x: -x[1])[:3]
-                named = [f'"{t}" ({_mins(tm)})' for t, tm in top if t and tm >= 0.5]
+                named = [f'"{t}" ({how_long(tm)})' for t, tm in top if t and tm >= 0.5]
                 if named:
                     line += ", on " + ", ".join(named)
             lines.append(line)
         if away >= 1:
-            lines.append(f"- away or paused: {_mins(away)}")
+            lines.append(f"- away or paused: {how_long(away)}")
         return lines
 
     def _sites(self, since: datetime, until: datetime) -> list[str]:
@@ -316,10 +389,21 @@ class PcContext:
             if s.site and end > start:
                 per_site[s.site] += (end - start).total_seconds() / 60
         top = sorted(per_site.items(), key=lambda x: -x[1])[:MAX_SITES]
-        return [f"- {site}: {_mins(m)}" for site, m in top if m >= 0.5]
+        return [f"- {site}: {how_long(m)}" for site, m in top if m >= 0.5]
 
     def as_dict(self, owner: str) -> dict:
+        now = self.clock()
         return {
+            "host": self.host(),
+            "pcs": [
+                {
+                    "host": d.snap.host,
+                    "seen": d.seen.isoformat(),
+                    "online": now - d.seen <= STALE_AFTER,
+                    "in_use": not away_on(d.snap),
+                }
+                for d in self.desks.values()
+            ],
             "seen": self.seen.isoformat() if self.seen else None,
             "online": self.online(),
             "snapshot": self.latest.model_dump() if self.latest else None,

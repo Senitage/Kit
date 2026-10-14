@@ -23,12 +23,15 @@ tests can drive it frame by frame.
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, fields
 
 from kit.face.character import Character, builtin, current
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,16 @@ CLIPS: dict[str, GestureClip] = {name: _clip(builtin(), name) for name in builti
 _POSE_KEYS = [f.name for f in fields(Pose)]
 
 
+_said_unknown: set[tuple[str, str]] = set()
+
+
+def _unknown(kind: str, name: object) -> None:
+    key = (kind, repr(name))
+    if key not in _said_unknown:
+        _said_unknown.add(key)
+        log.warning("the brain sent an %s this face doesn't know, %r; showing none", kind, name)
+
+
 @dataclass
 class Face:
     """Kit's face. Tell it what is happening; call ``tick`` once per frame."""
@@ -160,8 +173,29 @@ class Face:
         self._dials = [0.5, 0.0]  # eased toward the values above
         self._breath: float | None = None  # breathing phase, radians
         self._colour: list[float] | None = None  # the glow colour, eased between moods
+        # How loud his voice is right now (0..1), from the sound itself, while it's
+        # playing; None when nothing is driving the mouth, and the pulse stands in.
+        self.talk_level: float | None = None
 
     # ---- what the desk app (or the arm) tells the face ----
+
+    def known_emotion(self, name: object) -> str:
+        """``name`` if this character has that pose, else "neutral". For names that
+        come from the brain: a newer brain's new emotion reaches an app that hasn't
+        been updated yet, and a plain face is better than an error part way
+        through showing his reply. Said once per name in the log."""
+        if name in self._ch.emotions:
+            return str(name)
+        _unknown("emotion", name)
+        return "neutral"
+
+    def known_gesture(self, name: object) -> str:
+        """``name`` if this character has that gesture, else "none" (see
+        ``known_emotion``)."""
+        if name in self._ch.gestures:
+            return str(name)
+        _unknown("gesture", name)
+        return "none"
 
     def set_emotion(self, name: str, now: float, hold_s: float | None = None) -> None:
         """Ease toward an emotion's pose; after ``hold_s`` seconds drift back to neutral."""
@@ -185,6 +219,11 @@ class Face:
         if state not in STATES:
             raise ValueError(f"unknown state {state!r}")
         self.state = state
+
+    def talk(self, level: float | None) -> None:
+        """How loud his voice is this instant (0..1), so his mouth follows the sound
+        itself rather than a pulse; None hands the mouth back to the pulse."""
+        self.talk_level = None if level is None else _clamp(level, 0, 1)
 
     def set_dials(self, arousal: float, valence: float) -> None:
         """How lively (0 flat .. 1 up) and how happy (-1 low .. 1 happy) Kit is. The
@@ -258,7 +297,9 @@ class Face:
         c = self._cur
         open_ = max(0.0, (c["open"] + g.open) * blink)
         talk = 0.0
-        if self.state == "speaking":
+        if self.talk_level is not None:
+            talk = self.talk_level
+        elif self.state == "speaking":
             talk = 0.25 + 0.55 * abs(math.sin(now * 11.8) * math.sin(now * 18.9 + 1))
         return FaceFrame(
             open_left=open_ * max(0.0, 1 + c["asym"] * 0.45),

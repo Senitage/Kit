@@ -57,7 +57,7 @@ firewall rule is needed.
   so they sound like the same Kit. Cloud answers can carry written detail (code,
   steps, sources) that shows on screen but isn't spoken. See section 3 for
   choosing models. `kit memory spend` shows the month's spend, and Kit stops
-  using cloud models once `cloud.monthly_cap_usd` is reached (default $40).
+  using cloud models once `cloud.monthly_cap_aud` is reached (default A$60).
 - **Memory** (how it works is in [[Memory In Depth]]):
   - Every turn, Kit searches what it knows for anything relevant to your
     message, by words and by meaning, and sees those memories with their
@@ -65,9 +65,10 @@ firewall rule is needed.
     Documents/Finance/Tax".
   - When you mention something it can't see, Kit searches deeper before
     answering, and says plainly when it doesn't know.
-  - "Remember that ..." saves a fact straight away. If Kit already knows it, it
-    doesn't save a copy; if it changes something ("I sold the Hilux"), the old
-    fact is replaced and kept in its history.
+  - "Remember that ..." saves a fact once the reply is out (the desk app shows
+    "Remembered: ..." when it's done). If Kit already knows it, it doesn't
+    save a copy; if it changes something ("I sold the Hilux"), the old fact is
+    replaced and kept in its history.
   - At the end of each day Kit writes a summary of the day and learns its
     facts the same way. Old conversations are searchable too.
   - Pin a fact to keep it always in mind.
@@ -127,7 +128,8 @@ firewall rule is needed.
 
 ## 3. Choose the models and how much stays local
 
-`kit models` shows the model profiles, what each costs, and which one does what:
+`kit models` shows your models, what each costs today (in Australian dollars,
+from a price list Kit fetches daily), and which one does what:
 
 - **work** answers real questions and does the web searches (default `sonnet`,
   Claude Sonnet 5.5).
@@ -150,17 +152,22 @@ kit config set persona.timezone Australia/Sydney
 Claude can also open a page it found (for a forecast, the weather service's
 own page) instead of trusting an old search snippet.
 
-Built-in profiles are `sonnet`, `opus`, `haiku` (Claude Haiku 5.5, about a
-twentieth of Sonnet's price), `gpt-sol` (OpenAI GPT-6.1 Sol) and
-`gemini-flash` (Google Gemini 3.8 Flash). Switch with one command; it applies
+A new Kit starts with `haiku` (Claude Haiku 5.5, about a twentieth of
+Sonnet's price), `sonnet` and `opus`. They're a starting list, not presets:
+add any model you like and take out the ones you don't use. Switching applies
 from the next message:
 
 ```
+kit models add gpt-sol --provider openai --model gpt-6.1-sol     # any model
+kit models add gemini --provider google --model gemini-3.8-flash
 kit models work gpt-sol                 # GPT does the work from now on
 kit models expert sonnet                # no separate expert
+kit models remove opus                  # once no role uses it
 kit config set models.sonnet.effort medium     # think harder (costs more)
-kit config set models.gemini-flash.input_usd_per_mtok 1.5   # prices change
 ```
+
+Prices aren't settings: Kit fetches the price list and the exchange rate
+daily (`kit models prices` does it now), so `kit models` always shows today's.
 
 Each provider needs its own API key in the secrets folder, the same way as the
 Anthropic key in stage 0: `openai_api_key` from platform.openai.com, or
@@ -278,6 +285,10 @@ run `sudo systemctl restart kit`.
       worded differently from the facts and 3 about things it was never told.
       It needs 10/10 recalled, 3/3 with nothing recalled, and a tidy memory
       (no stale or duplicate facts). Your real memory isn't touched.
+- [ ] **The right fact still wins:** once Kit has been running a while, put a
+      few questions about what he knows in `config/memory-questions.toml`
+      (see [[Evals]]) and run `kit eval memory --replay` on last night's
+      backup in `backups/`. Every question should say `ok`.
 - [ ] **Chats while it works:** ask something slow ("think hard about the
       best way to size a thickener for 200 t/h, with the maths"). While it's
       working, ask "how are you going?". The local model answers straight
@@ -347,7 +358,7 @@ target = "Tax/2023"       # part of the link the answer should come from
   (try 0.45). If unknown questions recall unrelated facts, raise it.
 - **Status says "words only":** the embedding model isn't answering. Check
   `ollama list` shows `nomic-embed-text`, then run `kit memory reindex`.
-- **Kit says the cloud budget is used up:** raise `cloud.monthly_cap_usd`, or
+- **Kit says the cloud budget is used up:** raise `cloud.monthly_cap_aud`, or
   wait for the new month.
 - **Too much goes to the cloud (or too little):** move `routing.mode` one step
   towards `local-heavy` (or `cloud-first`). In `balanced`, adding a persona

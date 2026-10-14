@@ -10,8 +10,10 @@ from fakes import (
     FakeEmbedder,
     FakeModel,
     FakeWeather,
+    chat_and_learn,
     collect,
     make_cloud,
+    models_with,
     reply,
 )
 from kit.brain import Brain, route
@@ -42,6 +44,8 @@ def make(memory, *outputs, settings=None, claude=None, error=None, embedder=None
 
 
 def settings_with(**sections):
+    if "models" in sections:  # the list is whole: the starters stay beside yours
+        sections["models"] = models_with(**sections["models"])
     return Settings.model_validate({"memory": {"min_similarity": 0.3}, **sections})
 
 
@@ -158,9 +162,9 @@ def test_remember_action_learns(memory):
     brain, _, _ = make(
         memory, reply("Got it.", action="remember", text="Emma's birthday is 14 March.")
     )
-    events = collect(brain.chat("Remember Emma's birthday is 14 March"))
-    got = next(e for e in events if e["type"] == "remembered")
-    assert got["decision"] == "new" and got["fact"] == "Emma's birthday is 14 March."
+    events, learned = chat_and_learn(brain, "Remember Emma's birthday is 14 March")
+    assert not [e for e in events if e["type"] == "remembered"]  # not on the chat path
+    assert learned[0]["decision"] == "new" and learned[0]["fact"] == "Emma's birthday is 14 March."
     assert memory.facts()[0].text == "Emma's birthday is 14 March."
 
 
@@ -171,8 +175,8 @@ def test_remember_action_updates(memory):
         reply("Nice.", action="remember", text="Dan now drives a Ranger."),
         decision("update", 1, "Dan drives a Ford Ranger."),
     )
-    events = collect(brain.chat("I traded the Hilux for a Ranger"))
-    got = next(e for e in events if e["type"] == "remembered")
+    _, learned = chat_and_learn(brain, "I traded the Hilux for a Ranger")
+    got = learned[0]
     assert got["decision"] == "update" and got["replaced"] == "Dan drives a Hilux."
     assert [f.text for f in memory.facts()] == ["Dan drives a Ford Ranger."]
 
@@ -189,12 +193,11 @@ def test_only_what_dan_said_is_remembered(memory):
         reply("Nice."),
         reply("Got it.", action="remember", text="Dan's sister Sarah's birthday is 12 March."),
     )
-    events = collect(brain.chat("Good night."))
-    assert not [e for e in events if e["type"] == "remembered"] and memory.facts() == []
-    collect(brain.chat("My sister Sarah's birthday is 12 March."))
-    events = collect(brain.chat("Remember that."))  # said a message ago counts
-    got = next(e for e in events if e["type"] == "remembered")
-    assert got["fact"] == "Dan's sister Sarah's birthday is 12 March."
+    _, learned = chat_and_learn(brain, "Good night.")
+    assert learned == [] and memory.facts() == []
+    chat_and_learn(brain, "My sister Sarah's birthday is 12 March.")
+    _, learned = chat_and_learn(brain, "Remember that.")  # said a message ago counts
+    assert learned[0]["fact"] == "Dan's sister Sarah's birthday is 12 March."
 
 
 def test_local_model_hands_off_with_memories(memory):
@@ -206,17 +209,20 @@ def test_local_model_hands_off_with_memories(memory):
     handing = next(e for e in events if e["type"] == "handing_off")
     assert handing["to"] == "Sonnet" and handing["question"] == "Kalman maths?"
     last = events[-1]
-    assert last["source"] == "cloud" and last["cost_usd"] > 0 and last["label"] == "Sonnet"
+    assert last["source"] == "cloud" and last["cost_aud"] > 0 and last["label"] == "Sonnet"
     kept = json.loads(memory.recent(1)[0].meta_json)  # for the desk chat's colours and details
-    assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_usd"] > 0
+    assert kept["role"] == last["role"] and kept["label"] == "Sonnet" and kept["cost_aud"] > 0
     call = claude.calls[0]
     assert call["model"] == "claude-sonnet-5-5"
-    assert call["messages"][-1]["content"] == "Explain Kalman filters properly"
-    fixed, this_turn = (block["text"] for block in call["system"])
-    assert "flotation model" in this_turn and "search the web" in fixed
-    system = fixed + this_turn
-    assert "ask_cloud" not in system  # nowhere further to hand it but the expert
-    assert "ask_expert" in system
+    # The fixed instructions are the (cached) system prompt; this turn's part, the
+    # time and memories, rides with Dan's message so the cache holds between turns.
+    (fixed,) = (block["text"] for block in call["system"])
+    asked = call["messages"][-1]["content"]
+    assert asked.endswith("\n\nExplain Kalman filters properly")
+    assert "flotation model" in asked and "It is Monday" in asked
+    assert "search the web" in fixed and "It is" not in fixed and "flotation" not in fixed
+    assert "ask_cloud" not in fixed  # nowhere further to hand it but the expert
+    assert "ask_expert" in fixed
     assert memory.recent(1)[0].source == "cloud"
 
 
@@ -256,7 +262,7 @@ def test_saying_ask_claude_skips_the_local_model(memory):
     events = collect(brain.chat("Ask Claude why the sky is blue"))
     assert model.calls == []
     assert events[0] == {"type": "say", "text": "Sure, asking Sonnet."}
-    assert claude.calls[0]["messages"][-1]["content"] == "Ask Claude why the sky is blue"
+    assert claude.calls[0]["messages"][-1]["content"].endswith("Ask Claude why the sky is blue")
     assert events[-1]["source"] == "cloud"
 
 
@@ -321,8 +327,8 @@ def test_cloud_reply_json_is_used_and_can_remember(memory):
     )
     s = settings_with(routing={"mode": "cloud-first"})
     brain, _, _ = make(memory, settings=s, claude=FakeAnthropic(answer=answer))
-    events = collect(brain.chat("Remember Emma's birthday is 14 March"))
-    assert next(e for e in events if e["type"] == "remembered")["decision"] == "new"
+    _, learned = chat_and_learn(brain, "Remember Emma's birthday is 14 March")
+    assert learned[0]["decision"] == "new"
     assert memory.facts()[0].text == "Emma's birthday is 14 March."
 
 
@@ -593,6 +599,38 @@ def test_weather_question_is_answered_locally_from_the_forecast(memory):
     assert not claude.calls
 
 
+def test_the_forecast_is_fetched_while_kit_recalls(memory):
+    """The forecast lookup (200 ms to 15 s) starts before recall, not after it."""
+
+    class SlowEmbedder(FakeEmbedder):
+        busy = False
+
+        async def embed(self, texts, purpose):
+            self.busy = True
+            await asyncio.sleep(0)  # a real embedder waits on Ollama
+            self.busy = False
+            return await super().embed(texts, purpose)
+
+    class WatchingWeather(FakeWeather):
+        def __init__(self, embedder):
+            super().__init__()
+            self.embedder, self.while_embedding = embedder, None
+
+        async def forecast(self, place, country=""):
+            self.while_embedding = self.embedder.busy
+            return await super().forecast(place, country)
+
+    embedder = SlowEmbedder()
+    brain, model, claude = make(
+        memory, reply("Clear tonight."), settings=Settings.model_validate(HOME), embedder=embedder
+    )
+    brain.weather = WatchingWeather(embedder)
+    events = collect(brain.chat("What's the weather like tonight?"))
+    assert brain.weather.while_embedding is True
+    assert next(e for e in events if e["type"] == "weather")["place"] == "Richmond, NSW"
+    assert "Forecast for Richmond, NSW" in model.calls[0][0]["content"]
+
+
 def test_engineering_temperatures_are_not_weather(memory):
     brain, model, _ = make(memory, reply("Hi."), settings=Settings.model_validate(HOME))
     brain.weather = FakeWeather()
@@ -720,7 +758,7 @@ def test_local_replies_get_a_mood_fresh_examples_and_recent_lines(memory, clock)
     collect(brain.chat("Morning Kit"))
     first = model.calls[0][0]["content"]
     assert "How you feel right now:" in first and "haven't talked for 5 hours" in first
-    assert "never reuse these lines" in first
+    assert "The kind of thing you'd say" in first
     collect(brain.chat("whats up?"))
     collect(brain.chat("ok"))
     third = model.calls[2][0]["content"]
@@ -733,7 +771,7 @@ def test_examples_change_from_turn_to_turn(memory):
     brain, model, _ = make(memory, *[reply("Hi.")] * 6)
     for _ in range(6):
         collect(brain.chat("hi"))
-    shown = {c[0]["content"].split("never reuse these lines):")[1][:300] for c in model.calls}
+    shown = {c[0]["content"].split("your own words each time):")[1][:300] for c in model.calls}
     assert len(shown) > 1
 
 
@@ -748,29 +786,32 @@ def test_an_earlier_answer_to_the_same_words_is_not_recalled(memory):
     assert "Coffee first?" not in model.calls[2][0]["content"]
 
 
-def test_a_long_quiet_starts_a_new_chat(memory, clock):
+def test_a_long_quiet_is_a_hint_in_the_prompt_not_a_cut(memory, clock):
     brain, model, _ = make(memory, reply("API key stuff."), reply("Hi."), reply("Yo."))
     collect(brain.chat("let's test the API key"))
-    clock.now += timedelta(minutes=30)
+    clock.now += timedelta(minutes=20)
     collect(brain.chat("still there?"))
-    assert len(model.calls[1]) > 2  # half an hour: same conversation
+    assert len(model.calls[1]) > 2  # twenty minutes: same conversation, nothing to mark
+    assert not model.calls[1][-1]["content"].startswith("(")
     clock.now += timedelta(hours=3)
     collect(brain.chat("hey"))
-    assert len(model.calls[2]) == 2  # just the system prompt and "hey"
+    assert len(model.calls[2]) > 2  # the conversation carries on...
+    assert model.calls[2][-1]["content"].startswith("(3 hours later) hey")  # ...marked
     assert len(memory.messages_on(memory.today())) == 6  # nothing lost from the log
 
 
-def test_a_clearly_new_subject_starts_fresh(memory):
+def test_a_clearly_new_subject_is_noted_not_cut(memory):
     brain, model, _ = make(memory, *[reply("Ok.")] * 6)
     collect(brain.chat("let's test the API key removal"))
     collect(brain.chat("the API key is gone from secrets now"))
     collect(brain.chat("is the API key removal test from secrets done"))  # same subject
-    assert len(model.calls[2]) > 2
+    assert "changed the subject" not in model.calls[2][-1]["content"]
     events = collect(brain.chat("what's a good flotation recovery for copper"))
     assert "new_topic" in [e["type"] for e in events]
-    assert len(model.calls[3]) == 2  # only the system prompt and the new question
+    assert len(model.calls[3]) > 2  # the conversation is kept...
+    assert "changed the subject" in model.calls[3][-1]["content"]  # ...with a note beside it
     collect(brain.chat("why is that higher than gold"))  # leans on the last answer
-    assert len(model.calls[4]) > 2
+    assert "changed the subject" not in model.calls[4][-1]["content"]
 
 
 def test_new_topic_check_can_be_turned_off(memory):
@@ -778,5 +819,85 @@ def test_new_topic_check_can_be_turned_off(memory):
     brain, model, _ = make(memory, *[reply("Ok.")] * 3, settings=s)
     collect(brain.chat("let's test the API key removal"))
     collect(brain.chat("the API key is gone from secrets now"))
-    collect(brain.chat("what's a good flotation recovery for copper"))
-    assert len(model.calls[2]) > 2
+    events = collect(brain.chat("what's a good flotation recovery for copper"))
+    assert "new_topic" not in [e["type"] for e in events]
+    assert "changed the subject" not in model.calls[2][-1]["content"]
+
+
+# Learning runs after the reply is out, as a tracked background task
+
+
+def test_the_reply_does_not_wait_for_learning(memory, monkeypatch):
+    brain, _, _ = make(
+        memory, reply("Got it.", action="remember", text="Emma's birthday is 14 March.")
+    )
+    gate = asyncio.Event()
+    real = brain.learner.learn
+
+    async def slow(*args, **kwargs):
+        await gate.wait()  # the embedding model and the comparison, taking their time
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(brain.learner, "learn", slow)
+
+    async def run():
+        since = brain.life.state()["last_event"]
+        events = [e async for e in brain.chat("Remember Emma's birthday is 14 March")]
+        assert events[-1]["type"] == "reply" and brain.learning()  # the reply is out first
+        assert memory.facts() == []
+        gate.set()
+        await brain.settle()
+        assert not brain.learning() and memory.facts()[0].text == "Emma's birthday is 14 March."
+        learned = [e for e in brain.life.events_after(since) if e["type"] == "remembered"]
+        assert learned[0]["decision"] == "new"
+
+    asyncio.run(run())
+
+
+def test_closing_the_brain_stops_learning_cleanly(memory, monkeypatch):
+    brain, _, _ = make(
+        memory, reply("Got it.", action="remember", text="Emma's birthday is 14 March.")
+    )
+    gate = asyncio.Event()
+
+    async def stuck(*args, **kwargs):
+        await gate.wait()
+
+    monkeypatch.setattr(brain.learner, "learn", stuck)
+
+    async def run():
+        [e async for e in brain.chat("Remember Emma's birthday is 14 March")]
+        assert brain.learning()
+        await brain.close()
+        assert not brain.learning() and not brain._learning
+
+    asyncio.run(run())
+
+
+def test_a_failure_while_learning_is_logged_not_lost(memory, monkeypatch, caplog):
+    brain, _, _ = make(
+        memory, reply("Got it.", action="remember", text="Emma's birthday is 14 March.")
+    )
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("Ollama went away")
+
+    monkeypatch.setattr(brain.learner, "learn", broken)
+    with caplog.at_level("ERROR", logger="kit.brain"):
+        events, learned = chat_and_learn(brain, "Remember Emma's birthday is 14 March")
+    assert events[-1]["type"] == "reply" and learned == []
+    assert "learning after the reply failed" in caplog.text and "Ollama went away" in caplog.text
+
+
+def test_cloud_only_never_loads_the_local_model_to_compare_a_fact(memory):
+    """The chat model remembers; the work model is asked to compare; when it can't, the
+    fact is kept as new rather than waking the local model for it."""
+    memory.add_fact("Dan drives a Hilux.", "about")
+    asyncio.run(Recall(memory, FakeEmbedder(), lambda: Settings()).index_pending())
+    answer = reply("Noted.", action="remember", text="Dan drives a Ranger now.")
+    s = settings_with(routing={"mode": "cloud-only", "background": "chat"})
+    brain, model, claude = make(memory, settings=s, claude=FakeAnthropic(answer=answer))
+    _, learned = chat_and_learn(brain, "I drive a Ranger now, remember that")
+    assert model.calls == []  # never the local model
+    assert learned[0]["decision"] == "new"
+    assert [f.text for f in memory.facts()] == ["Dan drives a Hilux.", "Dan drives a Ranger now."]

@@ -26,10 +26,15 @@ picked it on 2026-10-05 from four styles in the
 - `plan_reply(reply)` turns a reply from the brain into timed cues (emotion,
   then gesture, then words), timed from the words' length. Stage 2's helper
   and the arm both use it. With his voice on, the desk's `Performer` lets the
-  voice keep the time instead: as each sentence starts playing, the face hears
-  how long it lasts, talks for exactly that long (plus a breath), and plays
-  the gesture of the segment it starts. If no voice comes within five seconds,
-  `plan_reply`'s timing takes over.
+  voice keep the time instead: as each sentence's first piece starts playing
+  (`heard`) the words go up, the face starts talking and the gesture of the
+  segment it starts plays; as the sentence ends (`spoken`) his mouth stops a
+  breath later. In between, the sound output measures how loud his voice is
+  (the RMS of each block it hands the sound card, rising in about 20 ms and
+  falling in about 80 ms) and `Face.talk(level)` sets the mouth from it, so the
+  rig's `talk` is the sound itself rather than a pulse; `Mirror` passes it to
+  Kit 3D as `kit.setTalk(level)`, where it sets the `mouth_open` target. If no
+  voice comes within five seconds, `plan_reply`'s timing takes over.
 - `kit.desk.glow.paint_glow` paints one frame with QPainter, and `FaceWidget`
   runs the rig at 60 fps. Stage 2's helper window uses the widget.
 
@@ -179,8 +184,9 @@ see the page on its own; add `&bloom=1` for the glow effect (off over a
 see-through window, where it would darken the edges).
 
 Blinks, eye darts, breathing, the reading sweep while working and the talking
-pulse are reflexes and stay in the rig's code. A new eye *shape* (not just new
-sizes or colours) needs a new painter `style` in each app.
+pulse (used when nothing is measuring his voice) are reflexes and stay in the
+rig's code. A new eye *shape* (not just new sizes or colours) needs a new
+painter `style` in each app.
 
 ## Body moves: hops, loops and big gestures
 

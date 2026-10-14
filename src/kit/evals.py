@@ -282,6 +282,80 @@ async def run_memory_eval(memory, learner, recall, owner: str = "Dan") -> Memory
     return report
 
 
+# Replay: Dan's own questions against a snapshot of his real memory (a backup), to
+# catch ranking drift. The built-in memory eval checks a fresh scratch memory; this
+# checks that after a month of recalls, supersedes and new facts the right fact
+# still comes first for each question.
+
+
+@dataclass
+class ReplayResult:
+    question: str
+    expected: str
+    rank: int | None  # 1 is first (or pinned); None means not recalled at all
+    recalled: list[str]
+
+    @property
+    def wins(self) -> bool:
+        return self.rank == 1
+
+    @property
+    def found(self) -> bool:
+        return self.rank is not None
+
+
+@dataclass
+class ReplayReport:
+    results: list[ReplayResult] = field(default_factory=list)
+    embedded: int = 0  # items the snapshot had no vector for, embedded first
+    facts: int = 0  # current facts in the snapshot
+
+    @property
+    def wins(self) -> int:
+        return sum(r.wins for r in self.results)
+
+    @property
+    def found(self) -> int:
+        return sum(r.found for r in self.results)
+
+    @property
+    def passed(self) -> bool:
+        return bool(self.results) and self.wins == len(self.results)
+
+
+def load_replay_questions(path) -> list[tuple[str, str]]:
+    """Dan's own memory questions from a TOML file, each with words the right fact
+    contains:
+
+    [[question]]
+    ask = "What do I drive?"
+    expect = "Ranger"
+    """
+    import tomllib
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return [(q["ask"], q["expect"]) for q in data.get("question", [])]
+
+
+async def run_replay_eval(memory, recall, questions: list[tuple[str, str]]) -> ReplayReport:
+    """Ask each question of ``memory`` (a copy of a snapshot) the way a chat turn does,
+    and see where the expected fact lands: first (a pinned fact counts as first),
+    further down, or nowhere. Items without a vector for the embedding model in use
+    are embedded first, so a snapshot from another model still replays."""
+    report = ReplayReport(facts=len(memory.facts()))
+    report.embedded = await recall.index_pending(limit=100_000)
+    for question, expected in questions:
+        got = await recall.for_turn(question, set())
+        texts = [i.text for i in got.pinned] + [h.item.text for h in got.memories]
+        rank = None
+        for n, text in enumerate(texts, start=1):
+            if expected.lower() in text.lower():
+                rank = 1 if n <= len(got.pinned) else n - len(got.pinned)
+                break
+        report.results.append(ReplayResult(question, expected, rank, texts))
+    return report
+
+
 # Routing: real questions paired with where the answer should come from. Kit
 # passes a question when the register entries it recalls for that question
 # include a link to the right system and place, the way a chat turn would.
@@ -454,7 +528,7 @@ class CompareResult:
     model: str
     ok: bool
     seconds: float
-    cost_usd: float = 0.0
+    cost_aud: float = 0.0
     searches: int = 0
     said: str = ""
     detail: str = ""
@@ -498,7 +572,7 @@ async def run_compare(
                     name,
                     True,
                     clock() - start,
-                    answer.cost_usd,
+                    answer.cost_aud,
                     answer.searches,
                     reply.text,
                     reply.detail,
@@ -520,7 +594,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         median = statistics.median(r.seconds for r in ok) if ok else 0.0
         lines.append(
             f"- **{name}**: {len(ok)}/{len(mine)} answered, median {median:.1f}s, "
-            f"${sum(r.cost_usd for r in mine):.3f} in total, "
+            f"A${sum(r.cost_aud for r in mine):.3f} in total, "
             f"{sum(r.searches for r in mine)} searches"
         )
     for prompt in dict.fromkeys(r.prompt for r in results):
@@ -528,7 +602,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         for r in results:
             if r.prompt != prompt:
                 continue
-            lines += ["", f"### {r.model} ({r.seconds:.1f}s, ${r.cost_usd:.4f})", ""]
+            lines += ["", f"### {r.model} ({r.seconds:.1f}s, A${r.cost_aud:.4f})", ""]
             lines.append(r.said if r.ok else f"Failed: {r.error}")
             if r.detail:
                 lines += ["", r.detail]

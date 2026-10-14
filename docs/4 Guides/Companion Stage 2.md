@@ -64,7 +64,7 @@ on the settings page.
 | `life.reflect_role` | expert | Who writes the nightly reflection: `expert` (Opus) or `work` (Sonnet) |
 | `routing.key_moments` | true | Sonnet answers bad news and long-absence hellos |
 | `routing.key_moment_strength` | 0.7 | How hard news must hit to count |
-| `cloud.reserve_usd` | 3 | Each step of the budget order keeps this much more |
+| `cloud.reserve_aud` | 5 | Each step of the budget order keeps this much more (A$) |
 | `memory.now_days` | 14 | How long a "now" fact lasts |
 | `memory.weight_floor` | 0.3 | 1 turns off weighing recall by importance and recency |
 
@@ -131,8 +131,9 @@ Use him normally for a few days with the desk app running. Then:
   and tell me the words you used.
 - **He started a thread that isn't one.** Forget it on the notebook tab. If it
   keeps happening, `kit config set life.threads false` and tell me the words.
-- **No opener.** A new chat starts after `brain.new_chat_after_minutes` (2
-  hours) quiet. With the desk app reporting, the hello when you sit down picks
+- **No opener.** He picks something up after `brain.new_chat_after_minutes` (2
+  hours) quiet (the conversation carries on; only `kit new-chat` starts fresh).
+  With the desk app reporting, the hello when you sit down picks
   the thing up instead. Short messages ("ok", "thanks") aren't picked up.
 - **Too many questions.** `kit config set life.interview false` stops the
   getting-to-know-you ones; `life.nudges false` stops the nudges.

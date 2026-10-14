@@ -5,22 +5,24 @@ import anthropic
 import httpx
 import pytest
 
-from fakes import Clock, FakeAnthropic, make_cloud
+from fakes import Clock, FakeAnthropic, make_cloud, models_with
 from kit.cloud import (
     ANTHROPIC_SEARCH_TOOL,
     BASIC_FETCH_TOOL,
     BASIC_SEARCH_TOOL,
+    CACHE,
     FALLBACK_BETA,
     CloudError,
     GoogleProvider,
     OpenAIProvider,
-    Usage,
     Where,
     _web_steps,
-    estimate_cost,
+    cached_turns,
     split_messages,
 )
 from kit.memory import Memory
+from kit.prices import BUILT_IN, Usage, estimate_cost
+from kit.prompt import with_now
 from kit.settings import ModelProfile, Settings
 
 
@@ -38,7 +40,7 @@ MESSAGES = [
 
 
 def ask(cloud, name="opus", settings=None, messages=MESSAGES):
-    settings = settings or Settings()
+    settings = settings or Settings.model_validate({"models": models_with()})
     return asyncio.run(cloud.answer(settings.models[name], messages, settings))
 
 
@@ -54,16 +56,73 @@ def test_claude_answer_and_spend_logged(memory):
     assert system["text"] == "You are Kit." and system["cache_control"] == {"type": "ephemeral"}
     assert call["messages"] == [{"role": "user", "content": "Why?"}]
     assert call["tools"][0]["type"] == ANTHROPIC_SEARCH_TOOL
-    # 1000 in at $4/M + 2000 out at $20/M
-    assert answer.cost_usd == pytest.approx(0.044)
-    assert memory.month_spend() == pytest.approx(0.044)
+    # 1000 in at US$4/M + 2000 out at US$20/M, at A$1.50 to the dollar
+    assert answer.cost_aud == pytest.approx(0.066)
+    assert memory.month_spend() == pytest.approx(0.066)
+    logged = memory.spend_log()[0]
+    assert (logged.cost_usd, logged.cost_aud, logged.aud_per_usd) == (
+        pytest.approx(0.044),
+        pytest.approx(0.066),
+        1.5,
+    )
+
+
+def test_one_client_is_kept_per_key(memory):
+    """Every call reuses the connection rather than opening a new one first."""
+    fake = FakeAnthropic()
+    cloud = make_cloud(memory, fake)
+    ask(cloud)
+    ask(cloud)
+    assert fake.keys == ["sk-test"] and len(fake.calls) == 2
+    asyncio.run(cloud.close())
+    ask(cloud)
+    assert fake.keys == ["sk-test", "sk-test"]
+
+
+def test_the_real_client_can_be_made_with_the_installed_sdk():
+    """No call goes out: this only builds the client, which a newer SDK can refuse."""
+    from kit.cloud import CONNECT_TIMEOUT_S, make_anthropic_client
+
+    client = make_anthropic_client("sk-test")
+    assert client.timeout.connect == CONNECT_TIMEOUT_S
+    asyncio.run(client.close())
+
+
+def test_a_client_that_cant_be_made_is_a_cloud_error(memory):
+    """So the local model can step in (routing.fallback_to_local)."""
+    from kit.cloud import AnthropicProvider, Cloud
+
+    def refuse(key):
+        raise TypeError("Invalid `timeout` argument")
+
+    cloud = Cloud(memory, lambda provider: "sk-test", {"anthropic": AnthropicProvider(refuse)})
+    with pytest.raises(CloudError, match="couldn't set up"):
+        ask(cloud)
 
 
 def test_web_search_can_be_turned_off(memory):
     fake = FakeAnthropic()
-    s = Settings.model_validate({"models": {"opus": {"web_search": False}}})
+    s = Settings.model_validate({"models": models_with({"opus": {"web_search": False}})})
     ask(make_cloud(memory, fake), settings=s)
     assert "tools" not in fake.calls[0]
+
+
+def test_haiku_skips_thinking_unless_the_profile_says_to_think(memory):
+    """The built-in haiku profile has thinking off, so the first words come sooner;
+    Sonnet and Opus don't take the request, so their flag changes nothing."""
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake), "haiku")
+    assert fake.calls[0]["thinking"] == {"type": "disabled"}
+    assert fake.calls[0]["output_config"] == {"effort": "low"}
+    thinking = Settings.model_validate({"models": models_with({"haiku": {"thinking": True}})})
+    ask(make_cloud(memory, fake), "haiku", thinking)
+    assert "thinking" not in fake.calls[1]
+    too_hard = Settings.model_validate({"models": models_with({"haiku": {"effort": "max"}})})
+    ask(make_cloud(memory, fake), "haiku", too_hard)
+    assert "thinking" not in fake.calls[2]  # only up to high effort
+    no_think = Settings.model_validate({"models": models_with({"opus": {"thinking": False}})})
+    ask(make_cloud(memory, fake), "opus", no_think)
+    assert "thinking" not in fake.calls[3]
 
 
 def test_haiku_gets_the_basic_web_tools_and_no_fallback(memory):
@@ -74,13 +133,13 @@ def test_haiku_gets_the_basic_web_tools_and_no_fallback(memory):
     assert [t["type"] for t in call["tools"]] == [BASIC_SEARCH_TOOL, BASIC_FETCH_TOOL]
     assert "fallbacks" not in call and "betas" not in call
     # 1000 in at $0.10/M + 2000 out at $0.50/M
-    assert answer.cost_usd == pytest.approx(0.0011)
+    assert answer.cost_aud == pytest.approx(0.0011 * 1.5)
 
 
 def test_searches_are_counted_and_priced(memory):
     answer = ask(make_cloud(memory, FakeAnthropic(searches=2)))
     # 0.044 for tokens + 2 searches at $10 per 1,000
-    assert answer.searches == 2 and answer.cost_usd == pytest.approx(0.064)
+    assert answer.searches == 2 and answer.cost_aud == pytest.approx(0.064 * 1.5)
 
 
 def test_paused_search_is_resumed(memory):
@@ -88,7 +147,7 @@ def test_paused_search_is_resumed(memory):
     answer = ask(make_cloud(memory, fake))
     assert answer.text == "Looking. Found it." and len(fake.calls) == 2
     assert fake.calls[1]["messages"][-1]["role"] == "assistant"
-    assert answer.cost_usd == pytest.approx(0.088)  # both calls billed
+    assert answer.cost_aud == pytest.approx(0.088 * 1.5)  # both calls billed
 
 
 def test_progress_is_reported_while_a_search_runs(memory):
@@ -154,7 +213,7 @@ def test_opening_a_page_is_reported():
 
 
 def test_cost_estimate():
-    opus = Settings().models["opus"]
+    opus = BUILT_IN["claude-opus-5-5"]  # in US dollars, as Anthropic quotes them
     assert estimate_cost(opus, Usage(input_tokens=1_000_000)) == 4.0
     assert estimate_cost(opus, Usage(output_tokens=1_000_000)) == 20.0
     # On Opus 5.5 a cache read costs 0.05x input; a cache write costs 1.25x.
@@ -166,7 +225,68 @@ def test_cost_estimate():
 def test_cached_tokens_are_billed_at_the_cache_rate(memory):
     answer = ask(make_cloud(memory, FakeAnthropic(cache_read_input_tokens=1000)))
     # 1000 fresh at $4/M + 1000 cached at $0.20/M + 2000 out at $20/M
-    assert answer.cost_usd == pytest.approx(0.0442)
+    assert answer.cost_aud == pytest.approx(0.0442 * 1.5)
+
+
+def test_spend_log_shows_cache_use_and_searches(memory):
+    """ "cached 1830/2400": the log keeps how much of each call's input was read from
+    the cache, written to it, and how many searches it ran, so caching can be seen."""
+    fake = FakeAnthropic(cache_read_input_tokens=1830, cache_creation_input_tokens=400, searches=2)
+    ask(make_cloud(memory, fake))
+    (spent,) = memory.spend_log()
+    assert spent.input_tokens == 3230 and spent.cached_tokens == 1830
+    assert spent.cache_write_tokens == 400 and spent.searches == 2
+
+
+# --- Streaming and the cache layout -----------------------------------------
+
+CONVERSATION = [
+    {"role": "system", "content": "You are Kit."},
+    {"role": "user", "content": "Hi"},
+    {"role": "assistant", "content": "Hello Dan."},
+    {"role": "user", "content": "How are you?"},
+    {"role": "assistant", "content": "Well, thanks."},
+    {"role": "user", "content": with_now("Why?", "It is Monday.\nMemories.", "Dan")},
+]
+
+
+def test_streamed_answer_is_heard_as_written_and_resumes_after_a_pause(memory):
+    fake = FakeAnthropic(answer=["Looking. ", "Found it."], stop_reason=["pause_turn", "end_turn"])
+    cloud, heard = make_cloud(memory, fake), []
+    answer = asyncio.run(
+        cloud.answer(Settings().models["opus"], MESSAGES, Settings(), on_text=heard.append)
+    )
+    assert fake.streamed == 2 and len(heard) > 2  # a few characters at a time, both calls
+    assert "".join(heard) == "Looking. Found it." == answer.text
+    resumed = fake.calls[1]["messages"]
+    assert resumed[-1]["role"] == "assistant" and resumed[:-1] == fake.calls[0]["messages"]
+    assert answer.cost_aud == pytest.approx(0.088 * 1.5)  # both calls billed
+
+
+def test_cache_breakpoints_are_on_the_fixed_prompt_and_the_last_turn_only(memory):
+    """The system prompt (one breakpoint) and the conversation so far (a breakpoint on
+    Kit's last turn) read the same every turn, so Claude serves them from its cache;
+    only Dan's new message, with this turn's part in front of it, is new."""
+    fake = FakeAnthropic()
+    ask(make_cloud(memory, fake), messages=CONVERSATION)
+    call = fake.calls[0]
+    assert call["system"] == [{"type": "text", "text": "You are Kit.", "cache_control": CACHE}]
+    sent = call["messages"]
+    assert [m["role"] for m in sent] == ["user", "assistant", "user", "assistant", "user"]
+    assert sent[1] == {"role": "assistant", "content": "Hello Dan."}  # no breakpoint
+    assert sent[3] == {
+        "role": "assistant",
+        "content": [{"type": "text", "text": "Well, thanks.", "cache_control": CACHE}],
+    }
+    assert sent[4]["content"].startswith("[Not from Dan: how things stand right now")
+    assert "It is Monday." in sent[4]["content"] and sent[4]["content"].endswith("\n\nWhy?")
+    assert "cache_control" not in sent[4]
+    assert json.dumps(call).count("cache_control") == 2
+
+
+def test_a_first_message_has_no_turn_to_cache():
+    turns = [{"role": "user", "content": "Hi"}]
+    assert cached_turns(turns) == turns and "cache_control" not in turns[0]
 
 
 def test_cap_stops_calls(memory):
@@ -285,7 +405,7 @@ def test_openai_request_and_answer(memory):
     assert body["tools"] == [{"type": "web_search"}]
     assert answer.text == "Sunny, 24." and answer.searches == 1
     # 1000 fresh at $2/M + 1000 cached at $0.10/M + 500 out at $10/M + 1 search at $10/1000
-    assert answer.cost_usd == pytest.approx(0.002 + 0.0001 + 0.005 + 0.01)
+    assert answer.cost_aud == pytest.approx((0.002 + 0.0001 + 0.005 + 0.01) * 1.5)
     assert memory.spend_log()[0].model == "gpt-6.1-sol-2026-09-22"
 
 
@@ -313,12 +433,52 @@ def test_openai_errors(memory, status, words):
         ask(cloud, "gpt-sol")
 
 
-def test_openai_offline(memory):
+def test_openai_offline(memory, monkeypatch):
+    monkeypatch.setattr("kit.cloud.RETRY_BACKOFF_S", (0, 0))
+
     def down(request):
         raise httpx.ConnectError("no route", request=request)
 
+    seen = []
     with pytest.raises(CloudError, match="reach"):
-        ask(openai_cloud(memory, down, []), "gpt-sol")
+        ask(openai_cloud(memory, down, seen), "gpt-sol")
+    assert len(seen) == 3  # tried again twice first
+
+
+def test_openai_and_gemini_try_again_when_rate_limited_or_the_server_stumbles(memory, monkeypatch):
+    monkeypatch.setattr("kit.cloud.RETRY_BACKOFF_S", (0, 0))
+    replies = iter([429, 503, 200])
+
+    def flaky(request):
+        return httpx.Response(next(replies), json=OPENAI_OK)
+
+    seen = []
+    answer = ask(openai_cloud(memory, flaky, seen), "gpt-sol")
+    assert answer.text == "Sunny, 24." and len(seen) == 3
+    seen = []
+    cloud = gemini_cloud(memory, lambda r: httpx.Response(500, json={}), seen)
+    with pytest.raises(CloudError, match="500"):
+        ask(cloud, "gemini-flash")
+    assert len(seen) == 3  # two more goes, then the error
+    seen = []
+    cloud = openai_cloud(memory, lambda r: httpx.Response(400, json={}), seen)
+    with pytest.raises(CloudError, match="400"):
+        ask(cloud, "gpt-sol")
+    assert len(seen) == 1  # a bad request won't get better
+
+
+def test_openai_effort_above_high_is_sent_as_high(memory):
+    """The Responses API takes low, medium and high, as Gemini's thinking levels do."""
+    seen = []
+    cloud = openai_cloud(memory, lambda r: httpx.Response(200, json=OPENAI_OK), seen)
+    s = Settings.model_validate({"models": models_with({"gpt-sol": {"effort": "max"}})})
+    ask(cloud, "gpt-sol", settings=s)
+    assert json.loads(seen[0].content)["reasoning"] == {"effort": "high"}
+
+
+def test_opus_has_room_for_a_long_think():
+    models = Settings().models
+    assert models["opus"].max_tokens == 32000 and models["sonnet"].max_tokens == 16000
 
 
 GEMINI_OK = {
@@ -349,7 +509,7 @@ def gemini_cloud(memory, handler, seen):
 def test_gemini_request_and_answer(memory):
     seen = []
     cloud = gemini_cloud(memory, lambda r: httpx.Response(200, json=GEMINI_OK), seen)
-    s = Settings.model_validate({"models": {"gemini-flash": {"effort": "max"}}})
+    s = Settings.model_validate({"models": models_with({"gemini-flash": {"effort": "max"}})})
     answer = ask(cloud, "gemini-flash", settings=s)
     request = seen[0]
     assert request.url.path.endswith("/models/gemini-3.8-flash:generateContent")
@@ -362,7 +522,7 @@ def test_gemini_request_and_answer(memory):
     assert answer.text == "Sunny." and answer.searches == 2
     # 1000 fresh at $0.75/M + 1000 cached at $0.075/M + 500 out (thinking included)
     # at $3.75/M + 2 searches at $14/1000
-    assert answer.cost_usd == pytest.approx(0.00075 + 0.000075 + 0.001875 + 0.028)
+    assert answer.cost_aud == pytest.approx((0.00075 + 0.000075 + 0.001875 + 0.028) * 1.5)
 
 
 def test_gemini_assistant_turns_are_model_turns(memory):
@@ -387,7 +547,7 @@ def test_gemini_blocked_is_declined(memory):
 
 
 def test_unknown_provider(memory):
-    s = Settings.model_validate({"models": {"odd": {"provider": "openai", "model": "x"}}})
+    s = Settings.model_validate({"models": models_with(odd={"provider": "openai", "model": "x"})})
     cloud = make_cloud(memory)  # no openai provider given
     with pytest.raises(CloudError, match="openai"):
         asyncio.run(cloud.answer(s.models["odd"], MESSAGES, s))
@@ -401,6 +561,6 @@ def test_profile_name_prefers_label():
 def test_openai_search_knows_where_dan_is(memory):
     seen = []
     cloud = openai_cloud(memory, lambda r: httpx.Response(200, json=OPENAI_OK), seen)
-    ask(cloud, "gpt-sol", settings=Settings.model_validate(HOME))
+    ask(cloud, "gpt-sol", settings=Settings.model_validate({**HOME, "models": models_with()}))
     tool = json.loads(seen[0].content)["tools"][0]
     assert tool["user_location"]["city"] == "Richmond" and tool["user_location"]["country"] == "AU"
