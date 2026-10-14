@@ -44,7 +44,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Lite eyes: the eyes on a CPU, a few looks a second, the detector resting between looks | Done, pull request #45 | [[Eyes#Without a graphics card]] |
 | Models as your own list (`kit models add` and `remove`, no presets) and prices fetched daily in Australian dollars, the budget and every spend figure in A$ | Done, pull request #60 | [[Models and Routing#Your own list of models]], [[Models and Routing#Prices, fetched for you]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
-| Stage 4, part A1: the tool loop. Cloud models call tools natively, the local model's action joins the same loop, the core pack (recall, the PC, the room, the forecast, a note), every call logged | Open, pull request #PRNUM | [[Tools and Packs]], [[Stage 4 - Tools]] |
+| Stage 4, part A1: the tool loop. Cloud models call tools natively, the local model's action joins the same loop, the core pack (recall, the PC, the room, the forecast, a note), every call logged | Open, pull request #61 | [[Tools and Packs]], [[Stage 4 - Tools]] |
 | Stage 4, the rest: pack matching and a yes before changes, files, PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
@@ -52,7 +52,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 1. Companion stage 5 (hearing, #42) tested on the desk.
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
-3. Stage 4: the tool loop first (#PRNUM), then PC control, the Claude Code
+3. Stage 4: the tool loop first (#61), then PC control, the Claude Code
    bridge, MCP, Home Assistant, and the home_app and MetTools connections
    ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
@@ -91,6 +91,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 13 Oct | Body feed and knowing who can hear him; naps and sleep; hearing (companion stage 5) | #36, #37, #42 |
 | 13 Oct | The whole-codebase review: faster first words, Claude's cache, one voice, memory that scales, inner life and desk fixes, streaming voice, judgement over keywords, settings as changes only, routes tidied | #47 to #58 |
 | 13 Oct | `kit memory scrub` | #59 |
+| 14 Oct | Stage 4 begins: the tool loop and the core pack | #61 |
 
 ## Keeping this note true
 
