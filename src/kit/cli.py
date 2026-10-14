@@ -1323,6 +1323,51 @@ def cmd_notes(paths: KitPaths) -> int:
     return 0
 
 
+def cmd_tools(
+    paths: KitPaths, args: argparse.Namespace, transport: httpx.BaseTransport | None = None
+) -> int:
+    """``kit tools``: the running Kit's packs and tools, or one tool run by hand."""
+    s = SettingsStore(paths).current().brain
+    host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
+    headers = {"Authorization": f"Bearer {api_token(paths)}"}
+    with httpx.Client(
+        base_url=f"http://{host}:{s.port}", headers=headers, timeout=120, transport=transport
+    ) as client:
+        try:
+            if args.action == "run":
+                try:
+                    arguments = json.loads(args.args)
+                except ValueError as e:
+                    print(f"--args isn't JSON: {e}")
+                    return 2
+                r = client.post(
+                    "/api/tools/run",
+                    json={"tool": args.tool, "arguments": arguments, "yes": args.yes},
+                )
+                if r.status_code in (404, 409):
+                    print(r.json().get("detail", r.text))
+                    return 1
+                r.raise_for_status()
+                out = r.json()
+                print(("" if out["ok"] else "failed: ") + out["text"])
+                return 0 if out["ok"] else 1
+            r = client.get("/api/tools")
+            r.raise_for_status()
+            packs = r.json()["packs"]
+        except httpx.HTTPError as e:
+            print(f"couldn't reach Kit at {host}:{s.port}: {e} (is `kit serve` running?)")
+            return 1
+    for pack in packs:
+        if args.action == "packs":
+            state = "always" if pack["always"] else "on" if pack["enabled"] else "off"
+            print(f"{pack['name']:<10} {state:<7} {pack['card']}")
+            continue
+        for tool in pack["tools"]:
+            asks = "  (asks first)" if tool["asks_first"] else ""
+            print(f"{tool['name']:<16} {pack['name']:<10} {tool['effect']:<7}{asks}")
+    return 0
+
+
 def cmd_things(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.memory import Memory
     from kit.things import Register
@@ -1597,7 +1642,22 @@ def main(argv: list[str] | None = None) -> int:
         "which",
         nargs="?",
         default="replies",
-        choices=["replies", "memory", "routing", "compare", "voice", "companion", "mood"],
+        choices=[
+            "replies",
+            "memory",
+            "routing",
+            "tools",
+            "compare",
+            "voice",
+            "companion",
+            "mood",
+        ],
+    )
+    ev.add_argument("--pack", help="tools: only this pack's questions")
+    ev.add_argument(
+        "--live",
+        action="store_true",
+        help="tools: ask the real chat model (every tool stubbed); spends real money",
     )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
@@ -1617,7 +1677,22 @@ def main(argv: list[str] | None = None) -> int:
         "this memory snapshot, e.g. a backup from backups/, to see the right fact still wins",
     )
     ev.add_argument(
-        "--questions", metavar="FILE", help="memory --replay: a different questions file"
+        "--questions",
+        metavar="FILE",
+        help="memory --replay or tools: a different questions file",
+    )
+
+    tools = sub.add_parser("tools", help="Kit's tools: the packs, each tool, trying one by hand")
+    tosub = tools.add_subparsers(dest="action", required=True)
+    tosub.add_parser("list", help="every tool with its pack and effect")
+    tosub.add_parser("packs", help="each pack: its card, and whether it may load")
+    trun = tosub.add_parser("run", help="run one tool on the running Kit, to try it")
+    trun.add_argument("tool")
+    trun.add_argument(
+        "--args", default="{}", help='its arguments as JSON, e.g. \'{"query": "tax"}\''
+    )
+    trun.add_argument(
+        "--yes", action="store_true", help="run it even though it changes something of yours"
     )
 
     args = parser.parse_args(argv)
@@ -1656,6 +1731,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hearing(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "tools":
+        return cmd_tools(paths, args)
     if args.command == "docs":
         return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":

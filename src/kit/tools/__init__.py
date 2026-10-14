@@ -10,7 +10,10 @@ something of Dan's and always asks first) and the coroutine that runs it. A
 
 The brain offers a cloud model the tools as the provider's native tool calls
 (kit.cloud) and runs what it asks for in a loop (``tools.hops`` at most), handing
-each result back until the model answers in words. The local model keeps its one
+each result back until the model answers in words. Only the packs a message needs
+are loaded (kit.tools.match), a ``change`` waits for Dan's yes (kit.tools.confirm)
+and a private result reaches a cloud model only as a local summary
+(kit.tools.private). The local model keeps its one
 ``action`` in the reply JSON (kit.reply); the brain turns a look-up action into the
 same tool call, so one loop serves both. Tool definitions never go in the system
 prompt: they ride in the request's tools field, and the prompt carries one line
@@ -109,6 +112,18 @@ class Tool:
     offered: Callable[[], bool] | None = None
     # What to say while it runs, for the local model's speaking pass (kit.prompt).
     speak: str = ""
+    # For a tool that asks first: what it will do, filled from the call's arguments,
+    # as the end of "Ask whether to ..." ("tick '{item}' in {note}").
+    ask: str = ""
+
+    def asking(self, call: ToolCall) -> str:
+        """What the tool will do, in words, for the question Kit asks first."""
+        if self.ask:
+            try:
+                return self.ask.format(**call.arguments)
+            except (KeyError, IndexError, ValueError):
+                pass
+        return call.line()
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -129,12 +144,43 @@ class Tool:
 
 
 @dataclass
+class EvalCase:
+    """One question for ``kit eval tools``: the tool a good answer calls first (None:
+    none at all) and the arguments it should carry. An argument matches when the
+    call has it and its value contains the case's, ignoring case."""
+
+    question: str
+    tool: str | None
+    arguments: dict[str, Any] = field(default_factory=dict)
+    pack: str = ""
+    note: str = ""
+
+    def matches(self, name: str | None, arguments: dict[str, Any]) -> bool:
+        if name != self.tool:
+            return False
+        return all(
+            key in arguments and str(want).lower() in str(arguments[key]).lower()
+            for key, want in self.arguments.items()
+        )
+
+
+@dataclass
 class Pack:
-    """The tools for one part of Kit's world, and the one line the prompt gets."""
+    """The tools for one part of Kit's world, and the one line the prompt gets. How a
+    message loads it (kit.tools.match): ``always``, a whole word from ``words``, a
+    register thing linked into one of ``systems``, or meaning close to one of
+    ``questions``. ``confirm`` names tools that ask first though they only ``act``;
+    ``cases`` are its questions for ``kit eval tools``."""
 
     name: str
     card: str
     tools: list[Tool] = field(default_factory=list)
+    words: list[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
+    systems: list[str] = field(default_factory=list)
+    always: bool = False
+    confirm: list[str] = field(default_factory=list)
+    cases: list[EvalCase] = field(default_factory=list)
 
     def offered(self) -> list[Tool]:
         return [t for t in self.tools if t.offered is None or t.offered()]
@@ -149,6 +195,18 @@ class Registry:
     def add(self, pack: Pack) -> Pack:
         self.packs[pack.name] = pack
         return pack
+
+    def names(self) -> list[str]:
+        return list(self.packs)
+
+    def tool_names(self, packs: list[str] | None = None) -> set[str]:
+        """Every tool in ``packs`` (all packs when None), offered this turn or not."""
+        chosen = (
+            self.packs.values()
+            if packs is None
+            else [self.packs[p] for p in packs if p in self.packs]
+        )
+        return {tool.name for pack in chosen for tool in pack.tools}
 
     def get(self, name: str) -> Tool | None:
         for pack in self.packs.values():

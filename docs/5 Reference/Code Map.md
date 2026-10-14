@@ -46,6 +46,7 @@ flowchart TB
 | `src/kit/routes/settings.py` | Reading, changing and undoing settings | [[API]], [[Settings and Data]] |
 | `src/kit/routes/memory.py` | Facts, memory search and day summaries | [[API]], [[Memory]] |
 | `src/kit/routes/things.py` | The register of things over the API | [[API]], [[Register of Things]] |
+| `src/kit/routes/tools.py` | The packs and tools over the API, and running one by hand | [[API]], [[Tools and Packs]] |
 | `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
 | `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
 | `src/kit/routes/eyes.py` | The eyes' reports, known faces and the "Let Kit see me" switch | [[API]], [[Eyes]] |
@@ -58,6 +59,9 @@ flowchart TB
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |
 | `src/kit/tools/__init__.py` | Tools, packs and the registry: what a model can call mid-answer, offered only where there's something to look at | [[Tools and Packs]] |
 | `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
+| `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
+| `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
+| `src/kit/tools/private.py` | A private result as a local summary for a cloud model | [[Tools and Packs#Private results]], [[Privacy]] |
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
 | `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |

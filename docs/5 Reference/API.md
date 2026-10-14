@@ -55,6 +55,7 @@ A chat streams events like these, one per line:
 | `show` | Something for his face: the time, the date, the weather |
 | `tool` | He's running a tool: `tool` (its name) and `line` (the call, like `recall(query='tax returns')`) |
 | `tool_calls` | A cloud model asked for tools without a word to say: the calls, with no words for the chat yet (the `reply` comes after the results) |
+| `confirm` | He wants to do something that needs your yes first: `tool`, `line` (the call) and `ask` (what he'll do, in words). Your next message answers it. See [[Tools and Packs#Asking first]] |
 | `recalled`, `remembered`, `reading_note`, `looked_at_pc`, `looked_around` | What a tool or action did mid-answer |
 | `handing_off` | A bigger model is taking over ("Let me think...") |
 | `notice` | A line for the chat, like a budget warning |
@@ -85,6 +86,8 @@ The reply's shape is in [[Brain#One shape for every reply]].
 | `DELETE /api/memory/facts/{id}` | Forget a fact |
 | `GET /api/memory/search?q=...` | Search the way Kit does |
 | `GET /api/memory/days` | Day summaries |
+| `GET /api/tools` | Every pack (`name`, `card`, `enabled`, `always`, `words`) and its tools (`name`, `effect`, `asks_first`, `description`) |
+| `POST /api/tools/run` | Run one tool by hand: `{"tool", "arguments", "yes"}`. `409` for a tool that changes something of yours unless `yes` is true; `404` for one Kit doesn't have. Answers `{"ok", "text", "private"}` (`kit tools run`) |
 | `GET /api/things` | The register of things |
 | `GET /api/things/suggestions` | Names he suggested adding |
 | `POST /api/things`, `PATCH /api/things/{id}` | Add or change a thing |
@@ -169,7 +172,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said, and `tools` (the `packs` he has, `hops` allowed, the ten most `recent` calls) |
+| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said, and `tools` (the `packs` he has, `hops` allowed, the packs the last message `loaded`, the call `pending` your yes or null, the ten most `recent` calls) |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend in Australian dollars (`month_aud`, `cap_aud`, `aud_per_usd`), as a log (each call with its `cost_usd` as billed, `cost_aud` at the day's rate, `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (`cost_aud`, `total_aud`, with each model's `cached_tokens`) |
 

@@ -49,6 +49,8 @@ def status(state: State) -> dict:
         "tools": {
             "packs": sorted(brain.tools.packs),
             "hops": s.tools.hops,
+            "loaded": brain.loaded_packs,
+            "pending": brain.pending_tool.call.line() if brain.pending_tool else None,
             "recent": memory.tool_calls(10),
         },
     }

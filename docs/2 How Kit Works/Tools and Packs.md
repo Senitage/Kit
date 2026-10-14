@@ -87,11 +87,70 @@ the prompt. The first is `core`: `recall`, `look_at_pc`, `look_around`,
 says what it does for the model, which arguments it takes, an **effect**
 (`read` looks something up; `act` does something easily undone, like
 turning a lamp on; `change` alters something of yours, like a note, and
-will be confirmed with you before it runs, in a later stage) and an example
-of its arguments. The
-packs to come (your files, the PC, the house, the notes vault, your apps)
-plug in the same way: another card in the prompt, their definitions with
-the request, their own evals.
+always asks you first: see [[#Asking first]]) and an example of its
+arguments. The packs to come (your files, the PC, the house, the notes
+vault, your apps) plug in the same way: another card in the prompt, their
+definitions with the request, their own evals. A pack also carries how a
+message finds it (its **match words**, example questions and register
+systems) and its own questions for `kit eval tools`.
+
+### Which packs load
+
+Every pack in every request would cost tokens and give the model more to
+choose from than it needs, so each message loads only the packs it needs.
+That's decided before any model is asked, in this order:
+
+1. **Always**: the `core` pack.
+2. **Words**: a pack loads when one of its match words is in your message
+   as a whole word ("lamp" loads the house; "listless" doesn't load the
+   shopping list).
+3. **The register**: a pack loads when your message names a thing whose
+   [[Register of Things|register]] entry lives in that pack's system ("the
+   Riverbend folder" is on the NAS, so the files pack).
+4. **Meaning**: while there's room, packs whose example questions are close
+   in meaning to your message, closest first.
+
+Words and the register load a pack whatever the limit, since they're near
+certain; meaning stops at `tools.max_packs` packs (3, core included) and
+needs `tools.match_similarity` (0.45). `tools.packs` lists the packs that
+may load at all (`all` by default). What loaded holds for the whole
+message: a tool's result never loads another pack halfway through. The
+prompt names only the loaded packs, and a call to a tool from a pack that
+didn't load is answered "there's no tool called that". `/api/status` shows
+the last message's packs as `tools.loaded`.
+
+### Asking first
+
+A tool that **changes** something of yours never runs on the model's say-so.
+The brain holds the call, tells the model to ask you in one short sentence,
+and waits:
+
+> **Dan:** I bought the filament, tick it off the shopping list
+> **Kit:** Want me to tick filament off the list?
+> **Dan:** yes
+> **Kit:** Done, it's off.
+
+- **Yes** (typed or said: "yes", "yep", "go ahead"...) runs it, and he says
+  what happened in his own words.
+- **No** ("no", "leave it"...) drops it.
+- **Anything else** lets it lapse, and so does waiting more than
+  `tools.confirm_lapse_minutes` (10), the same as when he offers to note
+  something down.
+- **One thing at a time**: if the model wants two changes in one go, he asks
+  about the first and is told to wait on the second.
+
+The chat gets a `confirm` event with what he's asking, for a yes/no row on
+the desk later. A pack's own confirm list, and the `tools.confirm` setting,
+make an `act` tool ask too. `/api/status` shows what's waiting as
+`tools.pending`.
+
+### Private results
+
+A tool can mark what it found **private** (a private folder, your
+finances). A cloud model never reads that text: the local model reads it
+and answers the question from it in a few words, and only that summary
+(marked as summarised locally) goes to the cloud. With the local model off,
+the cloud model is told the answer is in a private source. See [[Privacy]].
 
 ### What it costs
 
@@ -109,18 +168,31 @@ kit chat
 ```
 
 Watch the chat page: a small line shows each look. `GET /api/status` shows
-the packs and the last ten calls under `tools`.
+the packs, the ones the last message loaded and the last ten calls under
+`tools`.
+
+```
+kit tools packs              # each pack and whether it may load
+kit tools list               # every tool, its pack, its effect, whether it asks first
+kit tools run recall --args '{"query": "tax returns"}'
+kit eval tools               # does each question reach the right tool?
+```
 
 ## Go deeper
 - [[Brain#What he can do mid-answer]]: the tools beside the actions that stay in the reply (remember, note, thing, ask_cloud).
 - [[Models and Routing]]: which model is doing the asking, and what a turn costs.
 - [[Memory]]: what `recall` searches.
-- [[API]]: the `tool` and `tool_calls` events, and `tools` on the status route.
+- [[API]]: the `tool`, `tool_calls` and `confirm` events, `/api/tools`, and `tools` on the status route.
+- [[Evals#kit eval tools]]: the questions each pack is tested with.
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/tools/__init__.py`: `Tool`, `Pack`, `Registry` and the `Context` (what's been looked at this turn), `ToolCall` and `ToolResult`, and the provider-neutral definitions.
-> - `src/kit/tools/core.py`: the core pack, and the table of which reply action becomes which tool.
-> - `src/kit/brain.py`: the loop in `_converse` (`tools.hops` goes round), `_offered` (which tools this turn, none for the local model) and `_action_calls` (the local model's action as a call).
+> - `src/kit/tools/core.py`: the core pack, its eval questions, and the table of which reply action becomes which tool.
+> - `src/kit/tools/match.py`: `match`, which packs a message loads.
+> - `src/kit/tools/confirm.py`: `needs_yes`, the `Held` call and the words the model gets while it waits.
+> - `src/kit/tools/private.py`: `for_cloud`, the local summary of a private result.
+> - `src/kit/routes/tools.py`: `/api/tools` and `/api/tools/run` (`kit tools`).
+> - `src/kit/brain.py`: the loop in `_converse` (`tools.hops` goes round), `_offered` (which tools this turn, none for the local model), `_action_calls` (the local model's action as a call), `_hold` and `_answer_tool_offer` (asking first).
 > - `src/kit/cloud.py`: tool definitions and tool turns in each provider's shape; Claude's own content blocks are kept whole for the next request so a thinking model's blocks survive.
 > - `src/kit/prompt.py`: `tool_lines`, the one paragraph about tools; the action lines a tool replaces are left out when it's offered.
 > - `src/kit/memory.py`: the `tool_calls` table (`log_tool_call`, `tool_calls`).

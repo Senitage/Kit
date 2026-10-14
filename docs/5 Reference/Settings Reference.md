@@ -161,12 +161,17 @@ The brain's address and how conversations start and end. See [[Brain]].
 
 ## tools
 
-The tool loop: how many times a turn the model may ask for a tool. See
-[[Tools and Packs]].
+The tool loop: how many times a turn the model may ask for a tool, which
+packs a message loads, and what asks you first. See [[Tools and Packs]].
 
 | Setting | Default | What it does |
 |---|---|---|
 | `hops` | `6` | Most tool calls in one turn (1 to 20). After this many the model is answered with what it has. |
+| `packs` | `["all"]` | Which packs may load at all, by name (`kit tools packs`), or `all`. A pack left out is never offered. |
+| `max_packs` | `3` | At most how many packs one message loads by meaning, the core pack included (1 to 10). Packs named by a word in the message, or by a register thing, load even past this. |
+| `match_similarity` | `0.45` | How close in meaning a message must be to a pack's example questions to load that pack (0 to 1). Higher loads fewer. |
+| `confirm` | `[]` | Tools, by name, that ask you first even though they only do something easily undone. Anything that changes something of yours always asks. |
+| `confirm_lapse_minutes` | `10` | How long Kit waits for your yes to something he asked to do before letting it go (1 to 1440). |
 
 ## memory
 

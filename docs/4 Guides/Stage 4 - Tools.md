@@ -53,10 +53,54 @@ Update as in [[Updating Kit]]. No new package, key or setting is needed.
   calls just made under `tools.recent`.
 - [ ] **Tests:** `pytest -q tests/test_tools.py` passes on the server.
 
+## Part A2: which packs load, asking first, and the tool evals
+
+The second part gets ready for more packs. Each message loads only the packs
+it needs, chosen before any model is asked (always core; then a pack's
+match words, a register thing in that pack's system, or meaning). A tool that
+changes something of yours waits for your yes. A tool can mark what it
+found private, and a cloud model then only gets the local model's summary.
+And `kit eval tools` checks each question reaches the right tool. With only
+the core pack installed, nothing you see changes yet: it's the groundwork
+the next packs plug into. See [[Tools and Packs#Which packs load]] and
+[[Tools and Packs#Asking first]].
+
+### 1. Update and restart Kit
+
+Update as in [[Updating Kit]]. Nothing new to install. The new settings
+(`tools.packs`, `tools.max_packs`, `tools.match_similarity`, `tools.confirm`,
+`tools.confirm_lapse_minutes`) are in [[Settings Reference#tools]]; the
+defaults are fine.
+
+### 2. Test before moving on
+
+- [ ] **One pack for small talk:** say "Morning". `GET /api/status` shows
+  `tools.loaded` as `["core"]` and `tools.pending` as null.
+- [ ] **Two looks still work:** "What's the weather, and what did I tell you
+  about the Pod last week?" Both are answered in one turn, with two tool
+  lines in the desk chat.
+- [ ] **Notes untouched:** "Take a note: order filament" still writes it
+  without asking; "that's worth noting" still offers first.
+- [ ] **The expert still asks:** "Think hard about..." still goes to Opus
+  after your yes.
+- [ ] **The tools, by hand:** `kit tools packs` shows `core  always`;
+  `kit tools list` shows the five core tools, none asking first;
+  `kit tools run recall --args '{"query": "Pod"}'` prints what he'd find.
+- [ ] **The eval, offline:** `kit eval tools` passes every case.
+- [ ] **The eval, live:** `kit eval tools --live` passes on the server, with
+  each case's spend under A$0.05.
+- [ ] **Voice:** his first words still start before any tool runs.
+- [ ] **Tests:** `pytest -q tests/test_tool_match.py tests/test_tool_confirm.py
+  tests/test_tool_private.py tests/test_evals_tools.py tests/test_routes_tools.py`
+  passes on the server.
+
+Asking first can't be tried in a chat yet, because no installed tool
+changes anything. It gets its own checklist line with the first pack that
+has one (your notes, part E, or your files, part B).
+
 ## Parts to come
 
-In order, each with its own section here when it lands: pack matching, a
-yes before anything that changes something, and `kit eval tools` (A2); your
+In order, each with its own section here when it lands: your
 files indexed and found (B); opening files and apps on the PC (C); the house
 through Home Assistant (D); your notes vault, properly (E); your own apps and
 MCP (F); the morning brief (G). The plan is in [[Roadmap]].
@@ -70,6 +114,14 @@ MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 - **He looks twice at the same thing:** he shouldn't; a repeat call with the
   same arguments is answered from the first. A repeat with different
   arguments is allowed up to `tools.hops`.
+- **A pack didn't load when it should have:** `tools.loaded` on
+  `/api/status` shows what the last message loaded. Add the word to the
+  pack's match words, or a question like yours to `tool-questions.toml` and
+  run `kit eval tools` to see why. Lowering `tools.match_similarity` loads
+  more by meaning.
+- **He asked to do something and then forgot:** an offer lapses after
+  `tools.confirm_lapse_minutes`, or when your next message isn't a yes or a
+  no. Ask again.
 - **"There is no tool called ...":** the model asked for a tool it wasn't
-  offered this turn. The result tells it so and it answers without; if it
+  offered this turn, or one from a pack that didn't load. The result tells it so and it answers without; if it
   keeps happening, raise it as a bug with the line from `tools.recent`.

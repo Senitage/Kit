@@ -398,6 +398,37 @@ class ToolsSettings(_Section):
         description="How many rounds of tool calls (search memory, look at the PC, read a "
         "note...) one message may take before Kit has to answer in words.",
     )
+    packs: list[str] = Field(
+        default_factory=lambda: ["all"],
+        description="Which packs of tools may load at all, by name (see kit tools packs), or "
+        '"all". A pack left out is never offered.',
+    )
+    confirm: list[str] = Field(
+        default_factory=list,
+        description="Tools, by name, that ask you first even though they only do something "
+        "easily undone. Anything that changes something of yours always asks.",
+    )
+    max_packs: int = Field(
+        3,
+        ge=1,
+        le=10,
+        description="At most how many packs one message loads, counting the core pack. Packs "
+        "named by a word in the message load even past this.",
+    )
+    match_similarity: float = Field(
+        0.45,
+        ge=0,
+        le=1,
+        description="How close in meaning a message must be to a pack's example questions to "
+        "load that pack (0 to 1). Higher loads fewer.",
+    )
+    confirm_lapse_minutes: int = Field(
+        10,
+        ge=1,
+        le=1440,
+        description="How long Kit waits for your yes to something he asked to do before "
+        "letting it go.",
+    )
 
 
 class CloudSettings(_Section):

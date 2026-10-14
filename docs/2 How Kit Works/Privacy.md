@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/privacy]
 aliases: [Keep it local, What Kit sees, The switches, Security]
 summary: What Kit sees, what leaves the house and what never does - keep it local, the desk app's switches, the eyes' no-pictures rule, read-only shares, tokens and secrets.
-related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
+related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]", "[[Tools and Packs]]"]
 ---
 
 # Privacy
@@ -122,6 +122,12 @@ See [[Hearing]].
   writes only when you ask. Every other share is read-only, and `kit check`
   fails one he could write to. See [[Notes on the NAS]].
 - **Everything Kit owns stays in his data folder.** See [[Settings and Data]].
+- **A tool can mark what it found private** (a private folder, your
+  finances). A cloud model never reads that text: the local model answers
+  the question from it in a few words, and only that summary goes out,
+  marked as summarised locally. With the local model off, the cloud model is
+  only told the answer is in a private source. See
+  [[Tools and Packs#Private results]].
 
 ## Tokens and secrets
 
