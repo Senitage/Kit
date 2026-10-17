@@ -149,6 +149,29 @@ Two ways to hold the screen; print both and pick:
 5. Open the Serial Monitor at 115200. After a few seconds it says
    `On Wi-Fi as kit-pod (...)`. Type `help` to see what he can do.
 
+### Set up the neck
+
+The Pod serves a servo tuning page. Open `http://kit-pod.local` in a browser
+on the PC or a phone (or the address after "Servo tuning page:" in the
+Serial Monitor).
+
+1. **Fit the horns.** Press "Both servos to 90° and hold". Push the neck onto
+   the turn servo so Kit faces straight ahead, and slide the tilt servo onto
+   its horn with the head level. If they're already on, take them off and
+   refit them now.
+2. **Centre.** A horn only goes on a whole tooth at a time, so he'll be a few
+   degrees out. Use the Centre −1 and +1 buttons on Turn until he faces
+   straight ahead, and on Tilt until his head is level.
+3. **Range.** Press "One end" and "Other end" on each. Nothing should touch.
+   To find the real limit, tick Free movement and nudge 1° at a time until the
+   head just touches, then set Range a couple of degrees less.
+4. **Direction.** Under "Check with Kit", press Look left, right, up and down.
+   His eyes move first and the head should follow the same way. If it goes the
+   other way, tick Flip direction for that servo and try again.
+5. **Save in the Pod.** The settings stay through restarts and new uploads.
+
+![[pod-servo-tuning.png|480]]
+
 > [!WARNING] Keep your secrets out of the repo
 > `wifi_settings.h` and `kit_server.h` are in `.gitignore`. Never rename them
 > or paste their contents into the `.example.h` files.
@@ -202,9 +225,9 @@ on by himself.
       centre, without hitting anything.
 - [ ] **Face:** after the upload he perks up, blinks and looks about. `tour`
       shows all 20 moods.
-- [ ] **Facing forward:** at rest he faces straight ahead and level. If not,
-      change `TURN_CENTRE` or `TILT_CENTRE`; if he turns or nods the wrong way,
-      set `TURN_SIGN` or `TILT_SIGN` to -1.
+- [ ] **Facing forward:** at rest he faces straight ahead and level, and
+      turns and nods the same way as his eyes. If not, fix it on the servo
+      tuning page (step 5, "Set up the neck") and save.
 - [ ] **Calm neck:** over a few idle minutes the head mostly stays still while
       the eyes dart about; now and then he glances round.
 - [ ] **Pats:** one pat gives a wiggle; three quick pats and he laughs.
@@ -241,6 +264,8 @@ on by himself.
 - **He resets or twitches when the head moves:** the servos run off the USB's
   5 V, so a weak charger or long thin cable can dip. Try a good 5 V 2 A
   charger and a short cable.
+- **He doesn't face straight ahead, or turns the wrong way:** set it on the
+  servo tuning page (step 5, "Set up the neck") and press Save in the Pod.
 - **The head rubs or catches:** `python3 kit_pod_v2.py check` says whether the
   model itself hits; if it's clear, look for a blob or leftover brim on the
   print.

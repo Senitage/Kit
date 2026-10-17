@@ -29,6 +29,12 @@
 //               look 0.5 -0.3 (and down .. up), glance (look round the room now)
 //   other:      tour (go through every mood), still (servos off), help
 //
+// Servo tuning page: once he's on Wi-Fi, open http://kit-pod.local (or the address the
+// Serial Monitor prints) in a browser on the PC or a phone. It drives the turn and tilt
+// servos by hand, holds them at 90 degrees while you fit the horns, and sets each
+// servo's centre, range and direction. Those are saved in the Pod's own memory, so
+// they survive restarts and new uploads. Close the page and Kit has his neck back.
+//
 // Board: ESP32 Dev Module. Libraries: "Adafruit SSD1351 library", "Adafruit GFX Library",
 // "ESP32Servo". Wi-Fi uploads use ArduinoOTA, which comes with the ESP32 boards.
 // Wiring: screen VCC 3V3, GND GND, DIN D23, CLK D18, CS D5, DC RX2 (16), RST TX2 (17).
@@ -48,17 +54,26 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1351.h>
 #include <ESP32Servo.h>
+#include <WebServer.h>
+#include <Preferences.h>
 #include "wifi_settings.h"
 #include "kit_server.h"
 #include "kit2d_sheet.h"
+#include "tuning_page.h"
 
 // ---------- pins and servo setup ----------
 const int PIN_CS = 5, PIN_DC = 16, PIN_RST = 17, PIN_SCK = 18, PIN_MOSI = 23;
 const int PIN_TURN = 13, PIN_TILT = 14, PIN_TOUCH = 32;
-const float TURN_CENTRE = 90, TURN_RANGE = 35;  // degrees; change the centre if Kit doesn't face forward
-const float TILT_CENTRE = 90, TILT_RANGE = 18;
-const float TURN_SIGN = 1;                       // set to -1 if Kit turns the wrong way
-const float TILT_SIGN = 1;                       // set to -1 if Kit looks up when he should look down
+// Where the neck sits. These are the starting values: the servo tuning page (see the top of
+// the file) sets your own and saves them in the Pod's memory, and they're loaded at start-up.
+const float DEFAULT_TURN_CENTRE = 90, DEFAULT_TURN_RANGE = 35;  // degrees
+const float DEFAULT_TILT_CENTRE = 90, DEFAULT_TILT_RANGE = 18;  // 18 is as far as the printed head can nod
+float TURN_CENTRE = DEFAULT_TURN_CENTRE, TURN_RANGE = DEFAULT_TURN_RANGE;
+float TILT_CENTRE = DEFAULT_TILT_CENTRE, TILT_RANGE = DEFAULT_TILT_RANGE;
+float TURN_SIGN = 1;                             // -1 if Kit turns the wrong way
+float TILT_SIGN = 1;                             // -1 if Kit looks up when he should look down
+const unsigned long TUNE_LETGO_MS = 15000;       // the tuning page hands the neck back this long after it goes quiet
+const float TUNE_SPEED = 60;                     // degrees a second when the tuning page moves a servo
 
 // The calm neck (see the top of the file). Tune these to taste.
 const float NECK_DEADBAND_TURN = 9;              // degrees; smaller turns are left to the eyes
@@ -130,6 +145,14 @@ float headTurn = TURN_CENTRE, headTilt = TILT_CENTRE;  // the head's resting pla
 bool neckMoving = false;
 float moveFromT, moveFromL, moveToT, moveToL, moveSecs;
 unsigned long moveStart = 0, neckHoldUntil = 0;
+
+// The servo tuning page. While it has the neck, Kit's own neck moves stop and the
+// servos go where the page says, in raw servo degrees (0..180).
+WebServer web(80);
+Preferences prefs;
+bool webReady = false, tuning = false, tuneFree = false;
+float tuneTurn = 90, tuneTilt = 90;
+unsigned long tuneUntil = 0;
 
 // ---------- helpers ----------
 float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -683,9 +706,23 @@ void stepNeck(unsigned long now, float dt) {
 }
 
 // ---------- servos ----------
+void writeServos() {
+  if (!servosOn) { turnServo.attach(PIN_TURN, 500, 2400); tiltServo.attach(PIN_TILT, 500, 2400); servosOn = true; }
+  turnServo.writeMicroseconds(500 + (int)(turnPos * 1900 / 180));
+  tiltServo.writeMicroseconds(500 + (int)(tiltPos * 1900 / 180));
+  servoStill = millis();
+}
+
 void stepServos(float dt) {
-  if (!servosEnabled || updating) {
+  if (updating || (!servosEnabled && !tuning)) {
     if (servosOn) { turnServo.detach(); tiltServo.detach(); servosOn = false; }
+    return;
+  }
+  if (tuning) {  // the tuning page has the neck: go there at a steady speed and hold it firmly
+    float most = TUNE_SPEED * dt;
+    turnPos += clampf(tuneTurn - turnPos, -most, most);
+    tiltPos += clampf(tuneTilt - tiltPos, -most, most);
+    writeServos();
     return;
   }
   // A real gesture (nod, shake, perk up) rides on top of the resting head.
@@ -701,12 +738,132 @@ void stepServos(float dt) {
   bool moving = fabsf(goalT - turnPos) > 0.3f || fabsf(goalL - tiltPos) > 0.3f;
   turnPos = lerpf(turnPos, goalT, k); tiltPos = lerpf(tiltPos, goalL, k);
   if (moving) {
-    if (!servosOn) { turnServo.attach(PIN_TURN, 500, 2400); tiltServo.attach(PIN_TILT, 500, 2400); servosOn = true; }
-    turnServo.writeMicroseconds(500 + (int)(turnPos * 1900 / 180));
-    tiltServo.writeMicroseconds(500 + (int)(tiltPos * 1900 / 180));
-    servoStill = millis();
+    writeServos();
   } else if (servosOn && millis() - servoStill > 400) {  // let go so they don't buzz
     turnServo.detach(); tiltServo.detach(); servosOn = false;
+  }
+}
+
+// ---------- the servo tuning page ----------
+void command(String cmd);  // below, with the Serial Monitor commands
+
+void loadTuning() {
+  prefs.begin("pod", true);
+  TURN_CENTRE = prefs.getFloat("turn_c", DEFAULT_TURN_CENTRE);
+  TURN_RANGE = prefs.getFloat("turn_r", DEFAULT_TURN_RANGE);
+  TURN_SIGN = prefs.getFloat("turn_s", 1);
+  TILT_CENTRE = prefs.getFloat("tilt_c", DEFAULT_TILT_CENTRE);
+  TILT_RANGE = prefs.getFloat("tilt_r", DEFAULT_TILT_RANGE);
+  TILT_SIGN = prefs.getFloat("tilt_s", 1);
+  prefs.end();
+  headTurn = turnPos = TURN_CENTRE;
+  headTilt = tiltPos = TILT_CENTRE;
+  Serial.printf("Neck: turn centre %.0f, range %.0f, sign %.0f; tilt centre %.0f, range %.0f, sign %.0f\n",
+                TURN_CENTRE, TURN_RANGE, TURN_SIGN, TILT_CENTRE, TILT_RANGE, TILT_SIGN);
+}
+
+void saveTuning() {
+  prefs.begin("pod", false);
+  prefs.putFloat("turn_c", TURN_CENTRE); prefs.putFloat("turn_r", TURN_RANGE); prefs.putFloat("turn_s", TURN_SIGN);
+  prefs.putFloat("tilt_c", TILT_CENTRE); prefs.putFloat("tilt_r", TILT_RANGE); prefs.putFloat("tilt_s", TILT_SIGN);
+  prefs.end();
+  Serial.println("Neck settings saved");
+}
+
+// Keep the page's targets inside the neck's range, or anywhere 0..180 with "free" ticked.
+void clampTune() {
+  float tLo = tuneFree ? 0 : TURN_CENTRE - TURN_RANGE, tHi = tuneFree ? 180 : TURN_CENTRE + TURN_RANGE;
+  float lLo = tuneFree ? 0 : TILT_CENTRE - TILT_RANGE, lHi = tuneFree ? 180 : TILT_CENTRE + TILT_RANGE;
+  tuneTurn = clampf(tuneTurn, fmaxf(0, tLo), fminf(180, tHi));
+  tuneTilt = clampf(tuneTilt, fmaxf(0, lLo), fminf(180, lHi));
+}
+
+void takeNeck() {
+  if (!tuning) {
+    tuning = true;
+    tuneTurn = turnPos; tuneTilt = tiltPos;
+    Serial.println("The tuning page has the neck");
+  }
+  tuneUntil = millis() + TUNE_LETGO_MS;
+  lastActive = millis();
+}
+
+// Hand the neck back to Kit. From /release and when the page goes quiet it eases back to
+// centre; before a command (look, nod) it starts from where it is, so the command shows at once.
+void giveNeckBack(bool toCentre) {
+  if (!tuning) return;
+  tuning = false; tuneFree = false;
+  headTurn = clampf(turnPos, TURN_CENTRE - TURN_RANGE, TURN_CENTRE + TURN_RANGE);
+  headTilt = clampf(tiltPos, TILT_CENTRE - TILT_RANGE, TILT_CENTRE + TILT_RANGE);
+  aimX = aimY = 0; aimUntil = 0; aimHoldMs = 0;
+  neckMoving = false; neckHoldUntil = millis();
+  if (toCentre) {
+    moveFromT = headTurn; moveFromL = headTilt; moveToT = TURN_CENTRE; moveToL = TILT_CENTRE;
+    moveSecs = fmaxf(0.6f, fmaxf(fabsf(moveToT - moveFromT), fabsf(moveToL - moveFromL)) / NECK_SPEED_CALM);
+    moveStart = millis(); neckMoving = true;
+  }
+  Serial.println("Kit has his neck back");
+}
+
+void sendTuneState(const char *note) {
+  char buf[420];
+  snprintf(buf, sizeof buf,
+           "{\"turn\":%.1f,\"tilt\":%.1f,\"tuning\":%s,\"free\":%s,\"tc\":%.1f,\"tr\":%.1f,\"ts\":%d,"
+           "\"lc\":%.1f,\"lr\":%.1f,\"ls\":%d,\"state\":\"%s\",\"note\":\"%s\"}",
+           turnPos, tiltPos, tuning ? "true" : "false", tuneFree ? "true" : "false",
+           TURN_CENTRE, TURN_RANGE, (int)TURN_SIGN, TILT_CENTRE, TILT_RANGE, (int)TILT_SIGN, state, note);
+  web.send(200, "application/json", buf);
+}
+
+float webArg(const char *name, float fallback) { return web.hasArg(name) ? web.arg(name).toFloat() : fallback; }
+
+void startTuningPage() {
+  web.on("/", []() { web.send_P(200, "text/html", TUNING_PAGE); });
+  // ?hold=1 while the page is open and has the neck, so it isn't handed back under you
+  web.on("/state", []() { if (tuning && web.hasArg("hold")) tuneUntil = millis() + TUNE_LETGO_MS; sendTuneState(""); });
+  // raw servo degrees (turn=, tilt=) or a nudge from where it's going (dturn=, dtilt=)
+  web.on("/move", []() {
+    takeNeck();
+    tuneTurn = webArg("turn", tuneTurn) + webArg("dturn", 0);
+    tuneTilt = webArg("tilt", tuneTilt) + webArg("dtilt", 0);
+    clampTune();
+    sendTuneState("");
+  });
+  web.on("/centre", []() { takeNeck(); tuneTurn = TURN_CENTRE; tuneTilt = TILT_CENTRE; sendTuneState(""); });
+  // both servos to 90 and hold, for fitting the horns
+  web.on("/fit", []() { takeNeck(); tuneFree = true; tuneTurn = tuneTilt = 90; sendTuneState(""); });
+  web.on("/free", []() { takeNeck(); tuneFree = webArg("on", 0) != 0; clampTune(); sendTuneState(""); });
+  web.on("/set", []() {
+    TURN_CENTRE = clampf(webArg("tc", TURN_CENTRE), 20, 160);
+    TURN_RANGE = clampf(webArg("tr", TURN_RANGE), 0, 80);
+    TURN_SIGN = webArg("ts", TURN_SIGN) < 0 ? -1 : 1;
+    TILT_CENTRE = clampf(webArg("lc", TILT_CENTRE), 20, 160);
+    TILT_RANGE = clampf(webArg("lr", TILT_RANGE), 0, 40);
+    TILT_SIGN = webArg("ls", TILT_SIGN) < 0 ? -1 : 1;
+    if (tuning) clampTune();
+    sendTuneState("");
+  });
+  web.on("/save", []() { saveTuning(); sendTuneState("Saved in the Pod's memory"); });
+  web.on("/defaults", []() {
+    TURN_CENTRE = DEFAULT_TURN_CENTRE; TURN_RANGE = DEFAULT_TURN_RANGE; TURN_SIGN = 1;
+    TILT_CENTRE = DEFAULT_TILT_CENTRE; TILT_RANGE = DEFAULT_TILT_RANGE; TILT_SIGN = 1;
+    if (tuning) clampTune();
+    sendTuneState("Back to the starting values (not saved yet)");
+  });
+  web.on("/release", []() { giveNeckBack(true); sendTuneState(""); });
+  // any Serial Monitor command (nod, look -1, happy, ...); Kit gets his neck back first
+  web.on("/cmd", []() { giveNeckBack(false); command(web.arg("c")); sendTuneState(""); });
+  web.onNotFound([]() { web.send(404, "text/plain", "Not here. Try /"); });
+  web.begin();
+  webReady = true;
+  Serial.printf("Servo tuning page: http://%s.local or http://%s\n", POD_NAME, WiFi.localIP().toString().c_str());
+}
+
+void stepTuning(unsigned long now) {
+  if (webReady) web.handleClient();
+  if (tuning) {
+    lastActive = now;  // don't doze off mid-tune
+    if ((long)(now - tuneUntil) > 0) giveNeckBack(true);
   }
 }
 
@@ -730,6 +887,7 @@ void startWifi() {
   ArduinoOTA.setPassword(UPLOAD_PASSWORD);
   ArduinoOTA.onStart([]() {
     updating = true;
+    tuning = false;
     stepServos(0);  // let the servos go limp while the new program loads
     Serial.println("Receiving a new program over Wi-Fi");
     drawUpdate(0);
@@ -748,6 +906,7 @@ void stepWifi() {
     ArduinoOTA.begin();
     otaReady = true;
     Serial.printf("On Wi-Fi as %s (%s). Wi-Fi uploads ready.\n", POD_NAME, WiFi.localIP().toString().c_str());
+    startTuningPage();
   }
   if (otaReady) ArduinoOTA.handle();
 }
@@ -927,6 +1086,7 @@ void setup() {
   long sum = 0;
   for (int i = 0; i < 20; i++) { sum += touchRead(PIN_TOUCH); delay(10); }
   touchBaseline = sum / 20;
+  loadTuning();
   randomSeed(esp_random());
   startWifi();
   startLink();
@@ -948,7 +1108,8 @@ void loop() {
   stepLink(now);
   idleLife(now);
   Frame f = buildFrame(now, dt);
-  stepNeck(now, dt);
+  stepTuning(now);
+  if (!tuning) stepNeck(now, dt);
   stepServos(dt);
   drawFace(f);
 }
