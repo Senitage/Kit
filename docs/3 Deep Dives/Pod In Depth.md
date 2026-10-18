@@ -66,6 +66,7 @@ this order:
 | the link to Kit's brain | The body feed and pats (below) |
 | the calm neck | Decides *when* the head moves, then eases it there |
 | servos | Turns the head's angle into servo pulses, and lets go when still so they don't buzz |
+| the servo tuning page | The page that drives the servos by hand and saves the neck's centre, range and direction |
 | Wi-Fi uploads | ArduinoOTA, with a progress bar on his face |
 | input | Serial commands, pats and his life on his own |
 | each frame | Blends the pose, blinks, eye darts and breathing into one frame |
@@ -190,9 +191,13 @@ idle simulation went from about 26 servo moves a minute to under one.
 
 | Setting (top of the program) | Default | What it does |
 |---|---|---|
-| `TURN_CENTRE`, `TILT_CENTRE` | 90 | Change if he doesn't face straight ahead |
-| `TURN_RANGE`, `TILT_RANGE` | 35, 18 | How far each way, in degrees |
-| `TURN_SIGN`, `TILT_SIGN` | 1 | Set to -1 if he turns or nods the wrong way |
+| `DEFAULT_TURN_CENTRE`, `DEFAULT_TILT_CENTRE` | 90 | Where he faces straight ahead and level, until you tune it |
+| `DEFAULT_TURN_RANGE`, `DEFAULT_TILT_RANGE` | 35, 18 | How far each way, in degrees, until you tune it |
+| `TUNE_LETGO_MS` | 15000 | The tuning page hands the neck back this long after it goes quiet |
+| `TUNE_SPEED` | 60 | Degrees a second when the tuning page moves a servo |
+
+The real centre, range and direction (which way is left, which way is up) are
+set on the servo tuning page, below, and kept in the Pod's memory.
 | `NECK_DEADBAND_TURN`, `NECK_DEADBAND_TILT` | 9, 4 | Smaller moves are left to the eyes |
 | `NECK_HOLD_MS` | 3000 | The head stays put this long after a move |
 | `NECK_SPEED_CALM`, `NECK_SPEED_LIVELY`, `NECK_SPEED_NOTICE` | 30, 80, 120 | Degrees a second: sleepy, lively, "what's that?" |
@@ -233,6 +238,43 @@ Open the Arduino Serial Monitor at **115200** and type:
 >
 > ![[pod-screen-gestures.png]]
 
+## The servo tuning page
+
+Once he's on Wi-Fi the Pod serves a small web page at `http://kit-pod.local`
+(or the address the Serial Monitor prints). Open it in any browser on the PC
+or a phone; nothing to install, and it works without the internet.
+
+![[pod-servo-tuning.png]]
+
+| Part of the page | What it's for |
+|---|---|
+| Fit the horns | Both servos to 90 degrees, held, while you push the neck onto the turn servo and slide the tilt servo onto its horn |
+| Turn, Tilt | Move each servo by hand: slider, 1 and 5 degree nudges, each end of its range, a sweep. Set its centre, range and direction |
+| Check with Kit | Look left, right, up and down, nod, shake and glance, done by Kit himself, so you see his eyes and head agree |
+| Keep it | Save in the Pod, give the neck back, go back to the starting values, or free movement (anywhere 0 to 180 degrees, to find where the head touches) |
+
+While the page has the neck, the calm neck stops and the servos hold where the
+page puts them, moving at 60 degrees a second; his face carries on. The page
+keeps the neck while it's open; close it (or press Esc) and he takes it back
+15 s later, easing to centre. The arrow keys turn and tilt him once the
+directions are right. A horn only goes on a whole spline tooth at a time, so
+"Centre" is how you take out the last few degrees.
+
+Saved settings live in the ESP32's own storage (Preferences, namespace `pod`),
+so a restart or a new upload keeps them. The page talks to these addresses,
+all plain GET requests that answer with the neck's state as JSON:
+
+| Address | Does |
+|---|---|
+| `/state` | Just the state (`?hold=1` keeps the neck while the page is open) |
+| `/move?turn=95&tilt=88`, `/move?dturn=-1` | Takes the neck and moves to raw servo degrees, or nudges |
+| `/centre`, `/fit` | Both to centre, or both to 90 with free movement |
+| `/free?on=1` | Free movement on or off |
+| `/set?tc=92&tr=35&ts=1&lc=90&lr=16&ls=-1` | Centre, range and direction (1 or -1) for turn and tilt |
+| `/save`, `/defaults` | Saves them in the Pod, or goes back to the starting values |
+| `/release` | Gives the neck back to Kit |
+| `/cmd?c=nod` | Any Serial Monitor command, after giving the neck back |
+
 ## Uploads over Wi-Fi
 
 After the first USB upload the Pod joins the home Wi-Fi as `kit-pod` and
@@ -268,6 +310,7 @@ The steps are in [[Building the Pod#7. Link him to Kit]].
 | File | What it is |
 |---|---|
 | `pod/firmware/kit_pod_face/kit_pod_face.ino` | The whole program |
+| `pod/firmware/kit_pod_face/tuning_page.h` | The servo tuning page, as one HTML string |
 | `pod/firmware/kit_pod_face/kit2d_sheet.h` | Kit 2D's moods, poses and gestures as C tables, made by `make_sheet.py` |
 | `pod/firmware/kit_pod_face/wifi_settings.example.h` | Copy to `wifi_settings.h`: Wi-Fi name and password, upload password, network name |
 | `pod/firmware/kit_pod_face/kit_server.example.h` | Copy to `kit_server.h`: Kit's address and token |
@@ -287,9 +330,9 @@ The face plate comes in two versions; print both and keep the one you like.
 
 ![[pod-face-options.jpg]]
 
-*Left, studs: four countersunk screws through the plate and a nut on each, so
-the screen comes out again. Right, pins: the screen presses onto four printed
-pins with a dab of hot glue.*
+*Left, screws: four M2 screws go in from the back, through the board into the
+plate's posts, so nothing shows from the front and the screen comes out again.
+Right, pins: the screen presses onto four printed pins with a dab of hot glue.*
 
 ## What's next for the Pod
 

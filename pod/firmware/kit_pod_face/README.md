@@ -9,6 +9,7 @@ servos, the pat sensor and uploads over Wi-Fi.
 - `wifi_settings.h`: your Wi-Fi name and password, and the upload password. Copy `wifi_settings.example.h` to `wifi_settings.h` and fill it in before the first upload.
 - `kit_server.h`: where Kit's server is and Kit's token, so the Pod follows Kit's real moods. Copy `kit_server.example.h` to `kit_server.h`. Leave `KIT_URL` empty and he runs on his own.
 - Both real files are in `.gitignore`, so your Wi-Fi password and Kit's token never go into the repo.
+- `tuning_page.h`: the servo tuning page the Pod serves (below).
 - `kit2d_sheet.h`: Kit's moods, colours and gestures, made from Kit's character sheet (`src/kit/face/characters/kit2d.json`) by `make_sheet.py`. When the sheet changes, run `python make_sheet.py` and upload again.
 - What the screen shows is in the docs: `docs/Assets/pod-screen-moods.png` and `docs/Assets/pod-screen-gestures.png`.
 
@@ -34,10 +35,22 @@ If it fails with "No response from device" after "Authenticating... OK":
 
 ## Settings at the top of the program
 
-- `TURN_CENTRE`, `TILT_CENTRE`: change if Kit doesn't face straight ahead.
-- `TURN_SIGN`, `TILT_SIGN`: set to -1 if he turns or nods the wrong way.
+- `DEFAULT_TURN_CENTRE`, `DEFAULT_TILT_CENTRE`, `DEFAULT_TURN_RANGE`, `DEFAULT_TILT_RANGE`: where the neck starts before you tune it. Set the real centre, range and direction on the servo tuning page instead (below); it saves them in the Pod.
+- `TUNE_LETGO_MS`, `TUNE_SPEED`: how long the tuning page keeps the neck after it goes quiet, and how fast it moves a servo.
 - `NECK_...` and `GLANCE_...`: the calm neck (below). Dead band, how long the head holds still, how fast it moves, how often he glances round.
 - `DOZE_AFTER_MS`: how long alone before he falls asleep.
+
+## Servo tuning page
+
+Once he's on Wi-Fi, open `http://kit-pod.local` in a browser on the PC or a phone (or the address the Serial Monitor prints after "Servo tuning page:"). It:
+
+- holds both servos at 90 degrees while you fit the horns;
+- moves each servo by hand: a slider, 1 and 5 degree nudges, the arrow keys, each end of its range, and a sweep;
+- sets each servo's centre (straight ahead, level), range (how far each way) and direction;
+- checks the result with Kit himself: look left, right, up and down, nod, shake, glance;
+- saves the centre, range and direction in the Pod's own memory, so they survive restarts and new uploads.
+
+While the page has the neck, his own neck moves stop (his face carries on). Press "Give the neck back to Kit", or close the page, and 15 s later he has it back.
 
 ## Serial Monitor commands
 
