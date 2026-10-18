@@ -207,6 +207,17 @@ VOICE_WINS = (
 )
 
 
+# Haiku, playing a cheeky voice, wrote "Hehe!" into lines where nothing was funny, and
+# his voice read it out. A laugh outside a laugh segment is taken out anyway
+# (kit.reply.said_laughs); this keeps it from being written, so a line doesn't lose
+# its opening.
+NO_WRITTEN_LAUGHS = (
+    "Laugh only when something is actually funny (a joke, something silly that "
+    "happened), never to fill a line or sound friendly. When you do, give that segment "
+    "the laugh gesture; a laugh in words ('hehe', 'haha') goes only in that segment."
+)
+
+
 def own_voice_default_examples(persona: PersonaSettings) -> bool:
     """True when the owner has given Kit a voice of their own but kept the default
     examples, which are in the default voice and pull him back to it."""
@@ -310,6 +321,7 @@ def system_prompt(
         "that's only how you sound, not who you are. Earlier lines where you used another "
         "name were a slip; don't repeat them.",
         f"- {everyday(owner)}",
+        f"- {NO_WRITTEN_LAUGHS}",
     ]
     if cloud:
         lines += [

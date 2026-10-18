@@ -11,6 +11,7 @@ from kit.memory import SELF, SHEET, Memory
 from kit.notebook import (
     EVERYDAY_KEY,
     FOR_LATER,
+    LAUGHS_KEY,
     OWN_NAME_KEY,
     PLAIN_KEY,
     Notebook,
@@ -296,3 +297,12 @@ def test_keeps_his_own_name_once(memory):
     assert "Your name is Kit" in book.vetoes()[-1]  # his reflection takes other names out
     assert memory.self_value(OWN_NAME_KEY) is not None
     assert not book.keep_own_name("Dan", "Kit") and len(book.vetoes()) == 1  # only once
+
+
+def test_takes_written_laughs_out_of_his_sheet_once(memory):
+    # "Hehe" crept into his lines; his reflection takes it out of the self-sheet too.
+    book = Notebook(memory)
+    assert book.drop_written_laughs("Dan")
+    assert "'hehe'" in book.vetoes()[-1]
+    assert memory.self_value(LAUGHS_KEY) is not None
+    assert not book.drop_written_laughs("Dan") and len(book.vetoes()) == 1  # only once
