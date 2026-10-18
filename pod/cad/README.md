@@ -97,3 +97,5 @@ The neck arms reach a little past the round base (the cap's opening limits its s
 The pin's bracket in the head is 4 mm thick, with 7 mm of wall below the pin's channel and 6.7 mm above its seat, so it survives having its supports pulled off (2026-10-13).
 
 The body's three base screw bosses are joined to its wall by a 7 mm web with a 45 degree gusset on top. On their own they stood 0.1 to 0.9 mm clear of the wall, so they printed as loose towers and snapped off (2026-10-14).
+
+The back cover's four screws sit 25.5 mm either side of the middle and 8 mm above and below it, each through a 10 mm lug joined to the cover's side wall, and the head's matching bosses are joined to its walls too. Further out and further up and down, the cover's curved back corners left only a thin curl of wall round each hole, which tore off with the supports (2026-10-18).

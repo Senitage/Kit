@@ -253,10 +253,20 @@ def head_shell():
 
 
 BOSS_D = 6.0
+COVER_LUG_D = 10.0                      # the cover's solid lug round each of its screws
 
 
 def head_cover_bosses():
-    return [(sx * 28.6, H_ZC + sz * 13.0) for sx in (-1, 1) for sz in (-1, 1)]
+    # In from the sides and 8 mm above and below the middle. The cover is only 9 mm deep and its sides curve
+    # in toward the back, so further out or further up and down the holes broke out through its wall.
+    return [(sx * 25.5, H_ZC + sz * 8.0) for sx in (-1, 1) for sz in (-1, 1)]
+
+
+def cover_screw_lug(x, z, d, y0, y1):
+    """A round lug along Y for a cover screw, with a web out to the side wall so it's part of the shell."""
+    sx = 1 if x > 0 else -1
+    web = box(min(x, sx * (HW / 2 + 1)), y0, z - d / 2, max(x, sx * (HW / 2 + 1)), y1, z + d / 2)
+    return cyl(d, y1 - y0, (x, y0, z), "Y").union(web)
 
 
 def arm_slot(x0, x1):
@@ -294,7 +304,7 @@ def head():
     shell = shell.union(bulk.union(brk).intersect(inside))
     # bosses for the back cover
     for x, z in head_cover_bosses():
-        shell = shell.union(cyl(BOSS_D, 10, (x, H_CUT - 10, z), "Y").intersect(inside))
+        shell = shell.union(cover_screw_lug(x, z, BOSS_D, H_CUT - 10, H_CUT).intersect(inside))
         shell = shell.cut(cyl(pilot, 9, (x, H_CUT - 9, z), "Y"))
     # floor: slots for the neck's arms and the wire hole
     shell = shell.cut(arm_slot(R_ARM_X0 - 0.5, R_ARM_X0 + ARM_T + 0.5))
@@ -326,6 +336,12 @@ def ears():
 
 def cover():
     c = head_shell().intersect(box(-50, H_CUT, -10, 50, 60, 120))
+    # A solid lug round each screw, from the cut face to the back wall and joined to the side wall, so the
+    # hole and the screw head's counterbore have plastic all round (bare, they left only a thin curl of wall).
+    # The lugs stand on the bed (the cover prints cut face down), so they need no supports.
+    outer = head_outer().intersect(box(-50, H_CUT, -10, 50, 60, 120))
+    for x, z in head_cover_bosses():
+        c = c.union(cover_screw_lug(x, z, COVER_LUG_D, H_CUT, H_Y1 + 1).intersect(outer))
     for x, z in head_cover_bosses():
         c = c.cut(cyl(clear3, 30, (x, H_CUT - 1, z), "Y"))
         c = c.cut(cyl(6.2, 30, (x, H_CUT + 3.0, z), "Y"))      # counterbore: screw heads sit inside
