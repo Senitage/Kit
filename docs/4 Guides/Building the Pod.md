@@ -64,7 +64,7 @@ Then print the rest:
 | Part | Colour | Lay it | Supports |
 |---|---|---|---|
 | head | white | back opening down | yes, tree supports |
-| cover | white | flat side down | none |
+| cover | white | flat side down | yes, under the back wall only; the screw pads and lugs stand on the bed |
 | face (screws) or face_pins | black | front down | none |
 | ear x 2 | orange | flat side down | none |
 | neck | dark grey | disc down | touching the bed only |

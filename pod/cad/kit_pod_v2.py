@@ -254,19 +254,26 @@ def head_shell():
 
 BOSS_D = 6.0
 COVER_LUG_D = 10.0                      # the cover's solid lug round each of its screws
+COVER_PAD_T = 3.0                       # the flat pad each cover screw's head sits on
 
 
 def head_cover_bosses():
-    # In from the sides and 8 mm above and below the middle. The cover is only 9 mm deep and its sides curve
-    # in toward the back, so further out or further up and down the holes broke out through its wall.
-    return [(sx * 25.5, H_ZC + sz * 8.0) for sx in (-1, 1) for sz in (-1, 1)]
+    return [(sx * 28.6, H_ZC + sz * 13.0) for sx in (-1, 1) for sz in (-1, 1)]
 
 
 def cover_screw_lug(x, z, d, y0, y1):
-    """A round lug along Y for a cover screw, with a web out to the side wall so it's part of the shell."""
+    """A round lug along Y for a cover screw, with a web out to the side wall so it's part of the cover."""
     sx = 1 if x > 0 else -1
     web = box(min(x, sx * (HW / 2 + 1)), y0, z - d / 2, max(x, sx * (HW / 2 + 1)), y1, z + d / 2)
     return cyl(d, y1 - y0, (x, y0, z), "Y").union(web)
+
+
+def cut_face_outline(y0, y1):
+    """The head's outline where it meets the cover, run straight along Y: the back fillet has already pulled the
+    sides in a little there, so this is the outer shape shrunk by that much."""
+    e = H_BACK_R - math.sqrt(H_BACK_R ** 2 - (H_CUT - (H_Y1 - H_BACK_R)) ** 2)
+    s = cq.Workplane().box(HW - 2 * e, y1 - y0, HH - 2 * e, centered=(True, False, True)).translate((0, y0, H_ZC))
+    return s.edges("|Y").fillet(H_R - e)
 
 
 def arm_slot(x0, x1):
@@ -304,7 +311,7 @@ def head():
     shell = shell.union(bulk.union(brk).intersect(inside))
     # bosses for the back cover
     for x, z in head_cover_bosses():
-        shell = shell.union(cover_screw_lug(x, z, BOSS_D, H_CUT - 10, H_CUT).intersect(inside))
+        shell = shell.union(cyl(BOSS_D, 10, (x, H_CUT - 10, z), "Y").intersect(inside))
         shell = shell.cut(cyl(pilot, 9, (x, H_CUT - 9, z), "Y"))
     # floor: slots for the neck's arms and the wire hole
     shell = shell.cut(arm_slot(R_ARM_X0 - 0.5, R_ARM_X0 + ARM_T + 0.5))
@@ -336,15 +343,20 @@ def ears():
 
 def cover():
     c = head_shell().intersect(box(-50, H_CUT, -10, 50, 60, 120))
-    # A solid lug round each screw, from the cut face to the back wall and joined to the side wall, so the
-    # hole and the screw head's counterbore have plastic all round (bare, they left only a thin curl of wall).
-    # The lugs stand on the bed (the cover prints cut face down), so they need no supports.
+    # The screws sit where the cover's corners curve in toward the back, so the cover is only 2-3 mm deep
+    # there and the hole and the screw head's counterbore left a thin curl of wall that tore off with the
+    # supports. Each screw now has a flat pad, solid from the cut face to COVER_PAD_T, that the screw head
+    # sits on, and above it a lug joined to the side wall that runs up to the back wall. Both stand on the
+    # bed (the cover prints cut face down), so nothing round the screws needs supports. The holes stay
+    # where they were, so the head's bosses don't change.
     outer = head_outer().intersect(box(-50, H_CUT, -10, 50, 60, 120))
+    rim = cut_face_outline(H_CUT, H_CUT + COVER_PAD_T)
     for x, z in head_cover_bosses():
         c = c.union(cover_screw_lug(x, z, COVER_LUG_D, H_CUT, H_Y1 + 1).intersect(outer))
+        c = c.union(cyl(COVER_LUG_D, COVER_PAD_T, (x, H_CUT, z), "Y").intersect(rim))
     for x, z in head_cover_bosses():
         c = c.cut(cyl(clear3, 30, (x, H_CUT - 1, z), "Y"))
-        c = c.cut(cyl(6.2, 30, (x, H_CUT + 3.0, z), "Y"))      # counterbore: screw heads sit inside
+        c = c.cut(cyl(6.2, 30, (x, H_CUT + COVER_PAD_T, z), "Y"))   # counterbore: screw heads sit on the pad
     return c
 
 
