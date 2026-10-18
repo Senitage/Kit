@@ -19,6 +19,7 @@ import kit
 from kit.body_registry import BodyRegistry
 from kit.brain import Brain
 from kit.devices import DEVICES_FILE, Devices
+from kit.files.index import Files
 from kit.known_faces import FACES_FILE, KnownFaces
 from kit.known_voices import VOICES_FILE, KnownVoices
 from kit.life import TICK_S
@@ -37,6 +38,7 @@ log = logging.getLogger(__name__)
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
 SPEECH_CHECK_S = 5  # how often the voice engine is started or stopped to match settings
+FILES_CHECK_S = 60  # how often Kit checks whether a files sync is due (files.sync_every_minutes)
 
 
 def create_app(
@@ -54,6 +56,7 @@ def create_app(
     voices: KnownVoices | None = None,
     devices: Devices | None = None,
     registry: BodyRegistry | None = None,
+    files_every_s: float | None = FILES_CHECK_S,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
@@ -64,6 +67,13 @@ def create_app(
     if registry is None:
         registry = brain.bodies
     brain.bodies = registry
+    if brain.files is None:
+        brain.files = Files(
+            memory.index,
+            store.current,
+            store.paths.state_dir,
+            names=lambda: [n for t in brain.register.all() for n in t.names],
+        )
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -74,6 +84,8 @@ def create_app(
             tasks.append(asyncio.create_task(_life_loop(brain, life_every_s)))
         if notes_every_s:
             tasks.append(asyncio.create_task(_notes_loop(brain, store, notes_every_s)))
+        if files_every_s:
+            tasks.append(asyncio.create_task(_files_loop(brain, store, files_every_s)))
         if speech is not None and speech_check_s:
             tasks.append(asyncio.create_task(_speech_loop(speech, store, speech_check_s)))
         yield
@@ -103,6 +115,28 @@ async def _notes_loop(brain: Brain, store: SettingsStore, every_s: float) -> Non
                 await brain.recall.index_pending(limit=5000)
         except Exception:
             log.exception("reading the notes vault failed")
+        await asyncio.sleep(every_s)
+
+
+async def _files_loop(brain: Brain, store: SettingsStore, every_s: float) -> None:
+    """Keep the index in step with Dan's folders (kit.files): a sync once at start-up
+    and then every ``files.sync_every_minutes`` (once a day when that's 0). Only new
+    and changed files are read; the pieces are embedded as they come."""
+    last = None
+    while True:
+        try:
+            s = store.current().files
+            gap = (s.sync_every_minutes or 24 * 60) * 60
+            now = asyncio.get_running_loop().time()
+            if s.roots and (last is None or now - last >= gap) and not brain.files.running:
+                last = now
+                report = await asyncio.to_thread(brain.files.sync)
+                if report.indexed or report.removed:
+                    log.info("files: %s", report.line())
+                while await brain.recall.index_pending(limit=5000):
+                    pass
+        except Exception:
+            log.exception("reading the files roots failed")
         await asyncio.sleep(every_s)
 
 
@@ -183,7 +217,7 @@ async def _upkeep_loop(
     brain: Brain, paths: KitPaths | None, store: SettingsStore, every_s: float
 ) -> None:
     """Summarise finished days, let Kit reflect on them, embed anything not yet
-    indexed, and back up memory daily."""
+    indexed, back up memory daily, and fetch the day's model prices."""
     while True:
         try:
             await brain.summarise_past_days()
@@ -208,4 +242,9 @@ async def _upkeep_loop(
                     await asyncio.to_thread(brain.memory.backup, paths.backups_dir, keep)
             except Exception:
                 log.exception("backing up memory failed")
+        try:
+            if not brain.cloud.prices.fetched_today():
+                await brain.cloud.prices.refresh()  # today's model prices and exchange rate
+        except Exception:
+            log.exception("fetching prices failed")
         await asyncio.sleep(every_s)

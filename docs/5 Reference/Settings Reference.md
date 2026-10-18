@@ -21,24 +21,28 @@ next message and can be undone. How that works is in [[Settings and Data]].
 
 ## What the file holds
 
-`settings.toml` starts with `schema_version = 2` and then holds **only what
+`settings.toml` starts with `schema_version = 3` and then holds **only what
 you changed**. A setting that isn't in the file is at its default, so when a
-default moves in a Kit update (a model's price or id in `models`, a voice
-engine's field in `speech.engines`, a line of his character in `persona`), it
-reaches you by itself. A built-in model or voice engine profile is written the
-same way, field by field; a profile you added yourself is written whole.
+default moves in a Kit update (a voice engine's field in `speech.engines`, a
+line of his character in `persona`), it reaches you by itself. A built-in
+voice engine is written the same way, field by field; an engine you added
+yourself is written whole. The one exception is `models`: it's your own list,
+so once it differs from the three starters it's written whole, and it never
+holds a price.
 
 - `kit config show` prints everything in force, defaults included; the file
   is the short version. Set a value equal to its default and it leaves the
   file.
 - A value you type into the file by hand is yours, even if it equals today's
   default, until the next save from a page or `kit config set` tidies it out.
-- **Version 1 files** (before October 2026) held every value, chosen or not.
-  The first time Kit reads one he drops everything that was a default in
-  version 1 (the built-in profiles and persona lines of the day are kept in
-  the code for this; for every other setting, version 1's default is today's)
-  and rewrites the file as version 2, with no history entry. What you had
-  changed stays. See [[Updating Kit#Settings from an older Kit]].
+- **Version 2 files** (October 2026) took five built-in model profiles for
+  granted, held prices as settings and the budget in US dollars. The first
+  read keeps the models a role uses and any the file names (whole, without
+  the prices), turns the budget into Australian dollars and rewrites the file
+  as version 3. **Version 1 files** (before that) held every value, chosen or
+  not; the defaults of the day are dropped first. Neither makes a history
+  entry, and what you had changed stays. See
+  [[Updating Kit#Settings from an older Kit]].
 
 ## ollama
 
@@ -81,17 +85,17 @@ Which model answers what, and when Kit asks before spending. See [[Models and Ro
 
 ## models
 
-The models Kit can use, by name. The built-in profiles are always there; change
-their fields or add your own, then give a role one with
-`kit models ROLE NAME`. See [[Models and Routing]].
+The models Kit can use, by name: your own list. A new Kit starts with these
+three; `kit models add NAME --provider P --model ID` adds any model,
+`kit models remove NAME` takes one out (over the API, send it as `null`), and
+`kit models ROLE NAME` gives a role one. What each costs isn't a setting:
+`kit models` shows today's prices. See [[Models and Routing#Your own list of models]].
 
 | Profile | Provider | Model |
 |---|---|---|
-| `haiku` | anthropic | Claude Haiku |
+| `haiku` | anthropic | Claude Haiku, no thinking first |
 | `sonnet` | anthropic | Claude Sonnet |
-| `opus` | anthropic | Claude Opus |
-| `gpt-sol` | openai | GPT |
-| `gemini-flash` | google | Gemini Flash |
+| `opus` | anthropic | Claude Opus, room for a long think |
 
 Each profile has these fields:
 
@@ -104,19 +108,15 @@ Each profile has these fields:
 | `max_tokens` | Longest answer, thinking included, in tokens. 16000 unless set; the built-in `opus` profile has 32000, since an expert answer thinks at length first. |
 | `thinking` | Let the model think before it answers. Off, the first words come sooner; only Claude Haiku takes it (Sonnet and Opus always think). The built-in `haiku` profile has it off. |
 | `web_search` | Let the model search the web (the provider's own search). |
-| `input_usd_per_mtok` | Price per million input tokens. |
-| `cached_input_usd_per_mtok` | Price per million input tokens read from the prompt cache. |
-| `output_usd_per_mtok` | Price per million output tokens, thinking included. |
-| `search_usd_per_k` | Price per 1,000 web searches. |
 
 ## cloud
 
-The monthly budget for cloud models. See [[Models and Routing#The budget]].
+The monthly budget for cloud models, in Australian dollars. See [[Models and Routing#The budget]].
 
 | Setting | Default | What it does |
 |---|---|---|
-| `monthly_cap_usd` | `40.0` | Kit stops using cloud models once this month's spend reaches this. |
-| `reserve_usd` | `3.0` | As the budget runs low, cloud calls give way in order, each this much sooner than the last: evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same. |
+| `monthly_cap_aud` | `60.0` | Kit stops using cloud models once this month's spend reaches this, in Australian dollars. Every call is costed at the day's prices and exchange rate. |
+| `reserve_aud` | `5.0` | As the budget runs low, cloud calls give way in order, each this much sooner than the last (in Australian dollars): evals first, then fact checks and key moments, then chat. Kit's nightly reflection always has the last of it. 0 treats them all the same. |
 | `stream` | on | A Claude answer comes in as it's written, so Kit starts saying the first words (in the answer's mood) while the rest is still on its way. Goodbyes are still checked whole first. Off: each answer arrives in one piece. |
 
 ## nas
@@ -128,6 +128,19 @@ The NAS: the notes vault (the one place Kit may write) and shares he may only re
 | `read_only_shares` | none | Shares Kit may read but never change, by name. A UNC path on Windows (\\NAS\photo) or a mount point on Linux (/mnt/nas/photo). |
 | `vault` | empty | The Obsidian vault folder, the only place on the NAS Kit may write. |
 | `notes_folder` | empty | Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. Empty for the vault's top level. |
+
+## files
+
+The folders Kit reads into his memory, and how. See [[Your Files]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `roots` | none | The folders Kit indexes, by a short name you choose, each with `path` (the folder on the server; he only reads it), `private` (its contents stay with the local model), `ocr` (read scanned PDFs too; slow, needs the ocr extras) and `max_mb` (files bigger than this are skipped, default 50). Add them on the settings page ("Your files") or with `kit files add`. |
+| `skip` | `.obsidian`, `.git`, `node_modules`, `@eaDir`, `#recycle`, `#snapshot`, `*.tmp`, `~$*` | Folder or file names (with `*` wildcards) never indexed, anywhere under a root. |
+| `chunk_words` | `400` | About how many words each indexed piece of a file holds. |
+| `max_rows` | `2000` | Most rows read from each sheet of a spreadsheet. |
+| `sync_every_minutes` | `30` | How often Kit looks for new and changed files. 0 means once a day. |
+| `read_words` | `1500` | Most words of one file Kit reads into an answer at once (used by the file tools). |
 
 ## persona
 
@@ -158,6 +171,20 @@ The brain's address and how conversations start and end. See [[Brain]].
 | `new_chat_after_minutes` | `120` | Coming back after this long quiet, Kit picks up one thing from last time, as a new chat does; the conversation itself carries on, marked "(3 hours later)". 0 never does. |
 | `new_topic_below` | `0.45` | A message this far in meaning from your last few (similarity below this, 0 to 1) is noted as a change of subject beside it; the conversation is kept. 0 never does. Short or 'that/it' messages never count as a new topic. |
 | `history_messages` | `20` | Recent messages Kit sees each turn. |
+
+## tools
+
+The tool loop: how many times a turn the model may ask for a tool, which
+packs a message loads, and what asks you first. See [[Tools and Packs]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `hops` | `6` | Most tool calls in one turn (1 to 20). After this many the model is answered with what it has. |
+| `packs` | `["all"]` | Which packs may load at all, by name (`kit tools packs`), or `all`. A pack left out is never offered. |
+| `max_packs` | `3` | At most how many packs one message loads by meaning, the core pack included (1 to 10). Packs named by a word in the message, or by a register thing, load even past this. |
+| `match_similarity` | `0.45` | How close in meaning a message must be to a pack's example questions to load that pack (0 to 1). Higher loads fewer. |
+| `confirm` | `[]` | Tools, by name, that ask you first even though they only do something easily undone. Anything that changes something of yours always asks. |
+| `confirm_lapse_minutes` | `10` | How long Kit waits for your yes to something he asked to do before letting it go (1 to 1440). |
 
 ## memory
 
@@ -236,7 +263,12 @@ The camera, read by `kit eyes` on the PC. See [[Eyes]].
 | `height` | `720` | Frame height to ask the camera for. |
 | `mirror` | on | Flip the picture like a mirror. On for a webcam facing you at the desk, so left is your left; off for a camera on the arm. |
 | `detector` | `yolo11s` | The model that finds people and objects: yolo11s suits a PC with a graphics card, yolo11n is faster but mistakes mugs for phones, yolo11m is sharper still. Downloaded the first time the eyes run. |
+| `detector_format` | `pytorch` | How the detector runs. pytorch suits a graphics card; openvino is quickest on an Intel CPU, ncnn on a Raspberry Pi, onnx anywhere. Anything but pytorch is made from the downloaded model the first time, at detector_size. |
+| `detector_size` | `640` | The picture size the detector works at. 320 is about three times quicker on a CPU and still finds people and pets at desk distance; small things across the room get missed. |
+| `device` | `auto` | Where the detector runs: auto uses the graphics card if there is one, cpu leaves the graphics card free for other things. |
 | `confidence` | `0.4` | How sure the detector must be before something counts. |
+| `looks_per_second` | `0` | How many frames a second the eyes look at. 0 looks at every frame the camera gives; 5 is plenty to follow a face on a CPU. |
+| `detect_every` | `1` | Run the detector on one look in this many. Faces and hands are still read on every look, so his eyes keep following you while the detector rests. |
 | `forget_after_s` | `3.0` | Seconds out of view before someone or something has left. |
 | `report_every_s` | `1.0` | How often the eyes tell the brain what they see. |
 | `faces` | on | Read faces: where each person is looking and their expression. |

@@ -34,6 +34,7 @@ Kit data folder/
 │   ├── memory.db                his memory: messages, facts, register, notebook, spend log
 │   ├── faces.json               people his eyes know (numbers, never pictures)
 │   ├── speech/                  his voice clip and recent speech
+│   ├── files/                   the last run per folder and files he couldn't read (Your Files)
 │   └── evals/                   eval reports
 ├── backups/                     a copy of memory.db each day
 └── logs/                        kit.log, speech.log

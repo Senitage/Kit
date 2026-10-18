@@ -64,7 +64,7 @@ on the settings page.
 | `life.reflect_role` | expert | Who writes the nightly reflection: `expert` (Opus) or `work` (Sonnet) |
 | `routing.key_moments` | true | Sonnet answers bad news and long-absence hellos |
 | `routing.key_moment_strength` | 0.7 | How hard news must hit to count |
-| `cloud.reserve_usd` | 3 | Each step of the budget order keeps this much more |
+| `cloud.reserve_aud` | 5 | Each step of the budget order keeps this much more (A$) |
 | `memory.now_days` | 14 | How long a "now" fact lasts |
 | `memory.weight_floor` | 0.3 | 1 turns off weighing recall by importance and recency |
 

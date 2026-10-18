@@ -135,7 +135,7 @@ def test_memory_commands(paths, capsys, offline_models):
     memory.close()
     main(["memory", "spend"])
     out = capsys.readouterr().out
-    assert "$0.00 of $40.00" in out and "in 2400  cached 1830/2400  out 100" in out
+    assert "A$0.00 of A$60.00" in out and "in 2400  cached 1830/2400  out 100" in out
 
 
 def test_memory_eval_runs_in_scratch_space(paths, capsys, offline_models):
@@ -151,14 +151,39 @@ def test_models_list_and_switch(paths, capsys):
     main(["init"])
     assert main(["models"]) == 0
     out = capsys.readouterr().out
-    assert "routing: balanced" in out and "sonnet" in out and "gemini-3.8-flash" in out
+    assert "routing: balanced" in out and "claude-haiku-5-5" in out and "gemini" not in out
+    assert "A$60.00 a month" in out and "prices from built in" in out
+    sonnet = next(x for x in out.splitlines() if x.strip().startswith("sonnet"))
+    assert "3.04/15.20" in sonnet  # US$2 and US$10 a million at A$1.52
+    assert main(["models", "work", "nope"]) == 1
+    assert "isn't a model" in capsys.readouterr().out
+    assert main(["models", "add", "gpt-sol", "--provider", "openai", "--model", "gpt-6.1-sol"]) == 0
+    assert "no price" not in capsys.readouterr().out  # the built-in list has it
+    text = paths.settings_file.read_text(encoding="utf-8")
+    assert "[models.sonnet]" in text and "[models.gpt-sol]" in text  # your own list, whole
     assert main(["models", "work", "gpt-sol"]) == 0
     capsys.readouterr()
     main(["models"])
     line = next(x for x in capsys.readouterr().out.splitlines() if "gpt-sol" in x)
-    assert " work " in line
-    assert main(["models", "work", "nope"]) == 1
-    assert "isn't a model" in capsys.readouterr().out
+    assert " work " in line and "gpt-6.1-sol" in line
+    assert main(["models", "remove", "gpt-sol"]) == 1  # it's the work model
+    assert "point that at another model first" in capsys.readouterr().out
+    assert main(["models", "work", "sonnet"]) == 0
+    assert main(["models", "remove", "gpt-sol"]) == 0
+    assert main(["models", "remove", "gpt-sol"]) == 1
+    capsys.readouterr()
+    # Back to the three starters: nothing to write.
+    assert paths.settings_file.read_text(encoding="utf-8") == "schema_version = 3\n"
+
+
+def test_adding_a_model_nobody_has_a_price_for_says_so(paths, capsys):
+    main(["init"])
+    args = ["models", "add", "new", "--provider", "anthropic", "--model", "claude-9", "--no-search"]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "no price known for claude-9" in out
+    assert main(["models", "add", "new", "--provider", "ollama", "--model", "x"]) == 1
+    assert "already" in capsys.readouterr().out
 
 
 def test_config_set_reaches_into_a_model_profile(paths, capsys):
@@ -451,3 +476,23 @@ def test_check_includes_the_eyes(paths, capsys):
     assert "] eyes" in out and "[FAIL] eyes" not in out  # no camera here is a warning at most
     main(["check", *OFFLINE, "--skip", "eyes"])
     assert "] eyes" not in capsys.readouterr().out
+
+
+def test_memory_scrub_shows_first_then_takes_out_after_a_backup(paths, capsys):
+    main(["init"])
+    memory = Memory(paths.state_dir / "memory.db")
+    memory.add_message("user", "I can't cope tonight")
+    memory.add_message("kit", "I'm here.")
+    memory.add_message("user", "Is the pump fixed?")
+    memory.close()
+    assert main(["memory", "scrub", "can't cope"]) == 0
+    out = capsys.readouterr().out
+    assert "you: I can't cope tonight" in out and "Kit: I'm here." in out
+    assert "2 messages and 0 things kept from them would go" in out
+    assert main(["memory", "scrub", "can't cope", "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "backed up to" in out and "are gone" in out
+    memory = Memory(paths.state_dir / "memory.db")
+    assert [m.text for m in memory.recent(5)] == ["Is the pump fixed?"]
+    memory.close()
+    assert main(["memory", "scrub", "can't cope", "--since", "soon"]) == 2

@@ -56,12 +56,14 @@ flowchart LR
         Things["Register of Things"]
         Life["Inner Life"]
         Companion["Companion"]
+        Tools["Tools and Packs"]
     end
     subgraph Show["How he shows it"]
         Face["Face"]
     end
     subgraph World["What he can look at"]
         Notes["Notes on the NAS"]
+        Files["Your Files"]
         Weather["Time and Weather"]
     end
     DeskApp <--> Brain
@@ -72,14 +74,16 @@ flowchart LR
     Bodies <--> Brain
     Bodies --- Pod
     Brain <--> Routing
+    Brain <--> Tools
     Brain <--> Memory
     Memory --- Things
     Brain <--> Life
     Life --- Companion
     Brain --> Face
     Notes --> Memory
+    Files --> Memory
     Weather --> Brain
-    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Face,Notes,Weather internal-link
+    class DeskApp,Eyes,Hearing,Voice,Bodies,Pod,OtherApps,Brain,Routing,Memory,Things,Life,Companion,Tools,Face,Notes,Files,Weather internal-link
 ```
 
 ## Everything in these docs
@@ -95,6 +99,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[The Big Picture]]: the brain, the bodies, the data folder and the models.
 - [[Life of a Message]]: one message from your keyboard to his face and voice.
 - [[Brain]]: the conversation loop and the things he can do mid-answer.
+- [[Tools and Packs]]: how he looks things up mid-answer, and how new abilities plug in.
 - [[Models and Routing]]: which model answers what, and what it costs.
 - [[Memory]]: how he remembers, finds things and keeps his facts tidy.
 - [[Register of Things]]: where each person, pet, car and project lives.
@@ -109,6 +114,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[The Pod]]: his first robot body: his face on a screen, a calm neck, pats.
 - [[Phone App]]: Kit on Android, the body that leaves the house with you.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
+- [[Your Files]]: the folders you choose, read into his memory so he can find what's in your documents.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
 - [[Settings and Data]]: one data folder, one settings file, secrets and undo.
@@ -129,7 +135,7 @@ The full detail behind the plain-words notes.
 - [[Stage 0 - Server Setup]], [[Stage 1 - Text Brain]], [[Stage 2 - Desk App]], [[Stage 3 - Voice]]
 - [[Side Stage - Inner Life]], [[Companion Stage 1]], [[Companion Stage 2]], [[Companion Stage 3]], [[Companion Stage 4]], [[Companion Stage 5]]
 - [[Vision Stage 1]], [[Vision Stage 2]], [[Notes Setup]]
-- [[Phone Stage 0 - Pairing]]
+- [[Phone Stage 0 - Pairing]], [[Stage 4 - Tools]]
 
 ### 5. Reference
 - [[Commands]]: every `kit` command.

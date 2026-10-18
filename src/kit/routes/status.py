@@ -1,4 +1,5 @@
-"""How Kit is: the open health check, his status, and what the cloud has cost."""
+"""How Kit is: the open health check, his status, and what the cloud has cost (in
+Australian dollars, at the day's prices and rate)."""
 
 from __future__ import annotations
 
@@ -30,8 +31,9 @@ def status(state: State) -> dict:
         "local_model": s.ollama.model,
         "work_model": s.profile("work").model,
         "expert_model": s.profile("expert").model,
-        "cloud_month_usd": round(memory.month_spend(), 4),
-        "cloud_cap_usd": s.cloud.monthly_cap_usd,
+        "cloud_month_aud": round(memory.month_spend(), 4),
+        "cloud_cap_aud": s.cloud.monthly_cap_aud,
+        "prices": brain.cloud.prices.table.line(),
         "working_on": brain.busy(),
         "face": s.face.character,
         "memory_facts": len(memory.facts()),
@@ -44,14 +46,23 @@ def status(state: State) -> dict:
         "eyes_paused": brain.eyes_paused,
         "hearing": hearing_line(state),
         "hearing_paused": brain.hearing_paused,
+        "tools": {
+            "packs": sorted(brain.tools.packs),
+            "hops": s.tools.hops,
+            "loaded": brain.loaded_packs,
+            "pending": brain.pending_tool.call.line() if brain.pending_tool else None,
+            "recent": memory.tool_calls(10),
+        },
     }
 
 
 @router.get("/api/spend", dependencies=AUTH)
 def spend(state: State, limit: Annotated[int, Query(ge=1, le=500)] = 50) -> dict:
     return {
-        "month_usd": round(state.memory.month_spend(), 4),
-        "cap_usd": state.store.current().cloud.monthly_cap_usd,
+        "month_aud": round(state.memory.month_spend(), 4),
+        "cap_aud": state.store.current().cloud.monthly_cap_aud,
+        "aud_per_usd": state.brain.cloud.prices.table.aud_per_usd,
+        "prices": state.brain.cloud.prices.table.line(),
         "log": [s.__dict__ for s in state.memory.spend_log(limit)],
     }
 
@@ -61,6 +72,6 @@ def spend_summary(state: State, days: Annotated[int, Query(ge=1, le=366)] = 30) 
     """Cloud spend per day and per model, for a chart (the home_app Kit page)."""
     return {
         **state.memory.spend_summary(days),
-        "month_usd": round(state.memory.month_spend(), 4),
-        "cap_usd": state.store.current().cloud.monthly_cap_usd,
+        "month_aud": round(state.memory.month_spend(), 4),
+        "cap_aud": state.store.current().cloud.monthly_cap_aud,
     }

@@ -51,9 +51,17 @@ The eyes need Python 3.11+ on the PC with the webcam, in their own venv
 cd C:\path\to\Kit        # a clone of this repo
 python -m venv .eyes
 .eyes\Scripts\activate
-# PyTorch with CUDA first, so the detector uses the GPU (skip it for CPU only):
+# PyTorch with CUDA first, so the detector uses the GPU:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 pip install -e ".[eyes]"
+```
+
+For [[Eyes#Without a graphics card|lite eyes]] on a PC with no GPU to spare
+(the same PyTorch, but the CPU build, and OpenVINO for the detector):
+
+```powershell
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[eyes,eyes-cpu]"
 ```
 
 `kit[eyes]` brings OpenCV (the contrib build, which MediaPipe needs; don't
@@ -113,7 +121,8 @@ Nothing in money: everything runs on the desk PC. The detector takes a few
 milliseconds a frame on the GPU (40 to 80 ms on a desktop CPU), MediaPipe 10 to
 30 ms per task on the CPU, so expect 15 to 30 frames a second with faces,
 hands and one pose on. Turn `eyes.poses` to 0 or `eyes.hands` off to spend
-less. Reports to the brain are under a kilobyte, once a second. The server's
+less, or set up [[Eyes#Without a graphics card|lite eyes]] to leave the GPU
+alone altogether. Reports to the brain are under a kilobyte, once a second. The server's
 GPU is untouched; the 2070 Super keeps its memory for the local model.
 
 ## 7. Privacy

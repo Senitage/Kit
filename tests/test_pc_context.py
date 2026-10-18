@@ -183,7 +183,7 @@ def test_in_cloud_only_mode_the_chat_model_sees_the_full_pc_picture(paths):
     asked = claude.calls[0]["messages"][-1]["content"]
     assert "Open windows (3):" in asked and "pump.py - METTOOLS" in asked
     collect(brain.chat("Morning"))
-    assert "- look_at_pc:" in claude.calls[1]["system"][0]["text"]
+    assert "look_at_pc" in [t["name"] for t in claude.calls[1]["tools"]]
     collect(brain.chat("keep it local: what have I got open?"))
     assert len(claude.calls) == 2 and "Open windows (3):" in brain.model.calls[0][-1]["content"]
     memory.close()

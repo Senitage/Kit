@@ -20,6 +20,7 @@ from kit.checks import CheckResult, Status
 from kit.credentials import api_token, cloud_api_key
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
+from kit.prices import PRICES_FILE, Prices
 from kit.settings import (
     Settings,
     SettingsError,
@@ -30,7 +31,7 @@ from kit.settings import (
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "cloud", "eyes"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "cloud", "eyes"]
 
 
 def cmd_paths(paths: KitPaths) -> int:
@@ -72,8 +73,12 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.append(checks.check_tailscale())
     if "nas" not in skip:
         results.extend(checks.check_nas(settings))
+    if "files" not in skip:
+        results.extend(checks.check_files(settings))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
+    if "prices" not in skip:
+        results.append(checks.check_prices(settings, Prices(paths.state_dir / PRICES_FILE)))
     if "eyes" not in skip:
         results.append(checks.check_eyes(settings))
     return results
@@ -131,39 +136,118 @@ async def _weather(paths: KitPaths, place: str | None) -> int:
 
 
 def cmd_models(paths: KitPaths, args: argparse.Namespace) -> int:
-    """Show the models Kit can use and which one does what, or switch one."""
+    """Show the models Kit can use, with today's prices, and which one does what;
+    switch a role; add or remove a model; or fetch the prices now."""
     store = SettingsStore(paths)
-    if args.role:
-        if args.name is None:
-            print("give a model name too, for example: kit models work gpt-sol")
-            return 2
-        try:
-            store.update({"routing": {args.role: args.name}}, "cli")
-        except SettingsError as e:
-            print(e)
-            return 1
-        print(f"{args.role} now uses {args.name}; Kit uses it from the next message")
-        return 0
+    prices = Prices(paths.state_dir / PRICES_FILE)
+    action = args.action
+    try:
+        if action in ("chat", "work", "expert"):
+            if args.name is None:
+                print(f"give a model name too, for example: kit models {action} sonnet")
+                return 2
+            store.update({"routing": {action: args.name}}, "cli")
+            print(f"{action} now uses {args.name}; Kit uses it from the next message")
+            return 0
+        if action == "add":
+            return _add_model(store, prices, args)
+        if action == "remove":
+            return _remove_model(store, args.name)
+    except SettingsError as e:
+        print(e)
+        return 1
+    if action == "prices":
+        return asyncio.run(_fetch_prices(prices))
     s = store.current()
     roles: dict[str, list[str]] = {}
     in_use = (["chat"] if s.routing.mode == "cloud-only" else []) + ["work", "expert"]
     for role in in_use:
         roles.setdefault(getattr(s.routing, role), []).append(role)
     print(f"routing: {s.routing.mode}   local model: {s.ollama.model}")
-    print(f"cloud budget: ${s.cloud.monthly_cap_usd:.2f} a month\n")
+    print(f"cloud budget: A${s.cloud.monthly_cap_aud:.2f} a month")
+    print(f"{prices.table.line()}\n")
     print(
         f"  {'name':<14} {'role':<13} {'provider':<10} {'model':<20} {'effort':<7}"
-        f" {'$ in/out per M':<15} {'search/1k'}"
+        f" {'A$ in/out per M':<17} {'search/1k'}"
     )
+    rate = prices.table.aud_per_usd
     for name, m in s.models.items():
-        price = f"{m.input_usd_per_mtok:g}/{m.output_usd_per_mtok:g}"
-        search = f"${m.search_usd_per_k:g}" if m.web_search else "off"
+        price = prices.price_of(m.model, m.provider)
+        if m.provider == "ollama":
+            cost, search = "free (local)", "off"
+        elif price is None:
+            cost, search = "no price yet", "?"
+        else:
+            cost = f"{price.input_per_mtok * rate:.2f}/{price.output_per_mtok * rate:.2f}"
+            search = f"A${price.search_per_k * rate:.2f}" if m.web_search else "off"
         print(
             f"  {name:<14} {', '.join(roles.get(name, [])):<13} {m.provider:<10} {m.model:<20}"
-            f" {m.effort:<7} {price:<15} {search}"
+            f" {m.effort:<7} {cost:<17} {search}"
         )
-    print("\nSwitch with: kit models work <name>   or   kit config set routing.mode cloud-only")
+    print(
+        "\nSwitch:  kit models work <name>"
+        "\nAdd:     kit models add <name> --provider anthropic --model <id>"
+        "\nRemove:  kit models remove <name>"
+        "\nPrices:  kit models prices   (fetched daily while Kit runs)"
+    )
     return 0
+
+
+def _add_model(store: SettingsStore, prices: Prices, args: argparse.Namespace) -> int:
+    """``kit models add NAME --provider P --model ID [...]``: only what's given is
+    written, so the rest takes the profile's defaults."""
+    if not (args.name and args.provider and args.model):
+        print("give a name, --provider and --model, for example:")
+        print("  kit models add sonnet-6 --provider anthropic --model claude-sonnet-6")
+        return 2
+    if args.name in store.current().models:
+        print(f"there's a model called {args.name} already; remove it first, or pick a name")
+        return 1
+    profile: dict = {"provider": args.provider, "model": args.model}
+    for field in ("label", "effort", "max_tokens"):
+        if getattr(args, field) is not None:
+            profile[field] = getattr(args, field)
+    if args.no_thinking:
+        profile["thinking"] = False
+    if args.no_search:
+        profile["web_search"] = False
+    store.update({"models": {args.name: profile}}, "cli")
+    print(f"added {args.name} ({args.provider} {args.model})")
+    if args.provider != "ollama" and prices.price_of(args.model, args.provider) is None:
+        print(
+            f"no price known for {args.model} yet: its calls count as free in the budget until "
+            "the price list has it (kit models prices fetches today's)"
+        )
+    print(f"use it with: kit models work {args.name}")
+    return 0
+
+
+def _remove_model(store: SettingsStore, name: str | None) -> int:
+    if not name:
+        print("say which model to remove, for example: kit models remove gpt-sol")
+        return 2
+    s = store.current()
+    if name not in s.models:
+        print(f"there's no model called {name} ({', '.join(s.models)})")
+        return 1
+    using = [role for role in ("chat", "work", "expert") if getattr(s.routing, role) == name]
+    if using:
+        print(f"{name} is the {' and '.join(using)} model; point that at another model first")
+        return 1
+    store.update({"models": {name: None}}, "cli")
+    print(f"removed {name}")
+    return 0
+
+
+async def _fetch_prices(prices: Prices) -> int:
+    """``kit models prices``: fetch today's price list and exchange rate now."""
+    async with httpx.AsyncClient() as client:
+        prices.client = client
+        problems = await prices.refresh()
+    for problem in problems:
+        print(problem)
+    print(prices.table.line())
+    return 1 if problems else 0
 
 
 def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
@@ -328,7 +412,8 @@ def make_cloud(paths: KitPaths, memory, client: httpx.AsyncClient):
         "openai": OpenAIProvider(client),
         "google": GoogleProvider(client),
     }
-    return Cloud(memory, lambda provider: cloud_api_key(paths, provider), providers)
+    prices = Prices(paths.state_dir / PRICES_FILE, client)
+    return Cloud(memory, lambda provider: cloud_api_key(paths, provider), providers, prices)
 
 
 def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
@@ -1067,6 +1152,8 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
         else:
             print(f"no fact or conversation {args.id}")
             code = 1
+    elif args.action == "scrub":
+        code = _scrub(paths, memory, args)
     elif args.action == "days":
         for item in memory.index.items("days"):
             print(f"{item.ref}  {item.text}\n")
@@ -1074,19 +1161,58 @@ def cmd_memory(paths: KitPaths, args: argparse.Namespace) -> int:
         keep = SettingsStore(paths).current().memory.backups_keep
         print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
     elif args.action == "spend":
-        cap = SettingsStore(paths).current().cloud.monthly_cap_usd
-        print(f"Cloud models this month: ${memory.month_spend():.2f} of ${cap:.2f}")
+        cap = SettingsStore(paths).current().cloud.monthly_cap_aud
+        print(f"Cloud models this month: A${memory.month_spend():.2f} of A${cap:.2f}")
         # "cached 1830/2400": how much of the input was read from the prompt cache.
         for s in memory.spend_log(20):
             print(
                 f"  {s.at}  {s.model}  in {s.input_tokens}  cached {s.cached_tokens}/"
-                f"{s.input_tokens}  out {s.output_tokens}  ${s.cost_usd:.4f}  {s.question[:60]}"
+                f"{s.input_tokens}  out {s.output_tokens}  A${s.cost_aud:.4f}  {s.question[:60]}"
             )
     memory.close()
     return code
 
 
+def _scrub(paths: KitPaths, memory, args: argparse.Namespace) -> int:
+    """``kit memory scrub``: show what would go, then take it out with ``--apply``."""
+    from datetime import date, datetime
+
+    now = memory.clock()
+    try:
+        day = date.fromisoformat(args.since) if args.since else now.date()
+    except ValueError:
+        print(f"--since needs a date like {now:%Y-%m-%d}")
+        return 2
+    since = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
+    if args.apply:
+        keep = SettingsStore(paths).current().memory.backups_keep
+        print(f"backed up to {memory.backup(paths.backups_dir, keep)}")
+    found = memory.scrub(args.words, since, apply=args.apply)
+    if not found.messages and not found.items:
+        print(f"nothing since {day} says that")
+        return 0
+    for _, at, role, text in found.messages:
+        print(f"{at[:16]}  {'you' if role == 'user' else 'Kit'}: {text[:100]}")
+    for item in found.items:
+        print(f"{item.created[:16]}  {item.source} #{item.id}: {item.text[:100]}")
+    told = f"{len(found.messages)} messages and {len(found.items)} things kept from them"
+    if not args.apply:
+        print(f"\n{told} would go. Run it again with --apply to take them out.")
+        return 0
+    again = f"; {', '.join(found.days)} will be summarised again" if found.days else ""
+    print(f"\n{told} are gone{again}. Restart Kit so nothing of them stays in mind.")
+    return 0
+
+
+def file_place(item) -> str:
+    """Where a ``files`` hit came from: its root, path and page."""
+    m = item.meta
+    page = f", page {m['page']}" if m.get("page", 1) > 1 else ""
+    return f"{m.get('root')}: {m.get('rel')}{page}"
+
+
 async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.files import FILES
     from kit.memory import CONVERSATION, DAYS, FACTS
     from kit.notes import NOTES
 
@@ -1107,7 +1233,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                 else:
                     print(f"remembered: {learned.text}")
             elif args.action == "search":
-                hits = await brain.recall.search(args.query, [FACTS, DAYS, CONVERSATION, NOTES], 10)
+                sources = [FACTS, DAYS, CONVERSATION, NOTES, FILES]
+                hits = await brain.recall.search(args.query, sources, 10)
                 if brain.recall.embed_problem:
                     print(f"(words only: {brain.recall.embed_problem})")
                 if not hits:
@@ -1120,6 +1247,8 @@ async def _memory_async(paths: KitPaths, args: argparse.Namespace) -> int:
                     )
                     text = " / ".join(h.item.text.splitlines())[:110]
                     print(f"{h.item.id:>5}  {h.item.day}  {h.item.source:<12} {how:<14} {text}")
+                    if h.item.source == FILES:
+                        print(f"{'':>19}{file_place(h.item)}")
             elif args.action == "tidy":
                 return await _tidy(paths, store, memory, brain, args.apply)
             elif args.action == "reindex":
@@ -1204,6 +1333,142 @@ def cmd_notes(paths: KitPaths) -> int:
             print(f"  ... and {len(names) - 15} more")
     finally:
         memory.close()
+    return 0
+
+
+def cmd_files(paths: KitPaths, args: argparse.Namespace) -> int:
+    """``kit files``: the folders Kit indexes, what's in each, and indexing them now."""
+    from kit.files import RootError, add_root, change_root, remove_root
+    from kit.files.index import Files
+    from kit.memory import Memory
+
+    paths.ensure()
+    store = SettingsStore(paths)
+    if args.action in ("index", "search"):
+        return asyncio.run(_files_async(paths, args))
+    memory = Memory(paths.state_dir / "memory.db")
+    files = Files(memory.index, store.current, paths.state_dir)
+    try:
+        if args.action == "add":
+            add_root(store, args.name, args.path, args.private, args.ocr)
+            private = " (private)" if args.private else ""
+            print(f"added {args.name}{private}: {args.path}; `kit files index` reads it now")
+        elif args.action == "remove":
+            remove_root(store, args.name)
+            print(f"removed {args.name}; {files.drop_root(args.name)} pieces left the index")
+        elif args.action == "private":
+            on = args.state == "on"
+            change_root(store, args.name, private=on)
+            n = files.set_private(args.name, on)
+            print(f"{args.name} is {'private' if on else 'not private'} ({n} pieces changed)")
+        elif args.action == "status":
+            roots = files.status()
+            if not roots:
+                print("no folders yet; add one with `kit files add NAME PATH`")
+            for name, r in roots.items():
+                flags = "".join([", private" if r["private"] else "", ", OCR" if r["ocr"] else ""])
+                there = "" if r["reachable"] else "  (can't be reached just now)"
+                print(f"{name}: {r['path']}{flags}{there}")
+                print(f"  {r['files']} files, {r['pieces']} pieces")
+                if r["last_run"]:
+                    print(f"  last run {r['last_run']['at']}: {r['last_run']['result']}")
+                for ref in r["unreadable"][:10]:
+                    print(f"  couldn't read {ref}")
+                if len(r["unreadable"]) > 10:
+                    print(f"  ... and {len(r['unreadable']) - 10} more it couldn't read")
+    except (RootError, SettingsError) as e:
+        print(e)
+        return 1
+    finally:
+        memory.close()
+    return 0
+
+
+async def _files_async(paths: KitPaths, args: argparse.Namespace) -> int:
+    from kit.files import FILES
+    from kit.files.index import Files
+
+    async with httpx.AsyncClient() as client:
+        store, memory, brain = _runtime(paths, client)
+        try:
+            if args.action == "index":
+                if args.root and args.root not in store.current().files.roots:
+                    print(f"no root called {args.root}")
+                    return 1
+                files = Files(
+                    memory.index,
+                    store.current,
+                    paths.state_dir,
+                    names=lambda: [n for t in brain.register.all() for n in t.names],
+                )
+                report = await asyncio.to_thread(
+                    files.sync, args.full, args.root, lambda ref: print(f"  {ref}", flush=True)
+                )
+                print(report.line())
+                for ref, why in report.failed[:20]:
+                    print(f"  couldn't read {ref}: {why}")
+                done = await brain.recall.index_pending(limit=1_000_000)
+                problem = brain.recall.embed_problem
+                print(
+                    f"{done} pieces searchable by meaning"
+                    + (f"; stopped: {problem}" if problem else "")
+                )
+                return 0
+            hits = await brain.recall.search(args.query, [FILES], 10)
+            if brain.recall.embed_problem:
+                print(f"(words only: {brain.recall.embed_problem})")
+            if not hits:
+                print("nothing found")
+            for h in hits:
+                text = " / ".join(h.item.text.splitlines())[:100]
+                print(f"{file_place(h.item)}\n    {text}")
+        finally:
+            memory.close()
+    return 0
+
+
+def cmd_tools(
+    paths: KitPaths, args: argparse.Namespace, transport: httpx.BaseTransport | None = None
+) -> int:
+    """``kit tools``: the running Kit's packs and tools, or one tool run by hand."""
+    s = SettingsStore(paths).current().brain
+    host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
+    headers = {"Authorization": f"Bearer {api_token(paths)}"}
+    with httpx.Client(
+        base_url=f"http://{host}:{s.port}", headers=headers, timeout=120, transport=transport
+    ) as client:
+        try:
+            if args.action == "run":
+                try:
+                    arguments = json.loads(args.args)
+                except ValueError as e:
+                    print(f"--args isn't JSON: {e}")
+                    return 2
+                r = client.post(
+                    "/api/tools/run",
+                    json={"tool": args.tool, "arguments": arguments, "yes": args.yes},
+                )
+                if r.status_code in (404, 409):
+                    print(r.json().get("detail", r.text))
+                    return 1
+                r.raise_for_status()
+                out = r.json()
+                print(("" if out["ok"] else "failed: ") + out["text"])
+                return 0 if out["ok"] else 1
+            r = client.get("/api/tools")
+            r.raise_for_status()
+            packs = r.json()["packs"]
+        except httpx.HTTPError as e:
+            print(f"couldn't reach Kit at {host}:{s.port}: {e} (is `kit serve` running?)")
+            return 1
+    for pack in packs:
+        if args.action == "packs":
+            state = "always" if pack["always"] else "on" if pack["enabled"] else "off"
+            print(f"{pack['name']:<10} {state:<7} {pack['card']}")
+            continue
+        for tool in pack["tools"]:
+            asks = "  (asks first)" if tool["asks_first"] else ""
+            print(f"{tool['name']:<16} {pack['name']:<10} {tool['effect']:<7}{asks}")
     return 0
 
 
@@ -1310,11 +1575,29 @@ def main(argv: list[str] | None = None) -> int:
     crestore.add_argument("version")
     csub.add_parser("check", help="check the settings file is valid")
 
-    models = sub.add_parser("models", help="see the models Kit uses, or switch one")
-    models.add_argument(
-        "role", nargs="?", choices=["chat", "work", "expert"], help="role to switch"
+    models = sub.add_parser(
+        "models", help="the models Kit uses and their prices; switch, add or remove one"
     )
-    models.add_argument("name", nargs="?", help="model profile to use for it")
+    models.add_argument(
+        "action",
+        nargs="?",
+        choices=["chat", "work", "expert", "add", "remove", "prices"],
+        help="a role to switch (chat, work, expert), add, remove, or prices (fetch today's)",
+    )
+    models.add_argument("name", nargs="?", help="the model's name in settings")
+    models.add_argument(
+        "--provider", choices=["anthropic", "openai", "google", "ollama"], help="add: who runs it"
+    )
+    models.add_argument("--model", help="add: the provider's model id, e.g. claude-sonnet-5-5")
+    models.add_argument("--label", help="add: the name Kit calls it")
+    models.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "xhigh", "max"],
+        help="add: how hard it thinks",
+    )
+    models.add_argument("--max-tokens", type=int, dest="max_tokens", help="add: longest answer")
+    models.add_argument("--no-thinking", action="store_true", help="add: no thinking first")
+    models.add_argument("--no-search", action="store_true", help="add: no web search")
 
     speech = sub.add_parser("speech", help="Kit's voice: engines, switch, try a line, compare")
     spsub = speech.add_subparsers(dest="action")
@@ -1353,6 +1636,12 @@ def main(argv: list[str] | None = None) -> int:
         "tidy", help="sort what Kit knows into the right kinds and drop logs of chats"
     )
     mtidy.add_argument("--apply", action="store_true", help="do it (after a backup)")
+    mscrub = msub.add_parser(
+        "scrub", help="take out lines that should never have been said, and all kept of them"
+    )
+    mscrub.add_argument("words", nargs="+", help="words or phrases to find, any of them")
+    mscrub.add_argument("--since", help="from this date (YYYY-MM-DD); default today")
+    mscrub.add_argument("--apply", action="store_true", help="do it (after a backup)")
     msub.add_parser("reindex", help="build any missing meaning vectors now")
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
@@ -1457,7 +1746,22 @@ def main(argv: list[str] | None = None) -> int:
         "which",
         nargs="?",
         default="replies",
-        choices=["replies", "memory", "routing", "compare", "voice", "companion", "mood"],
+        choices=[
+            "replies",
+            "memory",
+            "routing",
+            "tools",
+            "compare",
+            "voice",
+            "companion",
+            "mood",
+        ],
+    )
+    ev.add_argument("--pack", help="tools: only this pack's questions")
+    ev.add_argument(
+        "--live",
+        action="store_true",
+        help="tools: ask the real chat model (every tool stubbed); spends real money",
     )
     ev.add_argument("--n", type=int, help="how many prompts (replies: 50, compare: 10, voice: 16)")
     ev.add_argument(
@@ -1477,7 +1781,45 @@ def main(argv: list[str] | None = None) -> int:
         "this memory snapshot, e.g. a backup from backups/, to see the right fact still wins",
     )
     ev.add_argument(
-        "--questions", metavar="FILE", help="memory --replay: a different questions file"
+        "--questions",
+        metavar="FILE",
+        help="memory --replay or tools: a different questions file",
+    )
+
+    files = sub.add_parser("files", help="the folders Kit indexes: add, remove, status, index")
+    fsub = files.add_subparsers(dest="action", required=True)
+    fadd = fsub.add_parser(
+        "add", help="add a folder for Kit to read, e.g. finance /mnt/nas/Finance"
+    )
+    fadd.add_argument("name")
+    fadd.add_argument("path")
+    fadd.add_argument(
+        "--private", action="store_true", help="its contents stay with the local model"
+    )
+    fadd.add_argument("--ocr", action="store_true", help="read scanned PDFs too (slow)")
+    fsub.add_parser(
+        "remove", help="stop indexing a folder; its pieces leave the index"
+    ).add_argument("name")
+    fpriv = fsub.add_parser("private", help="mark a folder private or not")
+    fpriv.add_argument("name")
+    fpriv.add_argument("state", choices=["on", "off"])
+    fsub.add_parser("status", help="each folder: files and pieces indexed, last run, unreadable")
+    findex = fsub.add_parser("index", help="read new and changed files now, showing each")
+    findex.add_argument("--root", help="only this folder")
+    findex.add_argument("--full", action="store_true", help="read every file again")
+    fsub.add_parser("search", help="search the indexed files only").add_argument("query")
+
+    tools = sub.add_parser("tools", help="Kit's tools: the packs, each tool, trying one by hand")
+    tosub = tools.add_subparsers(dest="action", required=True)
+    tosub.add_parser("list", help="every tool with its pack and effect")
+    tosub.add_parser("packs", help="each pack: its card, and whether it may load")
+    trun = tosub.add_parser("run", help="run one tool on the running Kit, to try it")
+    trun.add_argument("tool")
+    trun.add_argument(
+        "--args", default="{}", help='its arguments as JSON, e.g. \'{"query": "tax"}\''
+    )
+    trun.add_argument(
+        "--yes", action="store_true", help="run it even though it changes something of yours"
     )
 
     args = parser.parse_args(argv)
@@ -1516,6 +1858,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hearing(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
+    if args.command == "tools":
+        return cmd_tools(paths, args)
+    if args.command == "files":
+        return cmd_files(paths, args)
     if args.command == "docs":
         return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":

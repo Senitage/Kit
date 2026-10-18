@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/privacy]
 aliases: [Keep it local, What Kit sees, The switches, Security]
 summary: What Kit sees, what leaves the house and what never does - keep it local, the desk app's switches, the eyes' no-pictures rule, read-only shares, tokens and secrets.
-related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]"]
+related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]", "[[Tools and Packs]]"]
 ---
 
 # Privacy
@@ -122,6 +122,21 @@ See [[Hearing]].
   writes only when you ask. Every other share is read-only, and `kit check`
   fails one he could write to. See [[Notes on the NAS]].
 - **Everything Kit owns stays in his data folder.** See [[Settings and Data]].
+- **Your documents are read only from the folders you choose** (roots, see
+  [[Your Files]]), never changed, and what he reads stays in his memory file
+  on the server. He starts with no folders. Removing one takes what he read
+  from it out of his memory.
+- **A folder can be ticked private.** The tick is kept on every piece read
+  from it. Your files are searched on the memory page and with `kit memory
+  search` for now and don't come into conversation; when the file tools
+  arrive (part B2 of [[Stage 4 - Tools]]) a private folder's text reaches only
+  the local model, as below.
+- **A tool can mark what it found private** (a private folder, your
+  finances). A cloud model never reads that text: the local model answers
+  the question from it in a few words, and only that summary goes out,
+  marked as summarised locally. With the local model off, the cloud model is
+  only told the answer is in a private source. See
+  [[Tools and Packs#Private results]].
 
 ## Tokens and secrets
 
@@ -142,7 +157,7 @@ See [[Hearing]].
   in settings or the repo. See [[Settings and Data#Secrets]].
 - The brain answers on this PC only (`brain.host = 127.0.0.1`) until you open
   it to the home network or Tailscale.
-- Cloud spend has a **monthly cap** (`cloud.monthly_cap_usd`). See
+- Cloud spend has a **monthly cap** (`cloud.monthly_cap_aud`). See
   [[Models and Routing#The budget]].
 
 ## This repo is public

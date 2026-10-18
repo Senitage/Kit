@@ -29,12 +29,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+# The files libraries are in dev too, so the tests read real PDFs, Word files and sheets.
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "pypdf>=4",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6.23",
+]
+# Reading Dan's documents into Kit's memory (docs/2 How Kit Works/Your Files.md).
+files = ["pypdf>=4", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6.23"]
+# Reading scanned PDFs as well: needs the tesseract and poppler programs installed.
+ocr = ["pytesseract>=0.3.10", "pdf2image>=1.17"]
 desk = ["PySide6>=6.6", "psutil>=5.9", "sounddevice>=0.4.6"]
 # Kit's eyes, on the PC with the camera. opencv-contrib is the build MediaPipe wants;
 # don't install plain opencv-python beside it. For GPU detection install PyTorch's
 # CUDA build first (docs/4 Guides/Vision Stage 1.md).
 eyes = ["opencv-contrib-python>=4.10", "ultralytics>=8.3", "lap>=0.5.12", "mediapipe>=1.0"]
+# Lite eyes: the detector through OpenVINO on a CPU (docs/2 How Kit Works/Eyes.md).
+eyes-cpu = ["openvino>=2024.0"]
 # Kit's ears, on the PC with the mic: speech to text, voice detection and voice prints
 # on the processor through sherpa-onnx (no PyTorch, no graphics card).
 hearing = ["sherpa-onnx>=1.12", "sounddevice>=0.4.6"]

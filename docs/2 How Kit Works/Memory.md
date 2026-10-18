@@ -28,9 +28,10 @@ flowchart LR
         N["Your notes"]
         S["His notebook"]
         E["What his eyes saw"]
+        Y["Your files"]
     end
     I[("One index: words and meaning")]
-    F & D & C & T & N & S & E --> I
+    F & D & C & T & N & S & E & Y --> I
     I --> R["Recall, every turn"]
     I --> P["Memory page and kit memory"]
     I --> V["kit eval memory"]
@@ -45,8 +46,9 @@ flowchart LR
 | `notes` | Your Obsidian notes, by heading ([[Notes on the NAS]]) |
 | `self` | His own thoughts, opinions, moments and journal ([[Inner Life]]) |
 | `seen` | Arrivals after a while and animals wandering in ([[Eyes]]) |
+| `files` | What's inside the documents in the folders you chose, a page at a time ([[Your Files]]). Searchable now; brought into conversation by the file tools |
 
-A new kind of thing to remember (files, photos, projects) is added as a new
+A new kind of thing to remember (photos, projects) is added as a new
 source in the same index, and recall, search, the memory page and the
 accuracy test all cover it with no other change.
 
@@ -108,6 +110,9 @@ recall, not in the nightly reflection. See [[Privacy]].
 - `kit memory ...` does the same from a terminal ([[Commands#Memory]]).
 - `kit memory tidy` sorts what he knows by today's rules, showing the plan
   first.
+- `kit memory scrub "can't cope"` takes out lines that should never have been
+  said (a test, a joke he took seriously): the messages, his answers, and
+  anything he kept of them, showing what would go first.
 - Memory is **backed up** daily to `backups/` in the data folder.
 - `kit eval memory` checks accuracy on a scratch memory, and `kit eval memory
   --replay` asks your own questions of a backup of the real one, to see the

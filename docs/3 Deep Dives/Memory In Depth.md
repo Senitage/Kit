@@ -28,7 +28,7 @@ a reference back to where it came from.
 | `self` | Kit's own notebook: his thoughts, opinions, wants, moments and daily journal ([[Inner Life In Depth]]) | Inner life |
 | `self-sheet` | Who Kit thinks he is, in his own words, every version, and the weekly reviews of it. Always in his prompt, so never recalled | Inner life |
 | `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
-| `files` | NAS documents and folders (names, paths, text) | Stage 5 |
+| `files` | Your documents in the folders you chose: a piece of about 400 words per item, its `root:path` as the ref, page, folder, time, size, private flag and the years, amounts, dates and references in it ([[Your Files]]). Searched on the memory page and by `kit memory search`; the file tools bring it into conversation | Stage 4 (B1) |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([[Notes Setup|your notes]]) | Now |
 | `seen` | What Kit's eyes saw that's worth remembering: someone arriving after the desk was empty a while, the cat wandering in ([[Vision Stage 1|his eyes]]) | Vision 1 |
@@ -250,6 +250,15 @@ See [[Models and Routing#Caching]] for why the figure should be high.
   tidy --apply` does it after a backup. A moved fact keeps its old version in
   its history, pinned facts are never dropped, and private facts are only
   ever read by the local model.
+- `kit memory scrub WORDS... [--since DATE]` is for lines that should never
+  have been said, such as testing his bad-night care on the real Kit. It finds
+  every message since the date that says any of the words (curly apostrophes
+  count), Kit's lines straight after each, and every current item made since
+  then that says them or was kept from those messages: recalled exchanges,
+  facts, notebook lines, day summaries. It shows them first; `--apply` backs
+  up, takes them out, and puts any day already summarised back in the queue so
+  it's summarised again without them. Feelings and a bad night aren't touched:
+  they fade on their own within hours.
 - The memory page and `kit things ...` show the register, with links,
   suggestions to confirm or reject, other names, history and forget.
 - The memory page's **Kit's notebook** tab (and `kit life notebook`) shows

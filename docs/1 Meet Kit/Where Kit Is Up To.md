@@ -6,7 +6,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 
 # Where Kit is up to
 
-*As of 12 October 2026.* The plan behind this is in [[Roadmap]].
+*As of 13 October 2026.* The plan behind this is in [[Roadmap]].
 
 ## At a glance
 
@@ -40,17 +40,25 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | First sound: the first piece at a four-word clause, no watermark, the voice's conditioning worked out once, interrupting him drops the old reply's sentences, "not yet" while the engine loads, no boop over his first word | Done, pull request #53 | [[Voice#How a sentence becomes sound]], [[Desk App#His voice and face on the desk]] |
 | Streaming voice: each sentence played in pieces as it's made, his mouth following the sound, a varied opening sound for his mood | Done, pull request #56 | [[Voice#How a sentence becomes sound]], [[Face#The rig, in three layers]], [[API]] |
 | Tidy: the server's routes in one file per part of Kit sharing one app state, `kit eval` in its own module, duplicated helpers folded, a test that every route needs the token and one that kept-local words reach no cloud call | Done, pull request #58 | [[API]], [[Code Map]], [[Privacy#Keep it local]] |
+| `kit memory scrub`: take out lines that should never have been said, and everything kept of them | Done, pull request #59 | [[Memory In Depth#You stay in charge]] |
+| Lite eyes: the eyes on a CPU, a few looks a second, the detector resting between looks | Done, pull request #45 | [[Eyes#Without a graphics card]] |
+| Models as your own list (`kit models add` and `remove`, no presets) and prices fetched daily in Australian dollars, the budget and every spend figure in A$ | Done, pull request #60 | [[Models and Routing#Your own list of models]], [[Models and Routing#Prices, fetched for you]] |
 | Hearing, companion stage 5: he hears you, answers out loud, stops when talked over, knows voices (also stage 3 part 2) | Done, pull request #42 | [[Hearing]], [[Companion Stage 5]] |
 | The Pod's printed parts fit the real servo horns and the screen, the head goes on from the back, and a servo tuning page sets up his neck | Open, pull request #39 | [[Building the Pod]] |
-| Tools, PC control, the Claude Code bridge (stage 4) | Not started | [[Roadmap]] |
+| Stage 4, part A1: the tool loop. Cloud models call tools natively, the local model's action joins the same loop, the core pack (recall, the PC, the room, the forecast, a note), every call logged | Done, pull request #61 | [[Tools and Packs]], [[Stage 4 - Tools]] |
+| Stage 4, part A2: each message loads only the packs it needs, a yes before any change, private results summarised locally, `kit tools` and `kit eval tools` | Done, pull request #62 | [[Tools and Packs#Which packs load]], [[Stage 4 - Tools]] |
+| Stage 4, part B1: your files indexed. The folders you choose (settings page, `kit files`), PDFs, Word, sheets and slides read a page at a time, years, amounts and references picked out, kept up every half hour | Open, pull request #63 | [[Your Files]], [[Stage 4 - Tools]] |
+| Stage 4, the rest: asking about files and private folders, PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
 
 1. Companion stage 5 (hearing, #42) tested on the desk.
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
-3. Stage 4: a tool loop, PC control, the Claude Code bridge, MCP, Home
-   Assistant, and the home_app and MetTools connections.
+3. Stage 4: the tool loop (#61, done), then pack matching and asking
+   first (#62, done), then your files (#63, then the file tools), PC control, the Claude Code
+   bridge, MCP, Home Assistant, and the home_app and MetTools connections
+   ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
 
 ## How we got here
@@ -84,8 +92,13 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 10 Oct | Eyes stage 1: Kit sees you | #22 |
 | 10 Oct | Eyes stage 2: who's who | #35 |
 | 11 Oct | These docs as an Obsidian vault; the Pod's program, printed parts and build guide in the repo | #38 |
+| 11 Oct | Companion stage 4: his voice and eyes carry it | #40 |
 | 13 Oct | Body feed and knowing who can hear him; naps and sleep; hearing (companion stage 5) | #36, #37, #42 |
 | 13 Oct | The whole-codebase review: faster first words, Claude's cache, one voice, memory that scales, inner life and desk fixes, streaming voice, judgement over keywords, settings as changes only, routes tidied | #47 to #58 |
+| 13 Oct | `kit memory scrub` | #59 |
+| 13 Oct | Lite eyes on a CPU; models as your own list, prices in Australian dollars | #45, #60 |
+| 14 Oct | Stage 4 part A1: the tool loop | #61 |
+| 14 Oct | Stage 4 part A2: which packs load, asking first, tool evals | #62 |
 
 ## Keeping this note true
 

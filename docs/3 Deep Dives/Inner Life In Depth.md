@@ -119,21 +119,19 @@ words alone count unless something in them says work, code or a game. The
 model's reading of your mood as "awful" (`life.read_mood`) still starts one
 on its own, as it did.
 
-<<<<<<< HEAD
 He doesn't pipe up bored or curious while it lasts, and the cat walking in
 isn't news. Once he's been quiet the usual while after your last message, he
 **checks in**, one gentle line with no joke in it, and only once a bad night;
 it needs no answer, so not answering isn't ignoring him. After that he keeps
 quiet until you want to talk (`kit life` says so: "staying quiet: Dan's having
 a hard time").
-=======
+
 He stays with it **once**. The answer to the message that started it is his
 check-in; after that, a message about something else ("what's the weather
 doing?") gets a gentle, cheek-free answer to what you asked, with no going
 back to how you said you felt. A message that says it again ("I still can't
 cope") gets him staying with you again. Before, every reply for the three
 hours restated it, even about the weather, which felt like a script.
->>>>>>> origin/claude/review-09-judgement
 
 ## Energy
 
@@ -763,7 +761,7 @@ checked for guilt like any hello. Never when you said to keep it local or chose
 a model yourself; if the cloud can't answer, his local model does.
 
 As the month's cloud budget runs low, the least needed calls stop first, each
-step keeping `cloud.reserve_usd` ($3) more in hand: evals first, then key
+step keeping `cloud.reserve_aud` (A$5) more in hand: evals first, then key
 moments and the fact check, then ordinary chat, so the nightly reflection
 always has the last few dollars.
 

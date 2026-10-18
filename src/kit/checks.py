@@ -18,6 +18,7 @@ import anthropic
 import httpx
 
 from kit.paths import KitPaths
+from kit.prices import BUILT_IN_SOURCE, STALE_DAYS, Prices
 from kit.settings import Settings
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess]
@@ -183,6 +184,39 @@ def check_nas(settings: Settings, write: Writer = try_write) -> list[CheckResult
     return results
 
 
+def check_files(
+    settings: Settings,
+    libraries: Callable[[], dict[str, bool]] | None = None,
+    write: Writer = try_write,
+) -> list[CheckResult]:
+    """The file libraries Kit reads with, and each root in ``files.roots``: there,
+    readable, and (as Kit only reads them) best made read-only for him."""
+    from kit.files.extract import available
+
+    roots = settings.files.roots
+    if not roots:
+        return [CheckResult("files", Status.SKIP, "no folders yet (kit files add NAME PATH)")]
+    libs = (libraries or available)()
+    missing = [pkg for pkg, ok in libs.items() if not ok]
+    if missing:
+        detail = f'missing {", ".join(missing)}: pip install -e ".[files]"'
+        results = [CheckResult("files", Status.WARN, detail)]
+    else:
+        results = [CheckResult("files", Status.PASS, "PDF, Word, Excel and slides can be read")]
+    for name, root in roots.items():
+        label, folder = f"files: {name}", Path(root.path).expanduser()
+        if not folder.is_dir():
+            results.append(CheckResult(label, Status.FAIL, f"can't open {root.path}"))
+        elif write(folder) is None:
+            detail = f"{root.path} is readable; Kit could write to it too (he won't)"
+            results.append(CheckResult(label, Status.WARN, detail))
+        else:
+            private = ", private" if root.private else ""
+            detail = f"{root.path} is readable and read-only{private}"
+            results.append(CheckResult(label, Status.PASS, detail))
+    return results
+
+
 CameraLister = Callable[[], list[dict]]
 
 
@@ -227,6 +261,29 @@ ClientFactory = Callable[[str], anthropic.Anthropic]
 
 def make_anthropic_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
+
+
+def check_prices(settings: Settings, prices: Prices) -> CheckResult:
+    """Today's prices and exchange rate are in hand, and every model a role uses has a
+    price. Nothing is fetched here; Kit fetches daily while he runs."""
+    routing = settings.routing
+    chat = [routing.chat] if routing.mode == "cloud-only" else []
+    unpriced = []
+    for name in dict.fromkeys([*chat, routing.work, routing.expert]):
+        profile = settings.models[name]
+        if (
+            profile.provider != "ollama"
+            and prices.price_of(profile.model, profile.provider) is None
+        ):
+            unpriced.append(profile.model)
+    line = prices.table.line()
+    if unpriced:
+        detail = f"no price for {', '.join(unpriced)}: its calls count as free; {line}"
+        return CheckResult("prices", Status.WARN, detail)
+    if prices.table.source == BUILT_IN_SOURCE or prices.age_days() > STALE_DAYS:
+        detail = f"{line}; Kit fetches today's while he runs, or run `kit models prices`"
+        return CheckResult("prices", Status.WARN, detail)
+    return CheckResult("prices", Status.PASS, line)
 
 
 def check_cloud(

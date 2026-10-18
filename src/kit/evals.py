@@ -1,7 +1,8 @@
 """Kit's evals: does every local reply come back in Kit's format, and how quickly
 do the first words arrive? Does memory learn and recall tidily, does Kit know
 where things live, how do cloud models compare, does Kit sound like himself, and
-does he behave like a good companion (goodbyes, hellos, honesty)?"""
+does he behave like a good companion (goodbyes, hellos, honesty), and does a
+question reach the right tool?"""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import re
 import statistics
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from kit.life import (
@@ -35,6 +36,7 @@ from kit.prompt import system_prompt
 from kit.recall import Recalled
 from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_schema, sentences
 from kit.settings import Settings
+from kit.tools import Context, EvalCase, Registry, Tool, ToolResult
 from kit.when import When
 
 PROMPTS = [
@@ -528,7 +530,7 @@ class CompareResult:
     model: str
     ok: bool
     seconds: float
-    cost_usd: float = 0.0
+    cost_aud: float = 0.0
     searches: int = 0
     said: str = ""
     detail: str = ""
@@ -572,7 +574,7 @@ async def run_compare(
                     name,
                     True,
                     clock() - start,
-                    answer.cost_usd,
+                    answer.cost_aud,
                     answer.searches,
                     reply.text,
                     reply.detail,
@@ -594,7 +596,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         median = statistics.median(r.seconds for r in ok) if ok else 0.0
         lines.append(
             f"- **{name}**: {len(ok)}/{len(mine)} answered, median {median:.1f}s, "
-            f"${sum(r.cost_usd for r in mine):.3f} in total, "
+            f"A${sum(r.cost_aud for r in mine):.3f} in total, "
             f"{sum(r.searches for r in mine)} searches"
         )
     for prompt in dict.fromkeys(r.prompt for r in results):
@@ -602,7 +604,7 @@ def compare_report(results: list[CompareResult], names: list[str]) -> str:
         for r in results:
             if r.prompt != prompt:
                 continue
-            lines += ["", f"### {r.model} ({r.seconds:.1f}s, ${r.cost_usd:.4f})", ""]
+            lines += ["", f"### {r.model} ({r.seconds:.1f}s, A${r.cost_aud:.4f})", ""]
             lines.append(r.said if r.ok else f"Failed: {r.error}")
             if r.detail:
                 lines += ["", r.detail]
@@ -1322,4 +1324,177 @@ async def run_mood_eval(
         report.lines.append(line)
         if on_line is not None:
             on_line(line)
+    return report
+
+
+# Tools: does a question load the right pack and call the right tool?
+
+
+@dataclass
+class ToolEvalResult:
+    case: EvalCase
+    loaded: list[str]
+    called: str | None
+    arguments: dict
+    pack_loaded: bool
+    passed: bool
+    cost_aud: float = 0.0
+    seconds: float = 0.0
+    why: str = ""
+
+
+@dataclass
+class ToolEvalReport:
+    live: bool
+    results: list[ToolEvalResult] = field(default_factory=list)
+
+    @property
+    def score(self) -> int:
+        return sum(r.passed for r in self.results)
+
+    @property
+    def passed(self) -> bool:
+        """Offline every case passes; live, a real model may miss one in ten."""
+        misses = len(self.results) - self.score
+        return misses == 0 if not self.live else misses <= len(self.results) // 10
+
+    @property
+    def cost_aud(self) -> float:
+        return sum(r.cost_aud for r in self.results)
+
+
+def load_tool_cases(path) -> list[EvalCase]:
+    """Dan's own tool questions from a TOML file (config/tool-questions.toml):
+
+    [[case]]
+    question = "What's the forecast for Saturday?"
+    tool = "weather"            # leave out (or "") for a question that needs no tool
+    pack = "core"
+    arguments = { place = "" }
+    """
+    import tomllib
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return [
+        EvalCase(
+            c["question"],
+            c.get("tool") or None,
+            dict(c.get("arguments", {})),
+            c.get("pack", ""),
+            c.get("note", ""),
+        )
+        for c in data.get("case", [])
+    ]
+
+
+def tool_cases(registry: Registry, pack: str | None = None) -> list[EvalCase]:
+    """Every pack's own cases (or one pack's), each knowing its pack."""
+    return [
+        case if case.pack else replace(case, pack=p.name)
+        for p in registry.packs.values()
+        if pack is None or p.name == pack
+        for case in p.cases
+    ]
+
+
+def _expected_packs(case: EvalCase, registry: Registry) -> set[str]:
+    want = case.pack or (registry.pack_of(case.tool) if case.tool else "")
+    return {want} if want else set()
+
+
+def _fits(tool: Tool, arguments: dict) -> str:
+    """Why ``arguments`` don't suit ``tool``'s schema, or "" when they do."""
+    unknown = [k for k in arguments if k not in tool.parameters]
+    if unknown:
+        return f"{tool.name} has no argument {', '.join(unknown)}"
+    missing = [k for k in tool.required if k not in arguments]
+    if missing:
+        return f"{tool.name} needs {', '.join(missing)}"
+    return ""
+
+
+async def run_tool_eval(
+    brain,
+    cases: list[EvalCase],
+    live: bool = False,
+    on_result: Callable[[ToolEvalResult], None] | None = None,
+) -> ToolEvalReport:
+    """Each case through pack matching (kit.tools.match) and then, offline, a check
+    that the expected tool is on offer with arguments its schema takes, so matching,
+    offering and plumbing are tested without a model; live, the real chat model
+    answers the question with every tool stubbed (nothing real happens) and the
+    first call it makes, or none, is compared with the case."""
+    from kit.tools.match import match
+
+    settings = brain.settings()
+    report = ToolEvalReport(live)
+    registry = brain.tools
+    stubbed = {}
+    if live:
+
+        async def stub(args):
+            return ToolResult("(stubbed in the eval)")
+
+        for pack in registry.packs.values():
+            for tool in pack.tools:
+                stubbed[tool.name] = tool.run
+                tool.run = stub
+    try:
+        for case in cases:
+            start = time.perf_counter()
+            loaded = await match(case.question, registry, brain.recall, brain.register, settings)
+            always = {p.name for p in registry.packs.values() if p.always}
+            if case.tool is None:
+                extra = set(loaded) - always - _expected_packs(case, registry)
+                pack_loaded = not extra
+            else:
+                pack_loaded = _expected_packs(case, registry) <= set(loaded)
+            called, arguments, cost, why = None, {}, 0.0, ""
+            if live:
+                spent = brain.memory.month_spend()
+                last = brain.memory.tool_calls(1)
+                before = last[0]["id"] if last else 0
+                async for _ in brain.chat(case.question):
+                    pass
+                calls = [c for c in brain.memory.tool_calls(100) if c["id"] > before]
+                if calls:  # newest first: the turn's first call is the last
+                    called, arguments = calls[-1]["tool"], calls[-1]["arguments"]
+                cost = brain.memory.month_spend() - spent
+                brain.pending_tool = None  # a held call isn't answered in an eval
+            elif case.tool is not None:
+                brain.tool_context = Context(
+                    pc=True, scene=True, weather=True, notes=True
+                )  # everything there to look at
+                offered = {t.name: t for t in registry.offered(loaded)}
+                tool = offered.get(case.tool)
+                if tool is None:
+                    why = f"{case.tool} wasn't offered (loaded: {', '.join(loaded)})"
+                elif problem := _fits(tool, case.arguments):
+                    why = problem
+                else:
+                    called, arguments = case.tool, dict(case.arguments)
+            passed = pack_loaded and case.matches(called, arguments)
+            if not pack_loaded and not why:
+                why = f"loaded {', '.join(loaded)}"
+            elif not passed and not why:
+                why = f"called {called or 'nothing'}"
+            result = ToolEvalResult(
+                case,
+                loaded,
+                called,
+                arguments,
+                pack_loaded,
+                passed,
+                cost,
+                time.perf_counter() - start,
+                why,
+            )
+            report.results.append(result)
+            if on_result is not None:
+                on_result(result)
+    finally:
+        for pack in registry.packs.values():
+            for tool in pack.tools:
+                if tool.name in stubbed:
+                    tool.run = stubbed[tool.name]
     return report

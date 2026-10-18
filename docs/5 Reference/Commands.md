@@ -18,7 +18,7 @@ the options for any of them.
 |---|---|
 | `kit paths` | Show where Kit keeps his files. See [[Settings and Data]] |
 | `kit init` | Create the data folder and a starter settings file |
-| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one) |
+| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
 | `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
@@ -51,8 +51,11 @@ Every setting is in [[Settings Reference]].
 
 | Command | What it does |
 |---|---|
-| `kit models` | The models Kit uses for each role |
-| `kit models ROLE NAME` | Switch a role (`chat`, `work` or `expert`) to another model profile, e.g. `kit models work opus` |
+| `kit models` | The models Kit uses for each role, with today's prices in Australian dollars |
+| `kit models ROLE NAME` | Switch a role (`chat`, `work` or `expert`) to another model, e.g. `kit models work opus` |
+| `kit models add NAME --provider P --model ID` | Add any model (`--label`, `--effort`, `--max-tokens`, `--no-thinking`, `--no-search` are optional) |
+| `kit models remove NAME` | Take a model out of the list (not one a role uses) |
+| `kit models prices` | Fetch today's price list and exchange rate now (Kit does this daily while he runs) |
 
 See [[Models and Routing]].
 
@@ -80,6 +83,7 @@ See [[Inner Life]].
 | `kit memory history ID` | A fact's earlier versions |
 | `kit memory days` | The day summaries |
 | `kit memory summarise` | Summarise finished days now |
+| `kit memory scrub WORDS... [--since DATE]` | Show every message since the date (today by default) that says any of the words, Kit's answers to them and what was kept of them; `--apply` takes them out after a backup. For lines that should never have been said, such as a test |
 | `kit memory tidy` | Plan sorting what he knows into the right kinds; `--apply` does it, after a backup |
 | `kit memory reindex` | Build any missing meaning vectors now |
 | `kit memory backup` | Back up memory now |
@@ -98,14 +102,25 @@ See [[Memory]].
 | `kit things confirm ID` / `reject ID` | Add a suggestion, or drop it |
 | `kit things forget ID` | Delete a thing |
 | `kit things history ID` | A thing's earlier versions |
+| `kit tools` | Kit's tools, from the running server: |
+| `kit tools packs` | Each pack, its card, and whether it may load (`always`, `on`, `off`) |
+| `kit tools list` | Every tool with its pack, its effect and whether it asks first |
+| `kit tools run TOOL --args '{...}'` | Run one tool on the running Kit to try it, e.g. `kit tools run recall --args '{"query": "tax"}'`. One that changes something of yours needs `--yes` |
 
 See [[Register of Things]].
 
-## Notes and weather
+## Notes, files and weather
 
 | Command | What it does |
 |---|---|
 | `kit notes` | Read the notes vault now and list what Kit sees. See [[Notes on the NAS]] |
+| `kit files` | The folders Kit reads into his memory. See [[Your Files]]: |
+| `kit files add NAME PATH` | Add a folder, e.g. `kit files add finance /mnt/nas/Finance` (`--private`, `--ocr` for scans). The path is checked first |
+| `kit files remove NAME` | Stop indexing a folder; what was read from it leaves his memory |
+| `kit files private NAME on` / `off` | Mark a folder private or not, straight away |
+| `kit files status` | Each folder: files and pieces indexed, the last run, files it couldn't read |
+| `kit files index` | Read new and changed files now, showing each (`--root NAME`, `--full` to read everything again) |
+| `kit files search "..."` | Search the indexed files only, with each hit's folder, path and page |
 | `kit weather [PLACE]` | The forecast Kit sees, for `persona.location` or PLACE. See [[Time and Weather]] |
 
 ## Voice
@@ -162,6 +177,7 @@ See [[Hearing]].
 | `kit eval memory` | Memory recall, and a suggested `memory.min_similarity` |
 | `kit eval memory --replay SNAPSHOT [--questions FILE]` | Your own questions against a copy of a memory snapshot (a backup): does the right fact still come first? |
 | `kit eval routing` | Whether Kit knows where things live, from the register |
+| `kit eval tools` | Whether each question loads the right pack and reaches the right tool; `--live` asks the real chat model (tools stubbed, costs a little), `--pack NAME` for one pack, `--questions FILE` for another file |
 | `kit eval compare --models A B` | Compare cloud models on the same questions |
 | `kit eval voice --models A B` | Which local model sounds most alive |
 | `kit eval companion` | How good a companion he is |

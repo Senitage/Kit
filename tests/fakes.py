@@ -173,16 +173,21 @@ class FakeMessages:
         n = len(owner.calls) - 1
         stop = owner.stop_reason[min(n, len(owner.stop_reason) - 1)]
         answer = owner.answers[min(n, len(owner.answers) - 1)]
+        calls = owner.tool_calls[n] if n < len(owner.tool_calls) else []
         return SimpleNamespace(
             model=kwargs["model"],
-            stop_reason=stop,
+            stop_reason="tool_use" if calls else stop,
             content=[
                 SimpleNamespace(type="thinking", thinking="hmm"),
                 *(
                     SimpleNamespace(type="server_tool_use", name="web_search", input={"query": q})
                     for q in owner.queries
                 ),
-                SimpleNamespace(type="text", text=answer),
+                *([SimpleNamespace(type="text", text=answer)] if answer else []),
+                *(
+                    SimpleNamespace(type="tool_use", id=f"call_{n}_{i}", name=name, input=args)
+                    for i, (name, args) in enumerate(calls)
+                ),
             ],
             usage=SimpleNamespace(
                 input_tokens=1000,
@@ -206,8 +211,13 @@ class FakeAnthropic:
         cache_creation_input_tokens=0,
         searches=0,
         queries=(),
+        tool_calls=(),
     ):
+        """``tool_calls``: per call, the tools the model asks for as (name, arguments)
+        pairs; a call with any becomes a tool_use turn (its answer, if any, is the
+        words said first)."""
         self.queries = list(queries)
+        self.tool_calls = [list(calls) for calls in tool_calls]
         self.gate = None  # set to an asyncio.Event to hold answers back
         self.answers = answer if isinstance(answer, list) else [answer]
         self.error = error
@@ -228,13 +238,41 @@ class FakeAnthropic:
         pass
 
 
+TEST_RATE = 1.5  # Australian dollars to one US dollar in tests: easy sums
+GPT = {"label": "GPT", "provider": "openai", "model": "gpt-6.1-sol", "effort": "low"}
+GEMINI = {"label": "Gemini", "provider": "google", "model": "gemini-3.8-flash", "effort": "low"}
+
+
+def models_with(changes: dict | None = None, **added) -> dict:
+    """The three starter models with GPT and Gemini beside them (a real Kit adds those
+    with `kit models add`), ``changes`` to any of them by name, and ``added`` ones."""
+    from kit.settings import STARTER_MODELS
+
+    models = {**STARTER_MODELS, "gpt-sol": GPT, "gemini-flash": GEMINI, **added}
+    for name, fields in (changes or {}).items():
+        models[name] = {**models[name], **fields}
+    return models
+
+
+def test_prices():
+    """The built-in price list at a round exchange rate, nothing fetched."""
+    from dataclasses import replace
+
+    from kit.prices import Prices
+
+    prices = Prices(None)
+    prices.table = replace(prices.table, aud_per_usd=TEST_RATE)
+    return prices
+
+
 def make_cloud(memory, claude=None, key="sk-test", **providers):
-    """A Cloud with a fake Claude (and any other providers given)."""
+    """A Cloud with a fake Claude (and any other providers given), costing calls at
+    the built-in prices and ``TEST_RATE``."""
     from kit.cloud import AnthropicProvider, Cloud
 
     claude = claude or FakeAnthropic()
     all_providers = {"anthropic": AnthropicProvider(claude.factory), **providers}
-    return Cloud(memory, lambda provider: key, all_providers)
+    return Cloud(memory, lambda provider: key, all_providers, test_prices())
 
 
 class Clock:

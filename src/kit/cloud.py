@@ -3,7 +3,8 @@
 Each provider has an adapter that turns Kit's chat messages (a system prompt
 then alternating turns) into one request and returns the text and token
 counts. ``Cloud`` picks the adapter for a model profile, keeps to the monthly
-budget, and logs what every call cost, so swapping models is a settings change.
+budget (in Australian dollars), and logs what every call cost at the day's
+prices and rate (``kit.prices``), so swapping models is a settings change.
 
 As the budget runs low, calls give way in a set order (``SKIP_ORDER``): evals
 first, then fact checks and key moments, then chat, so Kit's nightly reflection
@@ -23,22 +24,25 @@ spend log keeps how much of each call was read from the cache.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
-from typing import Protocol
+from dataclasses import asdict, dataclass, field
+from typing import Any, Protocol
 
 import anthropic
 import httpx
 
 from kit.memory import Memory
+from kit.prices import Prices, Usage
 from kit.prompt import TURN_PART
 from kit.settings import ModelProfile, PersonaSettings, Settings
+from kit.tools import ToolCall
 
+__all__ = ["Usage"]  # the providers fill one in; it lives with the prices
 log = logging.getLogger(__name__)
 
-CACHE_WRITE_MULTIPLIER = 1.25  # an Anthropic 5-minute cache write costs 1.25x input
-# Who gives way as the month's budget runs low: each step stops cloud.reserve_usd
+# Who gives way as the month's budget runs low: each step stops cloud.reserve_aud
 # sooner than the one before, so evals can never use up the nightly reflection's share.
 # His background thoughts and pipe-ups ("life") go first, with evals: the local model can
 # have them.
@@ -50,30 +54,27 @@ class CloudError(Exception):
 
 
 @dataclass
-class Usage:
-    input_tokens: int = 0  # every input token, cached ones included
-    output_tokens: int = 0  # thinking included
-    cached_tokens: int = 0
-    cache_write_tokens: int = 0
-    searches: int = 0
-
-
-@dataclass
 class Completion:
     text: str
     model: str
     usage: Usage
     truncated: bool = False
     refused: bool = False
+    calls: list[ToolCall] = field(default_factory=list)  # tools the model asked for
+    # The provider's own assistant content for a turn with calls, handed back as is
+    # with the results (Claude needs its thinking blocks back); None for the rest.
+    content: Any = None
 
 
 @dataclass
 class CloudAnswer:
     text: str
     model: str
-    cost_usd: float
+    cost_aud: float  # at the day's prices and exchange rate
     searches: int
     truncated: bool
+    calls: list[ToolCall] = field(default_factory=list)
+    content: Any = None
 
 
 @dataclass
@@ -118,18 +119,35 @@ class Provider(Protocol):
         on_step: Step | None = None,
         where: Where | None = None,
         on_text: Text | None = None,
-    ) -> Completion: ...
+        tools: list[dict] | None = None,
+    ) -> Completion:
+        """``tools`` are kit.tools definitions (name, description, input_schema); the
+        model's calls come back in the Completion. A turn in ``turns`` is plain
+        (``content`` a string) or a tool exchange: an assistant turn with ``calls``
+        (and the provider's ``content`` from the Completion it came from), then a
+        user turn with ``results`` (call id, text), as ``tool_turns`` builds them."""
+        ...
 
 
-def estimate_cost(profile: ModelProfile, usage: Usage) -> float:
-    """What one call cost, from the profile's prices."""
-    fresh = usage.input_tokens - usage.cached_tokens - usage.cache_write_tokens
+def tool_turns(said: str, calls: list[ToolCall], results: list[tuple[str, str]], content=None):
+    """The two turns a tool exchange adds to the conversation: what the model said
+    and asked for, then what each tool gave back."""
+    return [
+        {"role": "assistant", "content": said, "calls": list(calls), "raw": content},
+        {"role": "user", "content": "", "results": list(results)},
+    ]
+
+
+def _plain(turn: dict) -> bool:
+    """A turn of words only: no tool calls or results, before or after it is
+    converted to a provider's shape."""
     return (
-        fresh * profile.input_usd_per_mtok
-        + usage.cache_write_tokens * profile.input_usd_per_mtok * CACHE_WRITE_MULTIPLIER
-        + usage.cached_tokens * profile.cached_input_usd_per_mtok
-        + usage.output_tokens * profile.output_usd_per_mtok
-    ) / 1_000_000 + usage.searches * profile.search_usd_per_k / 1000
+        not turn.get("calls") and not turn.get("results") and isinstance(turn.get("content"), str)
+    )
+
+
+def _calls_from(items: list[dict]) -> list[ToolCall]:
+    return [ToolCall(str(c["id"]), str(c["name"]), dict(c.get("arguments") or {})) for c in items]
 
 
 def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
@@ -141,10 +159,10 @@ def split_messages(messages: list[dict]) -> tuple[str, list[dict]]:
         if m["role"] == "system":
             continue
         role = "user" if m["role"] == "user" else "assistant"
-        if turns and turns[-1]["role"] == role:
+        if turns and turns[-1]["role"] == role and _plain(turns[-1]) and _plain(m):
             turns[-1] = {"role": role, "content": turns[-1]["content"] + "\n\n" + m["content"]}
         else:
-            turns.append({"role": role, "content": m["content"]})
+            turns.append({**m, "role": role})
     while turns and turns[0]["role"] != "user":
         turns.pop(0)
     if not turns or turns[-1]["role"] != "user":
@@ -212,6 +230,7 @@ class AnthropicProvider:
         on_step: Step | None = None,
         where: Where | None = None,
         on_text: Text | None = None,
+        tools: list[dict] | None = None,
     ) -> Completion:
         """``on_text`` hears the answer's text as it's written (it's streamed)."""
         try:
@@ -219,7 +238,8 @@ class AnthropicProvider:
         except (TypeError, ValueError) as e:  # an SDK that won't take these settings
             raise CloudError(f"I couldn't set up {profile.name}: {e}") from e
         haiku = profile.model.startswith("claude-haiku")
-        tools = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
+        web = anthropic_web_tools(where, basic=haiku) if profile.web_search else []
+        tools = [*anthropic_tools(tools or []), *web]
         fallback = {} if haiku else {"fallbacks": "default", "betas": [FALLBACK_BETA]}
         # Haiku can skip thinking (at effort up to high) and answer straight away;
         # Sonnet and Opus refuse the request, so for them the flag changes nothing.
@@ -228,10 +248,11 @@ class AnthropicProvider:
             if haiku and not profile.thinking and profile.effort in NO_THINKING_EFFORTS
             else {}
         )
-        turns = cached_turns(turns)
+        turns = cached_turns(anthropic_turns(turns))
         messages = list(turns)
         usage = Usage()
         text: list[str] = []
+        calls: list[ToolCall] = []
         try:
             for _ in range(MAX_RESUMES + 1):
                 request = {
@@ -250,6 +271,11 @@ class AnthropicProvider:
                     response = await _streamed(client, request, on_text)
                 _add_anthropic_usage(usage, response.usage)
                 text += [b.text for b in response.content if getattr(b, "type", "") == "text"]
+                calls += [
+                    ToolCall(str(b.id), str(b.name), dict(b.input or {}))
+                    for b in response.content
+                    if getattr(b, "type", "") == "tool_use"
+                ]
                 if response.stop_reason != "pause_turn":
                     break
                 if on_step:
@@ -273,6 +299,8 @@ class AnthropicProvider:
             usage,
             truncated=response.stop_reason == "max_tokens",
             refused=response.stop_reason == "refusal",
+            calls=calls,
+            content=list(response.content) if calls else None,
         )
 
 
@@ -284,6 +312,46 @@ async def _streamed(client: anthropic.AsyncAnthropic, request: dict, on_text: Te
             if getattr(event, "type", "") == "text" and event.text:
                 on_text(event.text)
         return await stream.get_final_message()
+
+
+def anthropic_tools(definitions: list[dict]) -> list[dict]:
+    """kit.tools definitions as Claude's tool list."""
+    return [
+        {"name": d["name"], "description": d["description"], "input_schema": d["input_schema"]}
+        for d in definitions
+    ]
+
+
+def anthropic_turns(turns: list[dict]) -> list[dict]:
+    """The turns as Claude's messages: a tool exchange becomes the assistant's own
+    content back (text, thinking and tool_use blocks, kept whole so a thinking
+    model's blocks aren't lost) and a user turn of tool_result blocks."""
+    out: list[dict] = []
+    for t in turns:
+        if t.get("calls"):
+            content = t.get("raw")
+            if content is None:
+                content = [
+                    *([{"type": "text", "text": t["content"]}] if t.get("content") else []),
+                    *(
+                        {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
+                        for c in t["calls"]
+                    ),
+                ]
+            out.append({"role": "assistant", "content": content})
+        elif t.get("results"):
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": call_id, "content": text}
+                        for call_id, text in t["results"]
+                    ],
+                }
+            )
+        else:
+            out.append({"role": t["role"], "content": t["content"]})
+    return out
 
 
 def anthropic_web_tools(where: Where | None, basic: bool = False) -> list[dict]:
@@ -340,7 +408,10 @@ def cached_turns(turns: list[dict]) -> list[dict]:
     conversation up to Dan's new message is read from the cache next turn (the
     system prompt comes first in the cache, so it's covered too). Nothing to mark
     on a first message: the system prompt's breakpoint does the work."""
-    last = max((i for i, t in enumerate(turns) if t["role"] == "assistant"), default=-1)
+    last = max(
+        (i for i, t in enumerate(turns) if t["role"] == "assistant" and _plain(t)),
+        default=-1,
+    )
     if last < 0:
         return list(turns)
     marked = {
@@ -382,25 +453,40 @@ class OpenAIProvider:
         on_step: Step | None = None,
         where: Where | None = None,
         on_text: Text | None = None,
+        tools: list[dict] | None = None,
     ) -> Completion:
         body: dict = {
             "model": profile.model,
             "instructions": system,
-            "input": [{"role": t["role"], "content": t["content"]} for t in turns],
+            "input": openai_input(turns),
             "max_output_tokens": profile.max_tokens,
             "reasoning": {"effort": OPENAI_EFFORT[profile.effort]},
             "store": False,
         }
+        body_tools = [
+            {
+                "type": "function",
+                "name": d["name"],
+                "description": d["description"],
+                "parameters": d["input_schema"],
+            }
+            for d in tools or []
+        ]
         if profile.web_search:
             near = where.approximate() if where else None
-            body["tools"] = [{"type": "web_search", **({"user_location": near} if near else {})}]
+            body_tools.append({"type": "web_search", **({"user_location": near} if near else {})})
+        if body_tools:
+            body["tools"] = body_tools
         data = await _post_json(
             self.client, self.url, body, {"Authorization": f"Bearer {key}"}, profile
         )
-        text, searches, refused = [], 0, False
+        text, searches, refused, calls = [], 0, False, []
         for item in data.get("output", []):
             if item.get("type") == "web_search_call":
                 searches += 1
+            elif item.get("type") == "function_call":
+                call_id, name = str(item.get("call_id", "")), str(item.get("name", ""))
+                calls.append(ToolCall(call_id, name, _json_args(item.get("arguments"))))
             elif item.get("type") == "message":
                 for part in item.get("content", []):
                     if part.get("type") == "output_text":
@@ -419,8 +505,51 @@ class OpenAIProvider:
             and (data.get("incomplete_details") or {}).get("reason") == "max_output_tokens"
         )
         return Completion(
-            "".join(text).strip(), data.get("model", profile.model), usage, truncated, refused
+            "".join(text).strip(),
+            data.get("model", profile.model),
+            usage,
+            truncated,
+            refused,
+            calls=calls,
         )
+
+
+def openai_input(turns: list[dict]) -> list[dict]:
+    """The turns as Responses API input items: a tool exchange becomes the
+    assistant's words (if any) plus one function_call item per call, then one
+    function_call_output item per result."""
+    items: list[dict] = []
+    for t in turns:
+        if t.get("calls"):
+            if t.get("content"):
+                items.append({"role": "assistant", "content": t["content"]})
+            items += [
+                {
+                    "type": "function_call",
+                    "call_id": c.id,
+                    "name": c.name,
+                    "arguments": json.dumps(c.arguments),
+                }
+                for c in t["calls"]
+            ]
+        elif t.get("results"):
+            items += [
+                {"type": "function_call_output", "call_id": call_id, "output": text}
+                for call_id, text in t["results"]
+            ]
+        else:
+            items.append({"role": t["role"], "content": t["content"]})
+    return items
+
+
+def _json_args(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 # --- Google (Gemini) ---------------------------------------------------------
@@ -444,24 +573,35 @@ class GoogleProvider:
         on_step: Step | None = None,
         where: Where | None = None,
         on_text: Text | None = None,
+        tools: list[dict] | None = None,
     ) -> Completion:
         body: dict = {
             "systemInstruction": {"parts": [{"text": system}]},
-            "contents": [
-                {
-                    "role": "user" if t["role"] == "user" else "model",
-                    "parts": [{"text": t["content"]}],
-                }
-                for t in turns
-            ],
+            "contents": gemini_contents(turns),
             "generationConfig": {
                 "maxOutputTokens": profile.max_tokens,
                 # Gemini 3 thinks at low, medium or high.
                 "thinkingConfig": {"thinkingLevel": GEMINI_THINKING[profile.effort]},
             },
         }
+        body_tools: list[dict] = []
+        if tools:
+            body_tools.append(
+                {
+                    "functionDeclarations": [
+                        {
+                            "name": d["name"],
+                            "description": d["description"],
+                            "parameters": _gemini_schema(d["input_schema"]),
+                        }
+                        for d in tools
+                    ]
+                }
+            )
         if profile.web_search:
-            body["tools"] = [{"google_search": {}}]
+            body_tools.append({"google_search": {}})
+        if body_tools:
+            body["tools"] = body_tools
         url = self.url.format(model=profile.model)
         data = await _post_json(self.client, url, body, {"x-goog-api-key": key}, profile)
         blocked = bool((data.get("promptFeedback") or {}).get("blockReason"))
@@ -469,6 +609,11 @@ class GoogleProvider:
         finish = candidate.get("finishReason", "STOP")
         parts = (candidate.get("content") or {}).get("parts") or []
         text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+        calls = [
+            ToolCall(str(fc.get("name", "")), str(fc.get("name", "")), dict(fc.get("args") or {}))
+            for p in parts
+            if (fc := p.get("functionCall"))
+        ]
         grounding = candidate.get("groundingMetadata") or {}
         u = data.get("usageMetadata") or {}
         usage = Usage(
@@ -484,7 +629,39 @@ class GoogleProvider:
             usage,
             truncated=finish == "MAX_TOKENS",
             refused=blocked or finish in GEMINI_REFUSALS,
+            calls=calls,
         )
+
+
+def gemini_contents(turns: list[dict]) -> list[dict]:
+    """The turns as Gemini contents: a tool exchange becomes a model turn with
+    functionCall parts and a user turn with functionResponse parts. Gemini has no
+    call ids, so a call is known by its name."""
+    out: list[dict] = []
+    for t in turns:
+        if t.get("calls"):
+            parts = [{"text": t["content"]}] if t.get("content") else []
+            parts += [{"functionCall": {"name": c.name, "args": c.arguments}} for c in t["calls"]]
+            out.append({"role": "model", "parts": parts})
+        elif t.get("results"):
+            out.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {"functionResponse": {"name": name, "response": {"result": text}}}
+                        for name, text in t["results"]
+                    ],
+                }
+            )
+        else:
+            role = "user" if t["role"] == "user" else "model"
+            out.append({"role": role, "parts": [{"text": t["content"]}]})
+    return out
+
+
+def _gemini_schema(schema: dict) -> dict:
+    """Gemini's OpenAPI subset: no additionalProperties."""
+    return {k: v for k, v in schema.items() if k != "additionalProperties"}
 
 
 # A busy or stumbling provider (429, 5xx, a dropped connection) gets this many more
@@ -536,10 +713,12 @@ class Cloud:
         memory: Memory,
         api_key: Callable[[str], str | None],
         providers: dict[str, Provider],
+        prices: Prices | None = None,
     ) -> None:
         self.memory = memory
         self.api_key = api_key
         self.providers = providers
+        self.prices = prices or Prices(None)  # built-in prices until one is given
 
     async def close(self) -> None:
         """Let go of the providers' connections (when Kit stops)."""
@@ -557,6 +736,7 @@ class Cloud:
         on_step: Step | None = None,
         priority: str = "chat",
         on_text: Text | None = None,
+        tools: list[dict] | None = None,
     ) -> CloudAnswer:
         """``question`` is what Dan asked, for the spend log. ``on_step`` hears about
         progress (web searches so far) while the model is still working. ``priority``
@@ -566,13 +746,13 @@ class Cloud:
         if provider is None:
             raise CloudError(f"I don't know how to talk to {profile.provider} models.")
         spent = self.memory.month_spend()
-        cap = settings.cloud.monthly_cap_usd
-        kept = settings.cloud.reserve_usd * SKIP_ORDER.get(priority, 1)
+        cap = settings.cloud.monthly_cap_aud
+        kept = settings.cloud.reserve_aud * SKIP_ORDER.get(priority, 1)
         if spent >= cap - kept:
-            saving = f", keeping the last ${kept:.2f} for my nightly reflection" if kept else ""
+            saving = f", keeping the last A${kept:.2f} for my nightly reflection" if kept else ""
             raise CloudError(
-                f"I've used this month's cloud budget (${spent:.2f} of ${cap:.2f}{saving}). "
-                "You can raise cloud.monthly_cap_usd in my settings."
+                f"I've used this month's cloud budget (A${spent:.2f} of A${cap:.2f}{saving}). "
+                "You can raise cloud.monthly_cap_aud in my settings."
             )
         key = self.api_key(profile.provider)
         if not key:
@@ -582,24 +762,45 @@ class Cloud:
             )
         system, turns = split_messages(messages)
         where = Where.of(settings.persona)
-        if on_text is None:
+        if on_text is None and not tools:
             done = await provider.complete(profile, system, turns, key, on_step, where)
         else:
-            done = await provider.complete(profile, system, turns, key, on_step, where, on_text)
-        cost = estimate_cost(profile, done.usage)
-        question = question or turns[-1]["content"]
+            done = await provider.complete(
+                profile, system, turns, key, on_step, where, on_text, tools=tools or None
+            )
+        cost = self.prices.cost(profile.model, profile.provider, done.usage)
+        question = question or _last_words(turns)
         self.memory.record_spend(
             done.model,
             done.usage.input_tokens,
             done.usage.output_tokens,
-            cost,
+            cost.usd,
             question,
             cached_tokens=done.usage.cached_tokens,
             cache_write_tokens=done.usage.cache_write_tokens,
             searches=done.usage.searches,
+            cost_aud=cost.aud,
+            aud_per_usd=cost.aud_per_usd,
         )
         if done.refused:
             raise CloudError(f"{profile.name} declined to answer that one.")
-        if not done.text:
+        if not done.text and not done.calls:
             raise CloudError(f"{profile.name} came back empty.")
-        return CloudAnswer(done.text, done.model, cost, done.usage.searches, done.truncated)
+        return CloudAnswer(
+            done.text,
+            done.model,
+            cost.aud,
+            done.usage.searches,
+            done.truncated,
+            calls=done.calls,
+            content=done.content,
+        )
+
+
+def _last_words(turns: list[dict]) -> str:
+    """The last thing Dan said, for the spend log: a tool-result turn has no words
+    of his, so the turn before it is used."""
+    for t in reversed(turns):
+        if t["role"] == "user" and isinstance(t.get("content"), str) and t["content"]:
+            return t["content"]
+    return ""

@@ -46,6 +46,8 @@ flowchart TB
 | `src/kit/routes/settings.py` | Reading, changing and undoing settings | [[API]], [[Settings and Data]] |
 | `src/kit/routes/memory.py` | Facts, memory search and day summaries | [[API]], [[Memory]] |
 | `src/kit/routes/things.py` | The register of things over the API | [[API]], [[Register of Things]] |
+| `src/kit/routes/files.py` | The settings page's "Your files": roots, their status, syncing now | [[API]], [[Your Files]] |
+| `src/kit/routes/tools.py` | The packs and tools over the API, and running one by hand | [[API]], [[Tools and Packs]] |
 | `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
 | `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
 | `src/kit/routes/eyes.py` | The eyes' reports, known faces and the "Let Kit see me" switch | [[API]], [[Eyes]] |
@@ -56,9 +58,15 @@ flowchart TB
 | `src/kit/brain.py` | The conversation loop: one message in, a streamed reply out | [[Brain]], [[Life of a Message]] |
 | `src/kit/reply.py` | The shape of every reply, emotions, gestures and actions | [[Brain#One shape for every reply]] |
 | `src/kit/prompt.py` | What a model sees each turn | [[Life of a Message]] |
+| `src/kit/tools/__init__.py` | Tools, packs and the registry: what a model can call mid-answer, offered only where there's something to look at | [[Tools and Packs]] |
+| `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
+| `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
+| `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
+| `src/kit/tools/private.py` | A private result as a local summary for a cloud model | [[Tools and Packs#Private results]], [[Privacy]] |
 | `src/kit/channels.py` | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | `src/kit/local_model.py` | The local model, through Ollama | [[Models and Routing]] |
 | `src/kit/cloud.py` | Claude, GPT and Gemini behind one interface, with caching and spend | [[Models and Routing]] |
+| `src/kit/prices.py` | What models cost: the price list and exchange rate, fetched daily, in Australian dollars | [[Models and Routing#Prices, fetched for you]] |
 | `src/kit/cli.py` | The `kit` command | [[Commands]] |
 | `src/kit/__main__.py` | `python -m kit` runs the `kit` command | [[Commands]] |
 
@@ -73,6 +81,11 @@ flowchart TB
 | `src/kit/learning.py` | Adding facts tidily, and each day's summary | [[Memory#Learning without a mess]] |
 | `src/kit/things.py` | The register of things | [[Register of Things]] |
 | `src/kit/notes.py` | The notes vault on the NAS | [[Notes on the NAS]] |
+| `src/kit/files/__init__.py` | Your folders (roots) and adding, changing and removing them in the settings | [[Your Files]] |
+| `src/kit/files/walk.py` | Finding the files under each root, and what's new, changed and gone | [[Your Files#How it works]] |
+| `src/kit/files/extract.py` | A PDF, Word file, sheet, slide deck or text file as pages of text | [[Your Files#How it works]] |
+| `src/kit/files/fields.py` | Years, amounts, dates, ABNs, references and names in a piece of a file | [[Your Files#How it works]] |
+| `src/kit/files/index.py` | Keeping the `files` source in step with the folders | [[Your Files]], [[Memory In Depth]] |
 
 ## Inner life and companionship
 

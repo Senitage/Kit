@@ -9,6 +9,7 @@ from kit.routes import (
     desk,
     eyes,
     face,
+    files,
     hearing,
     life,
     memory,
@@ -17,6 +18,7 @@ from kit.routes import (
     speech,
     status,
     things,
+    tools,
 )
 
 ROUTERS = (
@@ -26,6 +28,7 @@ ROUTERS = (
     settings.router,
     chat.router,
     memory.router,
+    files.router,
     things.router,
     desk.router,
     eyes.router,
@@ -33,4 +36,5 @@ ROUTERS = (
     life.router,
     bodies.router,
     speech.router,
+    tools.router,
 )
