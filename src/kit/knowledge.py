@@ -388,6 +388,28 @@ class Index:
             ).fetchall()
         return [self._row(r) for r in reversed(rows)]
 
+    def with_ref(self, source: str, ref: str) -> list[Item]:
+        """The current items of one document of ``source`` (a file's pieces), in order."""
+        with self.lock:
+            rows = self.db.execute(
+                f"SELECT {self._COLS} FROM items WHERE source = ? AND ref = ?"
+                " AND superseded_by IS NULL ORDER BY id",
+                (source, ref),
+            ).fetchall()
+        return [self._row(r) for r in rows]
+
+    def documents(self, source: str) -> list[tuple[str, dict]]:
+        """One ``(ref, meta)`` per document of ``source``, from its first item, so a
+        folder can be listed without reading every piece."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT ref, meta FROM items WHERE id IN (SELECT MIN(id) FROM items"
+                " WHERE source = ? AND ref IS NOT NULL AND superseded_by IS NULL GROUP BY ref)"
+                " ORDER BY ref",
+                (source,),
+            ).fetchall()
+        return [(r[0], json.loads(r[1] or "{}")) for r in rows]
+
     def since(self, created: str) -> list[Item]:
         """Current items of every source made at or after ``created``, oldest first."""
         with self.lock:

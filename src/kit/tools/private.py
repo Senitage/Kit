@@ -8,6 +8,7 @@ See docs/2 How Kit Works/Privacy.md."""
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from kit.local_model import LocalModelError
@@ -19,6 +20,12 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 SUMMARY_WORDS = 60
+# Dan saying, for one message, that the cloud may read a private source as it is.
+LIFT = re.compile(
+    r"\b(send|give|pass|show) (it|this|that|them) to (claude|the cloud)\b"
+    r"|\byou can use the cloud\b|\bthe cloud can (read|see) (it|this|that)\b",
+    re.IGNORECASE,
+)
 MARK = "[Summarised locally from a private source]"
 NO_LOCAL = (
     "I found it, but it's in a private source I can only read locally, and my local model is off."
@@ -30,6 +37,11 @@ SUMMARISE = (
     "and names it asks for, and where in the text they are. Nothing else from the text. "
     "If the text doesn't answer it, say so."
 )
+
+
+def lifted(text: str) -> bool:
+    """Whether Dan's message lets a cloud model read private results whole this once."""
+    return bool(LIFT.search(text))
 
 
 async def for_cloud(result: ToolResult, question: str, model: LocalModel) -> str:

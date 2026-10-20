@@ -59,6 +59,11 @@ one, ignoring case, so `place = "Richmond"` matches `"Richmond, NSW"`.
   call it makes is compared. It runs in a scratch memory; its spend is added
   to the real log so it counts toward the cap. One miss in ten passes.
 
+The packs' own questions: `core` (small talk, the forecast, a recall) and
+`files` (the council rates last year, the pump manual, what's in the Finance
+folder, whether he's read your files). `kit eval tools --pack files` runs
+one pack's.
+
 Your own questions go in `tool-questions.toml` in the config folder:
 
 ```toml

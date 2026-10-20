@@ -152,10 +152,46 @@ are in [[Settings Reference#files]]; the defaults are fine.
 - [ ] **Chat untouched:** Kit doesn't bring up your files in conversation yet.
 - [ ] **Tests:** `pytest -q tests/test_files.py` passes on the server.
 
+## Part B2: asking about your files
+
+Now he can answer from your documents mid-chat. The `files` pack loads when
+a message is about them, and finds, reads and lists them from the index
+B1 built. A private folder's text reaches a cloud model only as the local
+model's short answer. See [[Your Files#Asking about them]].
+
+### 1. Update and restart Kit
+
+Update as in [[Updating Kit]]. Nothing new to install or set. For the
+private test, tick one folder Private on the settings page, and keep the
+local model running.
+
+### 2. Test before moving on
+
+- [ ] **A figure from a document:** "What did I pay for the rates last
+  year?" gives the right amount and names the notice. The desk chat shows a
+  `find_documents` line (and maybe `read_document`).
+- [ ] **A folder:** "What's in the Finance folder?" lists its folders and
+  newest files.
+- [ ] **A register link:** with a project in the register linked to its NAS
+  folder (`kit things link ID nas Projects/Riverbend`), "bring up everything
+  on Riverbend" looks in that folder first.
+- [ ] **Have you got them:** "Have you read my files?" says which folders and
+  how many files.
+- [ ] **Private:** ask about a document in the private folder. The answer
+  has the figure. Stop the local model (`sudo systemctl stop ollama`) and ask
+  again: he says it's in a private folder he can only read locally, and
+  doesn't make up a figure. Start it again after.
+- [ ] **Lifting it:** "Send it to Claude: what does the lease say about
+  pets?" answers from the text itself.
+- [ ] **No files talk unasked:** "Morning" loads only `core`
+  (`/api/status`, `tools.loaded`).
+- [ ] **The eval:** `kit eval tools --pack files` passes offline, and with
+  `--live` on the server.
+- [ ] **Tests:** `pytest -q tests/test_tools_files.py` passes on the server.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: asking about
-your files, and private folders (B2); opening files and apps on the PC (C); the house
+In order, each with its own section here when it lands: opening files and apps on the PC (C); the house
 through Home Assistant (D); your notes vault, properly (E); your own apps and
 MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 
