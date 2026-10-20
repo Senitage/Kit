@@ -27,7 +27,8 @@ a reference back to where it came from.
 | `conversation` | Every exchange, so old conversations can be found | Stage 1 |
 | `self` | Kit's own notebook: his thoughts, opinions, wants, moments and daily journal ([[Inner Life In Depth]]) | Inner life |
 | `self-sheet` | Who Kit thinks he is, in his own words, every version, and the weekly reviews of it. Always in his prompt, so never recalled | Inner life |
-| `projects` | Your code projects: path, purpose, state, recent work | Stage 4 |
+| `projects` | Your code projects: name, what the README says it's for, branch and last commit, refreshed once a day ([[Desk App#What you worked on]]) | Stage 4 (C1) |
+| `activity` | One item a day of what you did on the PC: apps and how long, files, sites, projects. Replaced as the day goes on ([[Desk App#What you worked on]]) | Stage 4 (C1) |
 | `files` | Your documents in the folders you chose: a piece of about 400 words per item, its `root:path` as the ref, page, folder, time, size, private flag and the years, amounts, dates and references in it ([[Your Files]]). Searched on the memory page and by `kit memory search`; the file tools bring it into conversation | Stage 4 (B1) |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([[Notes Setup|your notes]]) | Now |

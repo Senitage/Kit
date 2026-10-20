@@ -69,13 +69,21 @@ from kit.desk.alive import Alive, Body
 from kit.desk.browser import BrowserFeed, BrowserListener
 from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError, Sound, SpeechOff, follow_life
+from kit.desk.commands import NoHands, Runner, WindowsHands
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.sound import Sounds
 from kit.desk.update import CHECK_EVERY_S, FIRST_CHECK_S, VERSION, Updater, run_installer
 from kit.desk.voice import Speaker
-from kit.desk.watch import OpenWindow, Reporter, WindowsDesktop, system_status
+from kit.desk.watch import (
+    OpenWindow,
+    Reporter,
+    WindowsDesktop,
+    recent_files,
+    recent_folder,
+    system_status,
+)
 from kit.desk.window import ConnectionForm, KitWindow, in_background
 from kit.face import Face, character
 from kit.face.body import move_for
@@ -502,8 +510,16 @@ class DeskApp(QObject):
             log.exception("can't listen for the Chrome extension (is another Kit running?)")
         desktop = WindowsDesktop() if sys.platform == "win32" else _NoDesktop()
         self.reporter = Reporter(
-            desktop, self._report, lambda: self.config, system_status, browser=self.browser.current
+            desktop,
+            self._report,
+            lambda: self.config,
+            system_status,
+            browser=self.browser.current,
+            recent=lambda config: recent_files(recent_folder(), config),
         )
+        # Doing what Kit asks on this PC, within its own rules (kit.desk.commands).
+        hands = WindowsHands() if sys.platform == "win32" else NoHands()
+        self.runner = Runner(lambda: self.config, hands)
         self.alive = Alive(self.face, desktop.focused_rect, self._busy, body=self.body)
         self.health = QTimer(self)
         self.health.timeout.connect(self.check_health)
@@ -779,6 +795,7 @@ class DeskApp(QObject):
             self.window.apply_look(self._palette(), self.config.font_pt)
             self.window.mood.face.eye = QColor(self.config.eye_colour)
             self.window.pc.saved.connect(self.save_pc)
+            self.window.pc.command_log = lambda: self.runner.log
             self.window.look.changed.connect(self.set_look)
             self.window.character_changed.connect(self.check_health)
             self._use_look()
@@ -999,6 +1016,11 @@ class DeskApp(QObject):
                 self._show_doing()
             if self.online:
                 self._show_online(True, "online")
+        elif event.get("type") == "desk_command":  # Kit asked this PC to open something
+            if speaks_here(event.get("to"), desk_id(self.reporter.host)):
+                threading.Thread(
+                    target=self._do_command, args=(event,), name="kit-command", daemon=True
+                ).start()
         elif event.get("type") == "remembered":  # learned after his reply was out
             self.chat.on_event(0, event)
         elif event.get("type") == "heard":  # Kit's ears heard someone talk to him
@@ -1027,6 +1049,25 @@ class DeskApp(QObject):
             if not self.face.isVisible() and not self.chat.isVisible():
                 said = " ".join(s.get("say", "") for s in reply.get("segments", []))
                 self.tray.showMessage("Kit", said, face_icon(), 8000)
+
+    def _do_command(self, event: dict) -> None:
+        """Claim the command (so it's never done late or twice), do it if this PC's
+        rules allow, and tell the brain how it went, in words Kit can say."""
+        client, command_id = self.client, str(event.get("command") or "")
+        if client is None or not command_id:
+            return
+        try:
+            command = client.claim_command(command_id)
+            if command is None:
+                return  # it waited too long, or another PC took it
+            if not self.config.do_commands:
+                ok, detail = False, "this PC's desk app has Kit's commands turned off"
+            else:
+                outcome = self.runner.run(command.get("kind", ""), command.get("args") or {})
+                ok, detail = outcome.ok, outcome.detail
+            client.command_done(command_id, ok, detail)
+        except BrainError as e:
+            log.warning("desk command %s: %s", command_id, e)
 
     def _show_doing(self) -> None:
         """What Kit's doing on his own ("watching the rain...") in his bubble, while

@@ -135,12 +135,31 @@ The folders Kit reads into his memory, and how. See [[Your Files]].
 
 | Setting | Default | What it does |
 |---|---|---|
-| `roots` | none | The folders Kit indexes, by a short name you choose, each with `path` (the folder on the server; he only reads it), `private` (its contents stay with the local model), `ocr` (read scanned PDFs too; slow, needs the ocr extras) and `max_mb` (files bigger than this are skipped, default 50). Add them on the settings page ("Your files") or with `kit files add`. |
+| `roots` | none | The folders Kit indexes, by a short name you choose, each with `path` (the folder on the server; he only reads it), `private` (its contents stay with the local model), `ocr` (read scanned PDFs too; slow, needs the ocr extras), `max_mb` (files bigger than this are skipped, default 50) and `pc_path` (the same folder as your PC sees it, like `\\NAS\finance`, so Kit can open a file there; empty means `path`). Add them on the settings page ("Your files") or with `kit files add`. |
 | `skip` | `.obsidian`, `.git`, `node_modules`, `@eaDir`, `#recycle`, `#snapshot`, `*.tmp`, `~$*` | Folder or file names (with `*` wildcards) never indexed, anywhere under a root. |
 | `chunk_words` | `400` | About how many words each indexed piece of a file holds. |
 | `max_rows` | `2000` | Most rows read from each sheet of a spreadsheet. |
 | `sync_every_minutes` | `30` | How often Kit looks for new and changed files. 0 means once a day. |
 | `read_words` | `1500` | Most words of one file Kit reads into an answer at once (used by the file tools). |
+
+## pc
+
+Kit doing things on your PC through the desk app. See [[Desk App#Doing things on the PC]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `command_timeout_s` | `10` | How long Kit waits for the desk app to say it opened something before he says it may not have happened. |
+| `keep_activity` | `true` | Keep a short note of each day on the PC (apps and how long, files, sites, projects) so "what was I working on yesterday?" has an answer. Off keeps nothing past the last 16 hours. |
+
+## projects
+
+Your code projects. See [[Desk App#What you worked on]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `roots` | none | Folders on the server whose subfolders are code projects (each with a `.git` or a README). Read once a day. |
+| `editor` | `code` | The app (by its short name in the desk app's list) that `open_project` opens a project in. |
+| `pc_roots` | none | Server folder = the same folder on your PC, like `"/srv/code" = "C:\\Users\\Sam\\Code"`, so a project opens where the PC sees it. |
 
 ## persona
 

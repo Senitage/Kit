@@ -14,7 +14,8 @@ the PC before they're sent.
 Kit sees a one-line "right now" in every prompt, and the ``look_at_pc`` action
 gives him the full picture: every open window, what has had focus over the
 last hour and today, and how the PC is coping. Activity is kept in memory for
-the day only; nothing here is written to disk.
+the day only. Once an hour the brain folds each day into a short ``activity``
+item in memory (kit.activity), unless ``pc.keep_activity`` is off.
 
 This module is plain Python so the brain stays cross-platform. The Windows
 code that reads windows lives in ``kit.desk``.
@@ -91,6 +92,14 @@ class System(BaseModel):
     busiest: list[BusyApp] = Field(default_factory=list, max_length=10)
 
 
+class RecentFile(BaseModel):
+    """A file Windows lists as recently opened (its Recent folder)."""
+
+    name: str = Field(max_length=300)
+    path: str = Field("", max_length=1000)
+    when: str = Field("", max_length=40)  # ISO time it was last opened
+
+
 class Snapshot(BaseModel):
     """One report from the desk app."""
 
@@ -104,6 +113,8 @@ class Snapshot(BaseModel):
     browser: Browser | None = None
     # What's playing (a song, a video), only when the tray's "Share what's playing" is on.
     now_playing: str = Field("", max_length=300)
+    # Recently opened files, sent at most once an hour (empty in the reports between).
+    recent_files: list[RecentFile] = Field(default_factory=list, max_length=60)
 
 
 @dataclass
@@ -200,6 +211,7 @@ class PcContext:
         self.clock = clock
         self.desks: dict[str, Desk] = {}  # by the PC's name (Snapshot.host)
         self.spans: list[Span] = []
+        self.recent_files: list[dict] = []  # the last list a desk app sent
 
     def _pick(self, now: datetime) -> Desk | None:
         """The PC that counts as "Dan's PC" right now: of those still reporting, the
@@ -244,6 +256,8 @@ class PcContext:
         away = away_on(snap)
         used = old.used if old and away else (None if away else now)
         self.desks[snap.host] = Desk(snap, now, used)
+        if snap.recent_files:
+            self.recent_files = [f.model_dump() for f in snap.recent_files]
         for host in [h for h, d in self.desks.items() if now - d.seen > FORGET_AFTER]:
             del self.desks[host]  # a PC gone a day (or a desk app sending made-up names)
         if self.current() is not self.desks[snap.host]:

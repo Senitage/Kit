@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 
 from kit.desk import face3d, startup, theme
 from kit.desk.client import BrainClient
+from kit.desk.commands import apps_from_text, apps_text, log_line
 from kit.desk.config import DeskConfig
 from kit.desk.glow import FaceWidget
 from kit.desk.mood import MoodPage
@@ -225,6 +226,7 @@ class PcPage(QWidget):
         )
         self.form = ConnectionForm(config, token)
         layout.addWidget(self.form)
+        layout.addWidget(self._may_open(config))
         row = QHBoxLayout()
         row.addStretch(1)
         self.note = _label("", "muted", wrap=False)
@@ -236,8 +238,55 @@ class PcPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
 
+    def _may_open(self, config: DeskConfig) -> QWidget:
+        """What Kit may open on this PC (kit.desk.commands), and what he's done."""
+        box = QWidget()
+        form = QFormLayout(box)
+        form.setContentsMargins(0, 12, 0, 0)
+        form.addRow(_label("What Kit may open", "title"))
+        self.do_commands = QCheckBox("Let Kit open files, folders, apps and sites when I ask")
+        self.do_commands.setChecked(config.do_commands)
+        form.addRow(self.do_commands)
+        self.open_roots = QPlainTextEdit("\n".join(config.open_roots))
+        self.open_roots.setFixedHeight(80)
+        form.addRow("Folders (one a line)", self.open_roots)
+        self.apps = QPlainTextEdit(apps_text(config.apps))
+        self.apps.setFixedHeight(110)
+        form.addRow("Apps (name = program)", self.apps)
+        self.url_schemes = QLineEdit(", ".join(config.url_schemes))
+        form.addRow("Links besides web pages", self.url_schemes)
+        self.share_recent = QCheckBox("Tell Kit the names of files I've opened lately, hourly")
+        self.share_recent.setChecked(config.share_recent_files)
+        form.addRow(self.share_recent)
+        self.log = QListWidget()
+        self.log.setMaximumHeight(120)
+        form.addRow("What he's done", self.log)
+        return box
+
+    def show_log(self, lines: list[dict]) -> None:
+        self.log.clear()
+        for line in lines:
+            self.log.addItem(log_line(line))
+        if not lines:
+            self.log.addItem("Nothing yet.")
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self.show_log(self.command_log())
+        super().showEvent(event)
+
+    def command_log(self) -> list[dict]:
+        return []  # the app points this at its Runner's log
+
     def save(self) -> None:
         config, token, at_logon = self.form.values()
+        config = replace(
+            config,
+            do_commands=self.do_commands.isChecked(),
+            open_roots=[r.strip() for r in self.open_roots.toPlainText().splitlines() if r.strip()],
+            apps=apps_from_text(self.apps.toPlainText()),
+            url_schemes=_list_text(self.url_schemes.text()),
+            share_recent_files=self.share_recent.isChecked(),
+        )
         self.form.config = config
         self.saved.emit(config, token, at_logon)
         self.note.setText("Saved.")

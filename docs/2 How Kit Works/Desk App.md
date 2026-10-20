@@ -35,7 +35,7 @@ related: ["[[Stage 2 - Desk App]]", "[[Desk App Builds and Updates]]", "[[Bodies
 | Mood | How he is at a glance: face, mood, feeling and why, needs bars. Only looks |
 | Memory | Search what he knows, teach him, pin, edit or forget |
 | Kit's settings | The brain's settings, with Save and Undo |
-| This PC | The brain's address and token, what Kit may see, start at logon |
+| This PC | The brain's address and token, what Kit may see, what Kit may open, start at logon |
 | Look | Theme, accent colour, eye colour, face size, text size, speech bubble, how much he moves |
 | Updates | Your version, new versions from GitHub |
 
@@ -63,6 +63,51 @@ PC** before anything is sent, addresses lose everything after `?` or `#`, and
 read from its process, remembered together with the process's start time:
 Windows hands a finished program's id to the next one, so a password manager
 starting on a browser's old id is still recognised as one. See [[Privacy]].
+
+## Doing things on the PC
+
+Ask "open the Riverbend folder", "open Excel", "pause the music" or "bring
+up the costs sheet" and Kit asks the desk app to do it (the `pc` pack, see
+[[Tools and Packs#Packs]]). Nothing listens on the PC: the request goes out
+as a `desk_command` event on the feed the desk app already reads, to the PC
+you're on. The desk app **claims** it first, so a request that waited too
+long, or that another PC took, never runs late; it does it, and says how it
+went, which Kit tells you. With no desk app running he says so instead of
+pretending. He waits `pc.command_timeout_s` for the answer.
+
+What he may open is the PC's call, not the brain's. **What Kit may open**
+on the This PC page holds:
+
+- **Folders**: a file or folder opens only inside one of them (Documents,
+  Desktop and Downloads to start). No `..`, no other share, and never a
+  program or script (`.exe`, `.bat`, `.ps1`, `.lnk` and the like).
+- **Apps**, by short name (`excel = excel.exe`): he can start only these,
+  and only with files from the folders above.
+- **Links besides web pages**: `http` and `https` always; `obsidian` to
+  start. `file:` and `javascript:` never.
+- **What he's done**: the last few requests and how each went.
+
+He can also bring an open window to the front by its title (never one the
+PC keeps private) and press the media keys. Untick **Let Kit open files,
+folders, apps and sites** to stop all of it. A document he found in
+[[Your Files]] opens where the PC sees it (`files.roots.*.pc_path`).
+
+## What you worked on
+
+Once an hour the brain folds what had focus each day into one short
+`activity` item in memory: the apps and how long, the files and sites, the
+projects they belong to (by the register's names and their code and NAS
+links). The desk app adds the **names** of files Windows lists as recently
+opened, at most hourly, never their folders and never one with a private
+word. So "what was I working on last Tuesday?" has an answer after the
+16 hours of focus history have moved on (`recent_work`). Only that summary
+is kept, never window by window; `pc.keep_activity` off keeps nothing.
+
+Your code projects are the folders under `projects.roots` with a `.git` or
+a README. Once a day each goes into memory with what its README says it's
+for, its branch and its last commit, so "the Pod firmware" or "that pump
+app" is found by meaning (`list_projects`) and opens in your editor
+(`open_project`, `projects.editor`).
 
 ## His voice and face on the desk
 

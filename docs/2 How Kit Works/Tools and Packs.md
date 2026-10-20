@@ -91,7 +91,10 @@ always asks you first: see [[#Asking first]]) and an example of its
 arguments. The second is `files` ([[Your Files#Asking about them]]):
 `find_documents`, `read_document`, `list_folder` and `files_status`, loaded
 by words like "invoice", "notice" or "folder", or a register thing with a NAS
-folder. The packs to come (the PC, the house, the notes vault, your apps)
+folder. The third is `pc` ([[Desk App#Doing things on the PC]]): `open_path`,
+`open_document`, `open_app`, `open_url`, `show`, `focus` and `media` (all
+`act`, offered only while a desk app is reporting), `recent_work` and
+`list_projects` and `open_project`. The packs to come (the house, the notes vault, your apps)
 plug in the same way: another card in the prompt, their
 definitions with the request, their own evals. A pack also carries how a
 message finds it (its **match words**, example questions and register

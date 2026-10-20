@@ -117,7 +117,9 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 `dials`, `pipe_up`, `remembered` (a fact learned once a reply was out: `fact`,
 `decision` of `new`, `same` or `update`, and `replaced`), `heard` (someone
 talked to him out loud: read his reply from `/api/hearing/turns/{turn}`) and
-`hush` (someone talked over him: stop his voice). See
+`hush` (someone talked over him: stop his voice) and `desk_command` (open
+something on the PC: `command`, `kind`, `args`, and `to`, the PC's desk id;
+claim it before doing it). See
 [[Bodies]]. The last 200 are kept, and `look` events (every couple of
 seconds while someone's in view) the last few, apart, so they never push the
 others out. A `quiet` event says why he's keeping quiet (`because`) and, while
@@ -157,7 +159,9 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 
 | Method and path | What it does |
 |---|---|
-| `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC. With several PCs, Kit keeps one report each; `GET` names the PC Dan's on (`host`) and lists them all (`pcs`) |
+| `POST /api/pc/context`, `GET /api/pc/context` | The desk app's report on what's on the PC (hourly with `recent_files`, names and times). With several PCs, Kit keeps one report each; `GET` names the PC Dan's on (`host`) and lists them all (`pcs`) |
+| `POST /api/desk/commands/{id}/claim` | The desk app taking a `desk_command` before doing it: what to do, or 410 when it's no longer wanted |
+| `POST /api/desk/commands/{id}/done` | How it went: `ok` and `detail`, in words Kit can say |
 | `POST /api/eyes/scene`, `GET /api/eyes/scene` | What the eyes see, in words |
 | `POST /api/eyes/pause` | Switch the eyes off or on |
 | `GET /api/eyes/faces`, `POST /api/eyes/faces`, `DELETE /api/eyes/faces/{name}` | The people his eyes know. Kit's own token only |

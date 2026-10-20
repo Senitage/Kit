@@ -70,11 +70,13 @@ from contextlib import aclosing
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
+from kit.activity import ACTIVITY, write_days
 from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
 from kit.body_registry import BodyRegistry
 from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError, tool_turns
 from kit.daily import Daily
+from kit.desk_commands import DeskCommands
 from kit.files.index import Files
 from kit.heard import (
     TONE_FEELINGS,
@@ -158,6 +160,7 @@ from kit.notes import (
 )
 from kit.pastimes import Pastime, Pastimes, Readers, weather_doing
 from kit.pc_context import PcContext, away_on
+from kit.projects import PROJECTS, Projects
 from kit.prompt import (
     IN_WORDS,
     about_yourself,
@@ -218,6 +221,7 @@ from kit.tools.confirm import Held, ask_first, needs_yes, one_at_a_time, said_ye
 from kit.tools.core import ACTION_ARGS, core_pack
 from kit.tools.files import files_pack
 from kit.tools.match import match
+from kit.tools.pc import pc_pack
 from kit.tools.private import for_cloud, lifted
 from kit.weather import Weather, WeatherError
 from kit.when import follow_up
@@ -766,6 +770,10 @@ class Brain:
         self.heard_turns = HeardTurns()  # replies to what he heard, for bodies to read
         self._hearing_tasks: set[asyncio.Task] = set()
         self.life = Life(settings, self.pc, memory.clock, store=memory, scene=self.scene)
+        # Opening things on the PC through the desk app (kit.desk_commands), and Dan's
+        # code projects (kit.projects).
+        self.desk = DeskCommands(self.life, self.pc)
+        self.projects = Projects(lambda: self.settings().projects.roots)
         self.notebook = Notebook(memory)
         self.notebook.swap_work_quirks(settings().persona.owner)
         self.notebook.drop_slang(settings().persona.owner)
@@ -792,6 +800,7 @@ class Brain:
         self.tools = Registry()
         self.tools.add(core_pack(self))
         self.tools.add(files_pack(self))
+        self.tools.add(pc_pack(self))
         self.current_text = ""  # the message being answered, for tools that read it
         # The packs this turn loaded (kit.tools.match), and a call waiting for a yes.
         self.loaded_packs: list[str] = [p.name for p in self.tools.packs.values() if p.always]
@@ -2049,6 +2058,26 @@ class Brain:
         """Old "now" facts and stale notebook entries go. Returns how many."""
         return self.memory.tidy_now(self.settings().memory.now_days) + self.notebook.tidy()
 
+    def note_activity(self) -> int:
+        """Fold each day still in the PC's focus history into its ``activity`` item
+        (kit.activity), so yesterday is kept after the history moves on."""
+        if not self.settings().pc.keep_activity or not self.pc.spans:
+            return 0
+        days = sorted(
+            {s.start.date() for s in self.pc.spans} | {s.end.date() for s in self.pc.spans}
+        )
+        return write_days(
+            self.memory.index, self.pc.spans, self.pc.recent_files, self.register, days
+        )
+
+    def refresh_projects(self) -> int:
+        """Once a day, Dan's code projects into the index (kit.projects)."""
+        today = self.memory.clock().date()
+        if self.projects.refreshed == today or not self.settings().projects.roots:
+            return 0
+        self.projects.refreshed = today
+        return self.projects.refresh(self.memory.index, self.register)
+
     def offer_game(self) -> bool:
         """At most once a day, when he's bored and Dan's about (``Life.game_due``),
         Kit writes a small game into his notebook as something he wants to bring up."""
@@ -2774,6 +2803,9 @@ class Brain:
             notes=bool(settings.nas.vault),
             note_done=bool(NOTE_DONE.get()),
             files=self.files is not None and bool(settings.files.roots),
+            desk=self.pc.online(),
+            activity=bool(self.memory.index.count(ACTIVITY) or self.memory.index.count(PROJECTS)),
+            projects=bool(settings.projects.roots),
         )
         self.current_text = text
         lift = lifted(text)  # "send it to Claude": private results go whole, this once

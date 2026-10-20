@@ -11,6 +11,7 @@ Up: [[Home]] · Reference
 | Word | Means | See |
 |---|---|---|
 | **Action** | Something a reply asks for once the words are out: remember, take a note, a thing for the register, hand off to a bigger model. The looks became tools | [[Brain#What he can do mid-answer]] |
+| **Activity day** | One short memory item a day of what you did on the PC: apps and how long, files, sites, projects | [[Desk App#What you worked on]] |
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
@@ -27,6 +28,7 @@ Up: [[Home]] · Reference
 | **CUDA graph** | GPU work recorded once and replayed in one go; it makes Chatterbox Turbo's voice about 2.4 times faster | [[Voice#Faster on a graphics card]] |
 | **Data folder** | The one folder holding everything Kit owns | [[Settings and Data]] |
 | **Day summary** | What Kit writes after midnight about each finished day | [[Memory]] |
+| **Desk command** | Kit asking the desk app to open something or press a key; the PC claims it, does it within its own rules and says how it went | [[Desk App#Doing things on the PC]] |
 | **Device token** | A token just for one paired device, like a phone, so it can be unpaired alone (`kit pair`) | [[Phone App#Pairing]] |
 | **Drives** | What rises and falls in him: boredom, curiosity, wanting a chat, something to say, energy | [[Inner Life#Drives and mood]] |
 | **Effect** | What a tool does to the world: `read` (looks something up), `act` (easily undone, like a lamp) or `change` (alters something of yours, so it asks first) | [[Tools and Packs#Packs]] |

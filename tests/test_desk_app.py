@@ -1057,3 +1057,64 @@ def test_what_kits_ears_heard_shows_and_his_reply_streams_in(qapp, desk_dir, mon
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def test_the_this_pc_page_saves_what_kit_may_open(qapp):
+    from kit.desk.window import PcPage
+
+    page = PcPage(DeskConfig(), "tok")
+    page.command_log = lambda: [
+        {"at": "09:00", "kind": "open_app", "args": {"name": "excel"}, "ok": True, "detail": ""}
+    ]
+    page.show()
+    assert page.log.item(0).text().startswith("09:00  open_app excel")
+    saved = []
+    page.saved.connect(lambda config, token, logon: saved.append(config))
+    page.do_commands.setChecked(False)
+    page.open_roots.setPlainText("C:\\Users\\Sam\\Documents\n\n\\\\NAS\\finance\n")
+    page.apps.setPlainText("excel = excel.exe\npaint = mspaint.exe")
+    page.url_schemes.setText("obsidian, vscode")
+    page.save()
+    config = saved[-1]
+    assert not config.do_commands and config.open_roots == [
+        "C:\\Users\\Sam\\Documents",
+        "\\\\NAS\\finance",
+    ]
+    assert config.apps == {"excel": "excel.exe", "paint": "mspaint.exe"}
+    assert config.url_schemes == ["obsidian", "vscode"]
+    page.close()
+
+
+def test_a_desk_command_for_this_pc_is_claimed_done_and_answered(qapp, desk_dir, monkeypatch):
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    calls = []
+
+    class Client:
+        def claim_command(self, command_id):
+            calls.append(("claim", command_id))
+            return None if command_id == "late" else {"kind": "media", "args": {"action": "x"}}
+
+        def command_done(self, command_id, ok, detail):
+            calls.append(("done", command_id, ok, detail))
+
+    try:
+        desk.client = Client()
+        here = desk_app.desk_id(desk.reporter.host)
+        desk._do_command({"command": "1-a", "to": here})
+        desk._do_command({"command": "late", "to": here})
+        assert calls == [
+            ("claim", "1-a"),
+            ("done", "1-a", False, "there's no media key like that"),
+            ("claim", "late"),
+        ]
+        calls.clear()
+        desk._on_life({"type": "desk_command", "command": "2-b", "to": "desk:another-pc"})
+        assert calls == []  # meant for another PC
+    finally:
+        desk.client = None
+        desk.quit()
+        desk.chat.close()
+        desk.face.close()

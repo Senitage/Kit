@@ -189,9 +189,51 @@ local model running.
   `--live` on the server.
 - [ ] **Tests:** `pytest -q tests/test_tools_files.py` passes on the server.
 
+## Part C1: doing things on your PC
+
+Kit can open files, folders, apps and sites on the PC you're on, bring a
+window up, pause the music, and say what you worked on and which code
+projects you have. The PC decides what's allowed. See
+[[Desk App#Doing things on the PC]] and [[Desk App#What you worked on]].
+
+### 1. Update Kit and the desk app, and set it up
+
+Update as in [[Updating Kit]], and let the desk app install its update. On
+the desk app's This PC page, under **What Kit may open**, add the folders
+you want him to open (your code folder, `\\NAS\finance`) and check the app
+list. For your files to open, set each folder's `pc_path` on the settings
+page (`files.roots.finance.pc_path = "\\NAS\finance"`). For code projects,
+set `projects.roots` to the server folder holding them and `projects.pc_roots`
+to where the PC sees it.
+
+### 2. Test before moving on
+
+- [ ] **A folder:** "Open my Documents folder" opens it in Explorer, and
+  Kit says so.
+- [ ] **A found document:** "Find the rates notice and open it" opens the
+  PDF from the NAS.
+- [ ] **An app and a site:** "Open Excel", then "open github.com".
+- [ ] **Not allowed:** "Open C:\\Windows" doesn't, and Kit says it isn't in
+  a folder the PC lets him open. The This PC page's **What he's done** shows
+  both.
+- [ ] **A window and the music:** with a song playing, "pause the music",
+  then "bring Excel to the front".
+- [ ] **Desk app closed:** quit it and ask him to open something: he says he
+  can't reach the PC.
+- [ ] **Switched off:** untick **Let Kit open...**, ask again: he says this
+  PC has it turned off.
+- [ ] **On the phone:** from the phone app, "open the Riverbend folder" opens
+  it on the PC and he says it's on the PC.
+- [ ] **What you worked on:** after a day of use, "what was I working on
+  yesterday?" names the apps, files and projects.
+- [ ] **Projects:** "what code projects have I got?" lists them with their
+  last commit; "open the Pod project" opens it in VS Code.
+- [ ] **The eval:** `kit eval tools --pack pc` passes offline.
+- [ ] **Tests:** `pytest -q tests/test_desk_commands.py tests/test_desk_run.py tests/test_activity.py` passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: opening files and apps on the PC (C); the house
+In order, each with its own section here when it lands: the house
 through Home Assistant (D); your notes vault, properly (E); your own apps and
 MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 
