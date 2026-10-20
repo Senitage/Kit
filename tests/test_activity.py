@@ -127,11 +127,11 @@ def test_projects_are_folders_with_git_or_a_readme(tmp_path, memory):
     make_projects(tmp_path)
     log = []
     found = Projects(lambda: [str(tmp_path), str(tmp_path / "missing")], fake_git(log)).find()
-    assert [p.name for p in found] == ["Pod", "notes"]
-    pod = found[0]
+    assert [p.name for p in found] == ["notes", "Pod"]  # by name, ignoring case
+    notes, pod = found
     assert pod.purpose == "Kit's first robot body: an ESP32 with a round screen."
     assert pod.branch == "main" and pod.last_commit.endswith("Fix the neck")
-    assert found[1].branch == "" and found[1].last_commit == ""
+    assert notes.branch == "" and notes.last_commit == ""
     assert "Code project Pod Kit's first robot body" in pod.text()
 
 

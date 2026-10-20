@@ -93,7 +93,10 @@ class Projects:
         for root in self.roots():
             base = Path(root).expanduser()
             try:
-                children = sorted(p for p in base.iterdir() if p.is_dir())
+                # By name, ignoring case, so the order is the same on Windows and Linux.
+                children = sorted(
+                    (p for p in base.iterdir() if p.is_dir()), key=lambda p: p.name.lower()
+                )
             except OSError as e:
                 log.warning("can't read projects folder %s: %s", base, e)
                 continue
