@@ -16,7 +16,7 @@ import json
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from kit.memory import FACT_KINDS
 from kit.things import SYSTEMS, THING_KINDS
@@ -132,10 +132,53 @@ ThingKind = Literal[tuple(THING_KINDS)]  # type: ignore[valid-type]
 LinkSystem = Literal[("none", *SYSTEMS)]  # type: ignore[valid-type]
 
 
+# A laugh written out as words ("Hehe!", "haha", "*laughs*"): a cloud model playing
+# a cheeky character sprinkled them through his lines where nothing was funny, and his
+# voice read them out. A laugh is fine when something is funny, so it stays only in a
+# segment with the laugh gesture (``said_laughs``) and goes from the rest.
+_LAUGH = re.compile(r"(,\s*)?\b(?:(?:ha|he)(?:[\s-]?(?:ha|he))+h?|heh|hah|lol)\b([!~.,]*)", re.I)
+_LAUGH_STAGE = re.compile(
+    r"[*(]\s*(?:laugh|giggl|chuckl|snicker|snort|cackl)\w*[^*()\n]{0,30}[*)]", re.I
+)
+_GONE = "\x00"  # where a laugh was, until the words around it are tidied
+
+
+def _laugh_gone(match: re.Match) -> str:
+    if match[1]:  # "Good good, hehe." keeps its full stop
+        return match[2].replace("~", "")
+    before = match.string[: match.start()].rstrip()
+    if not before or before[-1] in ".!?":  # it opened a sentence: so does the next word
+        return _GONE
+    return _GONE + match[2].replace("~", "")  # "Print good hehe." keeps its full stop
+
+
+def without_laughs(text: str) -> str:
+    """His words without a laugh written into them ("Hehe! Print good." is "Print
+    good."); a sentence the laugh opened starts with a capital again."""
+    out = _LAUGH.sub(_laugh_gone, _LAUGH_STAGE.sub(_GONE, text))
+    if out == text:
+        return text
+    out = re.sub(rf"(^\s*|[.!?]\s+){_GONE}[\s{_GONE}]*([a-z])", lambda m: m[1] + m[2].upper(), out)
+    out = re.sub(rf"\s*{_GONE}", "", out)
+    out = re.sub(r"(?<=\S) {2,}", " ", out)
+    return out.lstrip() if not text[:1].isspace() else out
+
+
+def said_laughs(gesture: str, text: str) -> str:
+    """A segment's words: a laugh stays where he laughs (the laugh gesture says he
+    found it funny) and goes from everywhere else."""
+    return text if gesture == "laugh" else without_laughs(text)
+
+
 class Segment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     gesture: Gesture = Field(description="The gesture that goes with it.")
     say: str = Field(description="One short sentence to say.")
+
+    @model_validator(mode="after")
+    def _laughs_only_when_funny(self) -> Segment:
+        self.say = said_laughs(self.gesture, self.say)
+        return self
 
 
 class Action(BaseModel):
@@ -526,6 +569,11 @@ class SayExtractor:
         self.segments: list[str] = []
         self.words_done = False
 
+    @property
+    def in_words(self) -> bool:
+        """Is it partway through a segment's words (a "say" still being written)?"""
+        return self._in_string and self._capturing
+
     def feed(self, chunk: str) -> str:
         out: list[str] = []
         for ch in chunk:
@@ -650,6 +698,7 @@ class StreamedReply:
         self._sounds = Sounds(sounds)
         self._segments = 0
         self._spoken = False
+        self._words: list[list[str]] = []  # [gesture, words as written] per segment
 
     def feed(self, piece: str) -> list[dict]:
         self.raw += piece
@@ -664,9 +713,12 @@ class StreamedReply:
             while self._segments < len(extractor.segments):
                 sound = self._sounds.at(self._segments, extractor.segments[self._segments])
                 self._segments += 1
+                self._words.append([extractor.segments[-1], ""])
                 if sound:
                     events.append({"type": "sound", "sound": sound})
             if text:
+                self._words[-1][1] += text
+            if text := self._release(final=not extractor.in_words):
                 self.said += text
                 if events and events[-1]["type"] == "say":
                     events[-1]["text"] += text
@@ -677,8 +729,33 @@ class StreamedReply:
             events.append({"type": "spoken"})
         return events
 
+    def _release(self, final: bool) -> str:
+        """Words ready to hand out, with laughs only where he laughs
+        (``said_laughs``). Partway through a segment the last word and what's before
+        it (", hehe") wait, as does a stage direction still open ("*laugh"), until
+        it's clear what they are. A segment that was only a laugh says nothing."""
+        parts = []
+        for n, (gesture, words) in enumerate(self._words):
+            if n == len(self._words) - 1 and not final:
+                cut = _LAST_WORD.search(words).start()
+                ready = words[:cut]
+                opener = max(ready.rfind("*") if ready.count("*") % 2 else -1, ready.rfind("("))
+                if opener > ready.rfind(")") and len(words) - opener < STAGE_HELD:
+                    cut = len(ready[:opener].rstrip())
+                parts.append(said_laughs(gesture, words[:cut]))
+            elif said := said_laughs(gesture, words).strip():
+                parts.append((" " if parts else "") + said)
+        clean = "".join(parts)
+        if not clean.startswith(self.said):
+            return ""  # tidying changed words already out; the rest waits for the reply
+        return clean[len(self.said) :]
+
     def _say(self, text: str) -> dict:
         return {"type": "say", "text": text, **({"source": self.source} if self.source else {})}
+
+
+_LAST_WORD = re.compile(r"[\s,]*\S*$")  # the word still being written, and its comma
+STAGE_HELD = 40  # characters: a "(" or "*" open this long isn't a stage direction
 
 
 def reply_events(reply: Reply, source: str = "", sounds: bool = False) -> list[dict]:
@@ -805,7 +882,7 @@ class SpokenStream:
         return self._body().split("\n\n", 1)[0]
 
     def _spoken(self, final: bool, cap: bool = True) -> str:
-        text = _STAGE.sub("", self._said())
+        text = without_laughs(_STAGE.sub("", self._said()))
         if "*" in text:  # a stage direction still being written, or a stray star
             text = text.replace("*", "") if final else text[: text.index("*")]
         if "{" in text:  # JSON that's still being written, or broken: never words

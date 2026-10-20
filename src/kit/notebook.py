@@ -124,6 +124,7 @@ RETIRED_KEY = "quirks_retired"
 EVERYDAY_KEY = "quirks_everyday"  # the day his work quirks were swapped (once)
 PLAIN_KEY = "slang_dropped"  # the day he was told to drop Australian slang (once)
 OWN_NAME_KEY = "own_name"  # the day he was told to call himself only by his own name (once)
+LAUGHS_KEY = "no_written_laughs"  # the day he was told to stop writing "hehe" (once)
 VETOES_KEY = "vetoes"  # what Dan undid, so the next reflection doesn't do it again
 MAX_VETOES = 10
 
@@ -826,6 +827,21 @@ class Notebook:
             f"out of your self-sheet and quirks."
         )
         self.memory.set_self_value(OWN_NAME_KEY, self._now().date().isoformat())
+        return True
+
+    def drop_written_laughs(self, owner: str) -> bool:
+        """Once: his next reflection is told to laugh only at what's funny and take
+        any habit of laughing ("hehe", "haha") out of his self-sheet and quirks. A
+        cloud model playing a cheeky voice put laughs in lines where nothing was
+        funny (2026-10-18). True when the note was added."""
+        if self.memory.self_value(LAUGHS_KEY) is not None:
+            return False
+        self.add_veto(
+            f"{owner} wants you to laugh ('hehe', 'haha') only when something is "
+            f"actually funny, not in lines where nothing is. Take any habit of laughing "
+            f"out of your self-sheet and quirks."
+        )
+        self.memory.set_self_value(LAUGHS_KEY, self._now().date().isoformat())
         return True
 
     def _picked(self) -> list[str]:

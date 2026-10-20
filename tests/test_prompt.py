@@ -103,6 +103,7 @@ def test_the_prompt_says_how_he_sounds_once(role):
     assert not BANNED.search(prompt), BANNED.search(prompt)
     assert "casual" not in prompt
     assert "Plain, neutral English" in prompt
+    assert "Laugh only when something is actually funny" in prompt
 
 
 @pytest.mark.parametrize("role", ["chat", "local"])

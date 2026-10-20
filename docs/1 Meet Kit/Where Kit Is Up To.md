@@ -47,6 +47,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part A1: the tool loop. Cloud models call tools natively, the local model's action joins the same loop, the core pack (recall, the PC, the room, the forecast, a note), every call logged | Done, pull request #61 | [[Tools and Packs]], [[Stage 4 - Tools]] |
 | Stage 4, part A2: each message loads only the packs it needs, a yes before any change, private results summarised locally, `kit tools` and `kit eval tools` | Done, pull request #62 | [[Tools and Packs#Which packs load]], [[Stage 4 - Tools]] |
 | Stage 4, part B1: your files indexed. The folders you choose (settings page, `kit files`), PDFs, Word, sheets and slides read a page at a time, years, amounts and references picked out, kept up every half hour | Open, pull request #63 | [[Your Files]], [[Stage 4 - Tools]] |
+| Laughs only when something is funny: a "hehe" stays only in a line with his laugh gesture, the rest come out before they're shown or said, and his self-sheet loses any laughing habit | Open, pull request #65 | [[Who Kit Is]], [[Voice#Laughs only when it's funny]] |
 | Stage 4, the rest: asking about files and private folders, PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next

@@ -3,7 +3,16 @@ import json
 import pytest
 
 from fakes import reply
-from kit.reply import Reply, ReplyError, SayExtractor, parse_reply, reply_schema
+from kit.reply import (
+    Reply,
+    ReplyError,
+    SayExtractor,
+    Segment,
+    StreamedReply,
+    parse_reply,
+    reply_schema,
+    without_laughs,
+)
 
 
 def feed_all(text, size):
@@ -124,3 +133,67 @@ def test_full_text_adds_detail():
     assert r.full_text == "Here."
     r.detail = "x = 1"
     assert r.full_text == "Here.\n\nx = 1"
+
+
+# A cheeky voice on Haiku wrote "Hehe!" into lines where nothing was funny, and his
+# voice read it out. A laugh stays only where the segment's gesture is a laugh.
+@pytest.mark.parametrize(
+    "said, kept",
+    [
+        ("Hehe! Print good.", "Print good."),
+        ("Good good, hehe.", "Good good."),
+        ("Good good, hehe!", "Good good!"),
+        ("Print good hehe.", "Print good."),
+        ("Good. Hehe, you funny.", "Good. You funny."),
+        ("Ha ha ha! Amaze.", "Amaze."),
+        ("*laughs* Yes yes.", "Yes yes."),
+        ("You eat dinner (chuckles softly), question?", "You eat dinner, question?"),
+        ("Hehehe~ Fun fun.", "Fun fun."),
+        # Words that only look like a laugh stay.
+        ("He helped. Hi hi, you back!", "He helped. Hi hi, you back!"),
+        ("Ha! Got you.", "Ha! Got you."),
+        ("I (think) fix *now*.", "I (think) fix *now*."),
+    ],
+)
+def test_laughs_written_as_words_are_taken_out(said, kept):
+    assert without_laughs(said) == kept
+    assert Segment(gesture="nod", say=said).say == kept
+    assert Segment(gesture="laugh", say=said).say == said  # something funny: he laughs
+
+
+@pytest.mark.parametrize("size", [1, 3, 7, 1000])
+def test_a_streamed_reply_never_lets_a_laugh_out(size):
+    raw = reply(
+        "Hehe! Print good.",
+        "Good good, hehe.",
+        "You eat dinner (laughs softly), question?",
+        "Haha. Amaze amaze amaze!",
+    )
+    said = "Print good. Good good. You eat dinner, question? Amaze amaze amaze!"
+    assert streamed(raw, size) == said
+    assert parse_reply(raw).text == said
+
+
+@pytest.mark.parametrize("size", [1, 3, 1000])
+def test_a_laugh_stays_where_something_is_funny(size):
+    # The gesture comes before the words, as the cloud prompt's shape has it.
+    segments = [("laugh", "Hehe! Toast on fire again."), ("nod", "Hehe. Hehe, print good.")]
+    segments.append(("wink", "Hehe!"))
+    data = json.loads(reply())
+    data["segments"] = [{"gesture": g, "say": t} for g, t in segments]
+    raw = json.dumps(data)
+    said = "Hehe! Toast on fire again. Print good."
+    assert streamed(raw, size) == said
+    assert parse_reply(raw).text == said
+
+
+def streamed(raw, size):
+    words = StreamedReply("cloud")
+    out = "".join(
+        e["text"]
+        for i in range(0, len(raw), size)
+        for e in words.feed(raw[i : i + size])
+        if e["type"] == "say"
+    )
+    assert out == words.said
+    return out

@@ -46,6 +46,9 @@ His starting character is set in the persona ([[Settings Reference#persona|perso
   like a character from a book") and he sounds like it, but he's still Kit:
   if he talks about himself it's as "I" or his own name (`persona.name`),
   never the character's.
+- **Laughs when it's funny.** A joke or something silly gets a laugh, with
+  his laugh gesture; a line where nothing is funny never gets a "hehe"
+  ([[Voice#Laughs only when it's funny]]).
 
 That's only where he starts. Each night he writes a **self-sheet**, who he
 thinks he is in his own words, and it slowly grows from what actually

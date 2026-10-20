@@ -99,6 +99,25 @@ sequenceDiagram
 - **Cloud answers stream** (`cloud.stream`): Claude's answer is read as it's
   written, so its mood and first words reach his voice within about a second.
 
+## Laughs only when it's funny
+
+A laugh written into his words ("Hehe!", "haha", "\*laughs\*") is read out
+by every voice engine, and a cheeky voice on a cloud model scattered them
+through lines where nothing was funny. So a laugh only stays in a sentence
+whose gesture is a laugh: the model picks that gesture when something is
+funny. Anywhere else it comes out before the words are shown or spoken, as
+they stream in, and a sentence it opened starts with a capital again
+("Hehe, you funny." becomes "You funny."). Words that only look like a laugh,
+such as "Hi hi" or a single "Ha!", stay.
+
+> [!under-the-hood]- Under the hood: laughs
+> - `src/kit/reply.py`: `said_laughs` and `without_laughs`. The cloud stream holds
+>   back the word still being written, and any open "(" or "\*", until it's clear
+>   what they are.
+> - `src/kit/prompt.py`: `NO_WRITTEN_LAUGHS`, laugh only at what's funny.
+> - `src/kit/notebook.py`: `drop_written_laughs`, once, so his reflection takes any
+>   laughing habit out of his self-sheet.
+
 ## Sounds in his voice
 
 With `speech.sounds` on, a sentence whose gesture comes with a sound gets it
