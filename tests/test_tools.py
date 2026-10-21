@@ -273,7 +273,7 @@ def test_the_status_lists_packs_and_recent_calls(memory, paths):
     app = create_app(SettingsStore(paths), memory, brain, "t", summarise_every_s=None)
     with TestClient(app) as client:
         status = client.get("/api/status", headers={"Authorization": "Bearer t"}).json()
-    assert status["tools"]["packs"] == ["core", "files"] and status["tools"]["hops"] == 6
+    assert status["tools"]["packs"] == ["core", "files", "pc"] and status["tools"]["hops"] == 6
     assert status["tools"]["recent"][0]["tool"] == "recall"
 
 

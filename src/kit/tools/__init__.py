@@ -53,6 +53,9 @@ class Context:
     notes: bool = False  # there's a notes vault
     note_done: bool = False  # a note request was carried out this turn already
     files: bool = False  # there's a folder of Dan's in the files index (kit.files)
+    desk: bool = False  # a desk app is online to take commands (kit.desk_commands)
+    activity: bool = False  # there are PC days or code projects kept (kit.activity)
+    projects: bool = False  # there are code project folders (kit.projects)
 
     def looked(self, tool: str) -> None:
         """A look was taken this turn, so it isn't offered again."""

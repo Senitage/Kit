@@ -49,7 +49,7 @@ flowchart TB
 | `src/kit/routes/files.py` | The settings page's "Your files": roots, their status, syncing now | [[API]], [[Your Files]] |
 | `src/kit/routes/tools.py` | The packs and tools over the API, and running one by hand | [[API]], [[Tools and Packs]] |
 | `src/kit/routes/life.py` | Kit's mood, notebook, life events, and piping up now | [[API]], [[Inner Life]] |
-| `src/kit/routes/desk.py` | The desk app's PC reports | [[API]], [[Desk App]] |
+| `src/kit/routes/desk.py` | The desk app's PC reports, and claiming and answering desk commands | [[API]], [[Desk App]] |
 | `src/kit/routes/eyes.py` | The eyes' reports, known faces and the "Let Kit see me" switch | [[API]], [[Eyes]] |
 | `src/kit/routes/face.py` | The character sheet and the 3D face page's files | [[API]], [[Face]] |
 | `src/kit/routes/bodies.py` | A body's hello, pairing devices, and the list of both | [[API]], [[Phone App]] |
@@ -61,6 +61,7 @@ flowchart TB
 | `src/kit/tools/__init__.py` | Tools, packs and the registry: what a model can call mid-answer, offered only where there's something to look at | [[Tools and Packs]] |
 | `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
 | `src/kit/tools/files.py` | The files pack: find, read and list your documents from the index | [[Your Files#Asking about them]] |
+| `src/kit/tools/pc.py` | The pc pack: open files, folders, apps and sites on the PC, bring a window up, the media keys, what you worked on and your code projects | [[Desk App#Doing things on the PC]], [[Tools and Packs#Packs]] |
 | `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
 | `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
 | `src/kit/tools/private.py` | A private result as a local summary for a cloud model | [[Tools and Packs#Private results]], [[Privacy]] |
@@ -108,6 +109,9 @@ flowchart TB
 
 | Module | What it does | Explained in |
 |---|---|---|
+| `src/kit/desk_commands.py` | Asking the desk app to do something on the PC: the `desk_command` event, the claim, the answer, the wait | [[Desk App#Doing things on the PC]], [[API]] |
+| `src/kit/activity.py` | What you did on the PC each day, kept as one `activity` item a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
+| `src/kit/projects.py` | Your code projects, refreshed into the index once a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/scene_context.py` | The brain's side of what the eyes see | [[Eyes]] |
 | `src/kit/known_faces.py` | The people his eyes know | [[Eyes]] |
@@ -169,7 +173,8 @@ flowchart TB
 | `src/kit/desk/window.py` | Kit's window and its pages | [[Desk App]] |
 | `src/kit/desk/mood.py` | The Mood page | [[Inner Life]] |
 | `src/kit/desk/theme.py` | The Look page's choices | [[Desk App]] |
-| `src/kit/desk/watch.py` | What's on the PC | [[Desk App#What Kit learns from the PC]] |
+| `src/kit/desk/commands.py` | Doing what Kit asks on the PC, within the PC's own "What Kit may open" rules | [[Desk App#Doing things on the PC]] |
+| `src/kit/desk/watch.py` | What's on the PC, and the names of recently opened files | [[Desk App#What Kit learns from the PC]] |
 | `src/kit/desk/browser.py` | Chrome's tabs, from the extension | [[Desk App]] |
 | `src/kit/desk/browser_extension/` | Kit's Chrome extension | [[Stage 2 - Desk App]] |
 | `src/kit/desk/glow.py` | The 2D face painter | [[Face]] |

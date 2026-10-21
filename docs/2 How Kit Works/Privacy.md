@@ -98,6 +98,13 @@ anything a cloud model is sent. See [[Memory In Depth#What you keep local]].
 - **The desk app only connects out**, to the brain. The one port it listens
   on is for the Chrome extension, on `127.0.0.1`, which nothing off the PC can
   reach. See [[Desk App#Connections]].
+- **What Kit may open is the PC's call.** The desk app opens only files and
+  folders inside the folders you list, starts only the apps you list, and
+  never runs a program or script, whatever the brain asks. See
+  [[Desk App#Doing things on the PC]].
+- **A day, not a diary.** Each day on the PC is kept as one short summary
+  (apps, files, sites), never window by window; recently opened files go as
+  names only. `pc.keep_activity` off keeps none of it.
 
 ## The camera
 

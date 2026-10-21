@@ -484,6 +484,11 @@ class FileRoot(_Section):
         "slow and needs the ocr extras.",
     )
     max_mb: int = Field(50, ge=1, le=2000, description="Files bigger than this are skipped.")
+    pc_path: str | None = Field(
+        None,
+        description="The same folder as Dan's PC sees it (a drive letter or a \\\\NAS share), "
+        "so Kit can open a file from it there. Empty: the path above works on the PC too.",
+    )
 
 
 class FilesSettings(_Section):
@@ -513,6 +518,38 @@ class FilesSettings(_Section):
         ge=100,
         le=20_000,
         description="Most words of one file Kit reads into an answer at once.",
+    )
+
+
+class PcSettings(_Section):
+    command_timeout_s: float = Field(
+        10.0,
+        ge=1,
+        le=120,
+        description="How long Kit waits for the desk app to open something on the PC.",
+    )
+    keep_activity: bool = Field(
+        True,
+        description="Keep a short note of each day on the PC (apps and how long, files, sites, "
+        "projects) in memory, so Kit can say what you worked on yesterday or last week. Off: "
+        "what you did on the PC is forgotten at the end of the day.",
+    )
+
+
+class ProjectsSettings(_Section):
+    roots: list[str] = Field(
+        default_factory=list,
+        description="Folders holding your code projects (each sub-folder with a .git or a "
+        "README is one), as this machine sees them. Empty: no projects.",
+    )
+    editor: str = Field(
+        "code",
+        description="The app alias (in the desk app's list) a project opens in.",
+    )
+    pc_roots: dict[str, str] = Field(
+        default_factory=dict,
+        description="Where each projects folder is on Dan's PC, when that differs: this "
+        "machine's folder = the PC's folder.",
     )
 
 
@@ -1482,6 +1519,8 @@ class Settings(_Section):
     tools: ToolsSettings = Field(default_factory=ToolsSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
     files: FilesSettings = Field(default_factory=FilesSettings)
+    pc: PcSettings = Field(default_factory=PcSettings)
+    projects: ProjectsSettings = Field(default_factory=ProjectsSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

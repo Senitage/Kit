@@ -42,6 +42,20 @@ HIDDEN_WORDS = [
     "incognito",
     "private browsing",
 ]
+# What Kit may open on this PC (kit.desk.commands): folders, apps by short name, and
+# kinds of address beyond http and https. Dan widens these on the This PC page.
+OPEN_ROOTS = ["~/Documents", "~/Desktop", "~/Downloads"]
+APPS = {
+    "excel": "excel.exe",
+    "word": "winword.exe",
+    "powerpoint": "powerpnt.exe",
+    "outlook": "outlook.exe",
+    "code": "code",
+    "notepad": "notepad.exe",
+    "explorer": "explorer.exe",
+    "calculator": "calc.exe",
+}
+URL_SCHEMES = ["obsidian"]
 
 
 def desk_dir() -> Path:
@@ -62,6 +76,12 @@ class DeskConfig:
     heartbeat_seconds: float = 20.0  # report at least this often, even with no change
     hidden_apps: list[str] = field(default_factory=lambda: list(HIDDEN_APPS))
     hidden_words: list[str] = field(default_factory=lambda: list(HIDDEN_WORDS))
+    # Doing what Kit asks (kit.desk.commands); do_commands off and he can't open anything.
+    do_commands: bool = True
+    open_roots: list[str] = field(default_factory=lambda: list(OPEN_ROOTS))
+    apps: dict[str, str] = field(default_factory=lambda: dict(APPS))
+    url_schemes: list[str] = field(default_factory=lambda: list(URL_SCHEMES))
+    share_recent_files: bool = True  # the names in Windows' Recent list, once an hour
     show_face: bool = True
     face_size: int = 150
     face_x: int | None = None  # where Dan last left the face (its top left); None: bottom right

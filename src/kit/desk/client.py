@@ -231,6 +231,23 @@ class BrainClient:
     def forget(self, fact_id: int) -> None:
         self._call("DELETE", f"/api/memory/facts/{fact_id}")
 
+    def claim_command(self, command_id: str) -> dict | None:
+        """Take a ``desk_command`` before doing it (kit.desk_commands): what to do, or
+        None when the brain no longer wants it (it waited too long, or another PC took it)."""
+        path = f"/api/desk/commands/{quote(command_id, safe='')}/claim"
+        try:
+            r = self._http.request("POST", path)
+        except httpx.HTTPError as e:
+            raise BrainError(f"Can't reach Kit at {self.url} ({type(e).__name__}).") from e
+        if r.status_code == 410:
+            return None
+        _check(r)
+        return r.json()
+
+    def command_done(self, command_id: str, ok: bool, detail: str) -> None:
+        path = f"/api/desk/commands/{quote(command_id, safe='')}/done"
+        self._call("POST", path, json={"ok": ok, "detail": detail[:2000]})
+
     def report(self, snapshot: dict) -> None:
         self._call("POST", "/api/pc/context", json=snapshot)
 

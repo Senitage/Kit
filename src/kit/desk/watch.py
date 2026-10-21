@@ -21,6 +21,8 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 from kit.desk.browser import BROWSER_APPS, clean_url
@@ -30,6 +32,8 @@ log = logging.getLogger(__name__)
 
 MAX_WINDOWS = 60
 SYSTEM_EVERY_S = 10.0
+RECENT_EVERY_S = 3600.0  # Windows' Recent list goes to Kit at most once an hour
+MAX_RECENT = 40
 
 # Friendlier names for common apps, by exe name (lower case).
 APP_NAMES = {
@@ -147,6 +151,34 @@ class Privacy:
         }
 
 
+def recent_folder() -> Path | None:
+    """Windows' list of recently opened files (shortcuts named after them)."""
+    appdata = os.environ.get("APPDATA")
+    return Path(appdata) / "Microsoft" / "Windows" / "Recent" if appdata else None
+
+
+def recent_files(folder: Path | None, config: DeskConfig, limit: int = MAX_RECENT) -> list[dict]:
+    """The newest files in Windows' Recent list: each one's name and when it was
+    opened, never its folder. Names with a private word (``hidden_words``) stay here."""
+    if folder is None:
+        return []
+    try:
+        links = [p for p in folder.iterdir() if p.suffix.lower() == ".lnk" and p.is_file()]
+    except OSError:
+        return []
+    privacy = Privacy(config)
+    found = []
+    for link in sorted(links, key=lambda p: p.stat().st_mtime, reverse=True):
+        name = link.stem
+        if "." not in name or privacy.hides("", "", name):
+            continue  # a folder, or a private name
+        when = datetime.fromtimestamp(link.stat().st_mtime).astimezone().isoformat()
+        found.append({"name": name[:300], "when": when})
+        if len(found) >= limit:
+            break
+    return found
+
+
 def build_snapshot(
     desktop: Desktop,
     config: DeskConfig,
@@ -222,9 +254,12 @@ class Reporter:
         clock: Callable[[], float] = time.monotonic,
         host: str | None = None,
         browser: Callable[[], dict | None] = lambda: None,
+        recent: Callable[[DeskConfig], list[dict]] = lambda config: [],
     ) -> None:
         self.desktop = desktop
         self.browser = browser
+        self.recent = recent
+        self._recent_at = float("-inf")
         self.send = send
         self.config = config
         self.system = system
@@ -256,13 +291,28 @@ class Reporter:
             snap["locked"],
             snap["idle_seconds"] >= 60,
         )
-        if key == self._last_key and now - self._last_sent < config.heartbeat_seconds:
+        recent_due = (
+            config.watch and config.share_recent_files and now - self._recent_at >= RECENT_EVERY_S
+        )
+        if recent_due:
+            self._recent_at = now
+            try:
+                snap["recent_files"] = self.recent(config)
+            except Exception:
+                log.exception("reading the recent files failed")
+        if (
+            not snap.get("recent_files")
+            and key == self._last_key
+            and now - self._last_sent < config.heartbeat_seconds
+        ):
             return False
         try:
             self.send(snap)
         except Exception as e:
             self.error = str(e)
             self._last_key = None  # try again next tick
+            if snap.get("recent_files"):
+                self._recent_at = float("-inf")
             return False
         self.error = None
         self._last_key, self._last_sent = key, now
@@ -436,7 +486,18 @@ class WindowsDesktop:
 
     def windows(self) -> list[OpenWindow]:
         """The windows on the taskbar, front to back."""
-        found: list[OpenWindow] = []
+        return [w for _, w in self._taskbar()]
+
+    def windows_with_handles(self, handles: dict[tuple[int, str], int]) -> list[OpenWindow]:
+        """``windows``, filling ``handles`` with each one's window handle by (pid,
+        title), so kit.desk.commands can bring one to the front."""
+        pairs = self._taskbar()
+        handles.clear()
+        handles.update({(w.pid, w.title): hwnd for hwnd, w in pairs})
+        return [w for _, w in pairs]
+
+    def _taskbar(self) -> list[tuple[int, OpenWindow]]:
+        found: list[tuple[int, OpenWindow]] = []
         user32 = self.user32
 
         @self._ct.WINFUNCTYPE(self._wt.BOOL, self._wt.HWND, self._wt.LPARAM)
@@ -450,7 +511,7 @@ class WindowsDesktop:
                     return True
                 w = self._window(hwnd)
                 if w:
-                    found.append(w)
+                    found.append((hwnd, w))
             except Exception:
                 log.exception("reading a window failed")
             return True

@@ -48,8 +48,9 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part A2: each message loads only the packs it needs, a yes before any change, private results summarised locally, `kit tools` and `kit eval tools` | Done, pull request #62 | [[Tools and Packs#Which packs load]], [[Stage 4 - Tools]] |
 | Stage 4, part B1: your files indexed. The folders you choose (settings page, `kit files`), PDFs, Word, sheets and slides read a page at a time, years, amounts and references picked out, kept up every half hour | Done, pull request #63 | [[Your Files]], [[Stage 4 - Tools]] |
 | Laughs only when something is funny: a "hehe" stays only in a line with his laugh gesture, the rest come out before they're shown or said, and his self-sheet loses any laughing habit | Done, pull request #65 | [[Who Kit Is]], [[Voice#Laughs only when it's funny]] |
-| Stage 4, part B2: asking about your files mid-chat (find, read, list), a register link narrowing the folder, private folders reaching the cloud only as a local summary, "send it to Claude" for one message | Open, pull request #64 | [[Your Files#Asking about them]], [[Stage 4 - Tools]] |
-| Stage 4, the rest: PC control, the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
+| Stage 4, part B2: asking about your files mid-chat (find, read, list), a register link narrowing the folder, private folders reaching the cloud only as a local summary, "send it to Claude" for one message | Done, pull request #64 | [[Your Files#Asking about them]], [[Stage 4 - Tools]] |
+| Stage 4, part C1: doing things on your PC. Open files, folders, apps and sites within the PC's own rules, a window to the front, the media keys, a day's work kept as one note, your code projects | Open, pull request #66 | [[Desk App#Doing things on the PC]], [[Stage 4 - Tools]] |
+| Stage 4, the rest: the house, the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
 
@@ -57,7 +58,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 2. The Pod as his first robot body: the body feed (#36), then voice and
    presence in the room.
 3. Stage 4: the tool loop (#61, done), then pack matching and asking
-   first (#62, done), then your files (#63, done) and the file tools (#64), PC control, the Claude Code
+   first (#62, done), then your files (#63, done) and the file tools (#64, done), PC control (#66), the Claude Code
    bridge, MCP, Home Assistant, and the home_app and MetTools connections
    ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
@@ -102,6 +103,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 14 Oct | Stage 4 part A2: which packs load, asking first, tool evals | #62 |
 | 14 Oct | Stage 4 part B1: your files indexed | #63 |
 | 20 Oct | Kit laughs only when something is funny | #65 |
+| 20 Oct | Stage 4 part B2: asking about your files | #64 |
 
 ## Keeping this note true
 

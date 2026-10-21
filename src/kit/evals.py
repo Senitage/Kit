@@ -1463,7 +1463,14 @@ async def run_tool_eval(
                 brain.pending_tool = None  # a held call isn't answered in an eval
             elif case.tool is not None:
                 brain.tool_context = Context(
-                    pc=True, scene=True, weather=True, notes=True, files=True
+                    pc=True,
+                    scene=True,
+                    weather=True,
+                    notes=True,
+                    files=True,
+                    desk=True,
+                    activity=True,
+                    projects=True,
                 )  # everything there to look at
                 offered = {t.name: t for t in registry.offered(loaded)}
                 tool = offered.get(case.tool)
