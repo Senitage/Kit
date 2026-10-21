@@ -293,6 +293,10 @@ async def _upkeep_loop(
         except Exception:
             log.exception("keeping the PC's activity and projects failed")
         try:
+            await asyncio.to_thread(brain.notes_tidy)  # Sundays: a look over the notes
+        except Exception:
+            log.exception("looking over the notes failed")
+        try:
             await brain.recall.index_pending(limit=5000)
         except Exception:
             log.exception("indexing memories failed")

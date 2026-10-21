@@ -109,7 +109,7 @@ def test_the_context_marks_a_look_as_taken():
 
 def test_the_core_pack_offers_looks_only_where_there_is_something_to_see(memory):
     brain, _, _ = make(memory, weather=FakeWeather())
-    names = lambda: sorted(t.name for t in brain.tools.offered())  # noqa: E731
+    names = lambda: sorted(t.name for t in brain.tools.offered(["core"]))  # noqa: E731
     brain.tool_context = Context()
     assert names() == ["recall"]
     brain.tool_context = Context(pc=True, scene=True, weather=True, notes=True)
@@ -273,7 +273,8 @@ def test_the_status_lists_packs_and_recent_calls(memory, paths):
     app = create_app(SettingsStore(paths), memory, brain, "t", summarise_every_s=None)
     with TestClient(app) as client:
         status = client.get("/api/status", headers={"Authorization": "Bearer t"}).json()
-    assert status["tools"]["packs"] == ["core", "files", "pc"] and status["tools"]["hops"] == 6
+    assert status["tools"]["packs"] == ["core", "files", "notes", "pc"]
+    assert status["tools"]["hops"] == 6
     assert status["tools"]["recent"][0]["tool"] == "recall"
 
 

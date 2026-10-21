@@ -46,6 +46,7 @@ class Held:
     message_id: int | None
     asked_at: datetime
     asking: str
+    preview: str = ""  # the change itself, shown with the question (a note's diff)
 
     def lapsed(self, now: datetime, minutes: int) -> bool:
         return (now - self.asked_at).total_seconds() > minutes * 60

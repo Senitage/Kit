@@ -63,6 +63,18 @@ kit check
 The `nas: vault` line should say PASS (writable). Settings apply from the
 next message, so there's nothing to restart.
 
+Optional, for the notes pack ([[Notes on the NAS#How he knows the vault]]):
+
+```
+kit config set notes.daily_folder Journal       # if Obsidian's settings don't say
+kit config set notes.templates_folder Templates
+kit config set notes.undo_keep 50               # notes kept for "undo that"
+kit config set notes.tidy_weekly false          # no Sunday look-over
+```
+
+The notes as they were before Kit's changes are kept in the data folder's
+`state/notes/undo/`; `kit notes undo` puts back the last one.
+
 ## Test checklist
 
 - [ ] "Take a note: ring the council about the bins on Monday" → the chat shows
@@ -74,3 +86,5 @@ next message, so there's nothing to restart.
 - [ ] "Add 'book the car' to my holiday planner" → it goes on the end of that note
 - [ ] Edit a note in Obsidian, wait five minutes, ask about the change → Kit knows
 - [ ] Next day, "what did I note about the bins?" → Kit finds it
+- [ ] `kit notes tasks` lists your open tasks; the rest of the notes pack's
+      checklist is in [[Stage 4 - Tools#Part E1: your notes vault, properly]]

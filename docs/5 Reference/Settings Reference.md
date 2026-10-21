@@ -129,6 +129,17 @@ The NAS: the notes vault (the one place Kit may write) and shares he may only re
 | `vault` | empty | The Obsidian vault folder, the only place on the NAS Kit may write. |
 | `notes_folder` | empty | Where in the vault Kit saves notes Dan asks for, e.g. 'Inbox'. Empty for the vault's top level. |
 
+## notes
+
+How Kit finds his way round the notes vault and changes it. See [[Notes on the NAS]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `daily_folder` | empty | Where daily notes go, when it isn't what Obsidian's Daily notes settings say. Empty: read it from the vault's `.obsidian` folder. |
+| `templates_folder` | empty | The folder of note templates, when it isn't what Obsidian's Templates settings say. Empty: read it from the vault. |
+| `undo_keep` | `50` | How many of the notes as they were before Kit's changes are kept in `state/notes/undo`, for "undo that". |
+| `tidy_weekly` | on | On Sundays Kit looks over the vault (old open tasks, notes nothing links to, names that look alike) and may mention it. He changes nothing. |
+
 ## files
 
 The folders Kit reads into his memory, and how. See [[Your Files]].

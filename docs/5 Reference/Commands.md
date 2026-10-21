@@ -114,6 +114,9 @@ See [[Register of Things]].
 | Command | What it does |
 |---|---|
 | `kit notes` | Read the notes vault now and list what Kit sees. See [[Notes on the NAS]] |
+| `kit notes tasks [--due WHEN]` | Every open task in the vault, soonest due first; `--due` is today, tomorrow, this week, next week, this month or overdue |
+| `kit notes shape` | The lines about how the vault is laid out that Kit gets with the notes pack |
+| `kit notes undo` | Put back the note Kit last changed, as it was before ([[Notes on the NAS#Changing a note]]) |
 | `kit files` | The folders Kit reads into his memory. See [[Your Files]]: |
 | `kit files add NAME PATH` | Add a folder, e.g. `kit files add finance /mnt/nas/Finance` (`--private`, `--ocr` for scans). The path is checked first |
 | `kit files remove NAME` | Stop indexing a folder; what was read from it leaves his memory |

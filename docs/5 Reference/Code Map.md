@@ -62,6 +62,7 @@ flowchart TB
 | `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
 | `src/kit/tools/files.py` | The files pack: find, read and list your documents from the index | [[Your Files#Asking about them]] |
 | `src/kit/tools/pc.py` | The pc pack: open files, folders, apps and sites on the PC, bring a window up, the media keys, what you worked on and your code projects | [[Desk App#Doing things on the PC]], [[Tools and Packs#Packs]] |
+| `src/kit/tools/notes.py` | The notes pack: find notes, list tasks, add under a heading, edit, tick, start, open in Obsidian and undo | [[Notes on the NAS#Changing a note]] |
 | `src/kit/tools/house.py` | The house pack: find, read and switch lights, the aircon, scenes, blinds and locks, and who's home | [[The House#The tools]] |
 | `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
 | `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
@@ -83,7 +84,9 @@ flowchart TB
 | `src/kit/recall.py` | Finding what matters right now | [[Memory#Finding things]] |
 | `src/kit/learning.py` | Adding facts tidily, and each day's summary | [[Memory#Learning without a mess]] |
 | `src/kit/things.py` | The register of things | [[Register of Things]] |
-| `src/kit/notes.py` | The notes vault on the NAS | [[Notes on the NAS]] |
+| `src/kit/notes.py` | The notes vault on the NAS: reading, taking notes, its shape and the Sunday report | [[Notes on the NAS]] |
+| `src/kit/notes_tasks.py` | The open tasks in a note and their due dates, as the `tasks` source | [[Notes on the NAS#Finding notes and tasks]] |
+| `src/kit/notes_edit.py` | Changing a note: add, edit, tick, start; shown first, never over your own edit, and undo | [[Notes on the NAS#Changing a note]] |
 | `src/kit/files/__init__.py` | Your folders (roots) and adding, changing and removing them in the settings | [[Your Files]] |
 | `src/kit/files/walk.py` | Finding the files under each root, and what's new, changed and gone | [[Your Files#How it works]] |
 | `src/kit/files/extract.py` | A PDF, Word file, sheet, slide deck or text file as pages of text | [[Your Files#How it works]] |

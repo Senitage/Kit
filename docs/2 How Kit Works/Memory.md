@@ -47,6 +47,7 @@ flowchart LR
 | `self` | His own thoughts, opinions, moments and journal ([[Inner Life]]) |
 | `seen` | Arrivals after a while and animals wandering in ([[Eyes]]) |
 | `files` | What's inside the documents in the folders you chose, a page at a time ([[Your Files]]). Searchable now; brought into conversation by the file tools |
+| `tasks` | The open tasks in your notes, with their due dates ([[Notes on the NAS#Finding notes and tasks]]) |
 | `house` | The lights, switches and rooms Home Assistant shows him ([[The House]]) |
 
 A new kind of thing to remember (photos, projects) is added as a new

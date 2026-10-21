@@ -55,8 +55,9 @@ A chat streams events like these, one per line:
 | `show` | Something for his face: the time, the date, the weather |
 | `tool` | He's running a tool: `tool` (its name) and `line` (the call, like `recall(query='tax returns')`) |
 | `tool_calls` | A cloud model asked for tools without a word to say: the calls, with no words for the chat yet (the `reply` comes after the results) |
-| `confirm` | He wants to do something that needs your yes first: `tool`, `line` (the call) and `ask` (what he'll do, in words). Your next message answers it. See [[Tools and Packs#Asking first]] |
+| `confirm` | He wants to do something that needs your yes first: `tool`, `line` (the call), `ask` (what he'll do, in words) and `preview` (the change itself, like a note's diff, or empty). Your next message answers it. See [[Tools and Packs#Asking first]] |
 | `recalled`, `remembered`, `reading_note`, `looked_at_pc`, `looked_around` | What a tool or action did mid-answer |
+| `note_changed` | He changed one of your notes: `note` (where it is in the vault) and `change` (what he did, in words). See [[Notes on the NAS#Changing a note]] |
 | `handing_off` | A bigger model is taking over ("Let me think...") |
 | `notice` | A line for the chat, like a budget warning |
 | `reply` | The whole reply: words, emotion, gestures, actions |
@@ -121,7 +122,9 @@ talked to him out loud: read his reply from `/api/hearing/turns/{turn}`) and
 something on the PC: `command`, `kind`, `args`, and `to`, the PC's desk id;
 claim it before doing it) and `house` (he noticed something in the house:
 `what`, like "the garage just opened, after dark", and `entity`; see
-[[The House#Noticing]]). See
+[[The House#Noticing]]) and `notes_tidy` (his Sunday look over your
+notes: `lines`, what looked untidy; see
+[[Notes on the NAS#The Sunday look-over]]). See
 [[Bodies]]. The last 200 are kept, and `look` events (every couple of
 seconds while someone's in view) the last few, apart, so they never push the
 others out. A `quiet` event says why he's keeping quiet (`because`) and, while

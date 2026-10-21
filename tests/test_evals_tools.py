@@ -22,7 +22,7 @@ def test_every_pack_case_passes_offline(memory):
     brain.tools.add(shopping_pack([]))
     brain.tools.add(house_pack())
     cases = tool_cases(brain.tools)
-    assert {c.pack for c in cases} == {"core", "files", "pc", "shopping", "house"}
+    assert {c.pack for c in cases} == {"core", "files", "pc", "notes", "shopping", "house"}
     report = asyncio.run(run_tool_eval(brain, cases))
     assert report.passed, [(r.case.question, r.why) for r in report.results if not r.passed]
 

@@ -79,11 +79,13 @@ Up: [[Home]] · Reference
 | **Sound** | A chuckle, sigh or gasp in his voice, inside his words | [[Voice#Sounds in his voice]] |
 | **Source** | A kind of thing in the memory index: facts, days, conversations, things, notes, his notebook | [[Memory#What's in it]] |
 | **Talking over him** | Starting to talk while Kit speaks; he stops, as he does when you type (`hearing.barge_in`) | [[Hearing#Talking over him]] |
+| **Task** | A `- [ ]` line in your notes. Each open one is its own item in his memory (the `tasks` source), with its due date | [[Notes on the NAS#Finding notes and tasks]] |
 | **Thread** | Something coming up in your life that he'll ask about after | [[Companion#He follows your life]] |
 | **Token** | The password every app uses to talk to the brain (`kit token`) | [[Privacy#Tokens and secrets]] |
 | **Tool** | Something a model can call mid-answer and get a result back from: search memory, look at the PC, the forecast, a note | [[Tools and Packs]] |
 | **Tool loop** | The model asks, the brain runs the tool, the model answers from the result, a few times a turn if need be | [[Tools and Packs#How it works]] |
 | **Tone** | How a voice sounded (cheerful, down, cross), read from the sound; he may ask, never tells | [[Hearing#Tone and laughs]] |
 | **Two passes** | Deciding what to do in one model call, then saying it in a second | [[Brain#Two passes when the local model talks]] |
+| **Undo file** | A note as it was before Kit changed it, kept in `state/notes/undo` so "undo that" can put it back | [[Notes on the NAS#Changing a note]] |
 | **Voice print** | 512 numbers worked out from a few seconds of someone talking; no sound can be rebuilt from them | [[Hearing#Whose voice]] |
 | **Vault** | A folder of markdown notes Obsidian opens: your notes on the NAS, or these docs | [[Notes on the NAS]], [[How These Docs Work]] |

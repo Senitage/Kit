@@ -63,7 +63,9 @@ The packs' own questions: `core` (small talk, the forecast, a recall) and
 `files` (the council rates last year, the pump manual, what's in the Finance
 folder, whether he's read your files), `pc`, and `house` (the study lamp
 off, is the aircon on, lock the front door, who's home: see
-[[The House#The tools]]). `kit eval tools --pack house` runs one pack's. With no Home Assistant set
+[[The House#The tools]]) and `notes` (the to-do list this week, tick off
+the filament, notes about the shed, open the holiday planner: see
+[[Notes on the NAS#Changing a note]]). `kit eval tools --pack house` runs one pack's. With no Home Assistant set
 up, the house questions run against an empty stand-in, so nothing is
 switched.
 
