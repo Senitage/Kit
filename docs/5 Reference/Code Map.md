@@ -62,6 +62,7 @@ flowchart TB
 | `src/kit/tools/core.py` | The core pack: recall, look at the PC, look around, the forecast, read a note | [[Tools and Packs]] |
 | `src/kit/tools/files.py` | The files pack: find, read and list your documents from the index | [[Your Files#Asking about them]] |
 | `src/kit/tools/pc.py` | The pc pack: open files, folders, apps and sites on the PC, bring a window up, the media keys, what you worked on and your code projects | [[Desk App#Doing things on the PC]], [[Tools and Packs#Packs]] |
+| `src/kit/tools/house.py` | The house pack: find, read and switch lights, the aircon, scenes, blinds and locks, and who's home | [[The House#The tools]] |
 | `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
 | `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
 | `src/kit/tools/private.py` | A private result as a local summary for a cloud model | [[Tools and Packs#Private results]], [[Privacy]] |
@@ -88,6 +89,11 @@ flowchart TB
 | `src/kit/files/extract.py` | A PDF, Word file, sheet, slide deck or text file as pages of text | [[Your Files#How it works]] |
 | `src/kit/files/fields.py` | Years, amounts, dates, ABNs, references and names in a piece of a file | [[Your Files#How it works]] |
 | `src/kit/files/index.py` | Keeping the `files` source in step with the folders | [[Your Files]], [[Memory In Depth]] |
+| `src/kit/house/__init__.py` | The house through Home Assistant, and its memory source's name | [[The House]] |
+| `src/kit/house/client.py` | The Home Assistant WebSocket client: auth, reconnecting, events, reads and service calls | [[The House]] |
+| `src/kit/house/model.py` | The exposed things and rooms, kept current, and finding the thing you mean | [[The House#Finding the thing you mean]] |
+| `src/kit/house/noticing.py` | What he notices in the house: got home, a door after dark, a light left on | [[The House#Noticing]] |
+| `src/kit/house/contents.py` | The house's things and rooms as the `house` source in memory | [[The House#In his memory]] |
 
 ## Inner life and companionship
 

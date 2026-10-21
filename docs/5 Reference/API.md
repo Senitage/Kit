@@ -119,7 +119,9 @@ Bodies listen to `/api/life/events`: `mood`, `fidget`, `react`, `state`
 talked to him out loud: read his reply from `/api/hearing/turns/{turn}`) and
 `hush` (someone talked over him: stop his voice) and `desk_command` (open
 something on the PC: `command`, `kind`, `args`, and `to`, the PC's desk id;
-claim it before doing it). See
+claim it before doing it) and `house` (he noticed something in the house:
+`what`, like "the garage just opened, after dark", and `entity`; see
+[[The House#Noticing]]). See
 [[Bodies]]. The last 200 are kept, and `look` events (every couple of
 seconds while someone's in view) the last few, apart, so they never push the
 others out. A `quiet` event says why he's keeping quiet (`because`) and, while

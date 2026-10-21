@@ -61,8 +61,11 @@ one, ignoring case, so `place = "Richmond"` matches `"Richmond, NSW"`.
 
 The packs' own questions: `core` (small talk, the forecast, a recall) and
 `files` (the council rates last year, the pump manual, what's in the Finance
-folder, whether he's read your files). `kit eval tools --pack files` runs
-one pack's.
+folder, whether he's read your files), `pc`, and `house` (the study lamp
+off, is the aircon on, lock the front door, who's home: see
+[[The House#The tools]]). `kit eval tools --pack house` runs one pack's. With no Home Assistant set
+up, the house questions run against an empty stand-in, so nothing is
+switched.
 
 Your own questions go in `tool-questions.toml` in the config folder:
 

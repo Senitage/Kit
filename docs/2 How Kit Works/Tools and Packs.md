@@ -94,8 +94,11 @@ by words like "invoice", "notice" or "folder", or a register thing with a NAS
 folder. The third is `pc` ([[Desk App#Doing things on the PC]]): `open_path`,
 `open_document`, `open_app`, `open_url`, `show`, `focus` and `media` (all
 `act`, offered only while a desk app is reporting), `recent_work` and
-`list_projects` and `open_project`. The packs to come (the house, the notes vault, your apps)
-plug in the same way: another card in the prompt, their
+`list_projects` and `open_project`. The fourth is `house`
+([[The House#The tools]]): lights, switches, the aircon, scenes, blinds,
+locks and who's home, through Home Assistant, offered only while it's
+answering. The packs to come (the notes vault, your apps) plug in the same
+way: another card in the prompt, their
 definitions with the request, their own evals. A pack also carries how a
 message finds it (its **match words**, example questions and register
 systems) and its own questions for `kit eval tools`.
@@ -147,7 +150,10 @@ and waits:
 
 The chat gets a `confirm` event with what he's asking, for a yes/no row on
 the desk later. A pack's own confirm list, and the `tools.confirm` setting,
-make an `act` tool ask too. `/api/status` shows what's waiting as
+make an `act` tool ask too, and a tool can ask depending on what it's
+asked to do: the house's cover tool asks for the garage but not the blinds,
+and its climate tool once a day ([[The House#Asking first]]). `/api/status`
+shows what's waiting as
 `tools.pending`.
 
 ### Private results

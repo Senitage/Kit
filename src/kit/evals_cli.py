@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -289,6 +290,19 @@ async def _eval_routing(paths: KitPaths) -> int:
     return 0 if passed else 1
 
 
+class _HouseStandIn:
+    """An empty, always-answering Home Assistant, so ``kit eval tools`` can ask the
+    house pack's questions on a machine with no house set up. Nothing is switched."""
+
+    connected, last_error = True, ""
+
+    def subscribe(self, callback) -> None:
+        pass
+
+    async def call_service(self, domain, service, data=None, entity=None) -> None:
+        pass
+
+
 async def _eval_tools(paths: KitPaths, pack: str | None, live: bool, questions) -> int:
     """Does each question load the right pack and reach the right tool? Offline it
     checks matching and what's offered; ``--live`` asks the real chat model, with
@@ -296,6 +310,7 @@ async def _eval_tools(paths: KitPaths, pack: str | None, live: bool, questions) 
     from kit.brain import Brain
     from kit.embed import OllamaEmbedder
     from kit.evals import load_tool_cases, run_tool_eval, tool_cases
+    from kit.house.model import House
     from kit.local_model import OllamaModel
     from kit.memory import Memory
     from kit.recall import Recall
@@ -324,6 +339,8 @@ async def _eval_tools(paths: KitPaths, pack: str | None, live: bool, questions) 
             cloud = make_cloud(paths, memory, client)
             recall = Recall(memory, OllamaEmbedder(store.current, client), store.current)
             brain = Brain(store.current, memory, model, cloud, recall, Weather(client))
+            if brain.house is None:  # the house pack's questions, without Home Assistant
+                brain.use_house(House(_HouseStandIn(), datetime.now))
             if pack and pack not in brain.tools.packs:
                 print(f"there's no pack called {pack}; see `kit tools packs`")
                 return 2

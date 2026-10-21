@@ -227,6 +227,54 @@ def cameras_here() -> list[dict]:
     return list_cameras()
 
 
+def check_house(settings: Settings, token: str | None, connect=None) -> CheckResult:
+    """Can Kit reach Home Assistant, as a non-admin user, and see anything? Kit's
+    user should not be an admin: the exposed-to-Assist list is all he may touch."""
+    import asyncio
+
+    from kit.house.client import HomeAssistant, HouseError, websocket_connect
+
+    s = settings.house
+    if not s.enabled:
+        return CheckResult("house", Status.SKIP, "house.enabled is off")
+    if not s.url:
+        return CheckResult(
+            "house", Status.FAIL, "house.url isn't set (kit config set house.url ...)"
+        )
+    if not token:
+        return CheckResult(
+            "house", Status.FAIL, "no home_assistant_token in the secrets folder (kit paths)"
+        )
+
+    async def look() -> CheckResult:
+        client = HomeAssistant(s.url, token, connect or websocket_connect)
+        await client.start()
+        try:
+            if not await client.wait_ready(10):
+                why = client.last_error or "no answer"
+                return CheckResult("house", Status.FAIL, f"can't reach {s.url}: {why}")
+            user = await client.current_user()
+            exposed = await client.exposed()
+        except HouseError as e:
+            return CheckResult("house", Status.FAIL, str(e))
+        finally:
+            await client.close()
+        name = user.get("name") or "Kit's user"
+        if user.get("is_admin"):
+            detail = f"{name} is a Home Assistant admin: give Kit a non-admin user"
+            return CheckResult("house", Status.WARN, detail)
+        if not exposed:
+            detail = f"reachable as {name}, but nothing is exposed to Assist yet"
+            return CheckResult("house", Status.WARN, detail)
+        detail = f"reachable as {name} (not an admin), {len(exposed)} things exposed to Assist"
+        return CheckResult("house", Status.PASS, detail)
+
+    try:
+        return asyncio.run(look())
+    except Exception as e:  # a broken socket mustn't stop the report
+        return CheckResult("house", Status.FAIL, f"{type(e).__name__}: {e}")
+
+
 def check_eyes(settings: Settings, cameras: CameraLister = cameras_here) -> CheckResult:
     """Can this machine see? The eyes usually run on the desk PC rather than the
     server, so no camera here is a warning, not a failure."""

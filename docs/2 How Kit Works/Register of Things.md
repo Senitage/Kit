@@ -25,7 +25,9 @@ related: ["[[Memory In Depth]]", "[[Stage 1 - Text Brain]]"]
 
 The systems a link can point into: Home Assistant (area or entity), home_app
 (record), the NAS (folder), MetTools (folder), Obsidian (note) and code
-(project folder).
+(project folder). A Home Assistant link is an entity id (`switch.shed_heater`)
+or a room (`area:Shed`): naming that thing loads the house pack and goes
+straight to it ([[The House#Finding the thing you mean]]).
 
 ## How it's used
 

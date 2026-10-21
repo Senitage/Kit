@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import time
 import tomllib
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 
@@ -17,7 +18,7 @@ import httpx
 
 from kit import checks, docs_check
 from kit.checks import CheckResult, Status
-from kit.credentials import api_token, cloud_api_key
+from kit.credentials import api_token, cloud_api_key, home_assistant_token
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
 from kit.prices import PRICES_FILE, Prices
@@ -75,6 +76,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.extend(checks.check_nas(settings))
     if "files" not in skip:
         results.extend(checks.check_files(settings))
+    if "house" not in skip:
+        results.append(checks.check_house(settings, home_assistant_token(paths)))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
     if "prices" not in skip:
@@ -1384,6 +1387,60 @@ def cmd_files(paths: KitPaths, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_house(paths: KitPaths, args: argparse.Namespace, connect=None) -> int:
+    """``kit house``: what Kit can see of the house through Home Assistant, a thing's
+    state, and switching one on or off (kit.house)."""
+    return asyncio.run(_house_async(paths, args, connect))
+
+
+async def _house_async(paths: KitPaths, args: argparse.Namespace, connect=None) -> int:
+    from kit.house.client import HomeAssistant, HouseError, websocket_connect
+    from kit.house.model import House
+
+    s = SettingsStore(paths).current().house
+    token = home_assistant_token(paths)
+    if not s.url or not token:
+        print("set house.url and put Kit's token in the secrets folder first (kit check)")
+        return 1
+    client = HomeAssistant(s.url, token, connect or websocket_connect)
+    house = House(client, datetime.now)
+    await client.start()
+    try:
+        if not await client.wait_ready(10):
+            print(f"can't reach Home Assistant: {client.last_error or 'no answer'}")
+            return 1
+        await house.refresh()
+        if args.action == "list":
+            things = sorted(house.entities.values(), key=lambda e: (e.area, e.name))
+            if args.area:
+                things = [e for e in things if e.area.lower() == args.area.lower()]
+            for e in things:
+                print(e.line())
+            print(f"{len(things)} things Kit can see")
+            return 0
+        found = house.find(args.name)
+        if len(found) != 1:
+            listed = ", ".join(f"{e.name} ({e.id})" for e in found[:8]) or "nothing"
+            print(f"'{args.name}' matches {listed}")
+            return 1
+        entity = found[0]
+        if args.action == "state":
+            print(entity.line())
+            return 0
+        if entity.domain not in ("light", "switch", "fan", "input_boolean"):
+            print(f"{entity.name} isn't a light, switch or fan")
+            return 1
+        service = "turn_on" if args.state == "on" else "turn_off"
+        await client.call_service(entity.domain, service, None, entity.id)
+        print(f"{entity.name}: {args.state}")
+        return 0
+    except HouseError as e:
+        print(e)
+        return 1
+    finally:
+        await client.close()
+
+
 async def _files_async(paths: KitPaths, args: argparse.Namespace) -> int:
     from kit.files import FILES
     from kit.files.index import Files
@@ -1786,6 +1843,16 @@ def main(argv: list[str] | None = None) -> int:
         help="memory --replay or tools: a different questions file",
     )
 
+    house = sub.add_parser("house", help="the house through Home Assistant: list, state, set")
+    hsub = house.add_subparsers(dest="action", required=True)
+    hsub.add_parser("list", help="the things Kit can see, by room").add_argument(
+        "area", nargs="?", default="", help="only this room"
+    )
+    hsub.add_parser("state", help="one thing's state, e.g. study lamp").add_argument("name")
+    hset = hsub.add_parser("set", help="turn a light or switch on or off")
+    hset.add_argument("name")
+    hset.add_argument("state", choices=["on", "off"])
+
     files = sub.add_parser("files", help="the folders Kit indexes: add, remove, status, index")
     fsub = files.add_subparsers(dest="action", required=True)
     fadd = fsub.add_parser(
@@ -1862,6 +1929,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_tools(paths, args)
     if args.command == "files":
         return cmd_files(paths, args)
+    if args.command == "house":
+        return cmd_house(paths, args)
     if args.command == "docs":
         return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":

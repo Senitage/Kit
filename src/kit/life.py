@@ -1392,6 +1392,20 @@ class Life:
         if changed:
             self.save()
 
+    def on_house(self, what: str, entity: str = "") -> None:
+        """Something in the house worth a mention (kit.house.noticing): the garage
+        opening after dark, someone home, a light left on. He's curious, has a think
+        about it, and may say so when his manners allow, like a cat wandering in."""
+        now = self.clock()
+        self.publish({"type": "house", "what": what, "entity": entity})
+        if self.asleep:
+            return
+        self.drives.curiosity = _clamp(self.drives.curiosity + 0.5)
+        self.curious_about, self.curious_kind = what, "house"
+        self.spotted = (what, now)
+        self._think_about("house", what)
+        self.save()
+
     def _watch(self, now: datetime) -> None:
         """What his eyes see Dan doing, besides coming and going: busy on his phone
         or talking to someone (he keeps quiet, ``life.eyes_manners``), and the small
