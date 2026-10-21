@@ -61,19 +61,29 @@ class HomeAssistant:
         self._waiting: dict[int, asyncio.Future] = {}
         self._subscribers: list[Callable[[dict], None]] = []
         self._ready = asyncio.Event()
+        self._failed = asyncio.Event()  # set when a try fails, for wait_ready(first_try)
         self._task: asyncio.Task | None = None
+        self._closed = False
 
     async def start(self) -> None:
         """Connect in the background; ``wait_ready`` waits for the first login."""
         if self._task is None:
+            self._closed = False
             self._task = asyncio.create_task(self._run())
 
-    async def wait_ready(self, timeout: float = 10.0) -> bool:
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(self._ready.wait(), timeout)
+    async def wait_ready(self, timeout: float = 10.0, first_try: bool = False) -> bool:
+        """Whether it's logged in, waiting up to ``timeout``; with ``first_try``, no
+        longer than the first failed try (for ``kit check``)."""
+        waiters = {asyncio.ensure_future(self._ready.wait())}
+        if first_try:
+            waiters.add(asyncio.ensure_future(self._failed.wait()))
+        await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        for waiter in waiters:
+            waiter.cancel()
         return self.connected
 
     async def close(self) -> None:
+        self._closed = True
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -88,7 +98,7 @@ class HomeAssistant:
 
     async def _run(self) -> None:
         tries = 0
-        while True:
+        while not self._closed:
             try:
                 await self._session()
                 tries = 0  # it ran, then dropped: try again straight away
@@ -97,6 +107,7 @@ class HomeAssistant:
             except Exception as e:  # never let the house take anything else down
                 self.last_error = str(e) or type(e).__name__
                 log.info("home assistant: %s", self.last_error)
+                self._failed.set()
             await self._drop(self.last_error or "connection lost")
             await self.sleep(BACKOFF_S[min(tries, len(BACKOFF_S) - 1)])
             tries += 1
@@ -167,9 +178,12 @@ class HomeAssistant:
         self._waiting[call_id] = future
         try:
             await socket.send(json.dumps({"id": call_id, "type": kind, **payload}))
-            return await asyncio.wait_for(future, timeout)
-        except TimeoutError as e:
-            raise HouseError("Home Assistant didn't answer in time") from e
+            # asyncio.wait, not wait_for: on Python 3.11 wait_for can swallow a
+            # cancel that lands as the answer arrives, and close() would hang.
+            done, _ = await asyncio.wait({future}, timeout=timeout)
+            if not done:
+                raise HouseError("Home Assistant didn't answer in time")
+            return future.result()
         finally:
             self._waiting.pop(call_id, None)
 

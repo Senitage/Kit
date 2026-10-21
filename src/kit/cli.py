@@ -1406,7 +1406,7 @@ async def _house_async(paths: KitPaths, args: argparse.Namespace, connect=None) 
     house = House(client, datetime.now)
     await client.start()
     try:
-        if not await client.wait_ready(10):
+        if not await client.wait_ready(10, first_try=True):
             print(f"can't reach Home Assistant: {client.last_error or 'no answer'}")
             return 1
         await house.refresh()

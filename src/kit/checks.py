@@ -250,7 +250,7 @@ def check_house(settings: Settings, token: str | None, connect=None) -> CheckRes
         client = HomeAssistant(s.url, token, connect or websocket_connect)
         await client.start()
         try:
-            if not await client.wait_ready(10):
+            if not await client.wait_ready(10, first_try=True):
                 why = client.last_error or "no answer"
                 return CheckResult("house", Status.FAIL, f"can't reach {s.url}: {why}")
             user = await client.current_user()
