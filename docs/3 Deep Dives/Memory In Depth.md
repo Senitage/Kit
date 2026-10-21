@@ -30,6 +30,7 @@ a reference back to where it came from.
 | `projects` | Your code projects: name, what the README says it's for, branch and last commit, refreshed once a day ([[Desk App#What you worked on]]) | Stage 4 (C1) |
 | `activity` | One item a day of what you did on the PC: apps and how long, files, sites, projects. Replaced as the day goes on ([[Desk App#What you worked on]]) | Stage 4 (C1) |
 | `files` | Your documents in the folders you chose: a piece of about 400 words per item, its `root:path` as the ref, page, folder, time, size, private flag and the years, amounts, dates and references in it ([[Your Files]]). Searched on the memory page and by `kit memory search`; the file tools bring it into conversation | Stage 4 (B1) |
+| `house` | The things in the house Home Assistant exposes to Kit, one item each ("Study lamp, a light in the Study") with its entity id as the ref, and one per room listing what's in it. Rewritten once a day ([[The House#In his memory]]) | Stage 4 (D1) |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([[Notes Setup|your notes]]) | Now |
 | `seen` | What Kit's eyes saw that's worth remembering: someone arriving after the desk was empty a while, the cat wandering in ([[Vision Stage 1|his eyes]]) | Vision 1 |

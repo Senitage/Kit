@@ -33,7 +33,7 @@ flowchart LR
 | 1 Text brain | Chat in a browser or terminal, memory, the register of things, local and cloud models, settings with undo | Done: [[Stage 1 - Text Brain]] |
 | 2 Desk app | Tray icon, floating face, chat, Kit's window, what's on the PC, the Chrome extension | Done: [[Stage 2 - Desk App]] |
 | 3 Voice and hearing | Part 1, his voice: done ([[Stage 3 - Voice]]). Part 2, hearing: microphone, his name as the wake word, speech to text, built as companion stage 5 ([[Companion Stage 5]]) | Done (#24, #42) |
-| 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools ([[Stage 4 - Tools]]) | Started: the tool loop is part A1 |
+| 4 Tools and PC control | A tool loop, opening apps, files and sites, the Claude Code bridge, MCP, Home Assistant, home_app and MetTools ([[Stage 4 - Tools]]) | Under way: the tool loop, your files, the PC and the house are in |
 | 5 NAS files and photos | NAS documents and photos as new memory sources | Planned |
 | 6 Notes, email, calendar | Gmail, Google Calendar, a daily brief (notes are already in) | Planned |
 | 7 Remote access | The phone as a first-class way in, notifications: the [[Phone App]] | Phase 0 (pairing, hello) open |

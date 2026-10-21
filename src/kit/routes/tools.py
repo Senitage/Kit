@@ -57,7 +57,7 @@ async def run(state: State, body: RunIn) -> dict:
     if tool is None:
         raise HTTPException(404, f"there's no tool called {body.tool}")
     pack = brain.tools.packs.get(brain.tools.pack_of(body.tool))
-    if needs_yes(tool, pack, s) and not body.yes:
+    if needs_yes(tool, pack, s, body.arguments) and not body.yes:
         raise HTTPException(409, f"{body.tool} changes something of yours: pass --yes to run it")
     result = await brain.tools.run(ToolCall("by-hand", body.tool, body.arguments))
     state.memory.log_tool_call(

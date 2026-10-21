@@ -72,6 +72,9 @@ away, right after a chat, or more than a few times an hour. With
 same manners), and he says why he waited (then he isn't "butting in", whatever
 the keyboard says). Something he means to bring up later ("ask me tomorrow")
 stays in his notebook, out of his prompts, until it's due.
+Something he noticed in the house (someone home, the garage opening after
+dark, a light left on for hours) makes him curious about it, and he may
+mention it next time he pipes up ([[The House#Noticing]]).
 Ignore him and he sulks a little and waits longer next time; being on a call
 or your phone isn't ignoring him. On a bad night he's never bored or curious at
 you: he checks in once, gently, and otherwise waits for you. Say **"shush"**

@@ -18,7 +18,7 @@ the options for any of them.
 |---|---|
 | `kit paths` | Show where Kit keeps his files. See [[Settings and Data]] |
 | `kit init` | Create the data folder and a starter settings file |
-| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only |
+| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only. The `house` line says whether Home Assistant answers, as which user, and how many things are exposed to Assist; it warns if Kit's user is an admin |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
 | `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
@@ -109,7 +109,7 @@ See [[Memory]].
 
 See [[Register of Things]].
 
-## Notes, files and weather
+## Notes, files, the house and weather
 
 | Command | What it does |
 |---|---|
@@ -121,6 +121,10 @@ See [[Register of Things]].
 | `kit files status` | Each folder: files and pieces indexed, the last run, files it couldn't read |
 | `kit files index` | Read new and changed files now, showing each (`--root NAME`, `--full` to read everything again) |
 | `kit files search "..."` | Search the indexed files only, with each hit's folder, path and page |
+| `kit house` | The house through Home Assistant. See [[The House]]: |
+| `kit house list [AREA]` | Every thing Kit can see (exposed to Assist), with its room and state, or just one room's |
+| `kit house state NAME` | One thing's state, found the way he finds it in chat |
+| `kit house set NAME on` / `off` | Switch a light, switch or fan, to check the token works |
 | `kit weather [PLACE]` | The forecast Kit sees, for `persona.location` or PLACE. See [[Time and Weather]] |
 
 ## Voice

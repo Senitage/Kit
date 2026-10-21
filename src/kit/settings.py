@@ -536,6 +536,55 @@ class PcSettings(_Section):
     )
 
 
+HOUSE_NOTICE = ["binary_sensor.*door*", "cover.garage*", "person.*"]
+
+
+class HouseSettings(_Section):
+    enabled: bool = Field(
+        False,
+        description="Talk to Home Assistant. Needs house.url and a token in the secrets "
+        "folder (home_assistant_token, from a non-admin Home Assistant user). Restart Kit "
+        "after turning it on.",
+    )
+    url: str = Field(
+        "",
+        description="Home Assistant's WebSocket address, e.g. "
+        "ws://192.168.1.60:8123/api/websocket.",
+    )
+    confirm: list[str] = Field(
+        default_factory=lambda: ["lock", "alarm_control_panel"],
+        description="Kinds of thing (Home Assistant domains) that always ask before Kit "
+        "changes them. Locks, alarms and the garage always ask anyway; add 'cover' for "
+        "every blind, 'switch' or 'light' to have those ask too.",
+    )
+    climate_confirm_daily: bool = Field(
+        True,
+        description="Changing the heating or air conditioning asks once a day per unit, "
+        "then not again that day. Off: it never asks.",
+    )
+    secure_from_phone: bool = Field(
+        False,
+        description="Allow unlocking a lock or disarming an alarm when you're talking "
+        "from the phone. Off: Kit refuses those from the phone.",
+    )
+    notice: list[str] = Field(
+        default_factory=lambda: list(HOUSE_NOTICE),
+        description="Things whose changes Kit notices and may mention (entity ids, with * "
+        "wildcards). Doors and the garage count only after dark.",
+    )
+    long_on_minutes: int = Field(
+        240,
+        ge=0,
+        description="A light or switch on longer than this is worth a mention. 0: never.",
+    )
+    refresh_minutes: int = Field(
+        60,
+        ge=1,
+        le=1440,
+        description="How often Kit re-reads the list of rooms and things from Home Assistant.",
+    )
+
+
 class ProjectsSettings(_Section):
     roots: list[str] = Field(
         default_factory=list,
@@ -1521,6 +1570,7 @@ class Settings(_Section):
     files: FilesSettings = Field(default_factory=FilesSettings)
     pc: PcSettings = Field(default_factory=PcSettings)
     projects: ProjectsSettings = Field(default_factory=ProjectsSettings)
+    house: HouseSettings = Field(default_factory=HouseSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

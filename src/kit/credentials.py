@@ -57,3 +57,18 @@ def api_token(paths: KitPaths, create: bool = True) -> str | None:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token + "\n")
     return token
+
+
+HOME_ASSISTANT_TOKEN_FILE = "home_assistant_token"
+
+
+def home_assistant_token(paths: KitPaths) -> str | None:
+    """The long-lived token of Kit's own (non-admin) Home Assistant user, from the
+    secrets folder or ``KIT_HOME_ASSISTANT_TOKEN``."""
+    token = os.environ.get("KIT_HOME_ASSISTANT_TOKEN", "").strip()
+    if token:
+        return token
+    path = paths.secrets_dir / HOME_ASSISTANT_TOKEN_FILE
+    if path.is_file():
+        return path.read_text(encoding="utf-8").strip() or None
+    return None

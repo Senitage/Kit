@@ -113,7 +113,7 @@
 		{
 			"id": "apps",
 			"type": "text",
-			"text": "### [[Other Apps]]\nhome_app shows and configures him; MetTools and Home Assistant come later.",
+			"text": "### [[Other Apps]]\nhome_app shows and configures him; MetTools comes later. Home Assistant is [[The House]].",
 			"x": -1080,
 			"y": 650,
 			"width": 320,
@@ -421,6 +421,15 @@
 			"y": 840,
 			"width": 680,
 			"height": 150
+		},
+		{
+			"id": "house",
+			"type": "text",
+			"text": "### [[The House]]\nLights, the aircon, locks and who's home, through Home Assistant. Locks always ask.",
+			"x": -620,
+			"y": 1030,
+			"width": 320,
+			"height": 150
 		}
 	],
 	"edges": [
@@ -562,6 +571,22 @@
 			"toNode": "tools",
 			"toSide": "top",
 			"label": "a tool call, a result"
+		},
+		{
+			"id": "house-tools",
+			"fromNode": "house",
+			"fromSide": "top",
+			"toNode": "tools",
+			"toSide": "bottom",
+			"label": "the house pack"
+		},
+		{
+			"id": "house-life",
+			"fromNode": "house",
+			"fromSide": "bottom",
+			"toNode": "life",
+			"toSide": "top",
+			"label": "what he notices"
 		}
 	]
 }

@@ -2,7 +2,7 @@
 tags: [guide, stage, topic/tools]
 aliases: [stage-4, Stage 4]
 summary: Stage 4, tools and PC control - the tool loop first, then the packs (files, PC, house, notes, apps), with the test checklist for each part as it lands.
-related: ["[[Tools and Packs]]", "[[Roadmap]]"]
+related: ["[[Tools and Packs]]", "[[Roadmap]]", "[[The House]]"]
 ---
 
 # Stage 4: tools and PC control
@@ -231,11 +231,69 @@ to where the PC sees it.
 - [ ] **The eval:** `kit eval tools --pack pc` passes offline.
 - [ ] **Tests:** `pytest -q tests/test_desk_commands.py tests/test_desk_run.py tests/test_activity.py` passes.
 
+## Part D1: the house, through Home Assistant
+
+Kit can see and switch what you expose to him in Home Assistant: lights,
+switches, the aircon, scenes, blinds, the garage and locks, and who's home.
+Locks and alarms always ask first, the garage asks every time, and the
+aircon once a day. He also notices someone getting home, a door opening
+after dark and a light left on. See [[The House]].
+
+### 1. Update Kit and set up his Home Assistant user
+
+1. Update as in [[Updating Kit]] (`pip install -e .` brings in
+   `websockets`).
+2. In Home Assistant: Settings, People, Users, add a user called Kit with
+   **Administrator off**. Log in as Kit, open the profile, Security, and
+   create a **long-lived access token**.
+3. Save the token on the server as `secrets/home_assistant_token` in Kit's
+   data folder (owner-only, like the other secrets).
+4. In Home Assistant: Settings, Voice assistants, **Expose**. Expose only
+   what Kit may see and switch: a few lights, the aircon, a scene, the
+   blinds, the garage, the front door lock, and the people.
+5. `kit config set house.url ws://192.168.1.60:8123/api/websocket` (your
+   Home Assistant's address), `kit config set house.enabled true`, then
+   restart Kit.
+
+### 2. Test before moving on
+
+- [ ] **The check:** `kit check` shows a `house` line: "reachable as Kit
+  (not an admin), N things exposed to Assist".
+- [ ] **What he sees:** `kit house list` lists only the exposed things, each
+  with its room and state. Something you didn't expose isn't there.
+- [ ] **A lamp:** "turn the study lamp off" switches it straight away, and he
+  says so. "Lounge lights to 30 percent" dims them.
+- [ ] **A state:** "is the aircon on?" gives its mode and temperature.
+- [ ] **Climate once a day:** "set the aircon to 23" asks first; say yes and
+  it changes. Ask again with another temperature: no question this time.
+- [ ] **Blinds and garage:** "close the blinds" just happens. "Open the
+  garage" asks every time.
+- [ ] **A lock:** "lock the front door" asks; yes locks it.
+- [ ] **No from the phone:** on the phone app, "unlock the front door" is
+  refused, even if you say yes, with "it has to be done at home".
+- [ ] **Not exposed:** ask for something you didn't expose: he says he
+  can't see it.
+- [ ] **Which one:** "turn the lights off" with several lights on: he asks
+  which.
+- [ ] **Who's home:** "who's home?" names the people and home or away.
+- [ ] **A register link:** `kit things link ID home_assistant
+  switch.shed_heater` on the shed, then "is the shed heater on?" goes
+  straight to it.
+- [ ] **Noticing:** after dark, open a watched door or the garage: he gets
+  curious (`/api/life/events` shows a `house` event) and may mention it.
+  Leave a light on for 4 hours: one mention.
+- [ ] **Down:** stop Home Assistant (or set a wrong `house.url`): "turn the
+  study lamp on" gets "the house is out of reach", and everything else about
+  him is fine. Start it again: within a minute or so the house is back
+  without restarting Kit.
+- [ ] **No house talk unasked:** "Morning" loads only `core`.
+- [ ] **The eval:** `kit eval tools --pack house` passes offline.
+- [ ] **Tests:** `pytest -q tests/test_house.py` passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: the house
-through Home Assistant (D); your notes vault, properly (E); your own apps and
-MCP (F); the morning brief (G). The plan is in [[Roadmap]].
+In order, each with its own section here when it lands: your notes vault,
+properly (E); your own apps and MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 
 ## If something's off
 
@@ -254,6 +312,12 @@ MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 - **He asked to do something and then forgot:** an offer lapses after
   `tools.confirm_lapse_minutes`, or when your next message isn't a yes or a
   no. Ask again.
+- **The house is out of reach:** `kit check` says why. A wrong token is
+  "auth_invalid"; a changed address is `house.url`. Kit retries on its own,
+  backing off to once a minute.
+- **He can't find a light you can see in Home Assistant:** it isn't exposed
+  to Assist, or its name is very different from what you said. `kit house
+  list` shows what he sees and the names he goes by.
 - **"There is no tool called ...":** the model asked for a tool it wasn't
   offered this turn, or one from a pack that didn't load. The result tells it so and it answers without; if it
   keeps happening, raise it as a bug with the line from `tools.recent`.

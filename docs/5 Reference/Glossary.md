@@ -15,6 +15,7 @@ Up: [[Home]] · Reference
 | **Body** | Anywhere Kit appears and acts out the brain's events: the desk app, home_app, the Pod, the arm | [[Bodies]] |
 | **Body feed** | The plain-text lines a small board like the Pod's reads, one per thing (`emotion happy`) | [[Pod In Depth#The body feed]] |
 | **Body move** | A whole-body move by name: a hop, a loop, a sway | [[Face#Body moves]] |
+| **Area** | A room as Home Assistant knows it; a thing's room is its own area or its device's | [[The House#Only what you expose]] |
 | **Aside** | A stage direction in square brackets beside your message (a hello, a bedtime nudge, a bad night); at most two ride with one message | [[Brain#One voice, two asides at most]] |
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
@@ -38,6 +39,7 @@ Up: [[Home]] · Reference
 | **Echo** | Kit's own voice from the speakers coming back through the mic; his ears know it and ignore it | [[Hearing#His own voice]] |
 | **Ears** | The microphone program that tells the brain what it heard, in words, never sound | [[Hearing]] |
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
+| **Exposed** | A Home Assistant thing you've exposed to Assist; the only things in the house Kit can see or switch | [[The House#Only what you expose]] |
 | **Follow-up window** | The few seconds after Kit stops talking when you can answer without his name | [[Hearing#When he answers]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |

@@ -146,6 +146,17 @@ See [[Hearing]].
   only told the answer is in a private source. See
   [[Tools and Packs#Private results]].
 
+## The house
+
+- **Kit is his own non-admin user in Home Assistant** and sees only what you
+  expose to Assist. Un-expose something and it's gone from him. See
+  [[The House]].
+- **Locks and alarms always ask first**, and unlocking or disarming from the
+  phone is refused unless `house.secure_from_phone` is on.
+- **The names and states of exposed things go to the cloud model** when a
+  house tool reads them (like any tool result); the token never does. It
+  stays in the secrets folder.
+
 ## Tokens and secrets
 
 - Every API call needs **Kit's token** (`kit token`). The desk app, the eyes

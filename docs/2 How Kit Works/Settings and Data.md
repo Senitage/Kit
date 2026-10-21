@@ -83,6 +83,7 @@ repo, so settings can be shown and shared freely.
 | OpenAI key | `OPENAI_API_KEY`, or `secrets/openai_api_key` |
 | Google key | `GEMINI_API_KEY` or `GOOGLE_API_KEY`, or `secrets/gemini_api_key` |
 | Kit's API token | `secrets/api_token`, made on first use; `kit token` shows it |
+| Home Assistant token | `KIT_HOME_ASSISTANT_TOKEN`, or `secrets/home_assistant_token` (see [[The House#Setting it up]]) |
 
 The desk app, the eyes and home_app each keep a copy of the token on their
 own machine. See [[Privacy]].

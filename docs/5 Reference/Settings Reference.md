@@ -161,6 +161,22 @@ Your code projects. See [[Desk App#What you worked on]].
 | `editor` | `code` | The app (by its short name in the desk app's list) that `open_project` opens a project in. |
 | `pc_roots` | none | Server folder = the same folder on your PC, like `"/srv/code" = "C:\\Users\\Sam\\Code"`, so a project opens where the PC sees it. |
 
+## house
+
+The house, through Home Assistant. See [[The House]]. The token lives in the
+secrets folder as `home_assistant_token`, never here.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | off | Talk to Home Assistant. Needs `url` and the token. Restart Kit after turning it on. |
+| `url` | empty | Home Assistant's WebSocket address, like `ws://192.168.1.60:8123/api/websocket`. |
+| `confirm` | `lock`, `alarm_control_panel` | Kinds of thing (Home Assistant domains) that always ask before he changes them. Locks, alarms and the garage ask anyway; add `cover` for every blind, or `light` or `switch`. |
+| `climate_confirm_daily` | on | The aircon or heating asks once a day per unit. Off: it never asks. |
+| `secure_from_phone` | off | Allow unlocking or disarming from the phone. Off: refused from the phone, even with a yes. |
+| `notice` | `binary_sensor.*door*`, `cover.garage*`, `person.*` | The things whose changes he notices (entity ids, `*` wildcards). Doors and the garage count only after dark. |
+| `long_on_minutes` | 240 | A light or switch on longer than this is worth a mention, once. 0: never. |
+| `refresh_minutes` | 60 | How often he reads the exposed things and rooms again (1 to 1440). |
+
 ## persona
 
 Who Kit is and who he's with. See [[Who Kit Is]].

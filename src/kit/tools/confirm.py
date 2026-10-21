@@ -18,13 +18,20 @@ if TYPE_CHECKING:
     from kit.tools import Pack, Tool, ToolCall
 
 
-def needs_yes(tool: Tool, pack: Pack | None, settings: Settings) -> bool:
-    """Whether ``tool`` waits for Dan's yes before it runs."""
-    return (
+def needs_yes(
+    tool: Tool, pack: Pack | None, settings: Settings, arguments: dict | None = None
+) -> bool:
+    """Whether ``tool`` waits for Dan's yes before it runs. With the call's
+    ``arguments``, a tool's own ``confirm_if`` can ask too (the garage, not the blinds)."""
+    if (
         tool.effect == "change"
         or (pack is not None and tool.name in pack.confirm)
         or tool.name in settings.tools.confirm
-    )
+    ):
+        return True
+    if arguments is None or tool.confirm_if is None:
+        return False
+    return tool.confirm_if(arguments, settings)
 
 
 @dataclass

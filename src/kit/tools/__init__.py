@@ -27,7 +27,10 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from kit.settings import Settings
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +122,9 @@ class Tool:
     # For a tool that asks first: what it will do, filled from the call's arguments,
     # as the end of "Ask whether to ..." ("tick '{item}' in {note}").
     ask: str = ""
+    # For a tool that asks only sometimes (the garage, not the blinds; the aircon
+    # once a day): whether this call asks, from its arguments.
+    confirm_if: Callable[[dict[str, Any], Settings], bool] | None = None
 
     def asking(self, call: ToolCall) -> str:
         """What the tool will do, in words, for the question Kit asks first."""

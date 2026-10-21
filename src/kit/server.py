@@ -18,8 +18,12 @@ from fastapi import FastAPI
 import kit
 from kit.body_registry import BodyRegistry
 from kit.brain import Brain
+from kit.credentials import home_assistant_token
 from kit.devices import DEVICES_FILE, Devices
 from kit.files.index import Files
+from kit.house.client import HomeAssistant
+from kit.house.contents import write_contents
+from kit.house.model import House
 from kit.known_faces import FACES_FILE, KnownFaces
 from kit.known_voices import VOICES_FILE, KnownVoices
 from kit.life import TICK_S
@@ -38,6 +42,7 @@ log = logging.getLogger(__name__)
 SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
 SPEECH_CHECK_S = 5  # how often the voice engine is started or stopped to match settings
+HOUSE_CHECK_S = 60  # how often the house is checked: lights left on, a refresh due
 FILES_CHECK_S = 60  # how often Kit checks whether a files sync is due (files.sync_every_minutes)
 
 
@@ -57,6 +62,8 @@ def create_app(
     devices: Devices | None = None,
     registry: BodyRegistry | None = None,
     files_every_s: float | None = FILES_CHECK_S,
+    house: House | None = None,
+    house_every_s: float | None = HOUSE_CHECK_S,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
@@ -75,9 +82,17 @@ def create_app(
             names=lambda: [n for t in brain.register.all() for n in t.names],
         )
 
+    if house is None and brain.house is None:
+        house = _house_from_settings(store, memory)
+    if house is not None:
+        brain.use_house(house)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
+        if brain.house is not None and house_every_s:
+            await brain.house.client.start()
+            tasks.append(asyncio.create_task(_house_loop(brain, store, house_every_s)))
         if summarise_every_s:
             tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
         if life_every_s:
@@ -91,6 +106,8 @@ def create_app(
         yield
         for task in tasks:
             task.cancel()
+        if brain.house is not None:
+            await brain.house.client.close()
         await brain.close()  # learning that was running after a reply
         await brain.cloud.close()
         if speech is not None:
@@ -137,6 +154,45 @@ async def _files_loop(brain: Brain, store: SettingsStore, every_s: float) -> Non
                     pass
         except Exception:
             log.exception("reading the files roots failed")
+        await asyncio.sleep(every_s)
+
+
+def _house_from_settings(store: SettingsStore, memory: Memory) -> House | None:
+    """The house, when ``house.enabled`` is on with an address and a token."""
+    s = store.current().house
+    if not s.enabled or not s.url:
+        return None
+    token = home_assistant_token(store.paths)
+    if not token:
+        log.warning("house.enabled is on but there's no home_assistant_token in secrets")
+        return None
+    return House(HomeAssistant(s.url, token), memory.clock)
+
+
+async def _house_loop(brain: Brain, store: SettingsStore, every_s: float) -> None:
+    """Read the house's rooms and things once connected and every
+    ``house.refresh_minutes``; mention lights left on; put the rooms and things in
+    memory once a day (kit.house.contents)."""
+    house = brain.house
+    last = None
+    written = None
+    while True:
+        try:
+            gap = store.current().house.refresh_minutes * 60
+            now = asyncio.get_running_loop().time()
+            if house.reachable and (last is None or now - last >= gap):
+                last = now
+                await house.refresh()
+                today = brain.memory.clock().date()
+                if written != today and house.entities:
+                    written = today
+                    write_contents(brain.memory.index, house)
+            elif not house.reachable:
+                last = None  # read it all again once it's back
+            if house.reachable and brain.house_watch is not None:
+                brain.house_watch.tick()
+        except Exception:
+            log.exception("keeping up with the house failed")
         await asyncio.sleep(every_s)
 
 

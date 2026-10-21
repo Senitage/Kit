@@ -86,6 +86,8 @@ from kit.heard import (
     speaker_aside,
     tone_aside,
 )
+from kit.house.model import House
+from kit.house.noticing import Watcher
 from kit.knowledge import Item
 from kit.learning import Learner, asking, relations_in, said_so
 from kit.life import (
@@ -220,6 +222,7 @@ from kit.tools import Context, Pack, Registry, Tool, ToolCall, ToolResult, defin
 from kit.tools.confirm import Held, ask_first, needs_yes, one_at_a_time, said_yes
 from kit.tools.core import ACTION_ARGS, core_pack
 from kit.tools.files import files_pack
+from kit.tools.house import house_pack
 from kit.tools.match import match
 from kit.tools.pc import pc_pack
 from kit.tools.private import for_cloud, lifted
@@ -794,6 +797,10 @@ class Brain:
         self.notes = Notes(memory.index, memory.clock)
         # Dan's folders in the index (kit.files); the server sets it up with the data folder.
         self.files: Files | None = None
+        # The house through Home Assistant (kit.house): set by use_house once
+        # house.enabled is on with a token; None means Kit has no house.
+        self.house: House | None = None
+        self.house_watch: Watcher | None = None
         # The tools a model may call mid-answer (kit.tools) and what there is to look
         # at this turn, set at the start of every turn.
         self.tool_context = Context()
@@ -2058,6 +2065,12 @@ class Brain:
         """Old "now" facts and stale notebook entries go. Returns how many."""
         return self.memory.tidy_now(self.settings().memory.now_days) + self.notebook.tidy()
 
+    def use_house(self, house: House) -> None:
+        """Give Kit the house (kit.house): the house pack, and what he notices in it."""
+        self.house = house
+        self.house_watch = Watcher(house, self.life, self.settings, self.memory.clock)
+        self.tools.add(house_pack(self))
+
     def note_activity(self) -> int:
         """Fold each day still in the PC's focus history into its ``activity`` item
         (kit.activity), so yesterday is kept after the history moves on."""
@@ -2303,6 +2316,8 @@ class Brain:
         if reason in ("curious", "watching") and self.life.curious_about:
             if self.life.curious_kind == "seen":
                 return f"you'd just seen {self.life.curious_about}"
+            if self.life.curious_kind == "house":
+                return f"you'd just noticed in the house: {self.life.curious_about}"
             return f"{owner} had just opened {self.life.curious_about}"
         return ""
 
@@ -2866,7 +2881,7 @@ class Brain:
                             "and answer now.",
                             ok=False,
                         )
-                    elif needs_yes(tool, pack, settings):
+                    elif needs_yes(tool, pack, settings, call.arguments):
                         done_calls.add(key)
                         result = self._hold(call, pack, text, role, message_id, owner)
                         if result.ok:

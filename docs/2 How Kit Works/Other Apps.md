@@ -1,8 +1,8 @@
 ---
 tags: [how-it-works, topic/apps, topic/home-app, topic/mettools]
-aliases: [home_app, MetTools, Configurators, Home Assistant]
-summary: How Kit fits with Dan's other apps - home_app shows and configures Kit, MetTools and Home Assistant become tools for him later - and the one rule, that Kit never depends on any of them.
-related: ["[[API]]", "[[Roadmap]]", "[[Privacy]]"]
+aliases: [home_app, MetTools, Configurators]
+summary: How Kit fits with Dan's other apps - home_app shows and configures Kit, MetTools becomes a tool for him later, Home Assistant is the house - and the one rule, that Kit never depends on any of them.
+related: ["[[API]]", "[[Roadmap]]", "[[Privacy]]", "[[The House]]"]
 ---
 
 # Other apps
@@ -17,7 +17,7 @@ flowchart LR
     Home["home_app (the home website)"] -- "calls Kit's API with a token" --> Kit["Kit's brain"]
     Kit -. "stage 4: tools over MCP" .-> Home
     Kit -. "stage 4: tools over MCP" .-> Met["MetTools"]
-    Kit -. "stage 4: WebSocket, non-admin" .-> HA["Home Assistant"]
+    Kit -- "WebSocket, non-admin" --> HA["Home Assistant"]
 ```
 
 ## The rule
@@ -59,14 +59,16 @@ server is unreachable its tools simply drop out.
 
 ## Home Assistant
 
-Also stage 4: Kit connects to Home Assistant over its WebSocket API as a
-non-admin user, to see and switch things in the house, with anything that
-matters confirmed first.
+Kit connects to Home Assistant over its WebSocket API as his own non-admin
+user, to see and switch what you expose to Assist, with locks, alarms and
+the garage confirmed first. If it's down he says the house is out of reach
+and carries on. See [[The House]].
 
 ## Go deeper
 - [[API]]: the endpoints home_app uses.
 - [[Roadmap]]: stage 4, tools.
 - [[Privacy]]: tokens, and what stays local.
+- [[The House]]: Home Assistant, the house pack and what he notices.
 
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/routes/`: the API other apps call, one file per part of Kit.
