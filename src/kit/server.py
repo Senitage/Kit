@@ -18,7 +18,7 @@ from fastapi import FastAPI
 import kit
 from kit.body_registry import BodyRegistry
 from kit.brain import Brain
-from kit.credentials import home_assistant_token
+from kit.credentials import app_token, home_assistant_token
 from kit.devices import DEVICES_FILE, Devices
 from kit.files.index import Files
 from kit.house.client import HomeAssistant
@@ -34,6 +34,7 @@ from kit.routes.life import pipe_up_now
 from kit.routes.state import AppState
 from kit.settings_store import SettingsStore
 from kit.speech.service import SpeechError, SpeechService
+from kit.tools.mcp import App
 
 __all__ = ["create_app", "life_tick", "pipe_up_now"]
 
@@ -64,6 +65,8 @@ def create_app(
     files_every_s: float | None = FILES_CHECK_S,
     house: House | None = None,
     house_every_s: float | None = HOUSE_CHECK_S,
+    apps: list[App] | None = None,
+    apps_run: bool = True,
 ) -> FastAPI:
     if faces is None:
         faces = KnownFaces(paths.state_dir / FACES_FILE if paths is not None else None)
@@ -86,6 +89,10 @@ def create_app(
         house = _house_from_settings(store, memory)
     if house is not None:
         brain.use_house(house)
+    if apps is None and not brain.apps:
+        apps = _apps_from_settings(store, brain)
+    for app_ in apps or []:
+        brain.use_app(app_)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -93,6 +100,8 @@ def create_app(
         if brain.house is not None and house_every_s:
             await brain.house.client.start()
             tasks.append(asyncio.create_task(_house_loop(brain, store, house_every_s)))
+        if apps_run:
+            tasks += [asyncio.create_task(a.run()) for a in brain.apps.values()]
         if summarise_every_s:
             tasks.append(asyncio.create_task(_upkeep_loop(brain, paths, store, summarise_every_s)))
         if life_every_s:
@@ -108,6 +117,8 @@ def create_app(
             task.cancel()
         if brain.house is not None:
             await brain.house.client.close()
+        for a in brain.apps.values():
+            await a.close()
         await brain.close()  # learning that was running after a reply
         await brain.cloud.close()
         if speech is not None:
@@ -167,6 +178,21 @@ def _house_from_settings(store: SettingsStore, memory: Memory) -> House | None:
         log.warning("house.enabled is on but there's no home_assistant_token in secrets")
         return None
     return House(HomeAssistant(s.url, token), memory.clock)
+
+
+def _apps_from_settings(store: SettingsStore, brain: Brain) -> list[App]:
+    """Dan's apps (``apps.servers``) with an address or a command, each with its
+    token from the secrets folder."""
+    settings = store.current()
+    out = []
+    for name, server in settings.apps.servers.items():
+        if not server.enabled or not (server.url or server.command):
+            continue
+        token = app_token(store.paths, name, server.token_secret)
+        if server.token_secret and not token:
+            log.warning("app %s: no %s in the secrets folder", name, server.token_secret)
+        out.append(App(name, server, token, store.current))
+    return out
 
 
 async def _house_loop(brain: Brain, store: SettingsStore, every_s: float) -> None:
@@ -292,6 +318,10 @@ async def _upkeep_loop(
             await asyncio.to_thread(brain.refresh_projects)
         except Exception:
             log.exception("keeping the PC's activity and projects failed")
+        try:
+            await brain.app_contents()  # once a day: each app's saved work into memory
+        except Exception:
+            log.exception("reading the apps' saved work failed")
         try:
             await asyncio.to_thread(brain.notes_tidy)  # Sundays: a look over the notes
         except Exception:

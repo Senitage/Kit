@@ -58,7 +58,8 @@ CHANNELS: dict[str, tuple[str, str]] = {
     "phone": (
         "on their phone, probably away from the desk",
         "Keep it short for a small screen. Their PC isn't in front of them, so don't assume "
-        "they can see it.",
+        "they can see it: tell them things rather than opening them. If you do open "
+        "something, it opens on the PC, so say it happened there.",
     ),
     "web": ("typing on your chat page in a browser", ""),
     "home": ("typing on your page in their home_app website, in a browser", ""),

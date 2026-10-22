@@ -18,7 +18,7 @@ import httpx
 
 from kit import checks, docs_check
 from kit.checks import CheckResult, Status
-from kit.credentials import api_token, cloud_api_key, home_assistant_token
+from kit.credentials import api_token, app_token, cloud_api_key, home_assistant_token
 from kit.memory import FACT_KINDS
 from kit.paths import KitPaths
 from kit.prices import PRICES_FILE, Prices
@@ -32,7 +32,8 @@ from kit.settings import (
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "cloud", "eyes"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "house", "apps"]
+CHECK_NAMES += ["cloud", "prices", "eyes"]
 
 
 def cmd_paths(paths: KitPaths) -> int:
@@ -78,6 +79,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.extend(checks.check_files(settings))
     if "house" not in skip:
         results.append(checks.check_house(settings, home_assistant_token(paths)))
+    if "apps" not in skip:
+        results.extend(checks.check_apps(settings, lambda n, s: app_token(paths, n, s)))
     if "cloud" not in skip:
         results.extend(checks.check_cloud(settings, lambda p: cloud_api_key(paths, p)))
     if "prices" not in skip:

@@ -585,6 +585,67 @@ class HouseSettings(_Section):
     )
 
 
+class AppServer(_Section):
+    url: str = Field(
+        "",
+        description="The app's MCP server address (streamable HTTP), e.g. "
+        "http://192.168.1.50:8001/mcp. Empty: start it with command instead.",
+    )
+    command: list[str] = Field(
+        default_factory=list,
+        description="A program that runs the app's MCP server on this machine (stdio), "
+        "e.g. ['python', '-m', 'kit_mcp.server'], when there's no url.",
+    )
+    token_secret: str = Field(
+        "",
+        description="The name of the file in Kit's secrets folder holding the app's token "
+        "for Kit (sent as a Bearer token, or as KIT_APP_TOKEN to a command). Empty: none.",
+    )
+    enabled: bool = Field(True, description="Off: Kit leaves the app alone.")
+    private: bool = Field(
+        False,
+        description="What the app gives back never reaches a cloud model as it is; only "
+        "the local model reads it (its money, its people).",
+    )
+    confirm: list[str] = Field(
+        default_factory=list,
+        description="The app's tools (by their own names) that always ask first, beyond "
+        "those the server marks as changing things.",
+    )
+    card: str = Field(
+        "",
+        description="One line on what the app is for, for Kit's prompt. Empty: the "
+        "server's own name for itself.",
+    )
+    words: list[str] = Field(
+        default_factory=list,
+        description="Words in a message that load the app's tools ('pump', 'calc').",
+    )
+    questions: list[str] = Field(
+        default_factory=list,
+        description="Example questions for the app; a message close in meaning loads it.",
+    )
+
+
+class AppsSettings(_Section):
+    servers: dict[str, AppServer] = Field(
+        default_factory=dict,
+        description="Your apps whose MCP servers Kit uses as tool packs, by a short name "
+        "(mettools, home_app). Restart Kit after adding one.",
+    )
+    relist_minutes: int = Field(
+        60,
+        ge=1,
+        le=1440,
+        description="How often Kit asks each app again which tools it has.",
+    )
+    contents_daily: bool = Field(
+        True,
+        description="Once a day, read each app's saved work (its contents tool) into "
+        "Kit's memory, so he can find it by meaning.",
+    )
+
+
 class ProjectsSettings(_Section):
     roots: list[str] = Field(
         default_factory=list,
@@ -1593,6 +1654,7 @@ class Settings(_Section):
     pc: PcSettings = Field(default_factory=PcSettings)
     projects: ProjectsSettings = Field(default_factory=ProjectsSettings)
     house: HouseSettings = Field(default_factory=HouseSettings)
+    apps: AppsSettings = Field(default_factory=AppsSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

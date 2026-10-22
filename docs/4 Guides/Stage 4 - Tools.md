@@ -337,10 +337,59 @@ wait for your yes, and he never writes over an edit you made meanwhile. See
 - [ ] **Tests:** `pytest -q tests/test_tools_notes.py tests/test_notes_edit.py`
   passes.
 
+## Part F1: your apps as packs
+
+Any app with an MCP server becomes a pack of Kit's tools: list it under
+`apps.servers` and its tools load when a message is about it. A tool that
+changes something asks first, a down app is said to be out of reach, and an
+app's saved work goes into his memory once a day. See
+[[Other Apps#Apps as packs]].
+
+### 1. Update Kit and add an app
+
+1. Update as in [[Updating Kit]].
+2. Put the app's token for Kit in the secrets folder, for example
+   `secrets/mettools_token`.
+3. Add the app, then restart Kit:
+
+   ```
+   kit config set apps.servers.mettools.url http://192.168.1.50:8001/mcp
+   kit config set apps.servers.mettools.token_secret mettools_token
+   kit config set apps.servers.mettools.words '["pump", "slurry", "calc", "MetTools"]'
+   ```
+
+   For a server that runs as a program on the box, set `command` instead of
+   `url`, like `'["python", "-m", "kit_mcp.server"]'`.
+
+### 2. Test before moving on
+
+- [ ] **The check:** `kit check` has an `app: mettools` line: "connected to
+  MetTools, N tools".
+- [ ] **Its tools:** "what can you do in MetTools?" lists its tools
+  (`mettools_status`).
+- [ ] **A look:** a read-only tool (saved work, a list) just runs.
+- [ ] **A change asks:** a tool the server marks destructive, or doesn't
+  mark at all, asks first; no leaves it undone.
+- [ ] **Your own confirm:** add a harmless tool's name to
+  `apps.servers.mettools.confirm`: now it asks too.
+- [ ] **Down:** stop the app's server: `kit check` fails its line, and "run
+  a pump calc in MetTools" gets "MetTools is out of reach right now", with
+  everything else about him fine. Start it again: within five minutes it's
+  back without restarting Kit.
+- [ ] **Saved work:** with a server that has a `contents` tool, the next day
+  `kit memory search` finds its rows, and "find my last pump calc" uses
+  `mettools_find`.
+- [ ] **Private:** set `apps.servers.home_app.private` true: its answers
+  reach Claude only as a local summary.
+- [ ] **The phone:** from the phone, "what's in my notes about Riverbend?"
+  tells you; "open it" opens it on the PC and he says so.
+- [ ] **No app talk unasked:** "Morning" loads only `core`.
+- [ ] **Tests:** `pytest -q tests/test_tools_mcp.py` passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: your own apps and
-MCP (F); the morning brief (G). The plan is in [[Roadmap]].
+In order, each with its own section here when it lands: MetTools in full
+(F2) and home_app (F3); the morning brief (G). The plan is in [[Roadmap]].
 
 ## If something's off
 

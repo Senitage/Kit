@@ -18,7 +18,7 @@ the options for any of them.
 |---|---|
 | `kit paths` | Show where Kit keeps his files. See [[Settings and Data]] |
 | `kit init` | Create the data folder and a starter settings file |
-| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only. The `house` line says whether Home Assistant answers, as which user, and how many things are exposed to Assist; it warns if Kit's user is an admin |
+| `kit check` | Check this machine is ready to run Kit (`--skip NAME` to skip one). The `files` lines list the file readers installed and each root: there, readable, and whether it's read-only. The `house` line says whether Home Assistant answers, as which user, and how many things are exposed to Assist; it warns if Kit's user is an admin. Each `app:` line says whether that app's MCP server answers and how many tools it has |
 | `kit serve` | Run the brain with its pages (`--host`, `--port` override the settings) |
 | `kit token` | Show the API token for the desk app, the eyes and home_app |
 | `kit pair NAME` | Pair a device (a phone) with a token of its own; shows a QR code (`--kind`, `--address`). See [[Phone App#Pairing]] |
