@@ -290,10 +290,57 @@ after dark and a light left on. See [[The House]].
 - [ ] **The eval:** `kit eval tools --pack house` passes offline.
 - [ ] **Tests:** `pytest -q tests/test_house.py` passes.
 
+## Part E1: your notes vault, properly
+
+Kit finds notes and tasks, lists what's due, adds under a heading, ticks a
+task off, starts a note from a template, opens one in Obsidian on the PC
+and undoes his last change. Edits, ticks and undo show the change first and
+wait for your yes, and he never writes over an edit you made meanwhile. See
+[[Notes on the NAS#Changing a note]].
+
+### 1. Update and restart Kit
+
+1. Update as in [[Updating Kit]] and restart Kit. The first sync after the
+   update reads every note once more, to pick up tasks, tags and links.
+2. Optional: if your daily notes or templates aren't set in Obsidian's own
+   settings, set `notes.daily_folder` and `notes.templates_folder`.
+
+### 2. Test before moving on
+
+- [ ] **What he sees:** `kit notes shape` lists the vault's folders, daily
+  notes, templates, tags and most linked notes, in 8 lines at most.
+- [ ] **Tasks:** `kit notes tasks` lists your open tasks; tick one in
+  Obsidian, wait for the sync (five minutes) and it's gone.
+- [ ] **To-do list:** "what's on my to-do list this week?" lists the tasks
+  due this week, soonest first.
+- [ ] **Finding:** "find my notes about the shed" names the notes.
+- [ ] **Under a heading:** "add check the spigot under This Week in my
+  Riverbend log" puts it at the end of that section, straight away.
+- [ ] **Ticking:** "tick off order filament" shows the change and asks; yes
+  ticks it in the note.
+- [ ] **Editing:** "change sandpaper to sanding discs in my shopping list"
+  shows the change and asks; no leaves the note alone.
+- [ ] **Your edit wins:** ask for a tick, then before saying yes, edit that
+  note in Obsidian and save. Say yes: he doesn't write, reads the note again
+  and asks once more.
+- [ ] **Undo:** after a tick, "undo that" asks, then puts the note back.
+  `kit notes undo` with nothing left says there's nothing to undo.
+- [ ] **A new note:** "start a note called Shed build from my Project
+  template" makes it in the vault with the template filled in.
+- [ ] **Opening:** with the desk app running, "open my holiday planner in
+  Obsidian" opens it on the PC.
+- [ ] **Never unasked:** "I'm out of glue" may offer to note it, never
+  writes it.
+- [ ] **Sunday:** on a Sunday, `/api/life/events` shows a `notes_tidy`
+  event if anything looks untidy, and nothing in the vault changed.
+- [ ] **The eval:** `kit eval tools --pack notes` passes.
+- [ ] **Tests:** `pytest -q tests/test_tools_notes.py tests/test_notes_edit.py`
+  passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: your notes vault,
-properly (E); your own apps and MCP (F); the morning brief (G). The plan is in [[Roadmap]].
+In order, each with its own section here when it lands: your own apps and
+MCP (F); the morning brief (G). The plan is in [[Roadmap]].
 
 ## If something's off
 

@@ -1314,20 +1314,54 @@ def _parse_link(text: str) -> dict:
     return {"system": system.strip(), "target": target.strip()}
 
 
-def cmd_notes(paths: KitPaths) -> int:
-    """Read the notes vault now and show what Kit sees."""
+def cmd_notes(paths: KitPaths, args: argparse.Namespace | None = None) -> int:
+    """``kit notes``: read the vault now and show what Kit sees; ``tasks``, ``shape``
+    and ``undo`` (kit.notes, kit.notes_tasks, kit.notes_edit)."""
     from kit.memory import Memory
-    from kit.notes import Notes
+    from kit.notes import NoteError, Notes, shape_lines
+    from kit.notes_edit import undo
+    from kit.notes_tasks import TASKS, due_window
 
     paths.ensure()
-    nas = SettingsStore(paths).current().nas
+    settings = SettingsStore(paths).current()
+    nas = settings.nas
+    action = getattr(args, "action", None) or "list"
     if not nas.vault:
         print("no notes vault set; see docs/4 Guides/Notes Setup.md (kit config set nas.vault ...)")
         return 1
+    if action == "undo":
+        try:
+            print(undo(nas, paths.state_dir / "notes" / "undo"))
+        except NoteError as e:
+            print(e)
+            return 1
+        return 0
     memory = Memory(paths.state_dir / "memory.db")
     try:
         notes = Notes(memory.index, memory.clock)
         indexed, removed = notes.sync(nas)
+        if action == "shape":
+            for line in shape_lines(notes.shape(nas, settings.notes)) or ["(nothing read yet)"]:
+                print(line)
+            return 0
+        if action == "tasks":
+            start, end = due_window(args.due, memory.clock())
+            tasks = sorted(
+                memory.index.items(TASKS, limit=1_000_000),
+                key=lambda t: (t.meta.get("due") or "9999", t.text),
+            )
+            if args.due:
+                tasks = [
+                    t
+                    for t in tasks
+                    if t.meta.get("due")
+                    and not (start and t.meta["due"] < start.isoformat())
+                    and not (end and t.meta["due"] > end.isoformat())
+                ]
+            for t in tasks:
+                print(f"- {t.text}")
+            print(f"{len(tasks)} open tasks")
+            return 0
         names = notes.names(limit=1_000_000)
         print(f"{len(names)} notes in {nas.vault} ({indexed} read now, {removed} gone)")
         for name in names[:15]:
@@ -1703,7 +1737,13 @@ def main(argv: list[str] | None = None) -> int:
     msub.add_parser("backup", help="back up memory now")
     msub.add_parser("spend", help="show this month's cloud spend")
 
-    sub.add_parser("notes", help="read the notes vault now and list what Kit sees")
+    notes = sub.add_parser("notes", help="the notes vault: what Kit sees, tasks, its shape, undo")
+    nsub = notes.add_subparsers(dest="action")
+    nsub.add_parser("list", help="read the vault now and list what Kit sees (the default)")
+    ntasks = nsub.add_parser("tasks", help="the open tasks in your notes")
+    ntasks.add_argument("--due", default="", help="today, tomorrow, week, overdue...")
+    nsub.add_parser("shape", help="how Kit sees the vault laid out (what his prompt says)")
+    nsub.add_parser("undo", help="undo Kit's last change to a note")
     eyes = sub.add_parser(
         "eyes", help="Kit's eyes: run them beside the camera (docs/4 Guides/Vision Stage 1.md)"
     )
@@ -1918,7 +1958,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "speech":
         return cmd_speech(paths, args)
     if args.command == "notes":
-        return cmd_notes(paths)
+        return cmd_notes(paths, args)
     if args.command == "eyes":
         return cmd_eyes(paths, args)
     if args.command == "hearing":

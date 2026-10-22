@@ -63,6 +63,12 @@ its matching update.
   `kit config set persona.knows "Lives in Richmond with ..."`, or on the
   settings page.
 
+### After the notes pack update
+
+The first notes sync after stage 4 part E1 reads every note in the vault once
+more, to pick up its tasks, tags and links. On a big vault on the NAS that
+first sync takes a little longer; after it, only changed notes are read.
+
 ## Try a pull request before it's merged
 
 ```

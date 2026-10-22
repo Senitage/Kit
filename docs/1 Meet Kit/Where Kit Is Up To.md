@@ -50,8 +50,9 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Laughs only when something is funny: a "hehe" stays only in a line with his laugh gesture, the rest come out before they're shown or said, and his self-sheet loses any laughing habit | Done, pull request #65 | [[Who Kit Is]], [[Voice#Laughs only when it's funny]] |
 | Stage 4, part B2: asking about your files mid-chat (find, read, list), a register link narrowing the folder, private folders reaching the cloud only as a local summary, "send it to Claude" for one message | Done, pull request #64 | [[Your Files#Asking about them]], [[Stage 4 - Tools]] |
 | Stage 4, part C1: doing things on your PC. Open files, folders, apps and sites within the PC's own rules, a window to the front, the media keys, a day's work kept as one note, your code projects | Done, pull request #66 | [[Desk App#Doing things on the PC]], [[Stage 4 - Tools]] |
-| Stage 4, part D1: the house through Home Assistant. Kit's own non-admin user, only what's exposed to Assist, lights, the aircon, scenes, blinds and locks with locks and the garage asking first, who's home, noticing a door after dark or a light left on | Open, pull request #67 | [[The House]], [[Stage 4 - Tools]] |
-| Stage 4, the rest: the notes vault, your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
+| Stage 4, part D1: the house through Home Assistant. Kit's own non-admin user, only what's exposed to Assist, lights, the aircon, scenes, blinds and locks with locks and the garage asking first, who's home, noticing a door after dark or a light left on | Done, pull request #67 | [[The House]], [[Stage 4 - Tools]] |
+| Stage 4, part E1: your notes vault, properly. Find notes and open tasks, what's due, add under a heading, tick a task, start from a template, open in Obsidian, every change shown first and undoable, never over your own edit, a Sunday look-over | Open, pull request #68 | [[Notes on the NAS#Changing a note]], [[Stage 4 - Tools]] |
+| Stage 4, the rest: your apps and MCP, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
 
@@ -60,7 +61,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
    presence in the room.
 3. Stage 4: the tool loop (#61, done), then pack matching and asking
    first (#62, done), then your files (#63, done) and the file tools (#64, done), PC control (#66, done), the house
-   (#67), the Claude Code bridge, MCP, and the home_app and MetTools connections
+   (#67, done), the notes vault (#68), the Claude Code bridge, MCP, and the home_app and MetTools connections
    ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
 
@@ -106,6 +107,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 20 Oct | Kit laughs only when something is funny | #65 |
 | 20 Oct | Stage 4 part B2: asking about your files | #64 |
 | 21 Oct | Stage 4 part C1: doing things on your PC | #66 |
+| 21 Oct | Stage 4 part D1: the house through Home Assistant | #67 |
 
 ## Keeping this note true
 

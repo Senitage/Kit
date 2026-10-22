@@ -20,15 +20,18 @@ The vault is the only place on the NAS Kit may write.
 
 from __future__ import annotations
 
+import json
 import re
+from collections import Counter
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 
 from kit.knowledge import Index
-from kit.settings import NasSettings
+from kit.notes_tasks import TASK, TASKS, tasks_in
+from kit.settings import NasSettings, NotesSettings
 
 NOTES = "notes"
 NOTE = "note"  # the kind of item: part of a note in the vault
@@ -38,6 +41,10 @@ ALL = 1_000_000  # every item of the source
 SKIP_DIRS = {"@eaDir", "#recycle", "#snapshot"}
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n?", re.S)
+_LINK = re.compile(r"\[\[([^\]|#^]+)")
+_PROP = re.compile(r"^([A-Za-z][\w -]*):(.*)$")
+SHAPE_LINES = 8  # at most this many lines about the vault in the prompt
+SHAPE_TOP = 8  # folders, tags and properties named in each line
 _ASKED = re.compile(
     r"^\W*(?:(?:can|could|would) you\s+|please\s+)*(?:(?:take|make|write|jot)\s+(?:down\s+)?"
     r"(?:a\s+)?(?:quick\s+)?(?:note|memo)?|note\b)\s*(?:down\s+)?(?:for me\s*)?"
@@ -64,6 +71,8 @@ _ADD_TO = re.compile(
     r"(?:\s+(?:note|notes|file|page))?\s*(?:please)?\W*$",
     re.IGNORECASE,
 )
+# "... under Hardware": a place in the note, left to the notes pack's append_note.
+_UNDER = re.compile(r"\bunder\s+(?:the\s+)?\w", re.IGNORECASE)
 # Asking about a note: "what's in my holiday planner?", "read me my shopping list".
 _READ = re.compile(
     r"\b(?:what'?s|whats|what is|what have i got|what do i have|read|open|show|check|"
@@ -79,6 +88,81 @@ _NOTEISH = {"note", "notes", "list", "file", "page", "planner", "plan", "log", "
 _UNSAFE = re.compile(r'[\\/:*?"<>|#^\[\]\x00-\x1f]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10))}
 _RESERVED |= {f"LPT{i}" for i in range(1, 10)}
+
+
+def front_matter(text: str) -> tuple[list[str], list[str]]:
+    """(tags, property names) from a note's front matter, read simply: ``key:
+    value`` lines, with tags as ``[a, b]``, ``a, b`` or a ``- a`` list."""
+    m = _FRONTMATTER.match(text.replace("\r\n", "\n"))
+    if not m:
+        return [], []
+    tags: list[str] = []
+    props: list[str] = []
+    key = ""
+    for line in m.group(0).split("\n")[1:-1]:
+        if line.startswith((" ", "\t", "-")) and key in ("tags", "tag"):
+            item = line.strip().lstrip("-").strip().strip("'\"#")
+            if item:
+                tags.append(item)
+            continue
+        p = _PROP.match(line)
+        if not p:
+            continue
+        key = p.group(1).strip().lower()
+        props.append(p.group(1).strip())
+        if key in ("tags", "tag"):
+            value = p.group(2).strip().strip("[]")
+            tags += [t.strip().strip("'\"#") for t in value.split(",") if t.strip()]
+    return tags, props
+
+
+@dataclass
+class Shape:
+    """How the vault is laid out, so Kit finds his way round it without coaching."""
+
+    notes: int = 0
+    folders: list[tuple[str, int]] = field(default_factory=list)
+    daily_folder: str | None = None
+    daily_format: str = ""
+    templates: str | None = None
+    tags: list[tuple[str, int]] = field(default_factory=list)
+    properties: list[str] = field(default_factory=list)
+    hubs: list[str] = field(default_factory=list)
+
+
+def _obsidian(vault: Path, name: str) -> dict:
+    try:
+        return json.loads((vault / ".obsidian" / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def shape_lines(shape: Shape) -> list[str]:
+    """At most ``SHAPE_LINES`` lines about the vault, for the notes pack's prompt."""
+    if not shape.notes:
+        return []
+
+    def top(pairs: list[tuple[str, int]]) -> str:
+        return ", ".join(f"{name} ({n})" for name, n in pairs[:SHAPE_TOP])
+
+    lines = [f"The notes vault: {shape.notes} notes."]
+    if shape.folders:
+        lines.append(f"Its folders: {top(shape.folders)}.")
+    if shape.daily_folder is not None:
+        where = shape.daily_folder or "the top of the vault"
+        named = f", named like {shape.daily_format}" if shape.daily_format else ""
+        lines.append(f"Daily notes go in {where}{named}.")
+    if shape.templates:
+        lines.append(f"Templates are in {shape.templates}.")
+    if shape.tags:
+        lines.append(
+            "Common tags: " + ", ".join(f"#{t} ({n})" for t, n in shape.tags[:SHAPE_TOP]) + "."
+        )
+    if shape.properties:
+        lines.append(f"Common properties: {', '.join(shape.properties[:SHAPE_TOP])}.")
+    if shape.hubs:
+        lines.append(f"The most linked-to notes: {', '.join(shape.hubs[:10])}.")
+    return lines[:SHAPE_LINES]
 
 
 class NoteError(Exception):
@@ -192,6 +276,8 @@ def request(message: str, names: Iterable[str]) -> Request | None:
             if added.group("note").split()[-1].lower() in _NOTEISH
             else None
         )
+        if note and _UNDER.search(added.group("what")):
+            return None  # under a heading: the model's append_note puts it there
         if note:
             return Request("add", note, added.group("what").strip(" '\""))
     if _WRITE.search(message):
@@ -251,6 +337,7 @@ class Notes:
         self.index = index
         self.clock = clock
         self._names: tuple[int, list[str]] | None = None  # (index changes seen, every name)
+        self._shape: tuple[tuple, Shape] | None = None
 
     # Reading
 
@@ -281,19 +368,145 @@ class Notes:
         gone = [ref for ref in known if ref not in seen]
         for ref in gone:
             self.index.delete_source(NOTES, ref)
+            self.index.delete_source(TASKS, ref)
         return indexed, len(gone)
 
-    def _known(self) -> dict[str, float]:
-        return {
-            item.ref: item.meta.get("mtime")
-            for item in self.index.items(NOTES, limit=ALL)
-            if item.ref is not None
-        }
+    def _known(self) -> dict[str, float | None]:
+        """Each indexed note's modified time; None for a note indexed before its
+        tags, links and tasks were kept, so the next sync reads it again."""
+        known: dict[str, float | None] = {}
+        whole: set[str] = set()
+        for item in self.index.items(NOTES, limit=ALL):
+            if item.ref is None:
+                continue
+            known.setdefault(item.ref, item.meta.get("mtime"))
+            if "links" in item.meta:
+                whole.add(item.ref)
+        return {ref: (mtime if ref in whole else None) for ref, mtime in known.items()}
 
     def _index_note(self, ref: str, name: str, text: str, mtime: float) -> None:
         self.index.delete_source(NOTES, ref)
-        for title, body in sections(name, text) or [(name, name)]:
-            self.index.add(NOTES, NOTE, body, title=title, ref=ref, meta={"mtime": mtime})
+        tags, props = front_matter(text)
+        links = sorted({m.strip() for m in _LINK.findall(text) if m.strip()})
+        for i, (title, body) in enumerate(sections(name, text) or [(name, name)]):
+            meta: dict = {"mtime": mtime}
+            if i == 0:  # the note's own facts ride on its first piece (Notes.shape)
+                meta.update(tags=tags, props=props, links=links)
+            self.index.add(NOTES, NOTE, body, title=title, ref=ref, meta=meta)
+        self._index_tasks(ref, text)
+
+    def _index_tasks(self, ref: str, text: str) -> None:
+        """The note's open tasks as ``tasks`` items (kit.notes_tasks)."""
+        self.index.delete_source(TASKS, ref)
+        note = ref.removesuffix(".md")
+        for task in tasks_in(note, text, self.clock().date()):
+            if task.done:
+                continue
+            meta = {
+                "note": note,
+                "heading": task.heading,
+                "line_no": task.line_no,
+                "due": task.due.isoformat() if task.due else None,
+            }
+            self.index.add(TASKS, TASK, task.line(), title=task.text, ref=ref, meta=meta)
+
+    def shape(self, nas: NasSettings, settings: NotesSettings | None = None) -> Shape:
+        """How the vault is laid out: its folders, daily notes and templates (from
+        Obsidian's own settings unless ``notes`` settings say otherwise), common tags
+        and properties, and the notes most linked to. Kept until a note changes."""
+        settings = settings or NotesSettings()
+        key = (self.index.changes(NOTES), settings.daily_folder, settings.templates_folder)
+        if self._shape is not None and self._shape[0] == key:
+            return self._shape[1]
+        shape = Shape()
+        folders: Counter[str] = Counter()
+        tags: Counter[str] = Counter()
+        props: Counter[str] = Counter()
+        linked: Counter[str] = Counter()
+        seen: set[str] = set()
+        for item in self.index.items(NOTES, limit=ALL):
+            if not item.ref or "links" not in item.meta or item.ref in seen:
+                continue
+            seen.add(item.ref)
+            folder = item.ref.rsplit("/", 1)[0] if "/" in item.ref else ""
+            if folder:
+                folders[folder.split("/", 1)[0]] += 1
+            tags.update(item.meta.get("tags") or [])
+            props.update(
+                p for p in item.meta.get("props") or [] if p.lower() not in ("tags", "tag")
+            )
+            linked.update(item.meta.get("links") or [])
+        shape.notes = len(seen) or len(self.names(limit=ALL))
+        shape.folders = folders.most_common()
+        shape.tags = tags.most_common()
+        shape.properties = [p for p, _ in props.most_common()]
+        shape.hubs = [n for n, c in linked.most_common(10) if c > 1]
+        vault = Path(nas.vault) if nas.vault else None
+        daily = _obsidian(vault, "daily-notes.json") if vault else {}
+        if settings.daily_folder:
+            shape.daily_folder = settings.daily_folder
+        elif daily or (vault and (vault / ".obsidian" / "daily-notes.json").exists()):
+            shape.daily_folder = str(daily.get("folder", "") or "")
+        if shape.daily_folder is not None:
+            shape.daily_format = str(daily.get("format", "") or "YYYY-MM-DD")
+        templates = _obsidian(vault, "templates.json") if vault else {}
+        shape.templates = settings.templates_folder or templates.get("folder") or None
+        self._shape = (key, shape)
+        return shape
+
+    def tidy_report(self, now: datetime, old_days: int = 30) -> list[str]:
+        """What looks untidy in the vault, for the Sunday look-over: open tasks in
+        notes untouched for ``old_days``, notes with no links in or out, and names
+        that look alike. It only reads the index and changes nothing."""
+        cutoff = now.timestamp() - old_days * 86400
+        mtimes: dict[str, float] = {}
+        links: dict[str, list[str]] = {}
+        for item in self.index.items(NOTES, limit=ALL):
+            if item.ref and "links" in item.meta:
+                mtimes[item.ref] = item.meta.get("mtime") or 0
+                links[item.ref] = item.meta.get("links") or []
+        old = [
+            t.title
+            for t in self.index.items(TASKS, limit=ALL)
+            if t.ref and mtimes.get(t.ref, now.timestamp()) < cutoff
+        ]
+        linked_to = {name.lower().rsplit("/", 1)[-1] for out in links.values() for name in out}
+        alone = [
+            ref.removesuffix(".md")
+            for ref, out in links.items()
+            if not out and Path(ref).stem.lower() not in linked_to
+        ]
+        stems: dict[str, list[str]] = {}
+        for ref in links:
+            stem = Path(ref).stem
+            stems.setdefault(stem[:3].lower(), []).append(stem)
+        alike = []
+        for group in stems.values():
+            for i, a in enumerate(group):
+                for b in group[i + 1 :]:
+                    if (
+                        a.lower() != b.lower()
+                        and SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.9
+                    ):
+                        alike.append(f"{a} / {b}")
+        lines = []
+        if old:
+            shown = "; ".join(old[:5]) + (f" and {len(old) - 5} more" if len(old) > 5 else "")
+            lines.append(f"{len(old)} open tasks in notes untouched for a month: {shown}")
+        if alone:
+            shown = ", ".join(alone[:5]) + (f" and {len(alone) - 5} more" if len(alone) > 5 else "")
+            lines.append(f"{len(alone)} notes nothing links to and that link nowhere: {shown}")
+        if alike:
+            lines.append(f"names that look alike: {', '.join(alike[:5])}")
+        return lines
+
+    def refresh(self, nas: NasSettings, path: Path) -> None:
+        """Read one note again into the index, right after Kit changed it."""
+        try:
+            ref = path.relative_to(Path(nas.vault or "")).as_posix()
+            self._index_note(ref, path.stem, path.read_text(encoding="utf-8"), path.stat().st_mtime)
+        except (OSError, ValueError):
+            pass  # the next sync reads it
 
     def names(self, limit: int = 40) -> list[str]:
         """The vault's notes (path without .md), most recently changed first. Read

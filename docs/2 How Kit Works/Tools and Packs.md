@@ -97,8 +97,13 @@ folder. The third is `pc` ([[Desk App#Doing things on the PC]]): `open_path`,
 `list_projects` and `open_project`. The fourth is `house`
 ([[The House#The tools]]): lights, switches, the aircon, scenes, blinds,
 locks and who's home, through Home Assistant, offered only while it's
-answering. The packs to come (the notes vault, your apps) plug in the same
-way: another card in the prompt, their
+answering. The fifth is `notes` ([[Notes on the NAS#Changing a note]]):
+`find_notes`, `list_tasks`, `append_note`, `edit_note`, `tick_task`,
+`new_note`, `open_note` and `undo_note`, loaded by words like "note",
+"to-do" or "tick off". It also adds a few lines about how your vault is laid
+out to the prompt while it's loaded (a pack's **context**), and its changes
+come with a **preview**, the change itself, shown with the question. The
+packs to come (your apps) plug in the same way: another card in the prompt, their
 definitions with the request, their own evals. A pack also carries how a
 message finds it (its **match words**, example questions and register
 systems) and its own questions for `kit eval tools`.

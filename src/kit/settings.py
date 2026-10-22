@@ -618,6 +618,27 @@ class NasSettings(_Section):
     )
 
 
+class NotesSettings(_Section):
+    daily_folder: str = Field(
+        "",
+        description="Where your daily notes are, inside the vault. Empty: what Obsidian's "
+        "Daily notes settings say.",
+    )
+    templates_folder: str = Field(
+        "",
+        description="Where your note templates are, inside the vault. Empty: what "
+        "Obsidian's Templates settings say.",
+    )
+    undo_keep: int = Field(
+        50, ge=1, le=1000, description="How many of Kit's note changes he can still undo."
+    )
+    tidy_weekly: bool = Field(
+        True,
+        description="On Sundays Kit looks over the vault (old open tasks, notes nothing "
+        "links to, look-alike names) and may mention it. He changes nothing.",
+    )
+
+
 class Example(_Section):
     user: str = Field(description="Something Dan says.")
     kit: str = Field(description="How Kit answers.")
@@ -1567,6 +1588,7 @@ class Settings(_Section):
     cloud: CloudSettings = Field(default_factory=CloudSettings)
     tools: ToolsSettings = Field(default_factory=ToolsSettings)
     nas: NasSettings = Field(default_factory=NasSettings)
+    notes: NotesSettings = Field(default_factory=NotesSettings)
     files: FilesSettings = Field(default_factory=FilesSettings)
     pc: PcSettings = Field(default_factory=PcSettings)
     projects: ProjectsSettings = Field(default_factory=ProjectsSettings)

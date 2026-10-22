@@ -68,7 +68,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from kit.activity import ACTIVITY, write_days
 from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
@@ -224,6 +224,7 @@ from kit.tools.core import ACTION_ARGS, core_pack
 from kit.tools.files import files_pack
 from kit.tools.house import house_pack
 from kit.tools.match import match
+from kit.tools.notes import notes_pack
 from kit.tools.pc import pc_pack
 from kit.tools.private import for_cloud, lifted
 from kit.weather import Weather, WeatherError
@@ -808,12 +809,14 @@ class Brain:
         self.tools.add(core_pack(self))
         self.tools.add(files_pack(self))
         self.tools.add(pc_pack(self))
+        self.tools.add(notes_pack(self))
         self.current_text = ""  # the message being answered, for tools that read it
         # The packs this turn loaded (kit.tools.match), and a call waiting for a yes.
         self.loaded_packs: list[str] = [p.name for p in self.tools.packs.values() if p.always]
         self.pending_tool: Held | None = None
         self._ran_held: tuple[str, str] | None = None  # the call a yes just ran
         self.pending_thing: int | None = None
+        self._notes_tidied: date | None = None  # the Sunday the notes were last looked over
         self.pending_note: tuple[str, str] | None = None  # (title, text) Kit offered to note
         self.pending_expert = ""  # the question Kit asked to hand to the expert model
         self.jobs: dict[int, Job] = {}
@@ -2083,6 +2086,33 @@ class Brain:
             self.memory.index, self.pc.spans, self.pc.recent_files, self.register, days
         )
 
+    def notes_tidy(self) -> list[str]:
+        """On Sundays (``notes.tidy_weekly``), what looks untidy in the notes vault
+        (kit.notes.Notes.tidy_report) goes into his notebook as something he may bring
+        up, and to the bodies as a ``notes_tidy`` event. He changes nothing. Once a day."""
+        settings = self.settings()
+        now = self.memory.clock()
+        if (
+            now.weekday() != 6
+            or not settings.notes.tidy_weekly
+            or not settings.nas.vault
+            or self._notes_tidied == now.date()
+        ):
+            return []
+        self._notes_tidied = now.date()
+        lines = self.notes.tidy_report(now)
+        if lines:
+            owner = settings.persona.owner
+            self.notebook.write(
+                "want",
+                f"I had a look over {owner}'s notes this week (I changed nothing): "
+                + "; ".join(lines)
+                + ". Mention it if it fits, lightly.",
+                again=True,
+            )
+            self.life.publish({"type": "notes_tidy", "lines": lines})
+        return lines
+
     def refresh_projects(self) -> int:
         """Once a day, Dan's code projects into the index (kit.projects)."""
         today = self.memory.clock().date()
@@ -2583,10 +2613,26 @@ class Brain:
         asking = tool.asking(call) if tool else call.line()
         if self.pending_tool is not None:
             return ToolResult(one_at_a_time(self.pending_tool.asking), ok=False)
+        preview = ""
+        if tool is not None and tool.preview is not None:
+            try:
+                preview = tool.preview(dict(call.arguments))
+            except Exception as e:  # it can't be done as asked: say so, ask nothing
+                return ToolResult(f"It can't be done as asked: {e}", ok=False)
         self.pending_tool = Held(
-            call, pack.name if pack else "", said, role, message_id, self.memory.clock(), asking
+            call,
+            pack.name if pack else "",
+            said,
+            role,
+            message_id,
+            self.memory.clock(),
+            asking,
+            preview,
         )
-        return ToolResult(ask_first(owner, asking))
+        text = ask_first(owner, asking)
+        if preview:
+            text += f"\nThe change, as it would be made (show {owner} the gist):\n{preview}"
+        return ToolResult(text)
 
     def _action_calls(self, reply: Reply, role: str) -> list[ToolCall]:
         """A look-up asked for the old way, as the reply's action, as a tool call.
@@ -2712,6 +2758,7 @@ class Brain:
             read_mood=READ_ON.get(),
             tools=self.tools.cards(self.loaded_packs),
             tool_names=[t.name for t in self._offered(role, settings)],
+            tool_context=self.tools.context(self.loaded_packs),
         )
 
     def _about_dan(self, role: str) -> str:
@@ -2890,6 +2937,7 @@ class Brain:
                                 "tool": call.name,
                                 "line": call.line(),
                                 "ask": tool.asking(call),
+                                "preview": self.pending_tool.preview if self.pending_tool else "",
                             }
                     else:
                         done_calls.add(key)

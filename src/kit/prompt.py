@@ -258,6 +258,7 @@ def system_prompt(
     read_mood: bool = False,
     tools: list[str] | None = None,
     tool_names: list[str] | None = None,
+    tool_context: list[str] | None = None,
 ) -> str:
     """Kit's prompt for one role: "local" (the local model), "chat", "work" or
     "expert" (a cloud model). ``helper`` and ``expert`` name the models a question can
@@ -380,6 +381,7 @@ def system_prompt(
     has = set(tool_names or [])  # look-ups offered as tools, not as actions
     if has:
         lines += tool_lines(owner, tools or [])
+        lines += tool_context or []  # what a loaded pack says about its corner (kit.tools)
     lines += [
         "Actions:" + (" most messages need none." if planning else ""),
         "- none: the usual.",

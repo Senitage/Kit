@@ -125,6 +125,9 @@ class Tool:
     # For a tool that asks only sometimes (the garage, not the blinds; the aircon
     # once a day): whether this call asks, from its arguments.
     confirm_if: Callable[[dict[str, Any], Settings], bool] | None = None
+    # For a tool that asks first: the change itself, shown with the question (a
+    # note's diff). It may raise; the question is then asked without it.
+    preview: Callable[[dict[str, Any]], str] | None = None
 
     def asking(self, call: ToolCall) -> str:
         """What the tool will do, in words, for the question Kit asks first."""
@@ -180,7 +183,9 @@ class Pack:
     message loads it (kit.tools.match): ``always``, a whole word from ``words``, a
     register thing linked into one of ``systems``, or meaning close to one of
     ``questions``. ``confirm`` names tools that ask first though they only ``act``;
-    ``cases`` are its questions for ``kit eval tools``."""
+    ``cases`` are its questions for ``kit eval tools``; ``context`` gives a few lines
+    about its corner of the world (how the notes vault is laid out), in the prompt
+    only while the pack is loaded."""
 
     name: str
     card: str
@@ -191,6 +196,7 @@ class Pack:
     always: bool = False
     confirm: list[str] = field(default_factory=list)
     cases: list[EvalCase] = field(default_factory=list)
+    context: Callable[[], list[str]] | None = None
 
     def offered(self) -> list[Tool]:
         return [t for t in self.tools if t.offered is None or t.offered()]
@@ -247,6 +253,23 @@ class Registry:
             else [self.packs[p] for p in packs if p in self.packs]
         )
         return [f"{pack.name}: {pack.card}" for pack in chosen if pack.offered()]
+
+    def context(self, packs: list[str] | None = None) -> list[str]:
+        """The loaded packs' own lines for the prompt (``Pack.context``)."""
+        chosen = (
+            self.packs.values()
+            if packs is None
+            else [self.packs[p] for p in packs if p in self.packs]
+        )
+        lines: list[str] = []
+        for pack in chosen:
+            if pack.context is None or not pack.offered():
+                continue
+            try:
+                lines += pack.context()
+            except Exception:  # a pack's own lines never stop a turn
+                log.exception("the %s pack's context failed", pack.name)
+        return lines
 
     async def run(self, call: ToolCall) -> ToolResult:
         """Run one call. A tool that fails, or one Kit doesn't have, becomes a result
