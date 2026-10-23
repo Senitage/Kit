@@ -1118,3 +1118,38 @@ def test_a_desk_command_for_this_pc_is_claimed_done_and_answered(qapp, desk_dir,
         desk.quit()
         desk.chat.close()
         desk.face.close()
+
+
+def test_too_much_memory_restarts_the_desk_app(qapp):
+    """A leak once took all of Windows' memory with it; past the limit the app
+    starts itself afresh in the tray instead."""
+    from types import SimpleNamespace
+
+    exits, hidden = [], []
+    desk = SimpleNamespace(
+        app=SimpleNamespace(exit=exits.append), tray=SimpleNamespace(hide=lambda: hidden.append(1))
+    )
+    check = desk_app.DeskApp.check_memory
+    assert not check(desk, lambda: 400.0) and exits == []
+    assert check(desk, lambda: desk_app.MEMORY_LIMIT_MB + 1.0)
+    assert exits == [desk_app.RESTART] and hidden == [1]
+
+
+def test_memory_is_private_bytes_where_windows_has_them():
+    from types import SimpleNamespace
+
+    windows = SimpleNamespace(memory_info=lambda: SimpleNamespace(private=3 * 2**20, rss=2**20))
+    linux = SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=2 * 2**20))
+    assert desk_app.memory_mb(windows) == 3.0
+    assert desk_app.memory_mb(linux) == 2.0
+    assert desk_app.memory_mb() > 0  # this process
+
+
+def test_a_restart_starts_a_fresh_app_in_the_tray(monkeypatch):
+    started = []
+    monkeypatch.delattr(desk_app.sys, "frozen", raising=False)
+    desk_app.restart(["kit-desk", "--background"], lambda cmd, **kw: started.append(cmd))
+    assert started == [[desk_app.sys.executable, "-m", "kit.desk", "--background"]]
+    monkeypatch.setattr(desk_app.sys, "frozen", True, raising=False)
+    desk_app.restart(["Kit.exe"], lambda cmd, **kw: started.append(cmd))
+    assert started[-1] == [desk_app.sys.executable, "--background"]

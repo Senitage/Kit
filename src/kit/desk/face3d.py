@@ -15,6 +15,11 @@ inside a see-through window flickers on Windows (the window and the page's GPU
 surface are composited separately), so this keeps the desktop window an ordinary
 painted one. Clicks, drags and the menu still go to that window. If Qt's web
 engine is missing or the page can't load, Glow stays.
+
+The page hands its frames (and whether Kit's model is drawn) back over a web
+channel, to ``_Bridge``. Asking with ``runJavaScript`` and a result callback looked
+simpler, but PySide never frees a string handed back that way: at 60 frames a
+second that leaked about 110 MB a minute until Windows ran out of memory.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ import logging
 import time
 from urllib.parse import urlencode
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, QUrl, Slot
 from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -36,14 +41,18 @@ log = logging.getLogger(__name__)
 APP = "desk"
 STEP_MS = 16  # how often face changes (and where the mouse is) are copied to the page
 FRAME_MS = 16  # how often the page's picture is copied to the window (up to 60 fps)
-FRAME_JS = "window.kit && kit.frame ? kit.frame() : null"
+BRIDGE = "kitDesk"  # the desk's object on the page's web channel
+# both answer through the bridge, never as runJavaScript results (see above)
+FRAME_JS = f"window.{BRIDGE} && {BRIDGE}.frame(window.kit && kit.frame ? kit.frame() || '' : '')"
+DRAWN_JS = f"window.{BRIDGE} && {BRIDGE}.drawn(!!(window.kit && window.kit.ready))"
+ASK_AGAIN_S = 1.0  # a frame asked for that never came back (a reload) is asked again
 PNG_PREFIX = "data:image/png;base64,"
 
 
 def available() -> bool:
     """Whether this desk app can show web pages (Qt's web engine is installed)."""
     try:
-        from PySide6 import QtWebEngineWidgets  # noqa: F401
+        from PySide6 import QtWebChannel, QtWebEngineWidgets  # noqa: F401
     except ImportError:
         return False
     return True
@@ -161,6 +170,8 @@ class Face3D:
         self.view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.view.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.view.page().setBackgroundColor(Qt.GlobalColor.transparent)
+        self._bridge = _Bridge(self)
+        _connect(self.view.page(), self._bridge)
         self.view.loadStarted.connect(self._loading)
         self.view.loadFinished.connect(self._loaded)
         self.view.resize(widget.size())
@@ -181,6 +192,7 @@ class Face3D:
         self.loads = 0  # page loads, for the log: a page reloading over and over shows here
         self.grabs = self.blanks = 0  # frames copied, and how many came back empty
         self._asking = False  # a frame has been asked for and not come back yet
+        self._asked = 0.0  # when
         self._told = time.monotonic()
         self.view.load(QUrl(self.url))
         self.view.show()
@@ -226,20 +238,22 @@ class Face3D:
         """Ask the page for its picture; ``_take`` paints it when it comes back. The
         page draws and reads the picture in one go, so it is never half drawn or
         empty, which copying the off-screen view itself can be on Windows."""
-        if self._asking:
+        now = time.monotonic()
+        if self._asking and now - self._asked < ASK_AGAIN_S:
             return
-        self._asking = True
-        self.view.page().runJavaScript(FRAME_JS, 0, self._take)
+        self._asking, self._asked = True, now
+        self.view.page().runJavaScript(FRAME_JS)
 
-    def _take(self, data) -> None:
+    def _take(self, data: str) -> None:
+        """A frame from the page: a PNG data URL, or empty (no ``kit.frame`` yet)."""
         self._asking = False
         if not self.covering:
             return
         frame = None
-        if isinstance(data, str) and data.startswith(PNG_PREFIX):
+        if data.startswith(PNG_PREFIX):
             frame = QPixmap()
             frame.loadFromData(base64.b64decode(data[len(PNG_PREFIX) :]), "PNG")
-        elif data is None:
+        elif not data:
             frame = self.view.grab()  # a brain without kit.frame yet
         self.grabs += 1
         if frame is None or _blank(frame):
@@ -265,7 +279,7 @@ class Face3D:
             self.run("".join(calls))
         self._steps += 1
         if self._steps % 30 == 1:  # twice a second: is Kit's model on screen?
-            self.view.page().runJavaScript("!!(window.kit && window.kit.ready)", 0, self._drawn)
+            self.view.page().runJavaScript(DRAWN_JS)
 
     def run(self, js: str) -> None:
         self.view.page().runJavaScript(f"window.kit && (function(){{{js}}})();")
@@ -289,6 +303,46 @@ class Face3D:
             del self.widget.play_show
         self.view.deleteLater()
         self.widget.update()
+
+
+class _Bridge(QObject):
+    """The desk's end of the page's web channel: the page calls these."""
+
+    def __init__(self, face3d: Face3D) -> None:
+        super().__init__(face3d.widget)
+        self.face3d = face3d
+
+    @Slot(str)
+    def frame(self, data: str) -> None:
+        self.face3d._take(data)
+
+    @Slot(bool)
+    def drawn(self, drawn: bool) -> None:
+        self.face3d._drawn(drawn)
+
+
+def _connect(page, bridge: _Bridge) -> None:
+    """Give ``page`` a web channel with ``bridge`` on it as ``window.kitDesk``, set up
+    again on every load (the face page reloads itself when the brain has a new one)."""
+    from PySide6.QtWebChannel import QWebChannel
+    from PySide6.QtWebEngineCore import QWebEngineScript
+
+    channel = QWebChannel(page)
+    channel.registerObject(BRIDGE, bridge)
+    page.setWebChannel(channel)
+    library = QFile(":/qtwebchannel/qwebchannel.js")  # carried inside Qt's web engine
+    if not library.open(QIODevice.OpenModeFlag.ReadOnly):
+        raise RuntimeError("Qt's web channel script is missing")
+    source = bytes(library.readAll().data()).decode()
+    script = QWebEngineScript()
+    script.setName("kit-desk-bridge")
+    script.setSourceCode(
+        source + f"\nnew QWebChannel(qt.webChannelTransport, function (c) "
+        f"{{ window.{BRIDGE} = c.objects.{BRIDGE}; }});"
+    )
+    script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+    script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+    page.scripts().insert(script)
 
 
 class _Resize(QObject):

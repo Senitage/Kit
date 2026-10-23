@@ -173,6 +173,15 @@ the desk as soon as the brain has them, with no new desk app. Clicks and drags
 still go to the Glow window underneath, and if the desk app has no web engine
 or the page can't load, Glow stays.
 
+> [!note]- Under the hood: how the page's pictures reach the window
+> The page renders off screen and the window paints its pictures (a web view
+> inside a see-through window flickers on Windows). Up to 60 times a second
+> the desk asks `kit.frame()` for a PNG, and the page hands it back over a Qt
+> web channel to the desk's `kitDesk` object, which also hears whether the
+> model is drawn. It never comes back as a `runJavaScript` result: PySide
+> never frees a string returned that way, and at 60 a second that leaked about
+> 110 MB a minute until Windows ran out of memory.
+
 `face.pack_folder` points the brain at a pack folder outside Kit, such as the
 `pack` folder the Blender project writes (from WSL, something like
 `/mnt/c/Users/<you>/Documents/Blender/Kit/Kit_3D_Face/pack`).

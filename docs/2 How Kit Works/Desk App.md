@@ -139,6 +139,11 @@ app" is found by meaning (`list_projects`) and opens in your editor
 - **Quit** stops his voice, lets the speakers go and closes the connection to
   the brain, so nothing hangs on the way out and the next start finds the
   sound device free.
+- **A memory limit**: the app normally uses a few hundred MB. If it ever passes
+  3 GB it says so in its log and starts itself afresh in the tray, so a leak
+  can't take the PC down. Once one did: the 3D face's pictures were never freed,
+  about 110 MB a minute, until Windows ran out and other apps crashed. That
+  leak is fixed (see [[Face In Depth#The 3D face page (no new desk app per face)]]).
 
 ## Connections
 
