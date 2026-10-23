@@ -53,6 +53,7 @@ def status(state: State) -> dict:
             "pending": brain.pending_tool.call.line() if brain.pending_tool else None,
             "recent": memory.tool_calls(10),
         },
+        "brief": brain.brief.status(memory.clock()),
     }
 
 

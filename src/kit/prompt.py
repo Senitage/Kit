@@ -663,19 +663,21 @@ PIPED_CHARS = 200  # Kit's pipe-up, quoted beside the answer to it
 # to three short sentences: too many bosses, and the model drops one at random.
 ASIDES_BUDGET = 2
 # Which asides give way first: a bad night beats answering a pipe-up, which beats
-# a homecoming, then one of the rest in this order (a new subject's hint gives way
-# first). None: not an aside but what the message is about (a goodbye, a question
-# about himself, a fact to check, words that may mean a hard time), always sent.
+# a homecoming, then the morning brief, then one of the rest in this order (a new
+# subject's hint gives way first). None: not an aside but what the message is about
+# (a goodbye, a question about himself, a fact to check, words that may mean a hard
+# time, a question about this morning's brief), always sent.
 ASIDE_RANKS = {
     "bad_night": 0,
     "pipe_up": 1,
     "homecoming": 2,
-    "bedtime": 3,
-    "news": 4,
-    "opener": 5,
-    "interview": 6,
-    "tone": 7,
-    "new_subject": 8,
+    "brief": 3,
+    "bedtime": 4,
+    "news": 5,
+    "opener": 6,
+    "interview": 7,
+    "tone": 8,
+    "new_subject": 9,
 }
 
 

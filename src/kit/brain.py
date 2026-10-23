@@ -73,6 +73,15 @@ from datetime import date, datetime, timedelta
 from kit.activity import ACTIVITY, write_days
 from kit.audience import aloud, audience_line, pets_by_kind, speaker_meta
 from kit.body_registry import BodyRegistry
+from kit.brief import (
+    FOLLOW_UP,
+    Brief,
+    asked_about,
+    brief_aside,
+    brief_prompt,
+    follow_up_aside,
+    sources_for,
+)
 from kit.channels import Arrival, channel_line, known
 from kit.cloud import Cloud, CloudAnswer, CloudError, tool_turns
 from kit.daily import Daily
@@ -805,6 +814,8 @@ class Brain:
         self.house_watch: Watcher | None = None
         self.apps: dict[str, App] = {}  # Dan's apps' MCP servers, each a pack (kit.tools.mcp)
         self._apps_read: date | None = None
+        # The morning brief (kit.brief): once a day, at the desk or in his first answer.
+        self.brief = Brief(memory, settings, sources_for(self))
         # The tools a model may call mid-answer (kit.tools) and what there is to look
         # at this turn, set at the start of every turn.
         self.tool_context = Context()
@@ -1056,6 +1067,7 @@ class Brain:
         if new_subject:
             asides.append(new_subject_note(owner))
             kinds.append("new_subject")
+        self._brief_asides(turn, asides, kinds)
         bedtime = next(
             (w for w in self.notebook.open_wants() if w.meta.get("nudge") == "sleep"), None
         )
@@ -1104,6 +1116,24 @@ class Brain:
             kinds.append(None)  # what the message may be about: always sent
         turn.asides, turn.kinds = asides, kinds
         MIND.set(turn.mind())
+
+    def _brief_asides(self, turn: Turn, asides: list[str], kinds: list[str | None]) -> None:
+        """The morning brief beside Dan's first message of the morning (brief.in_reply),
+        once; or, later that day, what was in it when he asks about "the second one"."""
+        now, owner = turn.now, turn.owner
+        given = self.brief.today(now)
+        if given:
+            if FOLLOW_UP.search(turn.text):
+                asides.append(follow_up_aside(owner, given, asked_about(turn.text, given)))
+                kinds.append(None)  # what the message is about
+            return
+        parts = self.brief.ready(now)
+        if not parts or not turn.settings.brief.in_reply or turn.farewell:
+            return
+        asides.append(brief_aside(owner, parts))
+        kinds.append("brief")
+        self.brief.mark_given(now, "reply")  # once, said or not, like the bedtime nudge
+        self.life.brief_ready = False
 
     def _quick_answer(self, turn: Turn) -> Reply | None:
         """An answer that needs no model: a no to the expert, a yes or no to a note or
@@ -1800,6 +1830,10 @@ class Brain:
         home = self.life.take_homecoming() if reason == "back" else None
         if reason == "back" and home is None:
             return  # the moment passed meanwhile
+        brief = self.brief.for_desk(self.memory.clock()) if reason == "brief" else []
+        if reason == "brief" and not brief:
+            self.life.brief_ready = False
+            return  # given meanwhile, in an answer, or the morning's over
         history = self.memory.recent(settings.brain.history_messages)
         share = self.notebook.to_share() if reason in SHARES else None
         if reason == "want" and share is None:
@@ -1813,7 +1847,7 @@ class Brain:
             aim, about = aim_of(share, owner, self.memory.clock())  # "tell Dan", not read out
         now = self.memory.clock()
         bar = settings.life.pipe_up_bar
-        if bar > 0 and home is None and reason not in ("nag", "visitor", "check_in"):
+        if bar > 0 and home is None and reason not in ("nag", "visitor", "check_in", "brief"):
             score, parts = self._pipe_up_score(reason, about, history, now)
             if score < bar:
                 why = f"had something to say, but it scored {score:.2f} of {bar:.2f} ({parts})"
@@ -1844,6 +1878,8 @@ class Brain:
                 prompt = homecoming_prompt(
                     home, owner, self.life.cheek(), now, also, settings.persona.speech
                 )
+            elif brief:
+                prompt = brief_prompt(owner, brief, settings.persona.speech)
             else:
                 prompt = pipe_up_prompt(
                     reason,
@@ -1885,6 +1921,12 @@ class Brain:
             LINT.reset(lint_token)
             MIND.reset(mind_token)
             self._keep_warm()
+        if brief:
+            self.life.brief_ready = False
+            if said:
+                self.brief.mark_given(now, "desk")
+            else:
+                self.brief.tried(now)  # again next beat, or in his next answer
         if not said:
             self.life.held_back(reason, home)
             if kept_quiet:  # he was about to say something, and thought better of it
@@ -2366,6 +2408,8 @@ class Brain:
         says it all."""
         if reason == "visitor":
             return f"you'd just said hi to {about}, who sat down at the desk"
+        if reason == "brief":
+            return f"it was {owner}'s morning brief"
         if aim:
             return f'you wanted to {aim}: "{about}"'
         if about:
@@ -2379,6 +2423,13 @@ class Brain:
                 return f"you'd just noticed in the house: {self.life.curious_about}"
             return f"{owner} had just opened {self.life.curious_about}"
         return ""
+
+    async def brief_tick(self) -> None:
+        """Once a beat: gather the morning brief while it's due, and tell his life it's
+        ready to say at the desk (``Life._urge_now`` asks for the "brief" pipe-up)."""
+        now = self.memory.clock()
+        parts = await self.brief.prepare(now)
+        self.life.brief_ready = bool(parts) and bool(self.brief.for_desk(now))
 
     async def think(self, trigger: tuple[str, str] | None = None) -> Thought | None:
         """One private thought (kit.thinking), kept in Kit's notebook. It may add

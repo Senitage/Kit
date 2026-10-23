@@ -31,6 +31,9 @@ related: ["[[Bodies]]", "[[Phone Stage 0 - Pairing]]", "[[Brain]]", "[[Privacy]]
   old news.
 - **Talk mode.** Said out loud rather than typed, so he answers short and
   natural, in his own voice.
+- **The morning brief in his first answer.** If the phone is where you talk
+  first in the morning, the brief comes after his answer. See
+  [[Companion#The morning brief]].
 - **Later:** his pipe-ups as notifications when you're away from the desk, a
   home-screen widget with his face, sharing things to him, and a few senses
   (home or out, walking, driving), always worked out on the phone and sent as

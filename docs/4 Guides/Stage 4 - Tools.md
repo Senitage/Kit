@@ -508,10 +508,42 @@ bills, fuel, cars and trips, with adding a trip stop asking first. See
   is out of reach right now"; start it again and it comes back on its own.
 - [ ] **No home talk unasked:** "Morning" loads only `core`.
 
+## Part G1: the morning brief
+
+Once a morning he gives you a few short things worth knowing: the weather,
+tasks due, a bill coming up, anything left on in the house, what you did
+yesterday and what he meant to ask. See [[Companion#The morning brief]].
+
+### 1. Update Kit and turn it on
+
+1. Update Kit and restart it ([[Updating Kit]]).
+2. Turn it on: `kit config set brief.enabled true`. The times and parts
+   are in [[Settings Reference#brief]].
+
+### 2. Test before moving on
+
+- [ ] **At the desk:** sit down after 7 without typing: he gives the
+  brief in two to four sentences, the most important first, then asks one
+  thing. `/api/status` shows `brief.given` as `desk`.
+- [ ] **Only once:** he doesn't give it again that day, even after a
+  restart.
+- [ ] **Talk first:** another morning, message him before he pipes up: his
+  answer to that message ends with the brief, and `brief.given` is `reply`.
+- [ ] **From the phone:** with the desk off, your first phone message of the
+  morning gets the brief after its answer.
+- [ ] **The second one:** "tell me more about the second one" talks about
+  the second thing he said.
+- [ ] **Left out:** with Home Assistant stopped, the brief comes without the
+  house part, and nothing breaks.
+- [ ] **Your parts:** `kit config set brief.parts '["weather","tasks"]'`
+  gives a brief with only those.
+- [ ] **Too late:** after 11 there's no brief until tomorrow.
+- [ ] **Tests:** `pytest -q tests/test_brief.py` passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: the morning brief
-(G). The plan is in [[Roadmap]].
+Stage 4's parts are all here. The Claude Code bridge is next; the plan is in
+[[Roadmap]].
 
 ## If something's off
 

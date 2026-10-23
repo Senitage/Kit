@@ -186,7 +186,7 @@ body should skip events and fields it doesn't know. See [[Phone App#Saying hello
 | `GET /api/face` | The character sheet in use |
 | `GET /api/face/presets` | Every character, and which one he is |
 | `GET /face/` | The 3D face page, plus `/face/api/info`, `/face/api/version`, `/face/model/...` |
-| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said, and `tools` (the `packs` he has, `hops` allowed, the packs the last message `loaded`, the call `pending` your yes or null, the ten most `recent` calls) |
+| `GET /api/status` | Version, models, spend (`cloud_month_aud`, `cloud_cap_aud`, where today's `prices` came from), memory size, what the PC, eyes and ears last said, and `tools` (the `packs` he has, `hops` allowed, the packs the last message `loaded`, the call `pending` your yes or null, the ten most `recent` calls) and `brief` (`enabled`, how it was `given` today or null, the `parts` gathered) |
 | `GET /api/health` | Is he up (no token) |
 | `GET /api/spend`, `GET /api/spend/summary?days=30` | Cloud spend in Australian dollars (`month_aud`, `cap_aud`, `aud_per_usd`), as a log (each call with its `cost_usd` as billed, `cost_aud` at the day's rate, `cached_tokens`, `cache_write_tokens` and `searches`) or per day and model (`cost_aud`, `total_aud`, with each model's `cached_tokens`) |
 
