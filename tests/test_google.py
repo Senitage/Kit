@@ -406,7 +406,7 @@ def test_times_the_model_writes_are_read_in_dans_zone():
     assert read_when("2026-10-24T04:00:00Z", SYD)[0].hour == 14
     with pytest.raises(ValueError, match="can't read the time"):
         read_when("Thursday arvo", SYD)
-    assert zone_for("Australia/Sydney").key == "Australia/Sydney"
+    assert zone_for("Australia/Sydney").utcoffset(datetime(2026, 7, 1)) == timedelta(hours=10)
     assert zone_for("Mars/Olympus") is not None  # falls back to this machine's
 
 
@@ -500,6 +500,7 @@ def make_brain(paths, fake, *outputs, claude=None, **google_settings):
     claude = claude or FakeAnthropic()
     recall = Recall(memory, FakeEmbedder(), store.current)
     brain = Brain(store.current, memory, model, make_cloud(memory, claude), recall)
+    brain.google_tz = lambda: SYD  # the same zone on every machine, zone database or not
     brain.use_google(google_for(paths, fake))
     return brain, memory, claude
 
