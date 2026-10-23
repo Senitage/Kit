@@ -84,6 +84,7 @@ repo, so settings can be shown and shared freely.
 | Google key | `GEMINI_API_KEY` or `GOOGLE_API_KEY`, or `secrets/gemini_api_key` |
 | Kit's API token | `secrets/api_token`, made on first use; `kit token` shows it |
 | Home Assistant token | `KIT_HOME_ASSISTANT_TOKEN`, or `secrets/home_assistant_token` (see [[The House#Setting it up]]) |
+| Google | `secrets/google_client.json` (your OAuth client, from Google Cloud) and `secrets/google_token.json` (the sign-in, made by `kit google connect`; see [[Mail and Calendar]]) |
 
 The desk app, the eyes and home_app each keep a copy of the token on their
 own machine. See [[Privacy]].

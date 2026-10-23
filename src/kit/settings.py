@@ -652,7 +652,61 @@ class AppsSettings(_Section):
     )
 
 
-BRIEF_PARTS = ("weather", "tasks", "bills", "house", "yesterday", "threads")
+BRIEF_PARTS = ("weather", "calendar", "mail", "tasks", "bills", "house", "yesterday", "threads")
+
+
+class GoogleSettings(_Section):
+    enabled: bool = Field(
+        False,
+        description="Use your Google account: Gmail and Google Calendar. Needs your own OAuth "
+        "client saved as google_client.json in the secrets folder, then `kit google "
+        "connect` to sign in. Restart Kit after turning it on.",
+    )
+    gmail: bool = Field(
+        True,
+        description="Mail: search and read, write drafts, and send after your yes. Off: the "
+        "sign-in doesn't ask for mail at all.",
+    )
+    calendar: bool = Field(
+        True,
+        description="Calendar: what's on, adding and moving events after your yes. Off: the "
+        "sign-in doesn't ask for calendars at all.",
+    )
+    send: bool = Field(
+        True,
+        description="Kit may send an email, always after showing it and getting your yes. "
+        "Off: he can only write drafts for you to send.",
+    )
+    calendar_write: bool = Field(
+        True,
+        description="Kit may add or move an event, always after your yes. Off: he can only "
+        "read the calendar.",
+    )
+    calendars: list[str] = Field(
+        default_factory=list,
+        description="The calendars he uses, by name or id. Empty: the ones you show in Google "
+        "Calendar.",
+    )
+    private: bool = Field(
+        False,
+        description="What he reads from Google reaches a cloud model only as the local "
+        "model's short summary. Needs a local model; with none, he can only say it's "
+        "private.",
+    )
+    remind_minutes: int = Field(
+        15,
+        ge=0,
+        le=180,
+        description="He mentions an event this many minutes before it starts, once, the way "
+        "he brings anything up (so not while you're busy or in quiet hours). 0: never.",
+    )
+    refresh_minutes: int = Field(
+        15,
+        ge=1,
+        le=1440,
+        description="How often he reads the coming events again for the brief, reminders and "
+        "his memory.",
+    )
 
 
 class BriefSettings(_Section):
@@ -673,8 +727,9 @@ class BriefSettings(_Section):
     )
     parts: list[str] = Field(
         default_factory=lambda: list(BRIEF_PARTS),
-        description="What goes in it, in this order: weather, tasks (due today or overdue in "
-        "your notes), bills (from an app's saved work, due in the next few days), house "
+        description="What goes in it, in this order: weather, calendar (today's events), mail "
+        "(what's new in the inbox), tasks (due today or overdue in your notes), bills (from an "
+        "app's saved work, due in the next few days), house "
         "(lights or the aircon left on, a door or the garage open), yesterday (what you "
         "worked on) and threads (things he meant to ask how they went).",
     )
@@ -1707,6 +1762,7 @@ class Settings(_Section):
     projects: ProjectsSettings = Field(default_factory=ProjectsSettings)
     house: HouseSettings = Field(default_factory=HouseSettings)
     apps: AppsSettings = Field(default_factory=AppsSettings)
+    google: GoogleSettings = Field(default_factory=GoogleSettings)
     brief: BriefSettings = Field(default_factory=BriefSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)

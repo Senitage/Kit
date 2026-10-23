@@ -33,6 +33,7 @@ a reference back to where it came from.
 | `tasks` | Every open task (a `- [ ]` line) in your notes, one item each, with its note as the ref, the heading it's under and its due date. Kept in step with the notes; a ticked task drops out ([[Notes on the NAS#Finding notes and tasks]]) | Stage 4 (E1) |
 | `app:<name>` | One of your apps' saved work (a calculation, a trip), one item per row its `contents` tool gives, its ref as the app says. Rewritten once a day; a private app's rows are titles only to a cloud model ([[Other Apps#Apps as packs]]) | Stage 4 (F1) |
 | `house` | The things in the house Home Assistant exposes to Kit, one item each ("Study lamp, a light in the Study") with its entity id as the ref, and one per room listing what's in it. Rewritten once a day ([[The House#In his memory]]) | Stage 4 (D1) |
+| `calendar` | The coming events on your Google calendars (a week back to two months ahead), one item each with its calendar and event id as the ref, when, where and the day. Rewritten once a day; mail is never kept ([[Mail and Calendar#The calendar he keeps in mind]]) | Stage 4 (H1) |
 | `photos` | Photo dates, places, people and captions | Stage 5 |
 | `notes` | Your Obsidian vault, by note and heading, kept in step with the files ([[Notes Setup|your notes]]) | Now |
 | `seen` | What Kit's eyes saw that's worth remembering: someone arriving after the desk was empty a while, the cat wandering in ([[Vision Stage 1|his eyes]]) | Vision 1 |

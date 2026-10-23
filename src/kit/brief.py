@@ -1,6 +1,7 @@
 """The morning brief: once a day, a few short things worth knowing, in Kit's own
-words. The weather, what's due in the notes, a bill coming up, anything left on in
-the house, what Dan worked on yesterday and what Kit meant to ask about.
+words. The weather, what's on the calendar, new mail, what's due in the notes, a
+bill coming up, anything left on in the house, what Dan worked on yesterday and what
+Kit meant to ask about.
 
 Each part is one line from a source the brain passes in (``Brief.sources``); a part
 that's off, empty or whose source is down is left out, and with nothing to say there's
@@ -24,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from kit.activity import ACTIVITY
+from kit.google.calendar import clock_words
 from kit.memory import Memory
 from kit.notes_tasks import TASKS
 from kit.settings import Settings
@@ -232,8 +234,9 @@ MOST = 3  # tasks, bills or things left on named in one part
 
 
 def sources_for(brain: Brain) -> dict[str, Source]:
-    """Each part's source, from what the brain has: its weather, notes index, apps'
-    saved work, the house, the activity days and the notebook."""
+    """Each part's source, from what the brain has: its weather, Dan's calendar and
+    inbox, the notes index, apps' saved work, the house, the activity days and the
+    notebook."""
 
     async def weather(now: datetime) -> str:
         if brain.weather is None:
@@ -246,6 +249,32 @@ def sources_for(brain: Brain) -> dict[str, Source]:
         if t.rain_chance is not None:
             bits.append(f"{t.rain_chance}% chance of rain")
         return f"Weather in {t.place}: {', '.join(bits)}." if bits else ""
+
+    async def calendar(now: datetime) -> str:
+        cals = brain.calendars
+        if cals is None or brain.google is None or not brain.google.connected:
+            return ""
+        if cals.refreshed is None:
+            await cals.refresh()
+        events = cals.today(now)
+        if not events:
+            return ""
+        shown = []
+        for e in events[: MOST + 1]:
+            when = "all day" if e.all_day else clock_words(e.start)
+            where = f" at {e.where}" if e.where else ""
+            shown.append(f"{e.title} ({when}{where})")
+        return "On the calendar today: " + ", ".join(shown) + "."
+
+    async def mail(now: datetime) -> str:
+        if brain.gmail is None or brain.google is None or not brain.google.connected:
+            return ""
+        found = await brain.gmail.search("in:inbox is:unread newer_than:1d category:primary", 10)
+        if not found:
+            return ""
+        names = ", ".join(f"{m.sender_name} about {m.subject}" for m in found[:MOST])
+        more = f" and {len(found) - MOST} more" if len(found) > MOST else ""
+        return f"New mail, unread: {names}{more}."
 
     async def tasks(now: datetime) -> str:
         today = now.date().isoformat()
@@ -308,6 +337,8 @@ def sources_for(brain: Brain) -> dict[str, Source]:
 
     return {
         "weather": weather,
+        "calendar": calendar,
+        "mail": mail,
         "tasks": tasks,
         "bills": bills,
         "house": house,

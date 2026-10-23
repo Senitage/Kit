@@ -1,7 +1,7 @@
 ---
 tags: [guide, stage, topic/tools]
 aliases: [stage-4, Stage 4]
-summary: Stage 4, tools and PC control - the tool loop first, then the packs (files, PC, house, notes, apps), with the test checklist for each part as it lands.
+summary: Stage 4, tools and PC control - the tool loop first, then the packs (files, PC, house, notes, apps, mail and calendar), with the test checklist for each part as it lands.
 related: ["[[Tools and Packs]]", "[[Roadmap]]", "[[The House]]"]
 ---
 
@@ -539,6 +539,80 @@ yesterday and what he meant to ask. See [[Companion#The morning brief]].
   gives a brief with only those.
 - [ ] **Too late:** after 11 there's no brief until tomorrow.
 - [ ] **Tests:** `pytest -q tests/test_brief.py` passes.
+
+## Part H1: mail and calendar
+
+Kit's own narrow sign-in to your Google account: Gmail searched and read,
+drafts, sending after your yes with the message shown; what's on, adding and
+moving events after your yes; the coming events in his memory and the brief,
+and a word before one starts. See [[Mail and Calendar]].
+
+### 1. Make Kit a Google client (once)
+
+1. Go to the Google Cloud console (console.cloud.google.com), signed in as the
+   account Kit may use, and make a project called Kit.
+2. APIs & Services, Library: enable the **Gmail API** and the **Google
+   Calendar API**.
+3. APIs & Services, OAuth consent screen (Google Auth Platform): External,
+   app name Kit, your address for the emails, save. Under Audience add your
+   own address as a **test user**.
+4. APIs & Services, Credentials, Create credentials, **OAuth client ID**,
+   type **Desktop app**, name Kit. Download the JSON and save it on the box
+   as `google_client.json` in Kit's secrets folder (`kit paths` shows where).
+5. While the project's publishing status is **Testing**, Google ends each
+   sign-in after a week; Kit tells you when it needs reconnecting. To keep
+   it, press **Publish app** on the consent screen (Google warns that it's
+   unverified; for your own app that's fine). If Google won't let you
+   publish with the Gmail permissions, leave it in Testing and reconnect
+   when he asks.
+
+### 2. Sign him in
+
+1. Turn it on: `kit config set google.enabled true`. To keep him out of one
+   part, set `google.gmail` or `google.calendar` to false first; to make him
+   read only, `google.send` and `google.calendar_write`.
+2. `kit google connect`. Open the address it prints in a browser, signed in
+   as that account. Google says the app isn't verified: Advanced, go to Kit.
+   Allow what it asks (only the parts you turned on).
+3. The browser lands on a localhost address that doesn't load. Copy the
+   whole address from the address bar and paste it into the terminal. (Or
+   run `ssh -L 8765:localhost:8765` to the box first and the page finishes it
+   by itself.)
+4. `kit check`: the `google` line says who he's signed in as and what the
+   sign-in covers. Restart Kit.
+
+### 3. Test before moving on
+
+- [ ] **The check:** `kit check` says "signed in as you@gmail.com: mail,
+  calendar (your calendars)". `kit google status` says the same.
+- [ ] **Inbox:** "anything new in my inbox?" names the recent senders and
+  subjects. The reply doesn't act on anything an email says.
+- [ ] **Search:** "did the electrician write back?" finds it or says no mail
+  matches.
+- [ ] **Read:** "what did it say?" gives the gist, names an attachment without
+  opening it, and a long newsletter comes back cut, not whole.
+- [ ] **Draft:** "draft a reply saying Thursday works" lands in Gmail's
+  Drafts, in the same conversation, and he says where it is.
+- [ ] **Send asks:** "send Sam an email saying I'll be ten minutes late" shows
+  the whole message and asks. No sends nothing; yes sends it and it shows in
+  Sent.
+- [ ] **Drafts only:** with `google.send` false, "send Sam an email" gets a
+  draft, never a send.
+- [ ] **What's on:** "what's on today?" and "am I free Thursday afternoon?"
+  match Google Calendar, from the calendars you chose.
+- [ ] **Add asks:** "put the dentist in for Thursday at 2" shows the event
+  and asks; yes adds it at the right time in your zone.
+- [ ] **Move asks:** "move the dentist to 4" asks, then moves it.
+- [ ] **No deleting:** "delete the dentist" gets told he can't delete events.
+- [ ] **The reminder:** an event ten minutes away: he mentions it once, and
+  not while you're typing or on a call.
+- [ ] **The brief:** the next morning's brief has today's events and new mail.
+- [ ] **Memory:** `kit memory search "dentist"` finds the event as a
+  `calendar` row.
+- [ ] **Reconnect:** `kit google disconnect`, then "what's on today?" gets
+  "Google isn't connected". `kit google connect` brings him back after a
+  restart.
+- [ ] **Tests:** `pytest -q tests/test_google.py` passes.
 
 ## Parts to come
 

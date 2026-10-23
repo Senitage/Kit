@@ -54,6 +54,7 @@ def status(state: State) -> dict:
             "recent": memory.tool_calls(10),
         },
         "brief": brain.brief.status(memory.clock()),
+        "google": brain.google.status() if brain.google is not None else None,
     }
 
 

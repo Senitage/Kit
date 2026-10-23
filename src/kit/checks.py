@@ -11,6 +11,7 @@ import json
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -263,6 +264,70 @@ def check_apps(settings: Settings, token_of, connect=None) -> list[CheckResult]:
         except Exception as e:  # a broken server mustn't stop the report
             results.append(CheckResult(f"app: {name}", Status.FAIL, f"{type(e).__name__}: {e}"))
     return results
+
+
+def check_google(
+    settings: Settings, paths: KitPaths, http: httpx.AsyncClient | None = None
+) -> CheckResult:
+    """Is Kit signed in to Google, and does Google still honour it? Says which parts
+    (mail, calendar) the sign-in covers and the calendars he'd use."""
+    import asyncio
+
+    from kit.google.auth import TokenStore
+    from kit.google.calendar import Calendars, zone_for
+    from kit.google.client import Google, GoogleError
+
+    s = settings.google
+    if not s.enabled:
+        return CheckResult("google", Status.SKIP, "google.enabled is off")
+    store = TokenStore(paths.secrets_dir)
+    if store.client() is None:
+        return CheckResult(
+            "google", Status.FAIL, "no google_client.json in the secrets folder (kit paths)"
+        )
+    if store.load() is None:
+        return CheckResult("google", Status.FAIL, "not signed in: run `kit google connect`")
+
+    async def look() -> CheckResult:
+        google = Google(store, lambda: datetime.now().astimezone(), http)
+        try:
+            account = await google.profile()
+            parts = []
+            if s.gmail and google.has("gmail"):
+                parts.append("mail")
+            if s.calendar and google.has("calendar"):
+                cals = Calendars(
+                    google,
+                    lambda: datetime.now().astimezone(),
+                    lambda: zone_for(settings.persona.timezone),
+                    lambda: s.calendars,
+                )
+                names = [c.name for c in await cals.list_calendars()]
+                parts.append(f"calendar ({', '.join(names) or 'none chosen'})")
+            missing = [
+                p for p, on in (("gmail", s.gmail), ("calendar", s.calendar))
+                if on and not google.has(p)
+            ]  # fmt: skip
+            detail = f"signed in as {account}: " + (", ".join(parts) or "nothing allowed")
+            if missing:
+                detail += (
+                    f"; the sign-in doesn't cover {', '.join(missing)}: "
+                    "run `kit google connect` again"
+                )
+                return CheckResult("google", Status.WARN, detail)
+            if not s.send and not s.calendar_write:
+                detail += "; read only"
+            return CheckResult("google", Status.PASS, detail)
+        except GoogleError as e:
+            status = Status.FAIL
+            return CheckResult("google", status, str(e))
+        finally:
+            await google.close()
+
+    try:
+        return asyncio.run(look())
+    except Exception as e:  # a broken socket mustn't stop the report
+        return CheckResult("google", Status.FAIL, f"{type(e).__name__}: {e}")
 
 
 def check_house(settings: Settings, token: str | None, connect=None) -> CheckResult:

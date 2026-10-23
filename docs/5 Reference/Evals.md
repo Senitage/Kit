@@ -65,7 +65,9 @@ folder, whether he's read your files), `pc`, and `house` (the study lamp
 off, is the aircon on, lock the front door, who's home: see
 [[The House#The tools]]) and `notes` (the to-do list this week, tick off
 the filament, notes about the shed, open the holiday planner: see
-[[Notes on the NAS#Changing a note]]). `kit eval tools --pack house` runs one pack's. With no Home Assistant set
+[[Notes on the NAS#Changing a note]]), `mail` and `calendar` (anything new in
+the inbox, a draft to the council, what's on today, the dentist in for
+Thursday: see [[Mail and Calendar]]). `kit eval tools --pack house` runs one pack's. With no Home Assistant set
 up, the house questions run against an empty stand-in, so nothing is
 switched.
 

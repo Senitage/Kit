@@ -18,11 +18,11 @@ Up: [[Home]] · Reference
 | **Area** | A room as Home Assistant knows it; a thing's room is its own area or its device's | [[The House#Only what you expose]] |
 | **Aside** | A stage direction in square brackets beside your message (a hello, a bedtime nudge, a bad night); at most two ride with one message | [[Brain#One voice, two asides at most]] |
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
-| **Brief** | The morning brief: a few short things worth knowing (weather, tasks, a bill, the house, yesterday), once a morning at the desk or in his first answer | [[Companion#The morning brief]] |
+| **Brief** | The morning brief: a few short things worth knowing (weather, the calendar, new mail, tasks, a bill, the house, yesterday), once a morning at the desk or in his first answer | [[Companion#The morning brief]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Contents tool** | A tool an app's MCP server offers that lists its saved work as rows, which Kit reads into memory once a day | [[Other Apps#Apps as packs]] |
-| **Capability pack** | A named set of tools with one card (the line in his prompt): `core` first, then files, the PC, the house, the notes vault, your apps | [[Tools and Packs#Packs]] |
+| **Capability pack** | A named set of tools with one card (the line in his prompt): `core` first, then files, the PC, the house, the notes vault, mail, the calendar, your apps | [[Tools and Packs#Packs]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
 | **Check-in** | The one gentle pipe-up he allows himself on a bad night, asking if you're okay | [[Inner Life In Depth#A bad night]] |
@@ -43,6 +43,7 @@ Up: [[Home]] · Reference
 | **Eyes** | The camera program that tells the brain what it sees, in words | [[Eyes]] |
 | **Exposed** | A Home Assistant thing you've exposed to Assist; the only things in the house Kit can see or switch | [[The House#Only what you expose]] |
 | **Follow-up window** | The few seconds after Kit stops talking when you can answer without his name | [[Hearing#When he answers]] |
+| **Google sign-in** | Kit's own narrow token for your Gmail and Google Calendar, made with `kit google connect` from an OAuth client of your own; revoked with `kit google disconnect` | [[Mail and Calendar#Signing in, and what he's allowed]] |
 | **Fact** | One thing Kit knows about you, with its kind and history | [[Memory]] |
 | **Features** | What the brain can do, each with a version number, sent to a body when it says hello | [[Phone App#Saying hello]] |
 | **Generation (voice)** | The number a reply's sentences carry to the voice engine; a sentence from a lower number than one already seen is dropped, so interrupting him doesn't leave the engine finishing the old reply | [[Voice#How a sentence becomes sound]] |

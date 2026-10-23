@@ -118,6 +118,7 @@ The notes come in layers. Each layer goes a step deeper than the one before.
 - [[Notes on the NAS]]: reading and writing Dan's Obsidian notes.
 - [[Your Files]]: the folders you choose, read into his memory so he can find what's in your documents.
 - [[The House]]: lights, the aircon, locks and who's home, through Home Assistant.
+- [[Mail and Calendar]]: your Gmail and Google Calendar, read freely, changed only after a yes.
 - [[Time and Weather]]: "Thursday arvo", the forecast and the shape of the week.
 - [[Other Apps]]: home_app and MetTools, and why Kit never depends on them.
 - [[Settings and Data]]: one data folder, one settings file, secrets and undo.

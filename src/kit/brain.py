@@ -87,6 +87,10 @@ from kit.cloud import Cloud, CloudAnswer, CloudError, tool_turns
 from kit.daily import Daily
 from kit.desk_commands import DeskCommands
 from kit.files.index import Files
+from kit.google.calendar import Calendars, plant_reminders, zone_for
+from kit.google.calendar import write_contents as write_calendar
+from kit.google.client import Google
+from kit.google.gmail import Gmail
 from kit.heard import (
     TONE_FEELINGS,
     HeardTurns,
@@ -228,10 +232,12 @@ from kit.shows import show_for
 from kit.things import Register, named_in
 from kit.thinking import THOUGHT_SCHEMA, THOUGHT_SHAPE, Thought, parse_thought, thinking_messages
 from kit.tools import Context, Pack, Registry, Tool, ToolCall, ToolResult, definitions
+from kit.tools.calendar import calendar_pack
 from kit.tools.confirm import Held, ask_first, needs_yes, one_at_a_time, said_yes
 from kit.tools.core import ACTION_ARGS, core_pack
 from kit.tools.files import files_pack
 from kit.tools.house import house_pack
+from kit.tools.mail import mail_pack
 from kit.tools.match import match
 from kit.tools.mcp import App, write_contents
 from kit.tools.notes import notes_pack
@@ -814,6 +820,12 @@ class Brain:
         self.house_watch: Watcher | None = None
         self.apps: dict[str, App] = {}  # Dan's apps' MCP servers, each a pack (kit.tools.mcp)
         self._apps_read: date | None = None
+        # Dan's Google account (kit.google): set by use_google once google.enabled is on
+        # and he's signed in; None means Kit has no mail or calendar.
+        self.google: Google | None = None
+        self.gmail: Gmail | None = None
+        self.calendars: Calendars | None = None
+        self._calendar_written: date | None = None
         # The morning brief (kit.brief): once a day, at the desk or in his first answer.
         self.brief = Brief(memory, settings, sources_for(self))
         # The tools a model may call mid-answer (kit.tools) and what there is to look
@@ -2118,6 +2130,47 @@ class Brain:
         self.house = house
         self.house_watch = Watcher(house, self.life, self.settings, self.memory.clock)
         self.tools.add(house_pack(self))
+
+    def use_google(self, google: Google) -> None:
+        """Give Kit Dan's Google account (kit.google): the mail and calendar packs,
+        each only for the part the sign-in covers and the settings allow."""
+        self.google = google
+        s = self.settings().google
+        if s.gmail:
+            self.gmail = Gmail(google)
+            self.tools.add(mail_pack(self))
+        if s.calendar:
+            self.calendars = Calendars(
+                google, self.memory.clock, self.google_tz, lambda: self.settings().google.calendars
+            )
+            self.tools.add(calendar_pack(self))
+
+    def google_tz(self):
+        """The owner's time zone, for the calendar (``persona.timezone``)."""
+        return zone_for(self.settings().persona.timezone)
+
+    async def calendar_tick(self) -> int:
+        """Every ``google.refresh_minutes``: the coming events again, into memory once
+        a day (the ``calendar`` source), and a want for one about to start
+        (kit.google.calendar). How many events are known."""
+        cals = self.calendars
+        if cals is None or self.google is None or not self.google.connected:
+            return 0
+        now = cals.now()  # zone-aware, like the cache's own stamp
+        gap = timedelta(minutes=self.settings().google.refresh_minutes)
+        if cals.refreshed is None or now - cals.refreshed >= gap:
+            await cals.refresh()
+            if self._calendar_written != now.date():
+                write_calendar(self.memory.index, cals.events)
+                self._calendar_written = now.date()
+        plant_reminders(
+            self.notebook,
+            cals.events,
+            now,
+            self.settings().google.remind_minutes,
+            self.settings().persona.owner,
+        )
+        return len(cals.events)
 
     def use_app(self, app: App) -> None:
         """Give Kit one of Dan's apps (kit.tools.mcp): its MCP server's tools as a pack."""
