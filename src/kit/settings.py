@@ -652,6 +652,52 @@ class AppsSettings(_Section):
     )
 
 
+BRIEF_PARTS = ("weather", "tasks", "bills", "house", "yesterday", "threads")
+
+
+class BriefSettings(_Section):
+    enabled: bool = Field(
+        False,
+        description="A short morning brief once a day: the weather, what's due, bills coming "
+        "up, anything left on in the house, yesterday and what he meant to ask about.",
+    )
+    after: str = Field(
+        "07:00",
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d$",
+        description="The brief is never given before this time...",
+    )
+    until: str = Field(
+        "11:00",
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d$",
+        description="...nor after this one: missed by then, it waits for tomorrow.",
+    )
+    parts: list[str] = Field(
+        default_factory=lambda: list(BRIEF_PARTS),
+        description="What goes in it, in this order: weather, tasks (due today or overdue in "
+        "your notes), bills (from an app's saved work, due in the next few days), house "
+        "(lights or the aircon left on, a door or the garage open), yesterday (what you "
+        "worked on) and threads (things he meant to ask how they went).",
+    )
+    at_desk: bool = Field(
+        True,
+        description="Say it at the desk, once he sees you there. Off: only in his answer to "
+        "your first message of the morning.",
+    )
+    in_reply: bool = Field(
+        True,
+        description="If you talk to him first (from the desk or the phone), the brief rides "
+        "with his answer.",
+    )
+
+    @field_validator("parts")
+    @classmethod
+    def _known_parts(cls, value: list[str]) -> list[str]:
+        unknown = [p for p in value if p not in BRIEF_PARTS]
+        if unknown:
+            raise ValueError(f"unknown brief parts {unknown}; known: {', '.join(BRIEF_PARTS)}")
+        return value
+
+
 class ProjectsSettings(_Section):
     roots: list[str] = Field(
         default_factory=list,
@@ -1661,6 +1707,7 @@ class Settings(_Section):
     projects: ProjectsSettings = Field(default_factory=ProjectsSettings)
     house: HouseSettings = Field(default_factory=HouseSettings)
     apps: AppsSettings = Field(default_factory=AppsSettings)
+    brief: BriefSettings = Field(default_factory=BriefSettings)
     persona: PersonaSettings = Field(default_factory=PersonaSettings)
     brain: BrainSettings = Field(default_factory=BrainSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

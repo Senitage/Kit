@@ -1061,6 +1061,7 @@ class Life:
         self.spotted: tuple[str, datetime] | None = None
         # Someone Kit knows who isn't Dan just sat down (who, when): a hello for them.
         self.visitor: tuple[str, datetime] | None = None
+        self.brief_ready = False  # the morning brief is gathered and due (kit.brief)
         self.was_off: tuple[datetime, datetime] | None = None  # the server was off then
         self.companion_since = now  # his first day (miffed waits a week from it)
         self.closeness = CLOSENESS_START
@@ -2325,6 +2326,12 @@ class Life:
             return "back", ""  # a hello as Dan sits down, whatever else is going on
         if self.visitor is not None:
             return "visitor", ""  # hello to whoever just sat down, by name
+        if (
+            self.brief_ready
+            and not self.awaiting_reply
+            and (snap is None or snap.idle_seconds >= TYPING_S)
+        ):
+            return "brief", ""  # the morning brief, once Dan's here and not mid-typing
         if self.spotted is not None and not self.bad_night():
             about, _ = self.spotted
             if snap is None or snap.idle_seconds >= TYPING_S:

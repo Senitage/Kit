@@ -121,6 +121,7 @@ flowchart TB
 | Module | What it does | Explained in |
 |---|---|---|
 | `src/kit/desk_commands.py` | Asking the desk app to do something on the PC: the `desk_command` event, the claim, the answer, the wait | [[Desk App#Doing things on the PC]], [[API]] |
+| `src/kit/brief.py` | The morning brief: its parts, when it's due, the desk pipe-up and the reply aside, "the second one" | [[Companion#The morning brief]] |
 | `src/kit/activity.py` | What you did on the PC each day, kept as one `activity` item a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
 | `src/kit/projects.py` | Your code projects, refreshed into the index once a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
 | `src/kit/pc_context.py` | The brain's side of what's on the PC | [[Desk App#What Kit learns from the PC]] |

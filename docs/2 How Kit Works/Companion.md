@@ -102,6 +102,37 @@ never an invented afternoon.
   quiet and his bubble says so; what he wanted to say can wait, and he tells
   you why he waited.
 
+## The morning brief
+
+Turn it on with `brief.enabled` and once a morning (between `brief.after` and
+`brief.until`, 7 to 11 by default) he gives you a few short things worth
+knowing, in his own words, the most important first, then asks one thing
+about the day:
+
+| Part | What it says |
+|---|---|
+| `weather` | Today's sky, top and chance of rain where you live |
+| `tasks` | Notes tasks due today or overdue |
+| `bills` | A bill in one of your apps due in the next four days |
+| `house` | Lights or the aircon still on, the garage or a door open, a lock undone |
+| `yesterday` | What you worked on at the PC yesterday |
+| `threads` | Things he meant to ask how they went |
+
+A part with nothing to say, or whose source is down, is left out; with
+nothing at all there's no brief. He gathers the parts ahead, so giving it
+costs one answer.
+
+- **At the desk** it's a pipe-up once you're there and not mid-typing
+  (`brief.at_desk`). If it comes out empty twice he leaves it for your next
+  message.
+- **If you talk first**, from the desk or the phone, it comes after his
+  answer to your first message (`brief.in_reply`). The phone gets it this
+  way until his pipe-ups reach it as notifications ([[Phone App]]).
+- **Once a day**, said or not. Later, "tell me more about the second one" or
+  "what was that bill?" gets that part again, with more if he can find it.
+- `/api/status` shows `brief`: on or off, whether it's been given today, and
+  the parts gathered ([[API]]).
+
 ## The stages so far
 
 | Stage | Theme | Guide |
@@ -122,6 +153,7 @@ goodbyes, hellos and honesty on any local model ([[Evals]]).
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/life.py`: hellos, goodbyes, miffs, closeness, games, bad nights.
 > - `src/kit/daily.py`: the once-a-day questions and nudges.
+> - `src/kit/brief.py`: the morning brief.
 > - `src/kit/notebook.py`: threads, wants and running jokes.
 > - `src/kit/pastimes.py`: what he does while you're out.
 > - `src/kit/when.py`: reading "Thursday arvo".

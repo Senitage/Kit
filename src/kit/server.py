@@ -270,10 +270,12 @@ async def life_tick(brain: Brain) -> None:
     """One heartbeat: drives move on, and Kit may pipe up or, failing that, have a
     thought of his own. Neither happens while he's answering something. Once a day
     he may think of a small game to suggest, a getting-to-know-you question, or a
-    nudge toward bed or outside (``Brain.offer_wants``). While Dan's out he finds
+    nudge toward bed or outside (``Brain.offer_wants``), and in the morning the
+    brief (``Brain.brief_tick``). While Dan's out he finds
     something to do (``Brain.start_pastime``), and late in the afternoon he settles
     any weather bet."""
     brain.offer_wants()
+    await brain.brief_tick()
     await brain.free_gpu()
     brain.life.wanting = brain.notebook.pressing()
     reason = brain.life.tick()

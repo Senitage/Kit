@@ -18,6 +18,7 @@ Up: [[Home]] · Reference
 | **Area** | A room as Home Assistant knows it; a thing's room is its own area or its device's | [[The House#Only what you expose]] |
 | **Aside** | A stage direction in square brackets beside your message (a hello, a bedtime nudge, a bad night); at most two ride with one message | [[Brain#One voice, two asides at most]] |
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
+| **Brief** | The morning brief: a few short things worth knowing (weather, tasks, a bill, the house, yesterday), once a morning at the desk or in his first answer | [[Companion#The morning brief]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
 | **Contents tool** | A tool an app's MCP server offers that lists its saved work as rows, which Kit reads into memory once a day | [[Other Apps#Apps as packs]] |

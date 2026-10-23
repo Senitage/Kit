@@ -198,6 +198,20 @@ Your apps whose MCP servers Kit uses as tool packs. See [[Other Apps#Apps as pac
 | `relist_minutes` | `60` | How often Kit asks each app again which tools it has. He also asks at once when the app says they changed. |
 | `contents_daily` | on | Once a day, read each app's saved work (its `contents` tool) into Kit's memory, so he can find it by meaning. |
 
+## brief
+
+The morning brief: a few short things worth knowing, once a morning. See
+[[Companion#The morning brief]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | off | Give the morning brief. |
+| `after` | `07:00` | The earliest he gives it (HH:MM). |
+| `until` | `11:00` | After this it waits for tomorrow (HH:MM). |
+| `parts` | `weather`, `tasks`, `bills`, `house`, `yesterday`, `threads` | What goes in it, in this order. Leave a part out to drop it. |
+| `at_desk` | on | Give it as a pipe-up once you're at the desk. Off: only in his answer to your first message. |
+| `in_reply` | on | If you talk first, give it after his answer to your first message of the morning (desk or phone). |
+
 ## persona
 
 Who Kit is and who he's with. See [[Who Kit Is]].
