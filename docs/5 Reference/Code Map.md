@@ -170,6 +170,8 @@ flowchart TB
 |---|---|---|
 | `src/kit/speech/service.py` | Runs the chosen engine and asks it for speech | [[Voice]] |
 | `src/kit/speech/worker.py` | One engine behind a tiny local web server | [[Voice#Engines]] |
+| `src/kit/speech/link.py` | Kit's end of the voice link: lines to the voice program, its sound back | [[Voice#His voice from another computer]] |
+| `src/kit/speech/program.py` | The voice program (`kit voice`): an engine on another computer's card, dialling in | [[Voice#His voice from another computer]] |
 | `src/kit/speech/turbo.py` | Chatterbox Turbo's token loop recorded as a CUDA graph | [[Voice#Faster on a graphics card]] |
 | `src/kit/speech/sentences.py` | Cutting words into speakable pieces | [[Voice]] |
 | `src/kit/speech/bench.py` | `kit speech bench` | [[Commands#Voice]] |

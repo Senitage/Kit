@@ -1,7 +1,7 @@
 ---
 tags: [guide, stage, topic/voice]
 aliases: [stage-3-voice]
-summary: Stage 3 part 1, Kit's voice - setting up each engine, changing his voice, moving to another machine, and the test checklist.
+summary: Stage 3 part 1, Kit's voice - setting up each engine, changing his voice, moving to another machine, his voice on another computer's graphics card, and the test checklist.
 ---
 
 # Stage 3, part 1: Kit's voice
@@ -162,6 +162,86 @@ What lives where:
 
 Then `kit speech use <name>`, `kit speech on`, and `kit speech say` to check.
 
+If the new machine has no graphics card, his Chatterbox voice can stay on the
+old one's: see the next section.
+
+## His voice on another computer
+
+Kit on a server with no graphics card can still speak with Chatterbox Turbo on
+the PC's card: the **voice program** runs on the PC and dials in to Kit (see
+[[Voice#His voice from another computer]]). Nothing on the PC listens on the
+network, so there's no port forward or firewall rule to add.
+
+On the PC, in WSL:
+
+1. **Only the voice program runs here, never Kit's server.** If an old copy of
+   Kit ran here, `systemctl is-enabled kit` must say `disabled`: two Kits on
+   one data folder split his memories.
+2. Update Kit's code: `git pull` in the WSL copy of Kit, then
+   `pip install -e .` in its `.venv`. The voice program is part of Kit, so it
+   runs with Kit's Python; the engine still runs with the Chatterbox Python
+   (`~/kit-voice/.venv` from the steps above).
+3. Tell it where Kit is, with the token from `kit token` on the server:
+
+   ```
+   kit voice connect http://kit-server:8600 TOKEN
+   ```
+
+   That's saved in `~/.config/kit-voice` (the token in a file of its own). It
+   never reads a Kit data folder on the PC, which may be an old copy.
+4. Try it in the foreground:
+
+   ```
+   kit voice --python ~/kit-voice/.venv/bin/python
+   ```
+
+   It says it's connected, then loads the engine once Kit asks for it (next
+   steps). Ctrl+C stops it. `--python` is the Python with Chatterbox
+   installed here; without it, the engine profile's `python` setting is used.
+
+On the server:
+
+5. Mark the engine as made on the other computer, keep a voice on the server
+   to fall back on, and switch to it:
+
+   ```
+   kit config set speech.engines.chatterbox-turbo.remote true
+   kit config set speech.fallback kokoro
+   kit speech use chatterbox-turbo
+   kit speech on
+   ```
+
+   His voice clip stays where it is, in the server's data folder
+   (`<data>/state/speech/`). Kit sends it to the voice program with the
+   engine's settings, which saves it in its own folder.
+6. `kit speech` shows the link at the bottom: the PC's name, `ready`, `cuda`
+   and the CUDA graph on. `kit speech say "Hello from the PC"` goes through
+   the server, so it shows the first sound as the desk hears it.
+
+Back on the PC, run it as a service so it starts with WSL (the logon task
+from [[Stage 0 - Server Setup]] keeps WSL running). Make
+`/etc/systemd/system/kit-voice.service`, with your user and paths:
+
+```ini
+[Unit]
+Description=Kit's voice on this PC's graphics card
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=you
+ExecStart=/home/you/Kit/.venv/bin/kit voice --python /home/you/kit-voice/.venv/bin/python
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `sudo systemctl daemon-reload` and `sudo systemctl enable --now kit-voice`.
+`journalctl -u kit-voice -f` shows it connecting and each sentence's timing.
+The engine's own messages go to `~/.config/kit-voice/logs/speech.log`.
+
 ## Commands
 
 - `kit speech`: the engines, which one is in use, and whether speech is on.
@@ -238,6 +318,25 @@ The engine's own messages go to `<data>/logs/speech.log`.
 - [ ] Send a new message while a long sentence is still being made: the server
       log shows the old line cut short and the new reply's sound comes within
       about half a second.
+
+His voice on another computer (after [[Stage 3 - Voice#His voice on another computer|the steps above]]):
+
+- [ ] `kit speech` on the server says the PC's voice is in use, and the link
+      line shows the PC's name, `ready`, `cuda` and the CUDA graph on.
+- [ ] `kit speech say "Testing from the PC"` on the server: the first sound
+      comes in about the time it did when Kit ran on the PC (about 0.8 s for a
+      short line), and the line shows how much of it was the PC making it.
+- [ ] Chat in the desk app: his voice is Heart's, and the first sound comes as
+      quickly as before.
+- [ ] `sudo systemctl stop kit-voice` on the PC while he talks: he carries on in
+      the server's voice from the next sentence, and `kit speech` says why.
+      `sudo systemctl start kit-voice`: within a few seconds he's back in the
+      PC's voice.
+- [ ] Restart the PC: the voice program reconnects by itself once WSL is up.
+- [ ] `kit speech off` on the server: the PC's graphics card memory is freed
+      (`nvidia-smi`); `kit speech on` loads it again.
+- [ ] After each switch his ears still ignore his own voice.
+- [ ] `systemctl is-enabled kit` in WSL on the PC says `disabled`.
 - [ ] `kit speech off`: within a few seconds `nvidia-smi` shows the memory freed,
       and replies are silent.
 - [ ] `kit speech use kokoro` while speech is on: the next reply is in Kokoro's

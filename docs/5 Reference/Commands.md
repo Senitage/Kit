@@ -137,10 +137,12 @@ See [[Register of Things]].
 | `kit speech` (`kit speech show`) | The voice engines, which one's in use and the fallback, on or off |
 | `kit speech use ENGINE` | Switch engine, e.g. `kit speech use chatterbox-turbo` |
 | `kit speech on` / `off` | Speak replies in the desk app, or stop (frees the engine's memory) |
-| `kit speech say TEXT` | Say a line and show how long it took (`--engine`, `--mood`) |
+| `kit speech say TEXT` | Say a line and show how long it took (`--engine`, `--mood`). With a remote engine it goes through Kit's running server and shows the first sound as the desk hears it |
 | `kit speech bench` | Compare engines on the same lines (`--engines`), with whether each fits the graphics card |
+| `kit voice` | On the PC with the graphics card: the voice program, dialling in to Kit to make his remote engine's lines (`--python` for the engine's Python, `--brain`, `--token`) |
+| `kit voice connect URL TOKEN` | Save where Kit is for the voice program, e.g. `http://kit-server:8600` and the token from `kit token` |
 
-See [[Voice]].
+See [[Voice]] and [[Voice#His voice from another computer]].
 
 ## Eyes
 

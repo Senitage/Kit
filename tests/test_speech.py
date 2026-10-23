@@ -768,13 +768,15 @@ class FakeSpeech:
     def ensure(self, engine=None):
         self.on = True
 
+    keep_ready = ensure
+
     def running(self):
         return self.on
 
     def stop(self):
         self.on = False
 
-    close = stop
+    close = idle = stop
 
     def quiet_s(self):
         return 99.0

@@ -256,9 +256,15 @@ async def _fetch_prices(prices: Prices) -> int:
     return 1 if problems else 0
 
 
-def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
+def cmd_speech(
+    paths: KitPaths,
+    args: argparse.Namespace,
+    launcher=None,
+    transport: httpx.BaseTransport | None = None,
+) -> int:
     """Kit's voice: show the engines, switch one, turn speech on or off, try a line,
-    or compare engines side by side."""
+    or compare engines side by side. A remote engine (the PC's voice) is made through
+    Kit's running server, which the voice program dials in to."""
     from kit.speech.service import SpeechError, SpeechService
 
     store = SettingsStore(paths)
@@ -283,12 +289,16 @@ def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
         for name, e in s.engines.items():
             mark = "*" if name == s.engine else " "
             voice = e.voice or e.reference or "-"
-            python = e.python or "(Kit's own)"
+            python = "(the voice program's)" if e.remote else e.python or "(Kit's own)"
             print(f"{mark} {name:<18} {e.kind:<17} {python:<28} {voice}")
+        if s.engines[s.engine].remote:
+            print("\n" + _voice_link_line(paths, transport))
         print("\nSwitch with: kit speech use <name>")
         print('Try one:     kit speech say "Hello" --engine <name> --mood happy')
         print("Compare:     kit speech bench --engines chatterbox-turbo kokoro")
         return 0
+    if action == "say" and s.engines[args.engine or s.engine].remote:
+        return _speech_say_through_kit(paths, args, transport)
     # A separate port, so this doesn't disturb the engine Kit's server is running.
     kwargs = {"launcher": launcher} if launcher else {}
     service = SpeechService(lambda: store.current().speech, paths, port_offset=1, **kwargs)
@@ -307,6 +317,88 @@ def cmd_speech(paths: KitPaths, args: argparse.Namespace, launcher=None) -> int:
         return 1
     finally:
         service.stop()
+
+
+def _kit_client(paths: KitPaths, transport: httpx.BaseTransport | None = None) -> httpx.Client:
+    """A client for Kit's running server on this machine, with his own token."""
+    s = SettingsStore(paths).current().brain
+    host = "127.0.0.1" if s.host in ("0.0.0.0", "::") else s.host
+    headers = {"Authorization": f"Bearer {api_token(paths)}"}
+    return httpx.Client(
+        base_url=f"http://{host}:{s.port}",
+        headers=headers,
+        timeout=httpx.Timeout(10.0, read=60.0),
+        transport=transport,
+    )
+
+
+def _voice_link_line(paths: KitPaths, transport: httpx.BaseTransport | None = None) -> str:
+    """How the voice link stands, as the running server sees it."""
+    try:
+        with _kit_client(paths, transport) as client:
+            status = client.get("/api/speech").json()
+    except (httpx.HTTPError, ValueError) as e:
+        return f"voice link: can't ask Kit's server ({type(e).__name__}); is it running?"
+    link = status.get("link") or {}
+    if not link.get("connected"):
+        return f"voice link: no voice program connected, so Kit speaks with {status.get('using')}"
+    graph = ", CUDA graph on" if link.get("cuda_graph") else ""
+    where = f"{link.get('name')} ({link.get('device') or '?'}{graph})"
+    line = f"voice link: {where}, {link.get('state') or 'idle'}"
+    if link.get("problem"):
+        line += f": {link['problem']}"
+    if link.get("last"):
+        last = link["last"]
+        line += f"; last line's first sound {last['first_s']:.2f} s ({last['there_s']:.2f} s there)"
+    return line + f". Kit speaks with {status.get('using')}."
+
+
+def _speech_say_through_kit(
+    paths: KitPaths, args: argparse.Namespace, transport: httpx.BaseTransport | None = None
+) -> int:
+    """Say a line with the engine Kit's server is using (a remote engine is only
+    reachable through it), timing the first sound as the desk would hear it."""
+    from kit.speech.bench import join_wavs
+    from kit.speech.sentences import SentenceSplitter
+    from kit.speech.service import pcm_wav
+
+    splitter = SentenceSplitter()
+    clips, engine = [], ""
+    with _kit_client(paths, transport) as client:
+        for n, piece in enumerate(splitter.feed(args.text + " ") + splitter.flush()):
+            body = {"text": piece, "emotion": args.mood, "first": n == 0, "aloud": False}
+            start = time.perf_counter()
+            first = None
+            try:
+                with client.stream("POST", "/api/speech/say", json=body) as r:
+                    if r.status_code != 200:
+                        r.read()
+                        detail = r.json().get("detail", r.text) if r.content else r.status_code
+                        print(f"Kit's server said no: {detail}")
+                        return 1
+                    engine = r.headers.get("x-engine", "")
+                    rate = int(r.headers.get("x-sample-rate", 24000))
+                    pcm = b""
+                    for chunk in r.iter_bytes():
+                        if first is None and chunk:
+                            first = time.perf_counter() - start
+                        pcm += chunk
+            except httpx.HTTPError as e:
+                print(f"can't reach Kit's server at {client.base_url} ({e}). Is it running?")
+                return 1
+            took = time.perf_counter() - start
+            clips.append(pcm_wav(pcm, rate))
+            audio = len(pcm) / 2 / rate
+            print(
+                f"  {first or 0:5.2f} s to first sound, {took:5.2f} s to make "
+                f"{audio:4.1f} s: {piece}"
+            )
+    folder = paths.state_dir / "speech" / "said"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = folder / f"{time.strftime('%Y%m%d-%H%M%S')}-{engine or 'kit'}.wav"
+    out.write_bytes(join_wavs(clips))
+    print(f"made by {engine or 'Kit'}; saved {out}")
+    return 0
 
 
 def _speech_say(paths: KitPaths, service, args: argparse.Namespace, stamp: str) -> int:
@@ -445,7 +537,11 @@ def cmd_serve(paths: KitPaths, args: argparse.Namespace) -> int:
 
     speech = SpeechService(lambda: store.current().speech, paths)
     app = create_app(store, memory, brain, token, paths=paths, speech=speech)
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    # Pings every 5 s, so a voice program on a PC that's switched off (kit voice) is
+    # noticed within 10 s rather than 40.
+    uvicorn.run(
+        app, host=host, port=port, log_level="warning", ws_ping_interval=5, ws_ping_timeout=5
+    )
     return 0
 
 
@@ -925,6 +1021,38 @@ def _enrol_voice(client, args: argparse.Namespace, settings, parts=None) -> int:
         f"Kit's ears know {done['name']}'s voice now ({done['count']} prints). Running ears "
         "pick this up by themselves; `kit hearing forget` undoes it."
     )
+    return 0
+
+
+def cmd_voice(paths: KitPaths, args: argparse.Namespace, program=None) -> int:
+    """``kit voice``: the voice program, on the PC with the graphics card. It dials
+    out to Kit's server and makes his remote engine's lines there (kit.speech.program).
+    It's its own small service, never Kit's server."""
+    from kit.speech import program as voice
+
+    if args.voice_action == "connect":
+        folder = voice.save_connection(args.url, args.token)
+        print(f"saved Kit's address and token in {folder}")
+        return 0
+    conn = voice.find_connection(args.brain, args.token)
+    if conn is None:
+        print(
+            "The voice program doesn't know where Kit is. Run `kit voice connect URL TOKEN` "
+            "with Kit's address (e.g. http://kit-server:8600) and the token from `kit token` "
+            "on his server."
+        )
+        return 1
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if program is None:
+        program = voice.VoiceProgram(conn.url, conn.token, python=args.python or "")
+    print(f"Kit's voice program: dialling {conn.url} (Ctrl+C stops it)")
+    try:
+        asyncio.run(program.run())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        program.close()
     return 0
 
 
@@ -1775,6 +1903,23 @@ def main(argv: list[str] | None = None) -> int:
     forget_face.add_argument("who")
     esub.add_parser("pause", help="switch the eyes off (the camera is released)")
     esub.add_parser("resume", help="switch the eyes on again")
+    voice = sub.add_parser(
+        "voice",
+        help="the voice program: Kit's voice on this PC's graphics card, dialling in to Kit",
+    )
+    voice.add_argument("--brain", help="Kit's address, e.g. http://kit-server:8600")
+    voice.add_argument("--token", help="Kit's API token (`kit token` on the server)")
+    voice.add_argument(
+        "--python",
+        help="the Python with the engine installed here, e.g. ~/kit-voice/.venv/bin/python "
+        "(default: the engine's python setting)",
+    )
+    vsub = voice.add_subparsers(dest="voice_action")
+    vconnect = vsub.add_parser(
+        "connect", help="save where Kit is, e.g. http://kit-server:8600 TOKEN"
+    )
+    vconnect.add_argument("url")
+    vconnect.add_argument("token")
     hearing = sub.add_parser(
         "hearing",
         help="Kit's ears: run them beside the mic (docs/4 Guides/Companion Stage 5.md)",
@@ -1966,6 +2111,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_eyes(paths, args)
     if args.command == "hearing":
         return cmd_hearing(paths, args)
+    if args.command == "voice":
+        return cmd_voice(paths, args)
     if args.command == "things":
         return cmd_things(paths, args)
     if args.command == "tools":

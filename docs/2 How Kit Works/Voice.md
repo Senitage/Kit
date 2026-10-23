@@ -1,7 +1,7 @@
 ---
 tags: [how-it-works, topic/voice]
 aliases: [Speech, kit.speech, Talking out loud]
-summary: How Kit talks out loud - a swappable voice engine on the server, speaking each sentence as soon as it's written, with his mood in his voice.
+summary: How Kit talks out loud - a swappable voice engine on the server or on another computer's graphics card, speaking each sentence as soon as it's written, with his mood in his voice.
 related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 ---
 
@@ -9,8 +9,10 @@ related: ["[[Stage 3 - Voice]]", "[[Desk App]]"]
 
 > [!ABSTRACT] In short
 > Kit speaks his replies through the desk PC's speakers in a voice of his own.
-> The **voice engine** runs on the server's GPU as its own small program, and
-> can be swapped (Chatterbox Turbo, Chatterbox, Kokoro, Piper). He speaks
+> The **voice engine** runs as its own small program, and can be swapped
+> (Chatterbox Turbo, Chatterbox, Kokoro, Piper). It runs on the server, or on
+> another computer's graphics card through the **voice program**, which dials
+> in to Kit, with a voice on the server taking over whenever it's away. He speaks
 > **sentence by sentence** as the brain writes, so he starts talking a few
 > words in, not after the whole reply, and a cloud answer as soon as its
 > first words arrive. Each sentence comes to the desk **in pieces as it's
@@ -53,6 +55,11 @@ sequenceDiagram
   the pieces into a whole clip. A sentence of a reply you've interrupted is cut
   short at its next piece.
 
+- **Each piece goes out the moment it's made.** The voice worker sends with
+  Nagle's algorithm off (`TCP_NODELAY`). With it on, the first piece, written
+  just after the answer's headers, waited for Kit to acknowledge them, which
+  Linux holds back for 40 ms: 47 ms to the first sound of a line of beeps
+  instead of 5 ms, on every line.
 - **The first sentence is cut short** where it can be, because an engine like
   Chatterbox makes a whole piece before any of it plays: at the first comma
   after at least four words ("Yeah, I had a look at that,"), or before an
@@ -141,7 +148,11 @@ Set `speech.fallback` (say to `kokoro`) and if his usual engine can't start
 or runs out of graphics card memory (that message exactly, from PyTorch, the
 CUDA driver or cuBLAS; other CUDA trouble isn't mistaken for it), he switches
 to it and carries on talking.
-He stays on it until his speech settings change. `GET /api/speech` shows which
+He stays on it until his speech settings change, and the backup stays loaded
+meanwhile: every few seconds Kit makes sure the voice he's *using* is loaded,
+not his usual one. (It used to load his usual one, which stopped the backup
+every minute to try the broken engine again.) A voice on another computer
+works differently: he goes back to it as soon as it's back, below. `GET /api/speech` shows which
 one he's `using` and why. `kit speech bench` ends each engine's line with
 whether it fits the graphics card: at most about 7.5 of 8 GB used at the peak,
 measured with everything else Kit keeps on the card.
@@ -178,6 +189,61 @@ Two more things the graph path does for the first sound:
   swapping its watermarker for one that does nothing). The `resemble-perth`
   package stays installed, since Chatterbox imports it on start-up.
 
+## His voice from another computer
+
+Kit's brain can run on a small server with no graphics card while his voice is
+still made on the PC's card, exactly as it sounds now, CUDA graph and all. A
+**voice program** (`kit voice`) runs on the PC, in WSL, as its own small
+service, and dials **out** to Kit with his token over a WebSocket. Nothing on
+the PC listens on the network, and Kit always knows whether it's there.
+
+```mermaid
+sequenceDiagram
+    participant Desk as Desk app
+    participant Kit as Kit (the server)
+    participant Program as Voice program (PC)
+    participant Engine as Voice engine (PC's card)
+    Program->>Kit: Dials in with Kit's token
+    Kit->>Program: Load chatterbox-turbo (with his voice clip)
+    Program->>Engine: Start it
+    Program-->>Kit: Ready
+    Desk->>Kit: Say sentence 1
+    Kit->>Program: Make it
+    Engine-->>Program: The first piece
+    Program-->>Kit: The first piece
+    Kit-->>Desk: The first piece, while the rest is made
+```
+
+- **One place to change his voice.** A voice engine profile with
+  `remote = true` is made by the voice program. Kit sends it the profile from
+  his settings and the voice clip from his data folder when it connects, and
+  again whenever either changes, so his voice is still changed on Kit with
+  `kit config` or the settings page.
+- **A voice on the server meanwhile.** Until the program has connected and
+  loaded the engine, Kit speaks with `speech.fallback` (Kokoro or Piper on the
+  server's processor), which he keeps loaded beside it. When the program
+  closes or the PC goes off he's back on the server's voice at once: the
+  connection closing, or at worst 10 s of missed pings. A sentence the link
+  drops before its first sound is said with the backup instead, so nothing he
+  says goes missing; one already playing is cut short there. As soon as the
+  program is back and ready, he speaks with the PC's voice again.
+- **What it costs.** One more hop on the home network for each piece. On one
+  machine the link adds about 2.5 ms to the first sound (7.5 ms through the
+  link against 5 ms on the server, with the beeping test engine); across a
+  wired home network add about a millisecond more. The voice itself takes
+  about 0.8 s for a short first sentence on the 2070 Super.
+- **Speech off frees the card.** `kit speech off`, or switching to an engine
+  on the server, tells the program to stop its engine, so the PC's graphics
+  card is free for other things. It stays connected, ready for next time.
+- **It keeps dialling.** If Kit restarts or the network drops, the program
+  tries again after a second, then longer, up to every 30 s, with the engine
+  still loaded, so the voice is back the moment Kit is.
+
+`GET /api/speech` and `kit speech` on the server show the link: which
+computer, whether its engine is ready, its device, whether the CUDA graph is
+on, and the last sentence's first sound with how much of that was making it.
+Setting it up: [[Stage 3 - Voice#His voice on another computer]].
+
 ## Engines
 
 | Profile | Engine | Runs on | Mood shows as |
@@ -202,11 +268,14 @@ kit speech use chatterbox-turbo     # switch engine
 kit speech on                       # speak replies in the desk app
 kit speech say "Hey, how do I sound?" --mood happy
 kit speech bench --engines chatterbox-turbo kokoro
+kit voice connect http://kit-server:8600 TOKEN   # on the PC: where Kit is
+kit voice                                        # on the PC: the voice program
 ```
 
 ## Go deeper
 - [[Stage 3 - Voice]]: setting up each engine, changing his voice, moving
-  Kit to another machine, and the test checklist.
+  Kit to another machine, his voice on another computer, and the test
+  checklist.
 - [[Desk App]]: where the sound comes out.
 - [[Companion Stage 4]]: sounds, the backup voice and the bench verdict, with
   the test checklist.
@@ -214,6 +283,8 @@ kit speech bench --engines chatterbox-turbo kokoro
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/speech/service.py`: runs the chosen engine and asks it for speech.
 > - `src/kit/speech/worker.py`: one engine behind a tiny local web server.
+> - `src/kit/speech/link.py`: Kit's end of the voice link, and its messages.
+> - `src/kit/speech/program.py`: the voice program, `kit voice`.
 > - `src/kit/speech/turbo.py`: Chatterbox Turbo's token loop as a CUDA graph, and
 >   the sound decoded a window at a time.
 > - `src/kit/speech/sentences.py`: cutting words into speakable pieces.

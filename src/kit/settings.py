@@ -1594,6 +1594,12 @@ class SpeechEngine(_Section):
         description="chatterbox-turbo on a graphics card: record its token loop as a CUDA "
         "graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop.",
     )
+    remote: bool = Field(
+        False,
+        description="Made on another computer's graphics card by the voice program there "
+        "(`kit voice`), which dials in to Kit; python is then the Python on that computer. "
+        "Until it's connected and loaded, Kit speaks with speech.fallback.",
+    )
 
 
 DEFAULT_SPEECH_ENGINES: dict[str, dict] = {

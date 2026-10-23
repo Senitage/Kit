@@ -224,14 +224,16 @@ async def _house_loop(brain: Brain, store: SettingsStore, every_s: float) -> Non
 
 async def _speech_loop(speech: SpeechService, store: SettingsStore, every_s: float) -> None:
     """Load the voice engine when speech is on, so the first reply isn't kept waiting
-    while it loads; stop it when speech is off, which frees the graphics card."""
+    while it loads; stop it when speech is off, which frees the graphics card. The
+    engine kept loaded is the one in use: the fallback once it has taken over, and
+    beside a remote engine (the PC's voice) so a dropped link carries straight on."""
     last_problem = ""
     while True:
         try:
             if store.current().speech.enabled:
-                await asyncio.to_thread(speech.ensure)
-            elif speech.running():
-                await asyncio.to_thread(speech.stop)
+                await asyncio.to_thread(speech.keep_ready)
+            else:
+                await asyncio.to_thread(speech.idle)
             last_problem = ""
         except SpeechError as e:
             if str(e) != last_problem:  # once per problem, not every few seconds

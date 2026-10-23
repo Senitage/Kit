@@ -371,6 +371,9 @@ class Worker:
 def make_handler(worker: Worker):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"  # pieces of sound as they're made, on one kept connection
+        # Each piece goes out at once. Without this the first piece, written just after
+        # the headers, waited for Kit to acknowledge them: 40 ms on Linux, every line.
+        disable_nagle_algorithm = True
 
         def log_message(self, *args) -> None:  # quiet: Kit logs what matters
             pass
