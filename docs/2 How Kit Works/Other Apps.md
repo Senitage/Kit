@@ -120,10 +120,30 @@ The home website (Django, on the NAS) has a **Kit section**:
 
 ## MetTools
 
-Dan's engineering calculators. Its MCP server runs calculations, saves them
-and reads saved work, and Kit uses it as the `mettools` pack. Full control
-(saved work as `contents` rows, opening a calculation, the most-used tools
-run headless and live on their pages) comes in part F2.
+Dan's engineering calculators. MetTools has its own MCP server (in its repo,
+`kit_mcp/server.py`), which Kit starts as a program on his box and uses as the
+`mettools` pack. Through it he can:
+
+| What | How it works | Asks first? |
+|---|---|---|
+| **Find saved work** | Saved calcs, projects, estimates, mass balances, documents and equipment, read from MetTools. Once a day they're also kept as the `app:mettools` source, so "my last tails pump calc" is found by meaning | No |
+| **Open a calculation** | Gets the save's address and opens it on your PC | No |
+| **Run a calculator** | The app's own engines, with no browser: from the defaults, or a variation on a save ("what if it's 40% solids?") | No |
+| **Save a result** | Files it as a new draft, never over an old one | Yes |
+| **Work on the page you have open** | Reads the page, fills fields, runs it, opens other tools, puts a note in the corner. Only listed while MetTools is open in your browser | Saving does |
+
+He reads the results MetTools gives back rather than doing the sums himself.
+Every calculator but the bulk conveyor (held back for a redesign) runs
+without a browser. Which tools ask first is MetTools' own call: its tools say
+what they do, and its admin page has a list of extra ones to confirm.
+
+### Setting it up
+
+MetTools' server runs **next to Kit**, not inside MetTools, and talks to
+MetTools' Kit API with a token of its own. Kit hands it two things when he
+starts it: the token from his secrets folder (as `KIT_APP_TOKEN`) and
+MetTools' address (from `env`). The calculators need Node.js 18 or newer on
+the box. The steps are in [[Stage 4 - Tools#Part F2: MetTools in full]].
 
 ## Home Assistant
 
@@ -134,19 +154,20 @@ and carries on. See [[The House]].
 
 ## Try it
 
-```
-kit config set apps.servers.mettools.url http://192.168.1.50:8001/mcp
-kit config set apps.servers.mettools.token_secret mettools_token
-kit config set apps.servers.mettools.words '["pump", "slurry", "calc", "MetTools"]'
-kit check
+```toml
+[apps.servers.mettools]
+command = ["/home/kit/METTOOLS/.venv/bin/python", "/home/kit/METTOOLS/kit_mcp/server.py"]
+env = { METTOOLS_URL = "http://192.168.1.50:8000/tools" }
+token_secret = "mettools_token"
+words = ["pump", "slurry", "calc", "estimate", "mass balance", "MetTools"]
 ```
 
-Restart Kit, then ask him: "what's in MetTools?"
+Restart Kit, run `kit check`, then ask him: "what's in MetTools?"
 
 ## Go deeper
 - [[API]]: the endpoints home_app uses.
 - [[Tools and Packs]]: packs, offering and asking first.
-- [[Stage 4 - Tools]]: part F1's setup and test checklist.
+- [[Stage 4 - Tools]]: parts F1 and F2, setup and test checklists.
 - [[Privacy]]: tokens, and what stays local.
 - [[The House]]: Home Assistant, the house pack and what he notices.
 

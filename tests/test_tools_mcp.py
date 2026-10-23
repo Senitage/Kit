@@ -255,6 +255,17 @@ def test_stdio_that_wont_start():
     asyncio.run(go())
 
 
+def test_a_command_gets_its_env_and_the_token():
+    s = settings(
+        url="", command=[sys.executable, SERVER], env={"METTOOLS_URL": "http://192.168.1.50:8000"}
+    )
+    app = App("trips", s.apps.servers["trips"], "tok", lambda: s)
+    client = app._client()
+    assert isinstance(client, StdioClient)
+    assert client.env == {"METTOOLS_URL": "http://192.168.1.50:8000", "KIT_APP_TOKEN": "tok"}
+    assert s.apps.servers["trips"].env == {"METTOOLS_URL": "http://192.168.1.50:8000"}
+
+
 def test_http_with_json_or_an_event_stream_and_a_session():
     fake = Server()
     seen = []

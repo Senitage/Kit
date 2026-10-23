@@ -139,7 +139,9 @@ class App:
             return self.connect(self)
         if self.server.url:
             return HttpClient(self.server.url, self.token, self._notified)
-        env = {"KIT_APP_TOKEN": self.token} if self.token else {}
+        env = dict(self.server.env)
+        if self.token:
+            env["KIT_APP_TOKEN"] = self.token
         return StdioClient(list(self.server.command), env, self._notified)
 
     def _notified(self, method: str, params: dict) -> None:
