@@ -211,11 +211,19 @@ On the server:
    kit speech on
    ```
 
-   His voice clip stays where it is, in the server's data folder
+   His voice clip must be on the server, in its data folder
    (`<data>/state/speech/`). Kit sends it to the voice program with the
-   engine's settings, which saves it in its own folder.
+   engine's settings, which saves it in its own folder. A `reference` that
+   points at a path on the PC (`/home/<you>/kit-voice/...`) isn't found on the
+   server, and Chatterbox then speaks in its own voice. Copy the clip across
+   and set it by name:
+
+   ```
+   scp ~/kit-voice/my_voice.wav you@kit-server:/var/lib/kit/state/speech/
+   kit config set speech.engines.chatterbox-turbo.reference my_voice.wav
+   ```
 6. `kit speech` shows the link at the bottom: the PC's name, `ready`, `cuda`
-   and the CUDA graph on. `kit speech say "Hello from the PC"` goes through
+   and the CUDA graph on, and a note if the voice clip is missing. `kit speech say "Hello from the PC"` goes through
    the server, so it shows the first sound as the desk hears it.
 
 Back on the PC, run it as a service so it starts with WSL (the logon task

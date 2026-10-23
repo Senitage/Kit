@@ -350,7 +350,10 @@ def _voice_link_line(paths: KitPaths, transport: httpx.BaseTransport | None = No
     if link.get("last"):
         last = link["last"]
         line += f"; last line's first sound {last['first_s']:.2f} s ({last['there_s']:.2f} s there)"
-    return line + f". Kit speaks with {status.get('using')}."
+    line += f". Kit speaks with {status.get('using')}."
+    if status.get("note"):
+        line += f"\nnote: {status['note']}"
+    return line
 
 
 def _speech_say_through_kit(
