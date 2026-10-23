@@ -445,10 +445,73 @@ himself and hands it MetTools' address and its token. See
   out of reach right now"; start it again and it's back on its own.
 - [ ] **Tests:** `pytest -q tests/test_tools_mcp.py` passes.
 
+## Part F3: home_app as a pack
+
+home_app's own MCP server joins Kit as the `home_app` pack: budgets,
+bills, fuel, cars and trips, with adding a trip stop asking first. See
+[[Other Apps#home_app as a pack]].
+
+### 1. Set it up on the box
+
+1. Redeploy home_app on the NAS so it has the new Kit API.
+2. Make Kit a token with everything he may see:
+
+   ```
+   docker exec -it home_app python mysite/manage.py kit_token create --grant finance trips trips-edit fuel vehicles
+   ```
+
+   (An old token from before can be given the new grants in the admin, or
+   revoked and made again.)
+3. Save it as `secrets/home_app_token` in Kit's data folder.
+4. Check out home_app on the box and give its server its own Python:
+
+   ```
+   git clone https://github.com/Senitage/home_app.git ~/home_app
+   cd ~/home_app && python3 -m venv .venv
+   .venv/bin/pip install -r kit_mcp/requirements.txt
+   ```
+
+5. Add it to Kit's `settings.toml` (your own paths and home_app's address),
+   then restart Kit:
+
+   ```toml
+   [apps.servers.home_app]
+   command = ["/home/kit/home_app/.venv/bin/python", "/home/kit/home_app/kit_mcp/server.py"]
+   env = { HOME_APP_URL = "http://192.168.1.50:8000" }
+   token_secret = "home_app_token"
+   private = false   # true once the box has a local model
+   card = "The household site: budgets, bills, fuel, vehicles and trips"
+   words = ["spend", "spent", "bill", "bills", "fuel", "trip", "trips", "holiday", "car", "rego", "budget"]
+   ```
+
+### 2. Test before moving on
+
+- [ ] **The check:** `kit check` says "app: home_app ... connected", with 9
+  tools.
+- [ ] **Fuel:** from the phone, "how much did we spend on fuel this month?"
+  gives the figure, and home_app's Kit Health page, under "What he's done
+  lately", shows `home_app_fuel_spending`.
+- [ ] **Bills:** "when's the next bill?" names it with its date.
+- [ ] **Spending:** "how's the budget going this month?" says what's over
+  and what's left.
+- [ ] **The car:** "when's the ute due for a service?" gives the next item
+  and roughly when.
+- [ ] **Later, private:** once the box has a local model, set
+  `apps.servers.home_app.private` to true: he answers from the local
+  model's short summary, and with it off says it's in a private source.
+- [ ] **A trip stop asks:** "add a stop in Richmond on the Riverbend trip"
+  finds the place and asks; no leaves the trip alone, yes adds it where you
+  said.
+- [ ] **Overnight:** the next day `kit memory search "Riverbend trip"`
+  finds it as an `app:home_app` row.
+- [ ] **home_app down:** stop home_app: "when's the next bill?" gets "home_app
+  is out of reach right now"; start it again and it comes back on its own.
+- [ ] **No home talk unasked:** "Morning" loads only `core`.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: home_app (F3); the
-morning brief (G). The plan is in [[Roadmap]].
+In order, each with its own section here when it lands: the morning brief
+(G). The plan is in [[Roadmap]].
 
 ## If something's off
 

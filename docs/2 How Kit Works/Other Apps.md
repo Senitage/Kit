@@ -114,9 +114,28 @@ The home website (Django, on the NAS) has a **Kit section**:
   face. See [[Face]].
 - The Kit pages are for people given `view_kit` or `control_kit` in
   home_app, since memories are private.
-- home_app also has an MCP server (trips, vehicles, bills, fuel), which Kit
-  uses as the `home_app` pack, marked private. Its labels and `contents`
-  rows come in part F3.
+
+### home_app as a pack
+
+home_app also has an MCP server (in its repo, `kit_mcp/server.py`), which Kit
+starts on his box like MetTools' and uses as the `home_app` pack. For now
+his cloud model reads its answers directly, since the box has no local model.
+When it has one again, set `apps.servers.home_app.private` to true and they
+reach a cloud model only as the local model's short summary.
+
+| Ask | What he uses | Asks first? |
+|---|---|---|
+| "How's spending going this month?" | The month's budgets: spent against planned, safe to spend | No |
+| "When's the next bill?" | Bills due, expected or overdue in the next few weeks | No |
+| "How much did we spend on fuel this month?" | The month's litres, spend and fills, per car, and the month before | No |
+| "When's the car due for a service?" | Each car's odometer now and what's due next | No |
+| "Add a stop in Richmond on the Riverbend trip" | Reads the trip, finds the place, then adds the stop | Yes |
+
+The money tools give totals and statuses, never single transactions. Once a
+day he reads home_app's trips, cars, bills due soon and each month's fuel as
+the `app:home_app` source, so "that trip we planned for November" is found
+by meaning. The Kit section's Health page lists his last ten tool calls, so
+you can see what he looked at.
 
 ## MetTools
 
@@ -167,7 +186,7 @@ Restart Kit, run `kit check`, then ask him: "what's in MetTools?"
 ## Go deeper
 - [[API]]: the endpoints home_app uses.
 - [[Tools and Packs]]: packs, offering and asking first.
-- [[Stage 4 - Tools]]: parts F1 and F2, setup and test checklists.
+- [[Stage 4 - Tools]]: parts F1 to F3, setup and test checklists.
 - [[Privacy]]: tokens, and what stays local.
 - [[The House]]: Home Assistant, the house pack and what he notices.
 
