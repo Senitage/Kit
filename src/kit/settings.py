@@ -596,6 +596,12 @@ class AppServer(_Section):
         description="A program that runs the app's MCP server on this machine (stdio), "
         "e.g. ['python', '-m', 'kit_mcp.server'], when there's no url.",
     )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Settings handed to the command as environment variables, e.g. "
+        "{METTOOLS_URL = 'http://192.168.1.50:8000/tools'}. Never a secret: use "
+        "token_secret for that.",
+    )
     token_secret: str = Field(
         "",
         description="The name of the file in Kit's secrets folder holding the app's token "

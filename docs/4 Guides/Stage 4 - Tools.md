@@ -386,10 +386,69 @@ app's saved work goes into his memory once a day. See
 - [ ] **No app talk unasked:** "Morning" loads only `core`.
 - [ ] **Tests:** `pytest -q tests/test_tools_mcp.py` passes.
 
+## Part F2: MetTools in full
+
+MetTools' own MCP server joins Kit as the `mettools` pack: saved work,
+calculators with no browser, and the page you have open. Kit starts it
+himself and hands it MetTools' address and its token. See
+[[Other Apps#MetTools]].
+
+### 1. Set it up on the box
+
+1. Update Kit as in [[Updating Kit]].
+2. In the MetTools container, make Kit a token:
+   `python manage.py kit_token create`. It prints the key once.
+3. On Kit's box, save it as `secrets/mettools_token` in Kit's data folder.
+4. Check out MetTools on the box and give its server its own Python:
+
+   ```
+   git clone https://github.com/Senitage/METTOOLS.git ~/METTOOLS
+   cd ~/METTOOLS && python3 -m venv .venv
+   .venv/bin/pip install -r kit_mcp/requirements.txt
+   node --version     # 18 or newer, for the calculators; sudo apt install nodejs if not
+   ```
+
+5. Add it to Kit's `settings.toml` (your own paths and MetTools' address,
+   with its `/tools` prefix if it has one), then restart Kit:
+
+   ```toml
+   [apps.servers.mettools]
+   command = ["/home/kit/METTOOLS/.venv/bin/python", "/home/kit/METTOOLS/kit_mcp/server.py"]
+   env = { METTOOLS_URL = "http://192.168.1.50:8000/tools" }
+   token_secret = "mettools_token"
+   card = "Dan's engineering calculators and saved work"
+   words = ["pump", "slurry", "calc", "calculation", "estimate", "mass balance", "MetTools"]
+   ```
+
+### 2. Test before moving on
+
+- [ ] **The check:** `kit check` says "app: mettools ... connected", with
+  about 25 tools (more while MetTools is open in your browser).
+- [ ] **Find:** "find my last slurry pump calc" names it, with its project.
+- [ ] **Read one:** "what was the TDH on it?" reads the saved result, not a
+  sum of his own.
+- [ ] **Open:** "open it" opens the calc in its tool on the PC.
+- [ ] **Run, no browser:** with MetTools closed, "what does that pump need
+  at 40% solids?" runs the calculator and gives MetTools' numbers.
+- [ ] **Save asks:** "save that as rev B" asks first; no leaves nothing
+  saved, yes adds a new draft (the old save is untouched).
+- [ ] **The page you have open:** open a pump calc in the browser, then
+  "set the flow to 300 and run it": the fields change on screen, and he reads
+  the results back.
+- [ ] **A note:** "put a note on my screen saying check the NPSH" shows it in
+  the corner of the MetTools window.
+- [ ] **Estimates and balances:** "what's the total on the latest estimate?"
+  and "does the Riverbend mass balance close?" answer from saved work.
+- [ ] **Overnight:** the next day `kit memory search "tails pump"` finds the
+  calc as an `app:mettools` row.
+- [ ] **MetTools down:** stop MetTools: "run a pump calc" gets "MetTools is
+  out of reach right now"; start it again and it's back on its own.
+- [ ] **Tests:** `pytest -q tests/test_tools_mcp.py` passes.
+
 ## Parts to come
 
-In order, each with its own section here when it lands: MetTools in full
-(F2) and home_app (F3); the morning brief (G). The plan is in [[Roadmap]].
+In order, each with its own section here when it lands: home_app (F3); the
+morning brief (G). The plan is in [[Roadmap]].
 
 ## If something's off
 
