@@ -383,7 +383,7 @@ His voice. See [[Voice]].
 | `port` | `8611` | Local port for the voice engine's program. |
 | `load_timeout_s` | `240` | How long a voice engine may take to load (the first Chatterbox start downloads its model). |
 | `sounds` | off | Sounds in his voice where a gesture calls for one: a chuckle on the punchline, a sigh, a gasp. At most one every other sentence. Only Chatterbox Turbo makes them; other engines leave them out. |
-| `fallback` | (none) | A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops. |
+| `fallback` | (none) | A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops. With a remote engine it's kept loaded beside it and speaks only while the voice program is away. |
 
 ### Voice engine profiles
 
@@ -404,6 +404,7 @@ His voice. See [[Voice]].
 | `mood_tags` | chatterbox-turbo: sounds that may open a reply in that emotion, such as `[sigh]` or `[chuckle]`; one is picked at random each time (a single sound works too). See [[Voice#Sounds in his voice]]. |
 | `mood_tag_chance` | chatterbox-turbo: how often a reply in one of those emotions opens with a sound (0.6: six in ten); the rest just start. |
 | `cuda_graph` | chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop. On by default. See [[Voice#Faster on a graphics card]]. |
+| `remote` | Made on another computer's graphics card by the voice program there (`kit voice`), which dials in to Kit; `python` is then the Python on that computer. Until it's connected and loaded, Kit speaks with `speech.fallback`. Off by default. See [[Voice#His voice from another computer]]. |
 
 ## face
 

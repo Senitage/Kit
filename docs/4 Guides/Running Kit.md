@@ -25,6 +25,7 @@ Up: [[Home]] · Guides
 | **Desk app** (tray face, chat) | The Windows desk PC | Yes, at logon | Tray menu > **Quit Kit**, then **Kit** from the Start menu |
 | **Eyes** (webcam) | The PC with the webcam | Only if you set up a logon task | Ctrl+C, then `kit eyes` again |
 | **Ears** (microphone) | The PC with the mic | Only if you set up a logon task | Ctrl+C, then `kit hearing` again |
+| **Voice program** (his voice on the PC's graphics card, when Kit runs elsewhere) | WSL on the PC with the card | Yes, as the `kit-voice` service | `sudo systemctl restart kit-voice` |
 | **The Pod** | On the desk, on Wi-Fi | Yes, when it has power | Unplug and plug in the USB |
 
 ```mermaid
@@ -87,6 +88,9 @@ are in [[Updating Kit]].
 ## His voice
 
 The brain starts the voice engine itself, so restarting Kit restarts it too.
+When his voice is made on another computer (`remote = true`), the voice
+program there runs it instead, and Kit speaks with `speech.fallback` while it's
+away ([[Voice#His voice from another computer]]).
 
 | To... | Run |
 |---|---|
@@ -95,6 +99,7 @@ The brain starts the voice engine itself, so restarting Kit restarts it too.
 | Turn speaking off or on | `kit speech off` / `kit speech on` |
 | Fall back to the light voice | `kit speech use kokoro` |
 | Back to the main voice | `kit speech use chatterbox-turbo` |
+| See the voice program's link | `kit speech` (the last line), or `journalctl -u kit-voice -f` on the PC |
 
 The voice's log is `logs/speech.log` in the data folder. See [[Voice]].
 

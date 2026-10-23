@@ -132,6 +132,14 @@ Chatterbox has its own Python (`speech.engines.*.python`), which Kit updates
 never touch. A stage guide says when it needs something new. See
 [[Stage 3 - Voice]].
 
+## The voice program
+
+On the PC with the graphics card (in WSL), `git pull` in that copy of Kit,
+`pip install -e .` in its `.venv`, then `sudo systemctl restart kit-voice`.
+Kit sends it the engine's settings and his voice clip itself, so there's
+nothing else to change there. See
+[[Stage 3 - Voice#His voice on another computer]].
+
 ## If something's off
 
 - `kit check` says what's wrong with the setup.

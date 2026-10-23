@@ -55,7 +55,8 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part F1: your apps as packs. Kit as an MCP client over HTTP or a local program, each app's tools as a pack that asks first before a change, out of reach said plainly, saved work into memory once a day, the phone told rather than opened | Done, pull request #69 | [[Other Apps#Apps as packs]], [[Stage 4 - Tools]] |
 | Stage 4, part F2: MetTools in full. Kit starts MetTools' own server on the box with its address and token, so its saved work, calculators (run with no browser) and the page you have open all become his tools | Done, pull request #70 | [[Other Apps#MetTools]], [[Stage 4 - Tools]] |
 | Stage 4, part F3: home_app as a pack. Fuel, cars and saved work as rows from home_app, money as figures only, adding a trip stop asks first, and his last tool calls on home_app's Health page | Done, pull request #71 | [[Other Apps#home_app as a pack]], [[Stage 4 - Tools]] |
-| Stage 4, part G1: the morning brief. Weather, tasks due, a bill coming up, the house, yesterday and threads, once a morning at the desk or in his first answer, and "the second one" later | Open, pull request #72 | [[Companion#The morning brief]], [[Stage 4 - Tools]] |
+| Stage 4, part G1: the morning brief. Weather, tasks due, a bill coming up, the house, yesterday and threads, once a morning at the desk or in his first answer, and "the second one" later | Done, pull request #72 | [[Companion#The morning brief]], [[Stage 4 - Tools]] |
+| His voice on another computer: the voice program on the PC dials in to Kit and makes his lines on its graphics card, with the server's voice taking over while it's away; the backup voice kept loaded; each piece of sound sent at once (40 ms off every line) | Open, pull request #74 | [[Voice#His voice from another computer]], [[Stage 3 - Voice#His voice on another computer]] |
 
 ## What's next
 
@@ -115,6 +116,7 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 23 Oct | Stage 4 part F1: your apps as packs over MCP | #69 |
 | 23 Oct | Stage 4 part F2: MetTools in full | #70 |
 | 23 Oct | Stage 4 part F3: home_app as a pack | #71 |
+| 23 Oct | Stage 4 part G1: the morning brief | #72 |
 
 ## Keeping this note true
 

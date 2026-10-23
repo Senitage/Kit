@@ -1,13 +1,17 @@
-"""Kit's voice (kit.speech): whether it's on, and one sentence of his speech at a
-time, streamed as it's made or sent as one WAV file."""
+"""Kit's voice (kit.speech): whether it's on, one sentence of his speech at a
+time, streamed as it's made or sent as one WAV file, and the voice link a voice
+program on another computer dials in to (kit.speech.link)."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
+import secrets
 from collections.abc import Iterator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import iterate_in_threadpool
@@ -98,3 +102,65 @@ def _heard_as_it_goes(hearing, text: str, pieces: Iterator[bytes], rate: int) ->
     for piece in pieces:
         hearing.spoke("", len(piece) / 2 / rate)  # 16-bit mono samples
         yield piece
+
+
+HELLO_S = 10  # a voice program says hello this soon after connecting, or it's closed
+
+
+@router.websocket("/api/speech/link")
+async def speech_link(websocket: WebSocket) -> None:
+    """The voice program on another computer (``kit voice``) dials in here with Kit's
+    own token (a paired phone's won't do) and makes his remote engine's lines. The
+    messages are in kit.speech.link. One program at a time: a new one replaces the
+    old. When it goes, Kit speaks with ``speech.fallback`` at once."""
+    state = websocket.app.state.kit
+    given = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not secrets.compare_digest(given.encode(), state.token.encode()):
+        await websocket.close(code=1008, reason="wrong token; run `kit token` on Kit's server")
+        return
+    speech = state.speech
+    if speech is None:
+        await websocket.close(code=1011, reason="this Kit has no voice")
+        return
+    await websocket.accept()
+    try:
+        hello = await asyncio.wait_for(websocket.receive_json(), HELLO_S)
+    except (TimeoutError, WebSocketDisconnect, ValueError):
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1002, reason="say hello first")
+        return
+    hello = hello if isinstance(hello, dict) else {}
+    link = speech.link
+    outbox: asyncio.Queue = asyncio.Queue()
+    number = link.attach(asyncio.get_running_loop(), outbox, hello)
+    log.info("voice link: %s connected", link.name)
+
+    async def send() -> None:
+        while (message := await outbox.get()) is not None:
+            await websocket.send_text(json.dumps(message))
+        await websocket.close(code=1000, reason="another voice program dialled in")
+
+    sender = asyncio.create_task(send())
+    if state.store.current().speech.enabled:
+        await asyncio.to_thread(_offer, speech)  # it loads at once, not at the next check
+    try:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            if message.get("bytes"):
+                link.received_sound(message["bytes"])
+            elif message.get("text"):
+                with contextlib.suppress(ValueError):
+                    link.received(json.loads(message["text"]))
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        link.detach(number)
+        sender.cancel()
+        log.info("voice link: %s went away", hello.get("name") or "the voice program")
+
+
+def _offer(speech) -> None:
+    with contextlib.suppress(SpeechError):
+        speech.offer_link()
