@@ -132,15 +132,15 @@ def test_glow_stops_only_while_kits_model_is_on_screen():
         def page(self):
             return self
 
-        def runJavaScript(self, js, world, callback):  # noqa: N802 (Qt's name)
-            assert js == face3d.FRAME_JS
-            callback(self.answer)
+        def runJavaScript(self, js):  # noqa: N802 (Qt's name)
+            assert js == face3d.FRAME_JS  # the frame comes back over the bridge
+            face3d._Bridge(shown).frame(self.answer)
 
     shown = face3d.Face3D.__new__(face3d.Face3D)  # no web engine: just the hand-over
     shown.widget, shown.view, shown.frame = widget, Page(), None
     shown.covering, shown._ready = False, True
     shown.grabs = shown.blanks = 0
-    shown._told, shown._asking = 0.0, False
+    shown._told, shown._asking, shown._asked = 0.0, False, 0.0
     shown._paint = face3d._Paint(shown)
     shown._frames = QTimer(widget)
     assert widget._timer.isActive()

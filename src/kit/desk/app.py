@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -93,6 +94,11 @@ log = logging.getLogger("kit.desk")
 
 INSTANCE_NAME = "kit-desk-app"
 HEALTH_EVERY_MS = 15_000
+# Past this much memory the desk app starts itself afresh: a leak must never take
+# the whole PC down with it (it has: see "Desk App" in the docs). It normally uses
+# a few hundred MB.
+MEMORY_LIMIT_MB = 3000
+RESTART = 75  # the exit code main reads as "start me again"
 OPEN_MS = 160  # the chat fades in this quickly
 # Which DeskConfig fields each page of Kit's window owns, so a save on one page
 # never puts back another page's old values.
@@ -914,7 +920,21 @@ class DeskApp(QObject):
         if old:
             old.close()
 
+    def check_memory(self, used_mb: Callable[[], float] | None = None) -> bool:
+        """Restart the app if it's using more memory than it ever should."""
+        used = (used_mb or memory_mb)()
+        if used < MEMORY_LIMIT_MB:
+            return False
+        log.warning(
+            "the desk app is using %.0f MB (more than %d): restarting", used, MEMORY_LIMIT_MB
+        )
+        self.tray.hide()
+        self.app.exit(RESTART)
+        return True
+
     def check_health(self) -> None:
+        if self.check_memory():
+            return
         client = self.client
         if client is None:
             self._show_online(False, "not set up yet: open Settings")
@@ -1167,6 +1187,30 @@ def _quietly(call, *args) -> None:
         log.exception("telling Kit to be quiet failed")
 
 
+def memory_mb(process=None) -> float:
+    """The memory this app has taken, in MB: on Windows its private bytes, the
+    memory Windows has promised it (what runs out when a program leaks)."""
+    if process is None:
+        import psutil
+
+        process = psutil.Process()
+    info = process.memory_info()
+    return getattr(info, "private", info.rss) / 2**20
+
+
+def restart(argv: list[str], popen=subprocess.Popen) -> None:
+    """Start a fresh desk app, quietly in the tray, as this one goes."""
+    if getattr(sys, "frozen", False):  # the installed Kit.exe
+        command = [sys.executable]
+    else:
+        command = [sys.executable, "-m", "kit.desk"]
+    command += [a for a in argv[1:] if a != "--background"] + ["--background"]
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+        subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+    )
+    popen(command, creationflags=flags, close_fds=True)
+
+
 def _single_instance() -> QLocalServer | None:
     """Only one Kit per logon: a second launch just opens the first one's chat."""
     socket = QLocalSocket()
@@ -1234,7 +1278,12 @@ def main(argv: list[str] | None = None) -> int:
     desk = DeskApp(app, background="--background" in argv)
     server.newConnection.connect(lambda: (server.nextPendingConnection(), desk.show_chat()))
     log.info("Kit desk app %s started", VERSION)
-    return app.exec()
+    code = app.exec()
+    if code == RESTART:
+        server.close()  # so the fresh one can take over
+        restart(argv)
+        return 0
+    return code
 
 
 if __name__ == "__main__":
