@@ -118,9 +118,10 @@ The home website (Django, on the NAS) has a **Kit section**:
 ### home_app as a pack
 
 home_app also has an MCP server (in its repo, `kit_mcp/server.py`), which Kit
-starts on his box like MetTools' and uses as the `home_app` pack. It's marked
-**private**, so what it gives back reaches a cloud model only as the local
-model's short summary.
+starts on his box like MetTools' and uses as the `home_app` pack. For now
+his cloud model reads its answers directly, since the box has no local model.
+When it has one again, set `apps.servers.home_app.private` to true and they
+reach a cloud model only as the local model's short summary.
 
 | Ask | What he uses | Asks first? |
 |---|---|---|

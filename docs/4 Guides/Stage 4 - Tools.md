@@ -447,7 +447,7 @@ himself and hands it MetTools' address and its token. See
 
 ## Part F3: home_app as a pack
 
-home_app's own MCP server joins Kit as the private `home_app` pack: budgets,
+home_app's own MCP server joins Kit as the `home_app` pack: budgets,
 bills, fuel, cars and trips, with adding a trip stop asking first. See
 [[Other Apps#home_app as a pack]].
 
@@ -479,7 +479,7 @@ bills, fuel, cars and trips, with adding a trip stop asking first. See
    command = ["/home/kit/home_app/.venv/bin/python", "/home/kit/home_app/kit_mcp/server.py"]
    env = { HOME_APP_URL = "http://192.168.1.50:8000" }
    token_secret = "home_app_token"
-   private = true
+   private = false   # true once the box has a local model
    card = "The household site: budgets, bills, fuel, vehicles and trips"
    words = ["spend", "spent", "bill", "bills", "fuel", "trip", "trips", "holiday", "car", "rego", "budget"]
    ```
@@ -496,10 +496,9 @@ bills, fuel, cars and trips, with adding a trip stop asking first. See
   and what's left.
 - [ ] **The car:** "when's the ute due for a service?" gives the next item
   and roughly when.
-- [ ] **Private:** with the local model running, he answers from its short
-  summary. With it off (as on the box today), he says the answer is in a
-  private source he can only read locally; "send it to Claude: how much on
-  fuel?" answers that once.
+- [ ] **Later, private:** once the box has a local model, set
+  `apps.servers.home_app.private` to true: he answers from the local
+  model's short summary, and with it off says it's in a private source.
 - [ ] **A trip stop asks:** "add a stop in Richmond on the Riverbend trip"
   finds the place and asks; no leaves the trip alone, yes adds it where you
   said.

@@ -54,7 +54,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part E1: your notes vault, properly. Find notes and open tasks, what's due, add under a heading, tick a task, start from a template, open in Obsidian, every change shown first and undoable, never over your own edit, a Sunday look-over | Done, pull request #68 | [[Notes on the NAS#Changing a note]], [[Stage 4 - Tools]] |
 | Stage 4, part F1: your apps as packs. Kit as an MCP client over HTTP or a local program, each app's tools as a pack that asks first before a change, out of reach said plainly, saved work into memory once a day, the phone told rather than opened | Done, pull request #69 | [[Other Apps#Apps as packs]], [[Stage 4 - Tools]] |
 | Stage 4, part F2: MetTools in full. Kit starts MetTools' own server on the box with its address and token, so its saved work, calculators (run with no browser) and the page you have open all become his tools | Done, pull request #70 | [[Other Apps#MetTools]], [[Stage 4 - Tools]] |
-| Stage 4, part F3: home_app as a private pack. Fuel, cars and saved work as rows from home_app, money as figures only, adding a trip stop asks first, and his last tool calls on home_app's Health page | Open, pull request #71 | [[Other Apps#home_app as a pack]], [[Stage 4 - Tools]] |
+| Stage 4, part F3: home_app as a pack. Fuel, cars and saved work as rows from home_app, money as figures only, adding a trip stop asks first, and his last tool calls on home_app's Health page | Open, pull request #71 | [[Other Apps#home_app as a pack]], [[Stage 4 - Tools]] |
 | Stage 4, the rest: MetTools and home_app in full, the morning brief | Not started | [[Stage 4 - Tools]], [[Roadmap]] |
 
 ## What's next
