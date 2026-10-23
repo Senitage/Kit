@@ -197,6 +197,7 @@ flowchart TB
 | `src/kit/desk/scenes.py` | Drawing shows on the desk | [[Face]] |
 | `src/kit/desk/alive.py` | Sleep, waking and glances on the desk | [[Bodies]] |
 | `src/kit/desk/voice.py` | Playing his voice | [[Voice]] |
+| `src/kit/desk/ears.py` | Kit's ears inside the desk app: this PC's mic, started again when something changes, introducing a voice | [[Hearing#In the desk app]] |
 | `src/kit/desk/sound.py` | The boop | [[Desk App]] |
 | `src/kit/desk/startup.py` | Starting at logon | [[Desk App]] |
 | `src/kit/desk/update.py` | Updates from GitHub Releases | [[Desk App Builds and Updates]] |
@@ -222,11 +223,11 @@ flowchart TB
 
 | Module | What it does | Explained in |
 |---|---|---|
-| `src/kit/hearing/run.py` | The loop: sound in, words out; talking over him stops him | [[Hearing]] |
+| `src/kit/hearing/run.py` | The loop: sound in, words out; talking over him stops him (the desk app runs the same loop) | [[Hearing]] |
 | `src/kit/hearing/mic.py` | The microphone through sounddevice | [[Hearing]] |
 | `src/kit/hearing/engines.py` | Voice detection, speech to text with tone, voice prints (sherpa-onnx) | [[Hearing#How it works]] |
 | `src/kit/hearing/models.py` | The three model files, downloaded the first time | [[Companion Stage 5]] |
-| `src/kit/hearing/enrol.py` | `kit hearing enrol` | [[Companion Stage 5]] |
+| `src/kit/hearing/enrol.py` | Introducing a voice: `kit hearing enrol`, and the desk app's This PC page | [[Companion Stage 5]] |
 | `src/kit/hearing/link.py` | The ears' files, and finding the brain | [[Companion Stage 5]] |
 
 ## Outside src

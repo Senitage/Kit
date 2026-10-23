@@ -1,15 +1,15 @@
 ---
 tags: [how-it-works, topic/hearing, topic/companion]
 aliases: [Ears, kit.hearing, kit.heard, Microphone, Mic, Speech to text, Wake word]
-summary: How Kit hears - a microphone process beside the mic that sends the brain words, tone and whose voice it was, never sound; he answers when you say his name or answer him, stops when you talk over him, and lets everything else go.
+summary: How Kit hears - the desk app (or a microphone process) beside the mic sends the brain words, tone and whose voice it was, never sound; he answers when you say his name or answer him, stops when you talk over him, and lets everything else go.
 related: ["[[Companion Stage 5]]", "[[Voice]]", "[[Eyes]]", "[[Privacy]]"]
 ---
 
 # Hearing
 
 > [!ABSTRACT] In short
-> A small program, `kit hearing`, runs on the PC with the microphone. It
-> listens for talking, turns it into **words** on that PC, notes how it
+> The desk app is his ears on the PC with the microphone (or the small
+> program `kit hearing`, anywhere else). It listens for talking, turns it into **words** on that PC, notes how it
 > **sounded** (cheerful, down, cross, a laugh) and **whose voice** it was,
 > and sends the brain only that. **Sound never leaves the PC.** Say his name
 > and he answers out loud; answer him and he carries on; talk over him and he
@@ -130,6 +130,32 @@ fearful, surprised. A tone gives him a light feeling (sympathetic when you
 sound down, pleased when you sound cheerful) and a line in his prompt to ask
 lightly, once, if it matters. Turn it off with `hearing.tone`.
 
+## In the desk app
+
+The desk app has the ears built in (`kit.desk.ears`), so a PC with the desk
+app on it hears him with nothing else installed: no copy of Kit, no Python,
+no `kit hearing connect`. They run on a thread of the app, through its
+connection to the brain, and the installer carries sherpa-onnx. The models
+download the first time into the same folder `kit hearing` uses
+(`%APPDATA%\Kit Hearing`).
+
+The **This PC** page has:
+
+- **Listen with this PC's mic**: on by default. Turn it off on a PC whose mic
+  shouldn't listen, or where `kit hearing` runs instead, so two ears don't
+  hear the same talking.
+- **Microphone**: the default, or one by name. It's for this PC only, and wins
+  over `hearing.mic`.
+- **How they are**: listening, paused, waiting for the mic, or why they can't
+  start.
+- **Introduce my voice** and **Someone else's**: the lines to read, while the
+  ears listen for 30 seconds. The running ears let the mic go while it does.
+
+They start again by themselves when the brain's address or token changes,
+the mic changes, or a `[hearing]` setting that needs the models built again
+changes (`mic`, `threshold`, `pause_ms`, `max_speech_s`, `language`,
+`threads`). `kit hearing` still works the same, for a PC without the desk app.
+
 ## The switch
 
 **Let Kit hear me** in the desk app's tray menu (or `kit hearing pause`) turns
@@ -137,6 +163,8 @@ the ears off: the mic is let go, and Kit is told he can't hear, so he never
 pretends to. The brain keeps the switch across restarts. See [[Privacy]].
 
 ## Try it
+
+With the desk app, it's all on the **This PC** page. Without it:
 
 ```
 kit hearing mics        # which microphones this PC has
@@ -155,6 +183,7 @@ kit hearing show        # listening or not, and what he last made of something
 > [!under-the-hood]- Under the hood: the code
 > - `src/kit/hearing/`: the mic side: `mic`, `engines`, `models`, `run`,
 >   `enrol`, `link`.
+> - `src/kit/desk/ears.py`: the same ears inside the desk app.
 > - `src/kit/heard.py`: the brain's side: meant for Kit or not, echoes, the
 >   follow-up window, tone lines, heard turns.
 > - `src/kit/known_voices.py`: the people Kit knows by voice.

@@ -35,7 +35,8 @@ Set-Content -Path "$root\src\kit\desk\_build.py" -Encoding utf8 -Value @(
     "PULL = $pull",
     "COMMIT = `"$commit`""
 )
-Run $Python @("-m", "pip", "install", "--upgrade", "$root[desk]", "pyinstaller>=6.6")
+# Kit's ears run inside the desk app (kit.desk.ears), so it carries the hearing extra.
+Run $Python @("-m", "pip", "install", "--upgrade", "$root[desk,hearing]", "pyinstaller>=6.6")
 $version = (& $Python -c "from kit.desk.update import VERSION; print(VERSION)").Trim()
 if (-not $version.EndsWith(".$build_no")) { throw "Kit reports version $version, not build ${build_no}: _build.py wasn't packed" }
 Run $Python @("$here\make_icon.py", "$build\kit.ico")
@@ -48,9 +49,11 @@ Run $Python @(
     # Kit's character sheets: the face falls back to them when the brain is out of reach.
     "--add-data", "$root\src\kit\face\characters;kit\face\characters",
     "--distpath", "$build\dist", "--workpath", "$build\work", "--specpath", "$build",
+    # Kit's ears: imported only when they start, and sherpa-onnx brings its own libraries.
+    "--collect-submodules", "kit.hearing", "--collect-all", "sherpa_onnx",
     # The brain's server side isn't part of the desk app.
     "--exclude-module", "fastapi", "--exclude-module", "uvicorn",
-    "--exclude-module", "anthropic", "--exclude-module", "numpy"
+    "--exclude-module", "anthropic"
 )
 # A windowed exe doesn't block PowerShell, so wait for the self-test explicitly,
 # and not for ever: a packed app that can't start shows an error box nobody can

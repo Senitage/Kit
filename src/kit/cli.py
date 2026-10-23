@@ -978,21 +978,10 @@ def _enrol_voice(client, args: argparse.Namespace, settings, parts=None) -> int:
     from kit.desk.client import BrainError
     from kit.hearing import enrol
 
-    who = args.who
-    if who.casefold() == "me":
-        who = client.settings()["settings"].get("persona", {}).get("owner", "") or who
+    who = enrol.owner(client, args.who)
     mic = None
     try:
-        if parts is None:
-            from kit.hearing.engines import CamPlusPlus, SileroVad
-            from kit.hearing.link import models_dir
-            from kit.hearing.mic import SoundDeviceMic, input_devices, pick_device
-
-            folder = models_dir()
-            device = pick_device(settings.mic, input_devices()) if settings.mic else None
-            parts = (lambda: SoundDeviceMic(device), SileroVad(folder, settings, ahead=False))
-            parts += (CamPlusPlus(folder, settings),)
-        open_mic, vad, printer = parts
+        open_mic, vad, printer = parts or enrol.real_parts(settings)
         mic = open_mic()
         print(f"{who}: read these out loud, at your normal pace and distance from the mic:\n")
         for line in enrol.LINES:

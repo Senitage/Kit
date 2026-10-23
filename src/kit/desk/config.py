@@ -82,6 +82,10 @@ class DeskConfig:
     apps: dict[str, str] = field(default_factory=lambda: dict(APPS))
     url_schemes: list[str] = field(default_factory=lambda: list(URL_SCHEMES))
     share_recent_files: bool = True  # the names in Windows' Recent list, once an hour
+    # Kit's ears in the desk app (kit.desk.ears): listen with this PC's mic, and which
+    # one (part of its name; empty for hearing.mic on the brain, or the default mic).
+    hear_here: bool = True
+    mic: str = ""
     show_face: bool = True
     face_size: int = 150
     face_x: int | None = None  # where Dan last left the face (its top left); None: bottom right
