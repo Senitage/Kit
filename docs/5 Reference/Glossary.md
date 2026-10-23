@@ -20,6 +20,7 @@ Up: [[Home]] · Reference
 | **Backup voice** | The voice engine he switches to if his usual one fails (`speech.fallback`) | [[Voice#A backup voice]] |
 | **Brain** | The server program that thinks, remembers and decides; everything else is a body or a sense | [[Brain]] |
 | **Calm neck** | The Pod's rule that his face is lively but his head only moves when he pays attention to something | [[Pod In Depth#The calm neck]] |
+| **Contents tool** | A tool an app's MCP server offers that lists its saved work as rows, which Kit reads into memory once a day | [[Other Apps#Apps as packs]] |
 | **Capability pack** | A named set of tools with one card (the line in his prompt): `core` first, then files, the PC, the house, the notes vault, your apps | [[Tools and Packs#Packs]] |
 | **Channel** | Where you're talking from: desk, voice, phone, web, home, terminal | [[Brain#Where you're talking from]] |
 | **Character sheet** | One file saying how Kit looks and moves: Retro, Kit 3D, Kit 2D | [[Face]] |
@@ -54,6 +55,7 @@ Up: [[Home]] · Reference
 | **Kit 2D** | The 3D face drawn flat, for small screens like the Pod's | [[Face]] |
 | **Kit 3D** | The Blender face, served by the brain as a live page | [[Face]] |
 | **Lite eyes** | The eyes set up to run on a CPU: a small detector a few times a second, faces read in between | [[Eyes#Without a graphics card]] |
+| **MCP** | Model Context Protocol: a shared way for an app to list its tools and run them. Kit is the client; each app's server becomes a pack | [[Other Apps#Apps as packs]] |
 | **Match words** | A pack's words that load it when one is in your message as a whole word | [[Tools and Packs#Which packs load]] |
 | **Notebook** | Kit's own book: thoughts, opinions, wants, threads, moments, journal | [[Inner Life#Thoughts and his notebook]] |
 | **Hop** | One go round the tool loop: the model asks for a tool, the brain runs it, the result goes back (`tools.hops` a turn) | [[Tools and Packs]] |

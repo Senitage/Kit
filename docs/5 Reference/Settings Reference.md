@@ -188,6 +188,16 @@ secrets folder as `home_assistant_token`, never here.
 | `long_on_minutes` | 240 | A light or switch on longer than this is worth a mention, once. 0: never. |
 | `refresh_minutes` | 60 | How often he reads the exposed things and rooms again (1 to 1440). |
 
+## apps
+
+Your apps whose MCP servers Kit uses as tool packs. See [[Other Apps#Apps as packs]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `servers` | none | Each app by a short name (`mettools`, `home_app`), with `url` (its MCP server's address, streamable HTTP) or `command` (a program that runs the server on this machine), `token_secret` (the name of its token file in the secrets folder; sent as a Bearer token, or as `KIT_APP_TOKEN` to a command), `enabled`, `private` (its answers reach a cloud model only as a local summary), `confirm` (its tools that always ask first), `card` (one line on what it's for), `words` and `questions` (what loads it). Restart Kit after adding one. |
+| `relist_minutes` | `60` | How often Kit asks each app again which tools it has. He also asks at once when the app says they changed. |
+| `contents_daily` | on | Once a day, read each app's saved work (its `contents` tool) into Kit's memory, so he can find it by meaning. |
+
 ## persona
 
 Who Kit is and who he's with. See [[Who Kit Is]].

@@ -224,6 +224,7 @@ from kit.tools.core import ACTION_ARGS, core_pack
 from kit.tools.files import files_pack
 from kit.tools.house import house_pack
 from kit.tools.match import match
+from kit.tools.mcp import App, write_contents
 from kit.tools.notes import notes_pack
 from kit.tools.pc import pc_pack
 from kit.tools.private import for_cloud, lifted
@@ -802,6 +803,8 @@ class Brain:
         # house.enabled is on with a token; None means Kit has no house.
         self.house: House | None = None
         self.house_watch: Watcher | None = None
+        self.apps: dict[str, App] = {}  # Dan's apps' MCP servers, each a pack (kit.tools.mcp)
+        self._apps_read: date | None = None
         # The tools a model may call mid-answer (kit.tools) and what there is to look
         # at this turn, set at the start of every turn.
         self.tool_context = Context()
@@ -2073,6 +2076,32 @@ class Brain:
         self.house = house
         self.house_watch = Watcher(house, self.life, self.settings, self.memory.clock)
         self.tools.add(house_pack(self))
+
+    def use_app(self, app: App) -> None:
+        """Give Kit one of Dan's apps (kit.tools.mcp): its MCP server's tools as a pack."""
+        app.brain = self
+        self.apps[app.name] = app
+        self.tools.add(app.pack)
+
+    async def app_contents(self) -> int:
+        """Once a day (``apps.contents_daily``), each app's saved work into memory
+        (kit.tools.mcp.write_contents). How many rows were written."""
+        today = self.memory.clock().date()
+        if self._apps_read == today or not self.settings().apps.contents_daily:
+            return 0
+        written = 0
+        waiting = False
+        for app in self.apps.values():
+            if not app.connected:
+                waiting = True  # try again later today
+                continue
+            try:
+                written += await write_contents(app, self.memory.index)
+            except Exception:
+                log.exception("reading %s's saved work failed", app.name)
+        if not waiting:
+            self._apps_read = today
+        return written
 
     def note_activity(self) -> int:
         """Fold each day still in the PC's focus history into its ``activity`` item

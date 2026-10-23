@@ -227,6 +227,44 @@ def cameras_here() -> list[dict]:
     return list_cameras()
 
 
+def check_apps(settings: Settings, token_of, connect=None) -> list[CheckResult]:
+    """Each app in ``apps.servers``: can Kit reach its MCP server, and how many tools
+    does it offer? ``token_of(name, secret)`` reads an app's token."""
+    import asyncio
+
+    from kit.tools.mcp import CONTENTS, App
+
+    async def look(name: str) -> CheckResult:
+        server = settings.apps.servers[name]
+        label = f"app: {name}"
+        if not server.enabled:
+            return CheckResult(label, Status.SKIP, "enabled is off")
+        if not server.url and not server.command:
+            return CheckResult(label, Status.FAIL, "needs a url or a command")
+        token = token_of(name, server.token_secret)
+        if server.token_secret and not token:
+            why = f"no {server.token_secret} in the secrets folder (kit paths)"
+            return CheckResult(label, Status.FAIL, why)
+        app = App(name, server, token, lambda: settings, connect)
+        try:
+            if not await app.connect_once():
+                return CheckResult(label, Status.FAIL, f"can't reach it: {app.last_error}")
+            tools = [t["name"] for t in app.tools if t["name"] != CONTENTS]
+            extra = ", and saved work for his memory" if app.has(CONTENTS) else ""
+            detail = f"connected to {app.title}, {len(tools)} tools{extra}"
+            return CheckResult(label, Status.PASS if tools else Status.WARN, detail)
+        finally:
+            await app.close()
+
+    results = []
+    for name in settings.apps.servers:
+        try:
+            results.append(asyncio.run(look(name)))
+        except Exception as e:  # a broken server mustn't stop the report
+            results.append(CheckResult(f"app: {name}", Status.FAIL, f"{type(e).__name__}: {e}"))
+    return results
+
+
 def check_house(settings: Settings, token: str | None, connect=None) -> CheckResult:
     """Can Kit reach Home Assistant, as a non-admin user, and see anything? Kit's
     user should not be an admin: the exposed-to-Assist list is all he may touch."""

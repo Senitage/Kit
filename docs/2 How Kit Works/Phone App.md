@@ -23,6 +23,9 @@ related: ["[[Bodies]]", "[[Phone Stage 0 - Pairing]]", "[[Brain]]", "[[Privacy]]
 - **Know he's on the phone.** Messages come in on the `phone` channel, so he
   keeps it short for a small screen and doesn't assume your PC is in front of
   you. See [[Brain#Where you're talking from]].
+- **Tell, don't open.** From the phone he tells you things rather than opening
+  them. Ask him to open something and it opens on the PC, and he says it
+  happened there. See [[Other Apps#From the phone]].
 - **Never lose a message.** Anything typed while he's out of reach waits on
   the phone and goes later with the time it was written. He's told it may be
   old news.

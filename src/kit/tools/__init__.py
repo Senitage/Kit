@@ -128,6 +128,9 @@ class Tool:
     # For a tool that asks first: the change itself, shown with the question (a
     # note's diff). It may raise; the question is then asked without it.
     preview: Callable[[dict[str, Any]], str] | None = None
+    # Shared parts of the schema its properties point to (``$ref``), as an app's MCP
+    # server gives them (kit.tools.mcp).
+    defs: dict[str, Any] = field(default_factory=dict)
 
     def asking(self, call: ToolCall) -> str:
         """What the tool will do, in words, for the question Kit asks first."""
@@ -139,12 +142,15 @@ class Tool:
         return call.line()
 
     def schema(self) -> dict[str, Any]:
-        return {
+        schema = {
             "type": "object",
             "properties": dict(self.parameters),
             "required": list(self.required),
             "additionalProperties": False,
         }
+        if self.defs:
+            schema["$defs"] = dict(self.defs)
+        return schema
 
     def definition(self) -> dict[str, Any]:
         """The provider-neutral definition; each provider in kit.cloud reshapes it.
