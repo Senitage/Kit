@@ -365,13 +365,14 @@ The camera, read by `kit eyes` on the PC. See [[Eyes]].
 
 ## hearing
 
-The microphone, read by `kit hearing` on the PC. Sound never leaves that PC.
+The microphone, read by the desk app (or `kit hearing`) on the PC. Sound never
+leaves that PC.
 See [[Hearing]].
 
 | Setting | Default | What it does |
 |---|---|---|
-| `enabled` | on | Kit listens through a microphone when `kit hearing` is running on the PC with the mic. The tray's "Let Kit hear me" switch turns it off and on. |
-| `mic` | empty | Which microphone to use: part of its name, or its number from `kit hearing mics`. Empty uses the PC's default. |
+| `enabled` | on | Kit listens through a microphone when the desk app (or `kit hearing`) is running on the PC with the mic. The tray's "Let Kit hear me" switch turns it off and on. |
+| `mic` | empty | Which microphone to use: part of its name, or its number from `kit hearing mics`. Empty uses the PC's default. The desk app's This PC page can pick one for its PC instead. |
 | `names` | `["Kit", "Kitt", "Ki", "Kid"]` | What Kit answers to. Said at the start or end of a sentence ("Kit, what's the weather?"), it means you're talking to him. After his name come the ways the ears sometimes write it; `kit hearing --words` shows what they hear, so add a word they often hear instead. |
 | `follow_up_s` | `8.0` | After Kit stops talking, this many seconds when you can answer him without saying his name. 0 means always say his name. |
 | `barge_in` | on | Talking over Kit stops him, as typing does. His own voice from the speakers doesn't count. |
@@ -399,7 +400,7 @@ His voice. See [[Voice]].
 | `port` | `8611` | Local port for the voice engine's program. |
 | `load_timeout_s` | `240` | How long a voice engine may take to load (the first Chatterbox start downloads its model). |
 | `sounds` | off | Sounds in his voice where a gesture calls for one: a chuckle on the punchline, a sigh, a gasp. At most one every other sentence. Only Chatterbox Turbo makes them; other engines leave them out. |
-| `fallback` | (none) | A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops. |
+| `fallback` | (none) | A voice engine to switch to if his usual one can't start or runs out of graphics card memory (e.g. kokoro, on the CPU). He stays on it until his speech settings change. Empty: no fallback, his voice just stops. With a remote engine it's kept loaded beside it and speaks only while the voice program is away. |
 
 ### Voice engine profiles
 
@@ -420,6 +421,7 @@ His voice. See [[Voice]].
 | `mood_tags` | chatterbox-turbo: sounds that may open a reply in that emotion, such as `[sigh]` or `[chuckle]`; one is picked at random each time (a single sound works too). See [[Voice#Sounds in his voice]]. |
 | `mood_tag_chance` | chatterbox-turbo: how often a reply in one of those emotions opens with a sound (0.6: six in ten); the rest just start. |
 | `cuda_graph` | chatterbox-turbo on a graphics card: record its token loop as a CUDA graph, about 2.4 times faster with the same voice. Off: Chatterbox's own loop. On by default. See [[Voice#Faster on a graphics card]]. |
+| `remote` | Made on another computer's graphics card by the voice program there (`kit voice`), which dials in to Kit; `python` is then the Python on that computer. Until it's connected and loaded, Kit speaks with `speech.fallback`. Off by default. See [[Voice#His voice from another computer]]. |
 
 ## face
 

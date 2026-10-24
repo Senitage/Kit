@@ -33,6 +33,23 @@ def input_devices(sd=None) -> list[tuple[int, str]]:
     ]
 
 
+def mic_names(devices: list[tuple[int, str]]) -> list[str]:
+    """Each mic's name once, for picking one. Windows lists the same mic under each
+    of its sound systems, the first (MME) with the name cut short; the short name
+    is kept, since ``pick_device`` then finds that first one, which takes any rate."""
+    names: list[str] = []
+    for _, name in devices:
+        name = name.strip()
+        if not name:
+            continue
+        same = [i for i, n in enumerate(names) if n.startswith(name) or name.startswith(n)]
+        if not same:
+            names.append(name)
+        elif len(name) < len(names[same[0]]):
+            names[same[0]] = name
+    return names
+
+
 def pick_device(wanted: str, devices: list[tuple[int, str]]) -> int | None:
     """``hearing.mic`` as a device number: a number as is, else the first mic whose
     name has it in; None for the PC's default."""

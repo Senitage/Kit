@@ -118,9 +118,14 @@ To run them without the GPU, see [[Eyes#Without a graphics card]]: it's one
 
 ## The ears
 
-The same on the PC with the mic: `git pull` in that copy of Kit,
+On a PC with the desk app, the ears update with it: nothing to do. Where they
+run as `kit hearing` instead, `git pull` in that copy of Kit,
 `pip install -e ".[hearing]"` if the guide says there's something new, then
 stop and start `kit hearing`. See [[Companion Stage 5]].
+
+Moving from `kit hearing` to the desk app's ears: stop `kit hearing` (and its
+logon task, if you made one). The desk app uses the models and voices you
+already have.
 
 A setting saved in your settings file keeps its value when an update changes
 the default. So if `hearing.names` is already there, add any new spellings of
@@ -131,6 +136,14 @@ his name yourself (`kit config show` lists what's set).
 Chatterbox has its own Python (`speech.engines.*.python`), which Kit updates
 never touch. A stage guide says when it needs something new. See
 [[Stage 3 - Voice]].
+
+## The voice program
+
+On the PC with the graphics card (in WSL), `git pull` in that copy of Kit,
+`pip install -e .` in its `.venv`, then `sudo systemctl restart kit-voice`.
+Kit sends it the engine's settings and his voice clip itself, so there's
+nothing else to change there. See
+[[Stage 3 - Voice#His voice on another computer]].
 
 ## If something's off
 

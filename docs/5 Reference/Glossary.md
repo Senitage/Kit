@@ -91,5 +91,7 @@ Up: [[Home]] · Reference
 | **Tone** | How a voice sounded (cheerful, down, cross), read from the sound; he may ask, never tells | [[Hearing#Tone and laughs]] |
 | **Two passes** | Deciding what to do in one model call, then saying it in a second | [[Brain#Two passes when the local model talks]] |
 | **Undo file** | A note as it was before Kit changed it, kept in `state/notes/undo` so "undo that" can put it back | [[Notes on the NAS#Changing a note]] |
+| **Voice link** | The WebSocket the voice program keeps open to Kit, which his sentences go out on and their sound comes back on | [[Voice#His voice from another computer]] |
 | **Voice print** | 512 numbers worked out from a few seconds of someone talking; no sound can be rebuilt from them | [[Hearing#Whose voice]] |
+| **Voice program** | `kit voice`: makes his voice on another computer's graphics card and dials in to Kit for the lines | [[Voice#His voice from another computer]] |
 | **Vault** | A folder of markdown notes Obsidian opens: your notes on the NAS, or these docs | [[Notes on the NAS]], [[How These Docs Work]] |

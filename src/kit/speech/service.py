@@ -14,10 +14,16 @@ samples, the first within a few hundred milliseconds on Chatterbox Turbo), so
 the desk can start playing it before the rest exists. ``speak`` gathers the
 pieces into one WAV for callers that want the whole clip (``kit speech say``,
 the bench).
+
+A profile with ``remote = true`` is made by the voice program on another computer
+(kit.speech.link): nothing is started here for it, and while the program isn't
+connected or ready, Kit speaks with ``speech.fallback``, kept loaded here beside it.
 """
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import io
 import json
 import logging
@@ -31,12 +37,15 @@ import wave
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Protocol
+from typing import IO, TYPE_CHECKING, Protocol
 
 import httpx
 
 from kit.paths import KitPaths
 from kit.settings import SpeechEngine, SpeechSettings
+
+if TYPE_CHECKING:
+    from kit.speech.link import VoiceLink
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +69,10 @@ class Loading(SpeechError):
 
 class Stale(SpeechError):
     """The line belongs to a reply that's been overtaken, so it wasn't made."""
+
+
+class NotConnected(SpeechError):
+    """The voice program for a remote engine isn't dialled in."""
 
 
 class Process(Protocol):
@@ -126,8 +139,12 @@ class SpeechService:
         port_offset: int = 0,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        link: VoiceLink | None = None,
     ) -> None:
+        from kit.speech.link import VoiceLink
+
         self.settings = settings
+        self.link = link or VoiceLink()
         self.paths = paths
         self.launcher = launcher
         self.http = http or httpx.Client(
@@ -160,7 +177,7 @@ class SpeechService:
 
     def options(self, profile: SpeechEngine) -> dict:
         """Engine options for the worker, with file settings made into real paths."""
-        options = profile.model_dump(mode="json", exclude={"kind", "python"})
+        options = profile.model_dump(mode="json", exclude={"kind", "python", "remote"})
         self.note = ""
         folder = speech_dir(self.paths)
         if profile.kind in ("chatterbox", "chatterbox-turbo"):
@@ -244,6 +261,8 @@ class SpeechService:
                 raise SpeechError("Kit is shutting down")
             s = self.settings()
             name = engine or s.engine
+            if name in s.engines and s.engines[name].remote:
+                return self._ensure_remote(name)
             key = self._key_for(name)
             profile, port = s.engines[name], key[-1]
             if self.running() and key == self._key:
@@ -258,6 +277,92 @@ class SpeechService:
                 raise
             self._key, self._failed = key, None
             return self.health
+
+    def keep_ready(self) -> None:
+        """Have loaded what Kit speaks with now, for the speech loop: the fallback
+        once it has taken over (not his usual engine, which would stop the fallback
+        to try again every minute). With a remote engine, ask the voice program to
+        load it and keep a fallback loaded here beside it, so a dropped link carries
+        straight on."""
+        s = self.settings()
+        if not s.engines[s.engine].remote:
+            self.link.unload()  # frees the other computer's graphics card
+            self.ensure(self.in_use())
+            return
+        self.offer_link()
+        if s.fallback and s.fallback != s.engine and not s.engines[s.fallback].remote:
+            self.ensure(s.fallback)
+        elif self.running():
+            self.stop()
+        if self.link.state == "failed":
+            self._ensure_remote(s.engine)  # says why, once, in the loop's log
+
+    def offer_link(self) -> None:
+        """Ask a connected voice program for the remote engine Kit speaks with, if
+        it hasn't been asked already. Doesn't wait: it says when it's ready."""
+        s = self.settings()
+        if s.engines[s.engine].remote:
+            with contextlib.suppress(Loading, NotConnected):
+                self._ensure_remote(s.engine)
+
+    def idle(self) -> None:
+        """Speech is off: stop the engine here and free the other computer's card."""
+        if self.running():
+            self.stop()
+        self.link.unload()
+
+    def _remote_message(self, name: str) -> dict:
+        """The engine message for a remote engine's voice program: the profile from
+        Kit's settings, with the voice clip itself, since that lives in his data
+        folder and not on the other computer."""
+        s = self.settings()
+        profile = s.engines[name]
+        data = profile.model_dump(mode="json", exclude={"remote"})
+        clip, clip_name = "", ""
+        if profile.kind in ("chatterbox", "chatterbox-turbo"):
+            reference = resolve(profile.reference, speech_dir(self.paths))
+            self.note = ""
+            if reference is not None and reference.is_file():
+                clip_name = reference.name
+                clip = base64.b64encode(reference.read_bytes()).decode("ascii")
+            elif reference is not None:
+                self.note = f"no voice clip at {reference}, so Chatterbox uses its own voice"
+        data["reference"] = clip_name
+        return {
+            "name": name,
+            "profile": data,
+            "clip_name": clip_name,
+            "clip": clip,
+            "load_timeout_s": s.load_timeout_s,
+        }
+
+    def _remote_key(self, name: str) -> str:
+        """What a remote engine is loaded with: a change to any of it (the clip
+        too) has the voice program load it again."""
+        s = self.settings()
+        profile = s.engines[name]
+        reference = resolve(profile.reference, speech_dir(self.paths))
+        try:
+            clip = reference.stat() if reference is not None else None
+            clip_key = [clip.st_size, clip.st_mtime_ns] if clip else None
+        except OSError:
+            clip_key = None
+        data = profile.model_dump(mode="json", exclude={"remote"})
+        return json.dumps([name, data, clip_key, s.load_timeout_s], sort_keys=True)
+
+    def _ensure_remote(self, name: str) -> dict:
+        """Ask the voice program for a remote engine; its health once it's ready."""
+        key = self._remote_key(name)
+        link = self.link
+        if not link.connected:
+            raise NotConnected(f"the voice program for {name} isn't connected (kit voice)")
+        if link.key != key or link.state == "failed":
+            link.load(key, self._remote_message(name), retry_s=RETRY_S)
+        if link.ready_for(key):
+            return link.health
+        if link.state == "failed" and link.key == key:
+            raise SpeechError(f"{name} couldn't load on {link.name}: {link.why}")
+        raise Loading(f"Kit's voice ({name}) is still loading on {link.name}")
 
     def _start(self, name: str, profile: SpeechEngine, port: int, timeout_s: float) -> None:
         folder = speech_dir(self.paths)
@@ -372,12 +477,19 @@ class SpeechService:
         generation: int | None,
         wait: bool,
     ) -> Speech:
+        name = engine or self.in_use()
         try:
-            return self._say(text, mood, engine or self.in_use(), first, generation, wait)
-        except (Loading, Stale):
+            return self._say(text, mood, name, first, generation, wait)
+        except Stale:
             raise  # nothing wrong with the engine
         except SpeechError as e:
-            if engine is not None or not self._fall_back(e):
+            s = self.settings()
+            if engine is None and s.engines[name].remote and s.fallback not in ("", name):
+                # The link dropped, or the line failed there: this line in the fallback.
+                if not isinstance(e, Loading):
+                    log.warning("voice link: %s; saying the line with %s", e, s.fallback)
+                return self._say(text, mood, s.fallback, first, generation, wait)
+            if isinstance(e, Loading) or engine is not None or not self._fall_back(e):
                 raise
             return self._say(text, mood, self.in_use(), first, generation, wait)
 
@@ -401,6 +513,12 @@ class SpeechService:
         """The engine Kit speaks with: ``speech.engine``, or ``speech.fallback`` once
         that has had to take over (until his speech settings change)."""
         s = self.settings()
+        if s.engines[s.engine].remote:
+            # The other computer's voice while its program is up and ready; the
+            # fallback here meanwhile, and his usual voice again the moment it's back.
+            if s.fallback in ("", s.engine) or self.link.ready_for(self._remote_key(s.engine)):
+                return s.engine
+            return s.fallback
         if self.fell_back is not None:
             if self.fell_back[0] == self._settings_key(s) and s.fallback:
                 return s.fallback
@@ -414,7 +532,8 @@ class SpeechService:
         why = str(error)
         started = self.running() and self._key is not None and self._key[0] == s.engine
         if (
-            self.fell_back is not None
+            s.engines[s.engine].remote
+            or self.fell_back is not None
             or not s.fallback
             or s.fallback == s.engine
             or (started and not OUT_OF_MEMORY.search(why))
@@ -432,6 +551,11 @@ class SpeechService:
     def _say(
         self, text: str, mood: str, engine: str, first: bool, generation: int | None, wait: bool
     ) -> Speech:
+        if self.settings().engines[engine].remote:
+            self._ensure_remote(engine)
+            said = self.link.speak(text, mood, first, generation)
+            said.pieces = self._overtakable(said.pieces, generation)
+            return said
         if not wait and not self.ready(engine):
             if (why := self._failed_lately(self._key_for(engine))) is not None:
                 raise SpeechError(why)
@@ -462,6 +586,18 @@ class SpeechService:
             pieces=self._pieces(r, generation),
         )
 
+    def _overtakable(self, pieces: Iterator[bytes], generation: int | None) -> Iterator[bytes]:
+        """A remote line's pieces, stopping once the reply is overtaken (closing them
+        tells the voice program to stop making it)."""
+        try:
+            for piece in pieces:
+                if self._overtaken(generation):
+                    log.info("reply %s was interrupted: dropping the rest of the line", generation)
+                    return
+                yield piece
+        finally:
+            pieces.close()
+
     def _pieces(self, r: httpx.Response, generation: int | None) -> Iterator[bytes]:
         """The engine's answer as it comes, stopping once the reply is overtaken."""
         try:
@@ -482,19 +618,32 @@ class SpeechService:
     def status(self) -> dict:
         s = self.settings()
         using = self.in_use()
+        remote = s.engines[using].remote
+        up = self.link.ready_for(self._remote_key(using)) if remote else self.running()
+        health = self.link.health if remote else self.health
+        fell_back = self.fell_back[1] if self.fell_back and using != s.engine else None
+        if s.engines[s.engine].remote and using != s.engine:
+            link = self.link
+            fell_back = (
+                link.why
+                or (f"it's still loading on {link.name}" if link.connected else "")
+                or "the voice program isn't connected"
+            )
         return {
             "enabled": s.enabled,
             "engine": s.engine,
             "using": using,
-            "fell_back": self.fell_back[1] if self.fell_back and using != s.engine else None,
+            "fell_back": fell_back,
             "kind": s.engines[using].kind,
-            "running": self.running(),
-            "loaded": self.health.get("engine") if self.running() else None,
-            "device": self.health.get("device") if self.running() else None,
-            "cuda_graph": bool(self.health.get("cuda_graph")) if self.running() else None,
+            "remote": remote,
+            "running": up,
+            "loaded": health.get("engine") if up else None,
+            "device": health.get("device") if up else None,
+            "cuda_graph": bool(health.get("cuda_graph")) if up else None,
             "load_s": self.load_s,
             "note": self.note,
             "engines": {name: e.kind for name, e in s.engines.items()},
+            "link": self.link.status(),
         }
 
     def close(self) -> None:

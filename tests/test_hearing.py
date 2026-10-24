@@ -500,3 +500,20 @@ def test_kit_hearing_runs_and_enrols_with_the_brains_settings(paths, capsys):
     args = _args("enrol", who="Dan", seconds=10.3)
     assert cmd_hearing(paths, args, transport=t, parts=parts) == 0
     assert "know Dan's voice now" in capsys.readouterr().out
+
+
+def test_each_mic_is_listed_once_by_its_shortest_name():
+    from kit.hearing.mic import mic_names
+
+    devices = [
+        (1, "Microphone (Realtek High Defini"),
+        (2, "Headset Mic (USB)"),
+        (5, "Microphone (Realtek High Definition Audio)"),
+        (7, "Headset Mic (USB)"),
+        (9, "  "),
+    ]
+    assert mic_names(devices) == ["Microphone (Realtek High Defini", "Headset Mic (USB)"]
+    assert mic_names(list(reversed(devices))) == [
+        "Headset Mic (USB)",
+        "Microphone (Realtek High Defini",
+    ]
