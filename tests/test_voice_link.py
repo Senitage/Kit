@@ -629,3 +629,19 @@ def test_kit_speech_say_with_the_pc_voice_goes_through_kits_server(paths, capsys
 def test_kits_paths_on_the_pc_are_the_programs_own_folder(tmp_path):
     program = voice.VoiceProgram("http://k", "t", tmp_path / "v", service=FakeService())
     assert program.paths == KitPaths(tmp_path / "v")
+
+
+def test_kit_speech_says_when_the_voice_clip_isnt_on_the_server(paths, capsys):
+    paths.ensure()
+    SettingsStore(paths).update(
+        {"speech": {"engine": "pc", "engines": {"pc": {"kind": "tone", "remote": True}}}}, "t"
+    )
+
+    def answer(request):
+        link = {"connected": True, "name": "desk-pc", "state": "ready", "device": "cuda"}
+        note = "no voice clip at /home/you/clip.wav, so Chatterbox uses its own voice"
+        return httpx.Response(200, json={"using": "pc", "link": link, "note": note})
+
+    args = argparse.Namespace(action="show")
+    assert cmd_speech(paths, args, transport=httpx.MockTransport(answer)) == 0
+    assert "note: no voice clip at /home/you/clip.wav" in capsys.readouterr().out

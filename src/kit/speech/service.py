@@ -327,6 +327,7 @@ class SpeechService:
                 clip = base64.b64encode(reference.read_bytes()).decode("ascii")
             elif reference is not None:
                 self.note = f"no voice clip at {reference}, so Chatterbox uses its own voice"
+                log.warning("voice link: %s (it must be on this machine)", self.note)
         data["reference"] = clip_name
         return {
             "name": name,
