@@ -21,13 +21,14 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
@@ -226,6 +227,7 @@ class PcPage(QWidget):
         )
         self.form = ConnectionForm(config, token)
         layout.addWidget(self.form)
+        layout.addWidget(self._ears(config))
         layout.addWidget(self._may_open(config))
         row = QHBoxLayout()
         row.addStretch(1)
@@ -237,6 +239,66 @@ class PcPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
+
+    def _ears(self, config: DeskConfig) -> QWidget:
+        """Kit's ears in the desk app (kit.desk.ears): on or off here, which mic, how
+        they are, and introducing a voice."""
+        box = QWidget()
+        form = QFormLayout(box)
+        form.setContentsMargins(0, 12, 0, 0)
+        form.addRow(_label("Kit's ears", "title"))
+        self.hear_here = QCheckBox('Listen with this PC\'s mic: say "Kit, ..." and he answers')
+        self.hear_here.setChecked(config.hear_here)
+        form.addRow(self.hear_here)
+        self.mic = QComboBox()
+        self._fill_mics(config.mic)
+        form.addRow("Microphone", self.mic)
+        self.ears_note = _label("", "muted")
+        form.addRow("How they are", self.ears_note)
+        self.enrol_note = _label("", "muted")
+        row = QHBoxLayout()
+        row.addWidget(_button("Introduce my voice...", self.introduce_me))
+        row.addWidget(_button("Someone else's...", self.introduce_someone))
+        row.addStretch(1)
+        form.addRow("", row)
+        form.addRow("", self.enrol_note)
+        self._ears_timer = QTimer(self)
+        self._ears_timer.timeout.connect(self._show_ears)
+        return box
+
+    def _fill_mics(self, current: str) -> None:
+        self.mic.clear()
+        self.mic.addItem("The default mic", "")
+        for name in self.mics():
+            self.mic.addItem(name, name)
+        if current and self.mic.findData(current) < 0:
+            self.mic.addItem(current, current)
+        self.mic.setCurrentIndex(max(0, self.mic.findData(current)))
+
+    def mics(self) -> list[str]:
+        return []  # the app points this at kit.desk.ears.mics
+
+    def ears_status(self) -> str:
+        return ""  # the app points this at its ears' status
+
+    def enrol(self, who: str, seconds: float) -> str:
+        raise RuntimeError("Kit's ears aren't running in this window.")  # the app's ears
+
+    def _show_ears(self) -> None:
+        self.ears_note.setText(self.ears_status())
+
+    def introduce_me(self) -> None:
+        self.introduce("me")
+
+    def introduce_someone(self) -> None:
+        who, ok = QInputDialog.getText(self, "Introduce a voice", "Whose voice is it?")
+        if ok and who.strip():
+            self.introduce(who.strip())
+
+    def introduce(self, who: str) -> None:
+        dialog = EnrolDialog(who, self.enrol, self)
+        dialog.finished.connect(lambda _code: self.enrol_note.setText(dialog.outcome))
+        dialog.open()
 
     def _may_open(self, config: DeskConfig) -> QWidget:
         """What Kit may open on this PC (kit.desk.commands), and what he's done."""
@@ -272,7 +334,14 @@ class PcPage(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt's name)
         self.show_log(self.command_log())
+        self._fill_mics(self.mic.currentData() or "")
+        self._show_ears()
+        self._ears_timer.start(1000)
         super().showEvent(event)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (Qt's name)
+        self._ears_timer.stop()
+        super().hideEvent(event)
 
     def command_log(self) -> list[dict]:
         return []  # the app points this at its Runner's log
@@ -286,10 +355,68 @@ class PcPage(QWidget):
             apps=apps_from_text(self.apps.toPlainText()),
             url_schemes=_list_text(self.url_schemes.text()),
             share_recent_files=self.share_recent.isChecked(),
+            hear_here=self.hear_here.isChecked(),
+            mic=self.mic.currentData() or "",
         )
         self.form.config = config
         self.saved.emit(config, token, at_logon)
         self.note.setText("Saved.")
+
+
+class EnrolDialog(QDialog):
+    """Introducing a voice to Kit's ears: the lines to read, while the ears listen."""
+
+    SECONDS = 30.0
+
+    def __init__(self, who: str, enrol: Callable[[str, float], str], parent=None) -> None:
+        from kit.hearing.enrol import LINES
+
+        super().__init__(parent)
+        self.who, self._enrol = who, enrol
+        self.outcome = ""
+        self.setWindowTitle("Introduce a voice")
+        layout = QVBoxLayout(self)
+        whose = "your" if who == "me" else f"{who}'s"
+        layout.addWidget(
+            _label(
+                f"Kit will learn {whose} voice. Press Start, then read these out loud at a "
+                "normal pace, from where you usually sit:"
+            )
+        )
+        layout.addWidget(_label("\n".join(LINES)))
+        self.progress = QProgressBar()
+        self.progress.setRange(0, int(self.SECONDS))
+        self.progress.setTextVisible(False)
+        layout.addWidget(self.progress)
+        self.note = _label("", "muted")
+        layout.addWidget(self.note)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.start_button = _button("Start", self.start, "primary")
+        row.addWidget(self.start_button)
+        self.close_button = _button("Cancel", self.reject)
+        row.addWidget(self.close_button)
+        layout.addLayout(row)
+        self._tick = QTimer(self)
+        self._tick.timeout.connect(lambda: self.progress.setValue(self.progress.value() + 1))
+
+    def start(self) -> None:
+        self.start_button.setEnabled(False)
+        self.close_button.setEnabled(False)
+        self.note.setText("Listening...")
+        self._tick.start(1000)
+        in_background(lambda: self._enrol(self.who, self.SECONDS), self._done)
+
+    def _done(self, result) -> None:
+        self._tick.stop()
+        self.outcome = str(result)
+        self.note.setText(self.outcome)
+        _restyle(self.note, "error" if isinstance(result, Exception) else "muted")
+        self.close_button.setText("Close")
+        self.close_button.setEnabled(True)
+        self.start_button.setText("Again")
+        self.start_button.setEnabled(True)
+        self.progress.setValue(0)
 
 
 # Memory

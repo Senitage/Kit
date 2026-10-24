@@ -33,9 +33,16 @@ update.
 
 ## 2. Install the ears on the PC with the mic
 
-Like the eyes, the ears are the `kit` package with an extra, on the PC with the
-microphone. Use the eyes' copy of Kit if you have one; otherwise make one as
-in [[Vision Stage 1]], then:
+**With the desk app on that PC, they're already there.** Update it (tray >
+Check for updates), open **This PC** and check **Listen with this PC's mic**
+is ticked; pick the mic if it isn't the default. Under **How they are** it
+says "Listening" once the models have downloaded (about 200 MB, once). Then
+skip to step 4, and introduce voices from the same page. See
+[[Hearing#In the desk app]].
+
+On a PC without the desk app, the ears are the `kit` package with an extra.
+Use the eyes' copy of Kit if you have one; otherwise make one as in
+[[Vision Stage 1]], then:
 
 ```powershell
 cd C:\path\to\Kit
@@ -69,6 +76,9 @@ To start them with Windows, add a logon task the same way as the eyes'
 ([[Vision Stage 1#4. Open them]]), with `kit hearing` as the command.
 
 ## 4. Introduce voices
+
+In the desk app: **This PC** > **Introduce my voice**, then **Someone
+else's** for anyone else, with their say-so. With `kit hearing`:
 
 ```powershell
 kit hearing enrol me        # you; read the lines it shows, at your usual distance

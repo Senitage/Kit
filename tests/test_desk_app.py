@@ -2,6 +2,7 @@
 
 import gc
 import os
+from dataclasses import replace
 
 import pytest
 
@@ -994,7 +995,10 @@ def test_the_desk_app_needs_nothing_the_installer_leaves_out():
     root = Path(__file__).resolve().parents[1]
     script = (root / "packaging" / "windows" / "build.ps1").read_text(encoding="utf-8")
     left_out = re.findall(r'"--exclude-module", "([\w.]+)"', script)
-    assert "numpy" in left_out and "fastapi" in left_out
+    assert "fastapi" in left_out and "anthropic" in left_out
+    # Kit's ears are packed in, but only loaded when they start, so the app opens quickly.
+    assert "numpy" not in left_out and '"sherpa_onnx"' in script
+    left_out += ["numpy", "sherpa_onnx"]
     blocker = (
         "import importlib.abc, sys\n"
         f"LEFT_OUT = {left_out!r}\n"
@@ -1083,6 +1087,70 @@ def test_the_this_pc_page_saves_what_kit_may_open(qapp):
     assert config.apps == {"excel": "excel.exe", "paint": "mspaint.exe"}
     assert config.url_schemes == ["obsidian", "vscode"]
     page.close()
+
+
+def test_the_this_pc_page_turns_the_ears_on_picks_a_mic_and_shows_how_they_are(qapp):
+    from kit.desk.window import PcPage
+
+    page = PcPage(DeskConfig(mic="Headset"), "tok")
+    page.mics = lambda: ["Microphone (Realtek)", "Headset Mic (USB)"]
+    page.ears_status = lambda: "Listening with Headset. Sound stays on this PC."
+    page.show()
+    names = [page.mic.itemText(i) for i in range(page.mic.count())]
+    # A saved mic that isn't plugged in stays picked, so saving doesn't lose it.
+    assert names == ["The default mic", "Microphone (Realtek)", "Headset Mic (USB)", "Headset"]
+    assert page.mic.currentData() == "Headset"
+    assert page.ears_note.text().startswith("Listening with Headset")
+    saved = []
+    page.saved.connect(lambda config, token, logon: saved.append(config))
+    page.hear_here.setChecked(False)
+    page.mic.setCurrentIndex(1)
+    page.save()
+    assert not saved[-1].hear_here and saved[-1].mic == "Microphone (Realtek)"
+    page.mic.setCurrentIndex(0)
+    page.save()
+    assert saved[-1].mic == ""
+    page.close()
+
+
+def test_introducing_a_voice_from_the_this_pc_page(qapp, monkeypatch):
+    from kit.desk import window
+
+    monkeypatch.setattr(window, "SYNC", True)
+    asked = []
+
+    def enrol(who, seconds):
+        asked.append((who, seconds))
+        if who == "Sam":
+            raise RuntimeError("I only heard 1 good stretch(es) of Sam talking.")
+        return "Kit knows Dan's voice now (9 voice prints)."
+
+    dialog = window.EnrolDialog("me", enrol)
+    dialog.start()
+    assert asked == [("me", 30.0)] and "Dan's voice" in dialog.note.text()
+    assert dialog.close_button.text() == "Close" and dialog.start_button.isEnabled()
+    dialog = window.EnrolDialog("Sam", enrol)
+    dialog.start()
+    assert dialog.note.objectName() == "error" and "only heard 1" in dialog.outcome
+
+
+def test_the_this_pc_page_saves_everything_on_it(qapp, desk_dir, monkeypatch):
+    # The page's own fields all reach desk.toml (What Kit may open was once dropped).
+    DeskConfig(brain_url="http://127.0.0.1:9").save(desk_dir)
+    save_token("tok", desk_dir)
+    monkeypatch.setattr(desk_app.DeskApp, "check_health", lambda self: None)
+    monkeypatch.setattr(desk_app.startup, "set_enabled", lambda on: None)
+    desk = desk_app.DeskApp(qapp, background=True)
+    try:
+        config = replace(
+            desk.config, do_commands=False, url_schemes=["vscode"], hear_here=False, mic="USB"
+        )
+        desk.save_pc(config, "tok", False)
+        saved = DeskConfig.load(desk_dir)
+        assert not saved.do_commands and saved.url_schemes == ["vscode"]
+        assert not saved.hear_here and saved.mic == "USB"
+    finally:
+        desk.quit()
 
 
 def test_a_desk_command_for_this_pc_is_claimed_done_and_answered(qapp, desk_dir, monkeypatch):

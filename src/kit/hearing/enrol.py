@@ -9,10 +9,12 @@ sound can be rebuilt) go to the brain, which keeps them in its data folder
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
 from kit.hearing.engines import RATE, Vad, VoicePrinter
+from kit.settings import HearingSettings
 
 PIECE_S = 3.0  # each voice print is made from this much talking
 MIN_PIECE_S = 1.5
@@ -25,6 +27,32 @@ LINES = [
     "What do you reckon we should have for tea tonight?",
     "Night Kit, see you in the morning.",
 ]
+
+
+Parts = tuple[Callable[[], object], Vad, VoicePrinter]  # open the mic, the VAD, the printer
+
+
+def real_parts(settings: HearingSettings, folder: Path | None = None) -> Parts:
+    """The real mic, voice detector and voice printer for enrolling. Imports the
+    libraries here, so only this needs them installed."""
+    from kit.hearing.engines import CamPlusPlus, SileroVad
+    from kit.hearing.link import models_dir
+    from kit.hearing.mic import SoundDeviceMic, input_devices, pick_device
+
+    models = models_dir(folder)
+    device = pick_device(settings.mic, input_devices()) if settings.mic else None
+    return (
+        lambda: SoundDeviceMic(device),
+        SileroVad(models, settings, ahead=False),
+        CamPlusPlus(models, settings),
+    )
+
+
+def owner(client, who: str) -> str:
+    """``me`` as Dan's name (persona.owner on the brain); anyone else as given."""
+    if who.casefold() != "me":
+        return who
+    return client.settings()["settings"].get("persona", {}).get("owner", "") or who
 
 
 def pieces(samples: np.ndarray) -> list[np.ndarray]:

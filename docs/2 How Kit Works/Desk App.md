@@ -11,8 +11,9 @@ related: ["[[Stage 2 - Desk App]]", "[[Desk App Builds and Updates]]", "[[Bodies
 > The desk app is Kit's first body. It puts his **face** on the desktop and
 > in the tray, a **chat** window, and **Kit's window** with his mood, memory,
 > settings and looks. It tells the brain **what's on the PC** (window titles,
-> idle time, PC health; never screenshots) and plays his **voice**. It only
-> connects out to the brain, and updates itself from GitHub.
+> idle time, PC health; never screenshots), plays his **voice** and is his
+> **ears** (words only, never sound). It only connects out to the brain, and
+> updates itself from GitHub.
 
 ## What you see
 
@@ -22,7 +23,7 @@ related: ["[[Stage 2 - Desk App]]", "[[Desk App Builds and Updates]]", "[[Bodies
   he can't reach the brain. Click him for the chat.
 - **The tray icon**: click for the chat; right-click for the menu: Open
   chat, Show Kit's face, the switches (Share what I'm working on, Let Kit see
-  me, Share what's playing, Boop when Kit talks), How Kit's feeling, What Kit
+  me, Let Kit hear me, Share what's playing, Boop when Kit talks), How Kit's feeling, What Kit
   remembers, Settings, Look, Quiet for an hour, Kit in the browser, Set up the
   Chrome extension, Check for updates, Quit Kit.
 - **The chat**: the same conversation as everywhere else. Replies stream in
@@ -35,7 +36,7 @@ related: ["[[Stage 2 - Desk App]]", "[[Desk App Builds and Updates]]", "[[Bodies
 | Mood | How he is at a glance: face, mood, feeling and why, needs bars. Only looks |
 | Memory | Search what he knows, teach him, pin, edit or forget |
 | Kit's settings | The brain's settings, with Save and Undo |
-| This PC | The brain's address and token, what Kit may see, what Kit may open, start at logon |
+| This PC | The brain's address and token, what Kit may see, his ears (on or off here, which mic, introducing a voice), what Kit may open, start at logon |
 | Look | Theme, accent colour, eye colour, face size, text size, speech bubble, how much he moves |
 | Updates | Your version, new versions from GitHub |
 
@@ -139,6 +140,14 @@ app" is found by meaning (`list_projects`) and opens in your editor
 - **Quit** stops his voice, lets the speakers go and closes the connection to
   the brain, so nothing hangs on the way out and the next start finds the
   sound device free.
+
+## His ears
+
+The app is Kit's ears on its PC: the same ears as `kit hearing`, built in, so
+there's nothing else to install. They start with the app, use its connection
+to the brain, and send only words. **This PC** turns them on or off for this
+PC, picks the mic, says how they are, and introduces a voice. See
+[[Hearing#In the desk app]].
 
 ## Connections
 

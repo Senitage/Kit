@@ -50,10 +50,12 @@ cooked from it each time.
 2. **Freezes the app with PyInstaller.** PyInstaller collects Python itself, Kit's
    desk code, Qt and every library into a folder with `Kit.exe` in it, so the
    desk PC doesn't need Python installed. The brain's own libraries (FastAPI,
-   uvicorn, the Anthropic client and numpy) are left out to keep it small, so
-   desk code must not import them; a desk test checks that.
+   uvicorn and the Anthropic client) are left out to keep it small, so desk
+   code must not import them; a desk test checks that. Kit's ears (the
+   `hearing` extra: sherpa-onnx and numpy) are packed in, and only loaded
+   when they start, so the app still opens quickly; the same test checks that.
 3. **Self-tests it.** It runs `Kit.exe --selftest`, which opens the chat and
-   Kit's window off-screen and exits. A broken exe stops the build here, and
+   Kit's window off-screen, loads the sound and ears libraries, and exits. A broken exe stops the build here, and
    one that hasn't finished in two minutes is stopped and fails the build.
 4. **Wraps it in an installer with Inno Setup.** That gives
    `Kit-Desk-Setup-<version>.exe`, which installs for your account only (no
