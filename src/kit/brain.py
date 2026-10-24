@@ -220,6 +220,7 @@ from kit.reply import (
     reply_schema,
     sentences,
     spoken_reply,
+    without_laughs,
     without_plans,
 )
 from kit.scene_context import SEEN, Happening, SceneContext, SceneReport
@@ -1957,7 +1958,9 @@ class Brain:
         context = " ".join(
             [self.pc.now_line(owner), *(m.text for m in history[-4:]), day_part(now), f"{now:%A}"]
         )
-        said = [without_plans(m.text) for m in history if m.role != "user"][-SAID_SHOWN:]
+        said = [without_laughs(without_plans(m.text)) for m in history if m.role != "user"][
+            -SAID_SHOWN:
+        ]
         d = self.life.drives
         urgency = {
             "want": self.life.wanting,
@@ -2551,7 +2554,9 @@ class Brain:
         for a pipe-up, where nobody has spoken; ``home``: a hello is in play, whose
         facts say how long Dan was gone, so the time line stays out."""
         persona = settings.persona
-        said = [without_plans(m.text)[:SAID_CHARS] for m in history if m.role != "user"]
+        said = [
+            without_laughs(without_plans(m.text))[:SAID_CHARS] for m in history if m.role != "user"
+        ]
         said = [line for line in said if line][-SAID_SHOWN:]
         own = [(ex.user, ex.kit) for ex in persona.examples]
         mind = self.notebook.mind_with_ids(persona.owner)
@@ -2785,7 +2790,11 @@ class Brain:
         routing = settings.routing
         voice = VOICE.get()
         if role != LOCAL and voice is not None:
-            said = [without_plans(m.text)[:SAID_CHARS] for m in history or [] if m.role != "user"]
+            said = [
+                without_laughs(without_plans(m.text))[:SAID_CHARS]
+                for m in history or []
+                if m.role != "user"
+            ]
             mind = self.notebook.mind_with_ids(settings.persona.owner, shared=True)
             opinions = self._opinions(settings, shared=True)
             voice = replace(

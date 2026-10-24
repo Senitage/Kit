@@ -114,8 +114,14 @@ through lines where nothing was funny. So a laugh only stays in a sentence
 whose gesture is a laugh: the model picks that gesture when something is
 funny. Anywhere else it comes out before the words are shown or spoken, as
 they stream in, and a sentence it opened starts with a capital again
-("Hehe, you funny." becomes "You funny."). Words that only look like a laugh,
-such as "Hi hi" or a single "Ha!", stay.
+("Hehe, you funny." becomes "You funny."). Spellings with a longer vowel count
+too ("hee hee", "heehee", "tee hee"). Words that only look like a laugh, such as
+"Hi hi" or a single "Ha!", stay.
+
+His own earlier lines go into the next prompt with their laughs taken out as
+well, both in the conversation so far and in the few lines he's shown to keep
+from repeating himself. Lines saved before this, with a "hee hee" still in them,
+had him tacking one onto every reply however the rules were worded.
 
 > [!under-the-hood]- Under the hood: laughs
 > - `src/kit/reply.py`: `said_laughs` and `without_laughs`. The cloud stream holds
@@ -124,6 +130,8 @@ such as "Hi hi" or a single "Ha!", stay.
 > - `src/kit/prompt.py`: `NO_WRITTEN_LAUGHS`, laugh only at what's funny.
 > - `src/kit/notebook.py`: `drop_written_laughs`, once, so his reflection takes any
 >   laughing habit out of his self-sheet.
+> - `src/kit/prompt.py` `_plain` and `kit.brain`'s own-lines list: his old turns are
+>   cleaned the same way before they go back into a prompt.
 
 ## Sounds in his voice
 

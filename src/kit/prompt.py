@@ -22,6 +22,7 @@ from kit.reply import (
     Action,
     Reply,
     ReplyError,
+    without_laughs,
     without_plans,
     written,
 )
@@ -982,7 +983,12 @@ def later_note(before: str, at: str) -> str:
 
 def _plain(m: Message, keep_detail: bool) -> str:
     """Kit's words in an earlier turn, without any plan JSON that got into them: one
-    left in the history and he copies it every time after."""
+    left in the history and he copies it every time after. Laughs go too: lines from
+    before they were taken out ("..., hee hee.") had him tacking one on every time."""
+    return without_laughs(_plain_words(m, keep_detail))
+
+
+def _plain_words(m: Message, keep_detail: bool) -> str:
     if not m.reply_json:
         return without_plans(m.text) or "..."
     try:
