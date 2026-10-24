@@ -272,6 +272,19 @@ def test_history_shows_his_turns_as_words_with_one_reminder_of_the_shape():
     assert plain[3]["content"] == "Hi." and "{" not in "".join(m["content"] for m in plain)
 
 
+def test_history_leaves_his_old_laughs_out():
+    # Lines from before laughs were taken out ("..., hee hee.") had him copying one
+    # onto every reply, and a funny one kept is still one to copy.
+    history = [
+        Message(1, "2026-10-23T09:00:00", "kit", "Kit just tease you, hee hee."),
+        Message(
+            2, "2026-10-23T09:00:05", "kit", "x", reply("Hehe! Toast on fire.", gesture="laugh")
+        ),
+    ]
+    shown = history_messages(history, plain=True)
+    assert [m["content"] for m in shown] == ["Kit just tease you.", "Toast on fire."]
+
+
 def test_the_speaking_note_is_one_reminder_not_a_second_copy():
     note = speak_note(
         Action(kind="none"),

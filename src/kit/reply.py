@@ -136,7 +136,13 @@ LinkSystem = Literal[("none", *SYSTEMS)]  # type: ignore[valid-type]
 # a cheeky character sprinkled them through his lines where nothing was funny, and his
 # voice read them out. A laugh is fine when something is funny, so it stays only in a
 # segment with the laugh gesture (``said_laughs``) and goes from the rest.
-_LAUGH = re.compile(r"(,\s*)?\b(?:(?:ha|he)(?:[\s-]?(?:ha|he))+h?|heh|hah|lol)\b([!~.,]*)", re.I)
+# "hee hee", "heehee" and "tee hee" too: Kit took to writing "hee hee" (2026-10-24),
+# which a pattern of "he" and "ha" pairs let through.
+_LAUGH = re.compile(
+    r"(,\s*)?\b(?:h[ae]{1,3}(?:[\s-]?h[ae]{1,3})+h?|te{1,2}[\s-]?he{1,2}|heh|hah|lol)\b"
+    r"([!~.,]*)",
+    re.I,
+)
 _LAUGH_STAGE = re.compile(
     r"[*(]\s*(?:laugh|giggl|chuckl|snicker|snort|cackl)\w*[^*()\n]{0,30}[*)]", re.I
 )

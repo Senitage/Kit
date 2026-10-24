@@ -149,8 +149,11 @@ def test_full_text_adds_detail():
         ("*laughs* Yes yes.", "Yes yes."),
         ("You eat dinner (chuckles softly), question?", "You eat dinner, question?"),
         ("Hehehe~ Fun fun.", "Fun fun."),
+        ("Coffee not bad! Kit just tease you, hee hee.", "Coffee not bad! Kit just tease you."),
+        ("Heehee! Tee hee, got you.", "Got you."),
         # Words that only look like a laugh stay.
         ("He helped. Hi hi, you back!", "He helped. Hi hi, you back!"),
+        ("The heel hurt here.", "The heel hurt here."),
         ("Ha! Got you.", "Ha! Got you."),
         ("I (think) fix *now*.", "I (think) fix *now*."),
     ],

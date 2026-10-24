@@ -57,6 +57,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part F3: home_app as a pack. Fuel, cars and saved work as rows from home_app, money as figures only, adding a trip stop asks first, and his last tool calls on home_app's Health page | Done, pull request #71 | [[Other Apps#home_app as a pack]], [[Stage 4 - Tools]] |
 | Stage 4, part G1: the morning brief. Weather, tasks due, a bill coming up, the house, yesterday and threads, once a morning at the desk or in his first answer, and "the second one" later | Done, pull request #72 | [[Companion#The morning brief]], [[Stage 4 - Tools]] |
 | His voice on another computer: the voice program on the PC dials in to Kit and makes his lines on its graphics card, with the server's voice taking over while it's away; the backup voice kept loaded; each piece of sound sent at once (40 ms off every line) | Done, pull request #75 | [[Voice#His voice from another computer]], [[Stage 3 - Voice#His voice on another computer]] |
+| Laughs: "hee hee" and "tee hee" caught too, and his own earlier lines go back into the prompt without their laughs | Open, pull request | [[Voice#Laughs only when it's funny]] |
 | Ears in the desk app: the desk app hears through its PC's mic with nothing else to install, picks the mic and introduces voices on the This PC page, and starts the ears again when something changes; This PC's "What Kit may open" choices now save | Open, pull request | [[Hearing#In the desk app]], [[Desk App#His ears]] |
 
 ## What's next
