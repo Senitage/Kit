@@ -112,6 +112,8 @@ about the day:
 | Part | What it says |
 |---|---|
 | `weather` | Today's sky, top and chance of rain where you live |
+| `calendar` | What's on today, from your Google calendars ([[Mail and Calendar]]) |
+| `mail` | New unread mail in the inbox: who, about what |
 | `tasks` | Notes tasks due today or overdue |
 | `bills` | A bill in one of your apps due in the next four days |
 | `house` | Lights or the aircon still on, the garage or a door open, a lock undone |

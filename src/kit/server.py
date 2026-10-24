@@ -21,6 +21,8 @@ from kit.brain import Brain
 from kit.credentials import app_token, home_assistant_token
 from kit.devices import DEVICES_FILE, Devices
 from kit.files.index import Files
+from kit.google.auth import TokenStore
+from kit.google.client import Google
 from kit.house.client import HomeAssistant
 from kit.house.contents import write_contents
 from kit.house.model import House
@@ -44,6 +46,7 @@ SUMMARY_INTERVAL_S = 3600
 NOTES_SYNC_S = 300  # how often Kit looks for new and changed notes in the vault
 SPEECH_CHECK_S = 5  # how often the voice engine is started or stopped to match settings
 HOUSE_CHECK_S = 60  # how often the house is checked: lights left on, a refresh due
+GOOGLE_CHECK_S = 60  # how often the calendar is looked at: a refresh due, an event soon
 FILES_CHECK_S = 60  # how often Kit checks whether a files sync is due (files.sync_every_minutes)
 
 
@@ -65,6 +68,8 @@ def create_app(
     files_every_s: float | None = FILES_CHECK_S,
     house: House | None = None,
     house_every_s: float | None = HOUSE_CHECK_S,
+    google: Google | None = None,
+    google_every_s: float | None = GOOGLE_CHECK_S,
     apps: list[App] | None = None,
     apps_run: bool = True,
 ) -> FastAPI:
@@ -89,6 +94,10 @@ def create_app(
         house = _house_from_settings(store, memory)
     if house is not None:
         brain.use_house(house)
+    if google is None and brain.google is None:
+        google = _google_from_settings(store, memory)
+    if google is not None:
+        brain.use_google(google)
     if apps is None and not brain.apps:
         apps = _apps_from_settings(store, brain)
     for app_ in apps or []:
@@ -100,6 +109,8 @@ def create_app(
         if brain.house is not None and house_every_s:
             await brain.house.client.start()
             tasks.append(asyncio.create_task(_house_loop(brain, store, house_every_s)))
+        if brain.calendars is not None and google_every_s:
+            tasks.append(asyncio.create_task(_google_loop(brain, google_every_s)))
         if apps_run:
             tasks += [asyncio.create_task(a.run()) for a in brain.apps.values()]
         if summarise_every_s:
@@ -117,6 +128,8 @@ def create_app(
             task.cancel()
         if brain.house is not None:
             await brain.house.client.close()
+        if brain.google is not None:
+            await brain.google.close()
         for a in brain.apps.values():
             await a.close()
         await brain.close()  # learning that was running after a reply
@@ -178,6 +191,30 @@ def _house_from_settings(store: SettingsStore, memory: Memory) -> House | None:
         log.warning("house.enabled is on but there's no home_assistant_token in secrets")
         return None
     return House(HomeAssistant(s.url, token), memory.clock)
+
+
+def _google_from_settings(store: SettingsStore, memory: Memory) -> Google | None:
+    """Dan's Google account, when ``google.enabled`` is on and he's signed in
+    (``kit google connect``)."""
+    s = store.current().google
+    if not s.enabled:
+        return None
+    tokens = TokenStore(store.paths.secrets_dir)
+    google = Google(tokens, memory.clock)
+    if google.tokens is None:
+        log.warning("google.enabled is on but Kit isn't signed in: run `kit google connect`")
+    return google
+
+
+async def _google_loop(brain: Brain, every_s: float) -> None:
+    """The coming events, every ``google.refresh_minutes``, and a word before one
+    starts (``Brain.calendar_tick``)."""
+    while True:
+        try:
+            await brain.calendar_tick()
+        except Exception:
+            log.exception("keeping up with the calendar failed")
+        await asyncio.sleep(every_s)
 
 
 def _apps_from_settings(store: SettingsStore, brain: Brain) -> list[App]:

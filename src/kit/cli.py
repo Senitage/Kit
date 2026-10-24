@@ -32,7 +32,7 @@ from kit.settings import (
 from kit.settings_store import SettingsStore
 from kit.things import SYSTEMS, THING_KINDS
 
-CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "house", "apps"]
+CHECK_NAMES = ["data", "gpu", "ollama", "tailscale", "nas", "files", "house", "google", "apps"]
 CHECK_NAMES += ["cloud", "prices", "eyes"]
 
 
@@ -79,6 +79,8 @@ def run_checks(paths: KitPaths, skip: set[str]) -> list[CheckResult]:
         results.extend(checks.check_files(settings))
     if "house" not in skip:
         results.append(checks.check_house(settings, home_assistant_token(paths)))
+    if "google" not in skip:
+        results.append(checks.check_google(settings, paths))
     if "apps" not in skip:
         results.extend(checks.check_apps(settings, lambda n, s: app_token(paths, n, s)))
     if "cloud" not in skip:
@@ -1541,6 +1543,156 @@ def cmd_files(paths: KitPaths, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_google(paths: KitPaths, args: argparse.Namespace, http=None, ask=input, opener=None) -> int:
+    """``kit google``: sign Kit in to Dan's Google account (``connect``), sign him
+    out and revoke it (``disconnect``), or say how it stands (``status``). ``ask``
+    reads a pasted reply; ``opener`` opens the browser (the terminal prints the
+    address either way)."""
+    return asyncio.run(_google_async(paths, args, http, ask, opener))
+
+
+async def _google_async(paths: KitPaths, args, http, ask, opener) -> int:
+    from kit.google.auth import (
+        GoogleAuthError,
+        TokenStore,
+        code_from_reply,
+        exchange_code,
+        revoke,
+        scopes_for,
+        start_sign_in,
+    )
+    from kit.google.client import Google, GoogleError
+
+    paths.ensure()
+    s = SettingsStore(paths).current().google
+    store = TokenStore(paths.secrets_dir)
+    own = http is None
+    http = http or httpx.AsyncClient()
+    try:
+        if args.action == "status":
+            google = Google(store, lambda: datetime.now().astimezone(), http)
+            if google.tokens is None:
+                print("not signed in: kit google connect")
+                return 1
+            try:
+                account = await google.profile()
+            except GoogleError as e:
+                print(e)
+                return 1
+            st = google.status()
+            parts = [p for p in ("gmail", "calendar") if st.get(p)]
+            print(f"signed in as {account}: {', '.join(parts) or 'nothing'}")
+            print(f"google.enabled is {'on' if s.enabled else 'off'}")
+            return 0
+        if args.action == "disconnect":
+            tokens = store.load()
+            if tokens is None:
+                print("not signed in")
+                return 0
+            print(
+                "revoked at Google" if await revoke(http, tokens) else "Google wouldn't revoke it"
+            )
+            store.forget()
+            print("signed out: the token file is gone")
+            return 0
+        client = store.client()
+        if client is None:
+            print(
+                f"first save your OAuth client's JSON as {store.client_file}\n"
+                "(Google Cloud console: APIs & Services, Credentials, OAuth client ID, Desktop app)"
+            )
+            return 1
+        scopes = scopes_for(s.gmail, s.calendar)
+        if not scopes:
+            print("google.gmail and google.calendar are both off: nothing to sign in for")
+            return 1
+        sign_in = start_sign_in(client, scopes, args.port)
+        got = _loopback(args.port, sign_in.state)
+        print("Open this address in a browser, signed in to the Google account Kit may use:\n")
+        print(sign_in.url + "\n")
+        print(
+            "Google will send the browser to a localhost address that may not load; that's\n"
+            "fine. Paste the whole address of the page you land on here (or press Enter if\n"
+            "it said Kit's connected):"
+        )
+        if opener is not None:
+            opener(sign_in.url)
+        reply = await asyncio.to_thread(ask, "> ")
+        code = got.get("code") or ""
+        if not code:
+            try:
+                code = code_from_reply(reply, sign_in.state)
+            except GoogleAuthError as e:
+                print(e)
+                return 1
+        try:
+            tokens = await exchange_code(http, client, sign_in, code, datetime.now().astimezone())
+        except GoogleAuthError as e:
+            print(e)
+            return 1
+        store.save(tokens)
+        google = Google(store, lambda: datetime.now().astimezone(), http)
+        try:
+            account = await google.profile()
+        except GoogleError as e:
+            print(f"signed in, but the first call failed: {e}")
+            return 1
+        parts = [p for p in ("gmail", "calendar") if google.has(p)]
+        print(f"signed in as {account}: {', '.join(parts)}. Restart Kit if he's running.")
+        return 0
+    finally:
+        got = locals().get("got")
+        if got is not None:
+            got["server"].shutdown()
+            got["server"].server_close()
+        if own:
+            await http.aclose()
+
+
+def _loopback(port: int, state: str) -> dict:
+    """A small web server on localhost:``port`` that takes Google's reply, for when the
+    port is forwarded to the box (``ssh -L``). It fills ``code`` in the dict it returns."""
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+    from urllib.parse import parse_qs, urlparse
+
+    got: dict = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 (http.server's name)
+            query = parse_qs(urlparse(self.path).query)
+            ok = query.get("state", [""])[0] == state and query.get("code")
+            if ok:
+                got["code"] = query["code"][0]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(
+                b"Kit's connected: go back to the terminal and press Enter."
+                if ok
+                else b"That isn't the reply Kit was waiting for."
+            )
+
+        def log_message(self, *args):  # quiet
+            pass
+
+    try:
+        server = HTTPServer(("127.0.0.1", port), Handler)
+    except OSError:
+        return {"server": _NoServer()}
+    Thread(target=server.serve_forever, daemon=True).start()
+    got["server"] = server
+    return got
+
+
+class _NoServer:
+    def shutdown(self) -> None:
+        pass
+
+    def server_close(self) -> None:
+        pass
+
+
 def cmd_house(paths: KitPaths, args: argparse.Namespace, connect=None) -> int:
     """``kit house``: what Kit can see of the house through Home Assistant, a thing's
     state, and switching one on or off (kit.house)."""
@@ -2020,6 +2172,15 @@ def main(argv: list[str] | None = None) -> int:
         help="memory --replay or tools: a different questions file",
     )
 
+    google = sub.add_parser("google", help="Gmail and Google Calendar: connect, disconnect, status")
+    gsub = google.add_subparsers(dest="action", required=True)
+    gconnect = gsub.add_parser("connect", help="sign Kit in to your Google account")
+    gconnect.add_argument(
+        "--port", type=int, default=8765, help="the localhost port Google sends the browser to"
+    )
+    gsub.add_parser("disconnect", help="sign him out and revoke the token at Google")
+    gsub.add_parser("status", help="who he's signed in as and what the sign-in covers")
+
     house = sub.add_parser("house", help="the house through Home Assistant: list, state, set")
     hsub = house.add_subparsers(dest="action", required=True)
     hsub.add_parser("list", help="the things Kit can see, by room").add_argument(
@@ -2110,6 +2271,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_files(paths, args)
     if args.command == "house":
         return cmd_house(paths, args)
+    if args.command == "google":
+        return cmd_google(paths, args)
     if args.command == "docs":
         return docs_check.check(args.vault or docs_check.repo_docs())
     if args.command == "weather":

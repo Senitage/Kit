@@ -56,8 +56,9 @@ summary: What's built and merged into main, what's open, and what's next. Update
 | Stage 4, part F2: MetTools in full. Kit starts MetTools' own server on the box with its address and token, so its saved work, calculators (run with no browser) and the page you have open all become his tools | Done, pull request #70 | [[Other Apps#MetTools]], [[Stage 4 - Tools]] |
 | Stage 4, part F3: home_app as a pack. Fuel, cars and saved work as rows from home_app, money as figures only, adding a trip stop asks first, and his last tool calls on home_app's Health page | Done, pull request #71 | [[Other Apps#home_app as a pack]], [[Stage 4 - Tools]] |
 | Stage 4, part G1: the morning brief. Weather, tasks due, a bill coming up, the house, yesterday and threads, once a morning at the desk or in his first answer, and "the second one" later | Done, pull request #72 | [[Companion#The morning brief]], [[Stage 4 - Tools]] |
+| Stage 4, part H1: mail and calendar. Kit's own narrow sign-in to your Google account: search and read Gmail, drafts, sending after a yes with the message shown; what's on, adding and moving events after a yes; the coming events in his memory and the brief, a word before one starts | Done, pull request #73 | [[Mail and Calendar]], [[Stage 4 - Tools]] |
 | His voice on another computer: the voice program on the PC dials in to Kit and makes his lines on its graphics card, with the server's voice taking over while it's away; the backup voice kept loaded; each piece of sound sent at once (40 ms off every line) | Done, pull request #75 | [[Voice#His voice from another computer]], [[Stage 3 - Voice#His voice on another computer]] |
-| Ears in the desk app: the desk app hears through its PC's mic with nothing else to install, picks the mic and introduces voices on the This PC page, and starts the ears again when something changes; This PC's "What Kit may open" choices now save | Open, pull request | [[Hearing#In the desk app]], [[Desk App#His ears]] |
+| Ears in the desk app: the desk app hears through its PC's mic with nothing else to install, picks the mic and introduces voices on the This PC page, and starts the ears again when something changes; This PC's "What Kit may open" choices now save | Done, pull request #77 | [[Hearing#In the desk app]], [[Desk App#His ears]] |
 
 ## What's next
 
@@ -66,7 +67,7 @@ summary: What's built and merged into main, what's open, and what's next. Update
    presence in the room.
 3. Stage 4: the tool loop (#61, done), then pack matching and asking
    first (#62, done), then your files (#63, done) and the file tools (#64, done), PC control (#66, done), the house
-   (#67, done), the notes vault (#68, done), apps over MCP (#69, done), MetTools in full (#70, done), home_app (#71, done), the morning brief (#72), then the Claude Code bridge
+   (#67, done), the notes vault (#68, done), apps over MCP (#69, done), MetTools in full (#70, done), home_app (#71, done), the morning brief (#72, done), mail and calendar (#73, done), then the Claude Code bridge
    ([[Stage 4 - Tools]]).
 4. Stages 5 to 8, then the arm.
 
@@ -118,6 +119,9 @@ Every change lands as a pull request on GitHub, tested on Windows and Linux.
 | 23 Oct | Stage 4 part F2: MetTools in full | #70 |
 | 23 Oct | Stage 4 part F3: home_app as a pack | #71 |
 | 23 Oct | Stage 4 part G1: the morning brief | #72 |
+| 23 Oct | His voice on another computer | #75 |
+| 24 Oct | Ears in the desk app | #77 |
+| 24 Oct | Stage 4 part H1: mail and calendar | #73 |
 
 ## Keeping this note true
 

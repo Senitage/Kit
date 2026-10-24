@@ -102,7 +102,10 @@ answering. The fifth is `notes` ([[Notes on the NAS#Changing a note]]):
 `new_note`, `open_note` and `undo_note`, loaded by words like "note",
 "to-do" or "tick off". It also adds a few lines about how your vault is laid
 out to the prompt while it's loaded (a pack's **context**), and its changes
-come with a **preview**, the change itself, shown with the question. Then
+come with a **preview**, the change itself, shown with the question. The
+`mail` and `calendar` packs ([[Mail and Calendar]]) are your Gmail and Google
+Calendar: search and read mail, a draft, sending and adding or moving an
+event only after a yes, with the message or event shown. Then
 **each of your apps** with an MCP server is a pack of its own, named after
 it, its tools listed by the app itself ([[Other Apps#Apps as packs]]). The
 packs to come plug in the same way: another card in the prompt, their

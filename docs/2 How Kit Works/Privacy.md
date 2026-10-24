@@ -2,7 +2,7 @@
 tags: [how-it-works, topic/privacy]
 aliases: [Keep it local, What Kit sees, The switches, Security]
 summary: What Kit sees, what leaves the house and what never does - keep it local, the desk app's switches, the eyes' no-pictures rule, read-only shares, tokens and secrets.
-related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]", "[[Tools and Packs]]"]
+related: ["[[Memory]]", "[[Stage 2 - Desk App]]", "[[Vision Stage 1]]", "[[Tools and Packs]]", "[[Mail and Calendar]]"]
 ---
 
 # Privacy
@@ -156,6 +156,19 @@ See [[Hearing]].
 - **The names and states of exposed things go to the cloud model** when a
   house tool reads them (like any tool result); the token never does. It
   stays in the secrets folder.
+
+## Mail and calendar
+
+- **Kit's own narrow sign-in** to your Google account, with only the
+  permissions you allow: read mail, draft, send after a yes, read calendars,
+  add or move an event after a yes. Never delete, archive or label; never an
+  attachment. See [[Mail and Calendar]].
+- **Mail is read live and never kept.** What a mail or calendar tool reads
+  goes to the cloud model like any tool result, with the email marked as
+  someone else's words so it can't give him instructions. The coming events
+  go in his memory; mail doesn't. `google.private` keeps both to the local
+  model's summary, once there is one.
+- The tokens stay in the secrets folder; `kit google disconnect` revokes them.
 
 ## Tokens and secrets
 

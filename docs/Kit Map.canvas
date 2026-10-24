@@ -430,6 +430,15 @@
 			"y": 1030,
 			"width": 320,
 			"height": 150
+		},
+		{
+			"id": "google",
+			"type": "text",
+			"text": "### [[Mail and Calendar]]\nYour Gmail and Google Calendar, as his own narrow sign-in. Sending and adding ask first.",
+			"x": -980,
+			"y": 1030,
+			"width": 320,
+			"height": 150
 		}
 	],
 	"edges": [
@@ -587,6 +596,14 @@
 			"toNode": "life",
 			"toSide": "top",
 			"label": "what he notices"
+		},
+		{
+			"id": "google-tools",
+			"fromNode": "google",
+			"fromSide": "top",
+			"toNode": "tools",
+			"toSide": "bottom",
+			"label": "the mail and calendar packs"
 		}
 	]
 }

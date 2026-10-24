@@ -198,6 +198,22 @@ Your apps whose MCP servers Kit uses as tool packs. See [[Other Apps#Apps as pac
 | `relist_minutes` | `60` | How often Kit asks each app again which tools it has. He also asks at once when the app says they changed. |
 | `contents_daily` | on | Once a day, read each app's saved work (its `contents` tool) into Kit's memory, so he can find it by meaning. |
 
+## google
+
+Your Google account: Gmail and Google Calendar. See [[Mail and Calendar]].
+
+| Setting | Default | What it does |
+|---|---|---|
+| `enabled` | off | Use your Google account. Needs your own OAuth client saved as `google_client.json` in the secrets folder, then `kit google connect`. Restart Kit after turning it on. |
+| `gmail` | on | Mail: search and read, write drafts, send after your yes. Off: the sign-in doesn't ask for mail at all. |
+| `calendar` | on | Calendar: what's on, adding and moving events after your yes. Off: the sign-in doesn't ask for calendars. |
+| `send` | on | He may send an email, always after showing it and getting your yes. Off: drafts only. |
+| `calendar_write` | on | He may add or move an event, always after your yes. Off: he only reads the calendar. |
+| `calendars` | none | The calendars he uses, by name or id. Empty: the ones you show in Google Calendar. |
+| `private` | off | What he reads from Google reaches a cloud model only as the local model's summary. Needs a local model. |
+| `remind_minutes` | 15 | He mentions an event this many minutes before it starts, once, through his usual manners. 0: never. |
+| `refresh_minutes` | 15 | How often he reads the coming events again (1 to 1440). |
+
 ## brief
 
 The morning brief: a few short things worth knowing, once a morning. See

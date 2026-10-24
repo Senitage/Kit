@@ -25,6 +25,7 @@ dependencies = [
     "pydantic>=2.7",
     "qrcode>=7.4",  # kit pair shows the pairing code as a QR code in the terminal
     "tomli-w>=1.0",
+    "tzdata>=2024.1",  # time zones for the calendar (Windows has no zone database of its own)
     "uvicorn>=0.29",
     "websockets>=13",  # Home Assistant (kit.house)
 ]

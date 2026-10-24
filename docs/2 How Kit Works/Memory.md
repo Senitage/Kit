@@ -50,6 +50,7 @@ flowchart LR
 | `tasks` | The open tasks in your notes, with their due dates ([[Notes on the NAS#Finding notes and tasks]]) |
 | `app:<name>` | Your apps' saved work, read once a day ([[Other Apps#Apps as packs]]) |
 | `house` | The lights, switches and rooms Home Assistant shows him ([[The House]]) |
+| `calendar` | The coming events on your Google calendars, a week back to two months ahead ([[Mail and Calendar]]) |
 
 A new kind of thing to remember (photos, projects) is added as a new
 source in the same index, and recall, search, the memory page and the

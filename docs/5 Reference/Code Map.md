@@ -64,6 +64,8 @@ flowchart TB
 | `src/kit/tools/pc.py` | The pc pack: open files, folders, apps and sites on the PC, bring a window up, the media keys, what you worked on and your code projects | [[Desk App#Doing things on the PC]], [[Tools and Packs#Packs]] |
 | `src/kit/tools/notes.py` | The notes pack: find notes, list tasks, add under a heading, edit, tick, start, open in Obsidian and undo | [[Notes on the NAS#Changing a note]] |
 | `src/kit/tools/mcp.py` | Your apps as packs: each app's MCP server connected, its tools wrapped with what they do, reconnecting, and its saved work into memory | [[Other Apps#Apps as packs]] |
+| `src/kit/tools/mail.py` | The mail pack: search and read Gmail, write a draft, send after a yes with the message shown | [[Mail and Calendar]] |
+| `src/kit/tools/calendar.py` | The calendar pack: what's on, add and move an event after a yes | [[Mail and Calendar]] |
 | `src/kit/tools/house.py` | The house pack: find, read and switch lights, the aircon, scenes, blinds and locks, and who's home | [[The House#The tools]] |
 | `src/kit/tools/match.py` | Which packs a message loads: always, words, register links, then meaning | [[Tools and Packs#Which packs load]] |
 | `src/kit/tools/confirm.py` | Asking first: which tools wait for a yes, the held call, what the model is told | [[Tools and Packs#Asking first]] |
@@ -121,6 +123,10 @@ flowchart TB
 | Module | What it does | Explained in |
 |---|---|---|
 | `src/kit/desk_commands.py` | Asking the desk app to do something on the PC: the `desk_command` event, the claim, the answer, the wait | [[Desk App#Doing things on the PC]], [[API]] |
+| `src/kit/google/auth.py` | Signing in to Google: the OAuth client file, PKCE, the loopback or pasted reply, the tokens file, refresh and revoke | [[Mail and Calendar#Signing in, and what he's allowed]] |
+| `src/kit/google/client.py` | The signed-in Google account: a fresh access token, JSON calls to Gmail and Calendar, errors in words, "needs reconnecting" | [[Mail and Calendar]] |
+| `src/kit/google/gmail.py` | Gmail as far as Kit may go: search, read (MIME walked, HTML stripped, marked as someone else's words), compose, draft, send | [[Mail and Calendar#Mail is read, never kept]] |
+| `src/kit/google/calendar.py` | Google Calendar: the calendars chosen, events in a range, add and move, the `calendar` source and reminders as wants | [[Mail and Calendar#The calendar he keeps in mind]] |
 | `src/kit/brief.py` | The morning brief: its parts, when it's due, the desk pipe-up and the reply aside, "the second one" | [[Companion#The morning brief]] |
 | `src/kit/activity.py` | What you did on the PC each day, kept as one `activity` item a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
 | `src/kit/projects.py` | Your code projects, refreshed into the index once a day | [[Desk App#What you worked on]], [[Memory In Depth]] |
