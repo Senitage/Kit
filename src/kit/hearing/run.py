@@ -118,7 +118,7 @@ class Ears:
         if now - self._last_check_in >= CHECK_IN_S:
             self.check_in(now)
         if self.paused:
-            self._release()
+            self.release()
             self.sleep(0.2)
             return []
         if self.mic is None and not self._open(now):
@@ -150,8 +150,12 @@ class Ears:
                 if max_steps is not None and steps >= max_steps:
                     break
         finally:
-            self._release()
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            self.close()
+
+    def close(self) -> None:
+        """Done with the ears: the mic goes, and words being got ready are dropped."""
+        self.release()
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     # Talking over him
 
@@ -304,7 +308,7 @@ class Ears:
             log.info("ears %s", "paused: the mic is off" if paused else "on again")
             self.paused = paused
             if paused:
-                self._release()
+                self.release()
         raw = answer.get("settings")
         if isinstance(raw, dict):
             try:
@@ -381,7 +385,8 @@ class Ears:
         self._mic_failed_at = None
         return True
 
-    def _release(self) -> None:
+    def release(self) -> None:
+        """Let the mic go; the next step opens it again (unless paused)."""
         if self.mic is not None:
             self.mic.close()
             self.mic = None

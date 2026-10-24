@@ -1272,19 +1272,21 @@ class EyesSettings(_Section):
 
 
 class HearingSettings(_Section):
-    """Kit's ears: the microphone process (`kit hearing`) on the PC with the mic. It
-    fetches these from the brain, so there's one place to change them. Sound never
+    """Kit's ears: the desk app, or the microphone process (`kit hearing`), on the PC
+    with the mic. They fetch these from the brain, so there's one place to change them. Sound never
     leaves that PC: only the words, and how they sounded, reach the brain."""
 
     enabled: bool = Field(
         True,
-        description="Kit listens through a microphone when `kit hearing` is running on the PC "
-        'with the mic. The tray\'s "Let Kit hear me" switch turns it off and on.',
+        description="Kit listens through a microphone when the desk app (or `kit hearing`) is "
+        'running on the PC with the mic. The tray\'s "Let Kit hear me" switch turns it off '
+        "and on.",
     )
     mic: str = Field(
         "",
         description="Which microphone to use: part of its name, or its number from "
-        "`kit hearing mics`. Empty uses the PC's default.",
+        "`kit hearing mics`. Empty uses the PC's default. The desk app's This PC page can "
+        "pick one for its PC instead.",
     )
     names: list[str] = Field(
         default_factory=lambda: ["Kit", "Kitt", "Ki", "Kid"],

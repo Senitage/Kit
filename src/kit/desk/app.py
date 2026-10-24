@@ -71,6 +71,7 @@ from kit.desk.chat import ChatWindow
 from kit.desk.client import BrainClient, BrainError, Sound, SpeechOff, follow_life
 from kit.desk.commands import NoHands, Runner, WindowsHands
 from kit.desk.config import UPDATE_TOKEN_FILE, DeskConfig, desk_dir, load_token, save_token
+from kit.desk.ears import DeskEars, mics
 from kit.desk.face_preview import Performer
 from kit.desk.glow import FaceWidget, paint_glow
 from kit.desk.sound import Sounds
@@ -96,7 +97,20 @@ HEALTH_EVERY_MS = 15_000
 OPEN_MS = 160  # the chat fades in this quickly
 # Which DeskConfig fields each page of Kit's window owns, so a save on one page
 # never puts back another page's old values.
-PC_FIELDS = ("brain_url", "watch", "show_face", "hidden_apps", "hidden_words")
+PC_FIELDS = (
+    "brain_url",
+    "watch",
+    "show_face",
+    "hidden_apps",
+    "hidden_words",
+    "do_commands",
+    "open_roots",
+    "apps",
+    "url_schemes",
+    "share_recent_files",
+    "hear_here",
+    "mic",
+)
 LOOK_FIELDS = (
     "theme",
     "accent",
@@ -527,6 +541,9 @@ class DeskApp(QObject):
         self.check_health()
         threading.Thread(target=self._watch_loop, name="kit-watch", daemon=True).start()
         threading.Thread(target=self._life_loop, name="kit-life", daemon=True).start()
+        # Kit's ears, with this PC's mic (kit.desk.ears).
+        self.ears = DeskEars(lambda: self.client, lambda: self.config, self._stop)
+        self.ears.start()
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.check_for_update)
@@ -773,6 +790,7 @@ class DeskApp(QObject):
         self.watch_action.setChecked(self.config.watch)
         self._connect()
         self.check_health()
+        self.ears.changed()
 
     def _take(self, config: DeskConfig, names: tuple[str, ...]) -> None:
         """Keep a page's fields from ``config`` and save."""
@@ -796,6 +814,9 @@ class DeskApp(QObject):
             self.window.mood.face.eye = QColor(self.config.eye_colour)
             self.window.pc.saved.connect(self.save_pc)
             self.window.pc.command_log = lambda: self.runner.log
+            self.window.pc.mics = mics
+            self.window.pc.ears_status = lambda: self.ears.status
+            self.window.pc.enrol = self.ears.enrol
             self.window.look.changed.connect(self.set_look)
             self.window.character_changed.connect(self.check_health)
             self._use_look()
@@ -1213,6 +1234,12 @@ def _selftest(argv: list[str]) -> int:
             import sounddevice  # noqa: F401
         except Exception:
             return 4
+        try:  # and his ears need numpy and sherpa-onnx's own libraries (kit.desk.ears)
+            import sherpa_onnx  # noqa: F401
+
+            import kit.hearing.run  # noqa: F401
+        except Exception:
+            return 5
     return 0
 
 
